@@ -54,6 +54,12 @@ importers:
         specifier: workspace:*
         version: link:../agent-repo
 
+  packages/scheduler:
+    dependencies:
+      '@agent-dive/events':
+        specifier: workspace:*
+        version: link:../events
+
 packages:
 
   '@biomejs/biome@2.5.10':
