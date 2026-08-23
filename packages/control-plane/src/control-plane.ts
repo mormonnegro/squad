@@ -16,6 +16,7 @@ import {
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
 import { CreatedAgentStore } from "./created-agents.ts";
+import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
 
@@ -98,7 +99,11 @@ export interface ControlPlaneOptions {
 export type PlaneEvent =
 	| { readonly kind: "audit"; readonly entry: AuditEntry }
 	| { readonly kind: "turn"; readonly agentId: string; readonly result: TurnResult }
-	| { readonly kind: "error"; readonly context: string; readonly message: string };
+	| { readonly kind: "error"; readonly context: string; readonly message: string }
+	/** A piece of an answer being written. The whole of it arrives again as a turn. */
+	| { readonly kind: "say"; readonly agentId: string; readonly text: string }
+	/** Something an agent did inside its sandbox, reported while the turn is still running. */
+	| { readonly kind: "step"; readonly agentId: string; readonly step: AgentStep };
 
 export interface AgentSummary {
 	readonly id: string;
@@ -288,6 +293,7 @@ export class ControlPlane {
 					this.#onTurn?.(id, result);
 					this.#emit({ kind: "turn", agentId: id, result });
 				},
+				onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
 				// Named by destination, not by agent, so an operator waiting on their own reply is not
 				// told that somebody else's channel is the reason.
 				onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
@@ -363,6 +369,7 @@ export class ControlPlane {
 
 		const runner = new PiTurnRunner({
 			sandbox: this.sandboxes,
+			onStep: (agentId, step) => this.#emit({ kind: "step", agentId, step }),
 			...(agent.provider !== undefined ? { provider: agent.provider } : {}),
 			...(agent.model !== undefined ? { model: agent.model } : {}),
 			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),

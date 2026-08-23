@@ -5,6 +5,7 @@ import { ControlClient, ControlError } from "./control-client.ts";
 import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
 import { runningPlanes } from "./control-relay.ts";
 import { ControlServer, controlSocketPath } from "./control-server.ts";
+import { MarkdownStream } from "./markdown.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
 
@@ -68,11 +69,20 @@ async function resolveStateDir(args: Args): Promise<Args> {
 	return { ...args, stateDir: only };
 }
 
-function describe(event: PlaneEvent): string {
+/** A line for a feed, or nothing for the events that are not lines. */
+function describe(event: PlaneEvent): string | undefined {
+	// Half a sentence at a time is for whoever is waiting on the answer. A feed gets the turn whole,
+	// one line, once, which is what makes it readable with several agents talking at once.
+	if (event.kind === "say") return undefined;
 	if (event.kind === "turn") return `[${event.agentId}] ${event.result.text}`;
 	if (event.kind === "error") return `[${event.context}] ${event.message}`;
 	const { at, agentId, outcome, method, host, path, reason } = event.entry;
 	return `${at} ${agentId ?? "-"} ${outcome} ${method} ${host}${path}${reason ? ` (${reason})` : ""}`;
+}
+
+function report(event: PlaneEvent): void {
+	const line = describe(event);
+	if (line !== undefined) process.stdout.write(`${line}\n`);
 }
 
 async function run(path: string): Promise<number> {
@@ -80,7 +90,7 @@ async function run(path: string): Promise<number> {
 	const plane = new ControlPlane(config);
 	const server = new ControlServer({ plane });
 
-	plane.observe((event) => process.stdout.write(`${describe(event)}\n`));
+	plane.observe(report);
 
 	// The socket opens before the agents do. Starting them means pulling an image, creating a volume
 	// and scaffolding a repository, and an operator who asks what is happening during that minute
@@ -429,6 +439,53 @@ async function confirm(question: string): Promise<boolean> {
 }
 
 /**
+ * Takes a turn and prints the answer as the agent writes it.
+ *
+ * The spinner stops at the first word rather than at the end of the turn, because from that word on
+ * there is something better to look at, and a wait that has visibly started producing an answer is
+ * no longer a wait anyone needs reassuring about.
+ *
+ * Markdown is rendered only into a terminal. Piped, it goes through as the agent wrote it: whoever
+ * redirected this into a file asked for the text, and bold is not text.
+ */
+async function say(
+	client: ControlClient,
+	agentId: string,
+	body: string,
+	options: { readonly stop: () => void; readonly lead?: string },
+): Promise<string> {
+	const out = new MarkdownStream({
+		write: (chunk) => process.stdout.write(chunk),
+		color: process.stdout.isTTY === true,
+	});
+
+	let opened = false;
+	const open = (): void => {
+		if (opened) return;
+		opened = true;
+		options.stop();
+		if (options.lead !== undefined) process.stdout.write(options.lead);
+	};
+
+	try {
+		const text = await client.wake(agentId, body, (delta) => {
+			open();
+			out.push(delta);
+		});
+		options.stop();
+		// A plane that answered without streaming still has an answer to show, and so does one whose
+		// turn produced its text only at the end.
+		if (!opened && text.length > 0) {
+			open();
+			out.push(text);
+		}
+		return text;
+	} finally {
+		out.end();
+	}
+}
+
+/**
  * A conversation with an agent: a turn per line, on the connection that already carries operator
  * trust. pi keeps a session per agent, so the agent remembers the previous line.
  */
@@ -461,9 +518,9 @@ async function chat(args: Args): Promise<number> {
 
 			const stop = waiting("thinking");
 			try {
-				const text = await client.wake(agent.id, line);
-				stop();
-				process.stdout.write(`\n${text.length > 0 ? text : "(nothing)"}\n\n`);
+				const text = await say(client, agent.id, line, { stop, lead: "\n" });
+				if (text.length === 0) process.stdout.write("\n(nothing)\n");
+				process.stdout.write("\n");
 			} catch (error) {
 				stop();
 				// A turn that failed is not a conversation that ended: the events stay queued, and the
@@ -494,9 +551,8 @@ async function wake(args: Args): Promise<number> {
 		// run and answers nobody. That wait is fifteen minutes and looks exactly like thinking.
 		const { agent, body } = await addressee(client, rest);
 		stop = waiting("thinking");
-		const text = await client.wake(agent.id, body);
-		stop();
-		process.stdout.write(text.length > 0 ? `${text}\n` : "the agent said nothing\n");
+		const text = await say(client, agent.id, body, { stop });
+		if (text.length === 0) process.stdout.write("the agent said nothing\n");
 		return 0;
 	} finally {
 		stop();
@@ -506,7 +562,7 @@ async function wake(args: Args): Promise<number> {
 
 async function logs(args: Args): Promise<number> {
 	const client = await connect(args.stateDir);
-	client.logs((event) => process.stdout.write(`${describe(event)}\n`));
+	client.logs(report);
 	await new Promise<void>((resolve) => {
 		process.once("SIGINT", () => resolve());
 		process.once("SIGTERM", () => resolve());

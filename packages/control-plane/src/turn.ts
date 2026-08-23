@@ -2,6 +2,7 @@ import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo
 import type { Reply } from "@agent-dive/channels";
 import type { WakeupHandler } from "@agent-dive/events";
 import type { ExecResult } from "@agent-dive/sandbox";
+import { type AgentStep, PiOutput } from "./pi-output.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
 export interface TurnSandbox {
@@ -9,7 +10,11 @@ export interface TurnSandbox {
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options?: { timeoutMs?: number; workingDir?: string },
+		options?: {
+			timeoutMs?: number;
+			workingDir?: string;
+			onStdout?: (chunk: string) => void;
+		},
 	): Promise<ExecResult>;
 }
 
@@ -17,6 +22,10 @@ export interface TurnResult {
 	readonly text: string;
 	readonly exitCode: number;
 	readonly stderr: string;
+	/** How long the turn took, what it burned and what it cost: the three questions asked after. */
+	readonly ms: number;
+	readonly tokens: number;
+	readonly costUsd: number;
 }
 
 export class TurnError extends Error {
@@ -39,6 +48,8 @@ export interface PiTurnRunnerOptions {
 	readonly repoPath?: string;
 	readonly timeoutMs?: number;
 	readonly command?: readonly string[];
+	/** Called with each thing the agent does inside the sandbox, while it is still doing it. */
+	readonly onStep?: (agentId: string, step: AgentStep) => void;
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
@@ -59,6 +70,7 @@ export class PiTurnRunner {
 	readonly #repoPath: string;
 	readonly #timeoutMs: number;
 	readonly #command: readonly string[];
+	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 
 	constructor(options: PiTurnRunnerOptions) {
 		this.#sandbox = options.sandbox;
@@ -68,6 +80,7 @@ export class PiTurnRunner {
 		this.#sessionDir = options.sessionDir ?? `${this.#repoPath}/.sessions`;
 		this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.#command = options.command ?? ["pi"];
+		this.#onStep = options.onStep;
 	}
 
 	sessionId(agentId: string): string {
@@ -82,6 +95,10 @@ export class PiTurnRunner {
 		return [
 			...this.#command,
 			"--print",
+			// The event stream rather than the finished text, because the finished text arrives all at
+			// once when the turn is over and there is no way back from that to an answer in progress.
+			"--mode",
+			"json",
 			"--session-id",
 			this.sessionId(agentId),
 			"--session-dir",
@@ -95,17 +112,30 @@ export class PiTurnRunner {
 		];
 	}
 
-	async run(agentId: string, prompt: string): Promise<TurnResult> {
+	async run(
+		agentId: string,
+		prompt: string,
+		onText?: (delta: string) => void,
+	): Promise<TurnResult> {
+		const started = Date.now();
+		const output = new PiOutput({
+			onText: (delta) => onText?.(delta),
+			onStep: (step) => this.#onStep?.(agentId, step),
+		});
 		// In its own repository, so what it remembers and what it can do are where it works.
 		const executed = await this.#sandbox.run(agentId, this.commandFor(agentId), prompt, {
 			timeoutMs: this.#timeoutMs,
 			workingDir: this.#repoPath,
+			onStdout: (chunk) => output.push(chunk),
 		});
 
 		const result: TurnResult = {
-			text: executed.stdout.trim(),
+			text: output.text,
 			exitCode: executed.exitCode,
 			stderr: executed.stderr.trim(),
+			ms: Date.now() - started,
+			tokens: output.tokens,
+			costUsd: output.costUsd,
 		};
 		// Throwing leaves the events queued, so a turn lost to a bad key is retried rather than
 		// acknowledged as if the agent had answered.
@@ -118,12 +148,17 @@ export class PiTurnRunner {
 				result,
 			);
 		}
+		// A refused model leaves pi exiting zero with the reason inside the stream, so without this the
+		// turn is an empty answer and the agent looks like it had nothing to say.
+		if (output.failure !== undefined) {
+			throw new TurnError(`Turn for "${agentId}" got no answer: ${output.failure}`, result);
+		}
 		return result;
 	}
 }
 
 export interface TurnRunner {
-	run(agentId: string, prompt: string): Promise<TurnResult>;
+	run(agentId: string, prompt: string, onText?: (delta: string) => void): Promise<TurnResult>;
 }
 
 export interface ReplyRouter {
@@ -134,6 +169,8 @@ export interface TurnHandlerOptions {
 	readonly runner: TurnRunner;
 	readonly router?: ReplyRouter;
 	readonly onTurn?: (agentId: string, result: TurnResult) => void;
+	/** The answer as it is written, for whoever is waiting rather than whoever is reading a log. */
+	readonly onSay?: (agentId: string, text: string) => void;
 	/** A reply that had nowhere to go. The turn still counts as taken. */
 	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
@@ -147,7 +184,9 @@ export interface TurnHandlerOptions {
  */
 export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 	return async ({ agentId, events, prompt }) => {
-		const result = await options.runner.run(agentId, prompt);
+		const result = await options.runner.run(agentId, prompt, (text) =>
+			options.onSay?.(agentId, text),
+		);
 		options.onTurn?.(agentId, result);
 		if (!options.router || result.text.length === 0) return;
 

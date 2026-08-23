@@ -28,7 +28,9 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agent: AgentSummary }
 	| { readonly id: string; readonly ok: true; readonly text: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
-	| { readonly id: string; readonly event: PlaneEvent };
+	| { readonly id: string; readonly event: PlaneEvent }
+	/** Part of an answer to a wake still being written. The request is unfinished until `ok`. */
+	| { readonly id: string; readonly chunk: string };
 
 /** Where a reply to `wake` goes. The suffix is the request it answers. */
 export const CLI_CHANNEL = "cli";
@@ -144,13 +146,19 @@ export class ControlServer {
 			if (request.op === "agents") {
 				this.#write(socket, { id: request.id, ok: true, agents: await this.#plane.agents() });
 			} else if (request.op === "logs") {
-				const stop = this.#plane.observe((event) => this.#write(socket, { id: request.id, event }));
+				// Turns, not the tokens they are made of: a log is read after the fact, and the whole
+				// answer arrives as one line the moment the turn ends.
+				const stop = this.#plane.observe((event) => {
+					if (event.kind !== "say") this.#write(socket, { id: request.id, event });
+				});
 				socket.once("close", stop);
 			} else if (request.op === "wake") {
 				this.#write(socket, {
 					id: request.id,
 					ok: true,
-					text: await this.#wake(request.agentId, request.body),
+					text: await this.#wake(request.agentId, request.body, (chunk) =>
+						this.#write(socket, { id: request.id, chunk }),
+					),
 				});
 			} else if (request.op === "create") {
 				this.#write(socket, {
@@ -176,7 +184,7 @@ export class ControlServer {
 	 * This is the only path into the system that carries operator trust, and it is deliberately the
 	 * one that requires already holding the socket. The same words arriving by webhook are data.
 	 */
-	async #wake(agentId: string, body: string): Promise<string> {
+	async #wake(agentId: string, body: string, onChunk: (text: string) => void): Promise<string> {
 		const requestId = randomUUID();
 		let answered: (text: string) => void = () => {};
 		let failed: (error: Error) => void = () => {};
@@ -190,8 +198,12 @@ export class ControlServer {
 		// silent for whoever is standing at a terminal: they would wait out the timeout and be told
 		// the agent said nothing. Turns are serialised per agent and this one's event is folded into
 		// whatever batch is running, so a failure reported while this call waits is this call's.
+		// The same reasoning carries the answer as it is written: turns are serialised per agent and
+		// this call's event is folded into whichever batch is running, so what that agent is saying
+		// while this call waits is what it is saying to this call.
 		const unobserve = this.#plane.observe((event) => {
 			if (event.kind === "error" && event.context === agentId) failed(new Error(event.message));
+			if (event.kind === "say" && event.agentId === agentId) onChunk(event.text);
 		});
 
 		try {

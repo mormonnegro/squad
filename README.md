@@ -182,9 +182,14 @@ it already means holding a file the operator owns. That is also why this socket 
 into the system that carries operator trust. The same sentence arriving by webhook is data the
 agent may read; typed here it is an instruction the agent may follow.
 
-`wake` waits for the turn to finish, which is as long as the agent takes to think, and prints what
-the agent said. `chat` is the same turn in a loop: pi keeps a session per agent, so the agent
-remembers the previous line.
+The answer is printed as it is written, not when the turn is over, and its markdown is rendered:
+bold is bold, a bullet is a bullet, a fenced block is dimmed and left exactly as typed. Nothing is
+shown until it can be shown right — an unclosed `**` is held back rather than printed and taken
+back — so words appear a fraction behind the agent instead of a paragraph behind it. Redirected
+into a file or piped into another program, the output is the markdown itself, untouched.
+
+`chat` is the same turn in a loop: pi keeps a session per agent, so the agent remembers the
+previous line.
 
 `rm` takes the container and leaves the volume, because the volume is the agent — its soul, what it
 chose to remember, and the tools it wrote for itself. `--purge` deletes that too, and asks for the

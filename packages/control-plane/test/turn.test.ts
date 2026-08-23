@@ -11,15 +11,21 @@ interface Invocation {
 	readonly workingDir: string | undefined;
 }
 
+/** What pi writes when it says one thing, as the events it writes it in. */
+const said = (text: string): string =>
+	`${JSON.stringify({ assistantMessageEvent: { type: "text_start" } })}\n${JSON.stringify({
+		assistantMessageEvent: { type: "text_delta", delta: text },
+	})}\n${JSON.stringify({ assistantMessageEvent: { type: "text_end", content: text } })}\n`;
+
 class StubSandbox implements TurnSandbox {
 	readonly calls: Invocation[] = [];
-	result: ExecResult = { exitCode: 0, stdout: "done\n", stderr: "" };
+	result: ExecResult = { exitCode: 0, stdout: said("done"), stderr: "" };
 
 	async run(
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options: { timeoutMs?: number; workingDir?: string } = {},
+		options: { timeoutMs?: number; workingDir?: string; onStdout?: (chunk: string) => void } = {},
 	): Promise<ExecResult> {
 		this.calls.push({
 			agentId,
@@ -28,6 +34,7 @@ class StubSandbox implements TurnSandbox {
 			timeoutMs: options.timeoutMs,
 			workingDir: options.workingDir,
 		});
+		if (this.result.stdout.length > 0) options.onStdout?.(this.result.stdout);
 		return this.result;
 	}
 }
@@ -44,6 +51,8 @@ describe("PiTurnRunner", () => {
 		expect(sandbox.calls[0]?.cmd).toEqual([
 			"pi",
 			"--print",
+			"--mode",
+			"json",
 			"--session-id",
 			"agent-dive-a1",
 			"--session-dir",
@@ -53,6 +62,29 @@ describe("PiTurnRunner", () => {
 			"--skill",
 			"/home/agent/.self/skills",
 		]);
+	});
+
+	it("hands over the answer as it is written, not only when the turn is over", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.result = {
+			exitCode: 0,
+			stdout: [
+				JSON.stringify({ assistantMessageEvent: { type: "text_start" } }),
+				JSON.stringify({ assistantMessageEvent: { type: "text_delta", delta: "half " } }),
+				JSON.stringify({ assistantMessageEvent: { type: "text_delta", delta: "an answer" } }),
+				JSON.stringify({
+					assistantMessageEvent: { type: "text_end", content: "half an answer" },
+				}),
+				"",
+			].join("\n"),
+			stderr: "",
+		};
+		const seen: string[] = [];
+
+		const result = await new PiTurnRunner({ sandbox }).run("a1", "hi", (text) => seen.push(text));
+
+		expect(seen).toEqual(["half ", "an answer"]);
+		expect(result.text).toBe("half an answer");
 	});
 
 	it("gives the agent its own soul and skills, not pi's defaults", () => {

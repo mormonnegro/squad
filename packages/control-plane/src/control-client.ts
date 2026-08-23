@@ -98,8 +98,9 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to create");
 	}
 
-	async wake(agentId: string, body: string): Promise<string> {
-		const response = await this.#once({ op: "wake", agentId, body });
+	/** Takes one turn. `onText` is called with the answer as it is written, before it is returned. */
+	async wake(agentId: string, body: string, onText?: (text: string) => void): Promise<string> {
+		const response = await this.#once({ op: "wake", agentId, body }, onText);
 		if ("text" in response) return response.text;
 		throw new ControlError("unexpected answer to wake");
 	}
@@ -117,10 +118,19 @@ export class ControlClient {
 		this.#send({ id, op: "logs" });
 	}
 
-	async #once(request: Record<string, unknown>): Promise<ControlResponse> {
+	async #once(
+		request: Record<string, unknown>,
+		onChunk?: (text: string) => void,
+	): Promise<ControlResponse> {
 		const id = String(this.#nextId++);
 		const answer = new Promise<ControlResponse>((resolve, reject) => {
 			this.#handlers.set(id, (response) => {
+				// A chunk is the answer arriving in pieces, so the request is not over until the rest of
+				// it: the handler stays, and the promise waits for the response that settles it.
+				if ("chunk" in response) {
+					onChunk?.(response.chunk);
+					return;
+				}
 				this.#handlers.delete(id);
 				if ("ok" in response && !response.ok) reject(new ControlError(response.error));
 				else resolve(response);

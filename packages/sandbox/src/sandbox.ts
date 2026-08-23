@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 import { DockerEngine, DockerError, type HijackedStream } from "./engine.ts";
 import { demultiplex, FrameSplitter, STDERR } from "./frames.ts";
 import {
@@ -170,7 +171,12 @@ export class DockerSandboxManager {
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options: { timeoutMs?: number; workingDir?: string } = {},
+		options: {
+			timeoutMs?: number;
+			workingDir?: string;
+			/** Called with stdout as it arrives, for a caller that cannot wait for the exit. */
+			onStdout?: (chunk: string) => void;
+		} = {},
 	): Promise<ExecResult> {
 		const created = await this.engine.request<{ Id: string }>(
 			"POST",
@@ -193,9 +199,19 @@ export class DockerSandboxManager {
 		const splitter = new FrameSplitter();
 		const stdout: string[] = [];
 		const stderr: string[] = [];
+		// One decoder per stream rather than a decode per frame: a frame boundary lands wherever the
+		// daemon's writes happen to land, and decoding each in isolation turns any multibyte character
+		// unlucky enough to straddle one into two replacement characters.
+		const outDecoder = new StringDecoder("utf8");
+		const errDecoder = new StringDecoder("utf8");
 		const collect = (chunk: Buffer): void => {
 			for (const frame of splitter.push(chunk)) {
-				(frame.stream === STDERR ? stderr : stdout).push(frame.payload.toString("utf8"));
+				if (frame.stream === STDERR) stderr.push(errDecoder.write(frame.payload));
+				else {
+					const text = outDecoder.write(frame.payload);
+					stdout.push(text);
+					if (text.length > 0) options.onStdout?.(text);
+				}
 			}
 		};
 

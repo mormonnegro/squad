@@ -53,6 +53,42 @@ describe("the control socket", () => {
 		expect(await client.wake("scout", "check the issues")).toBe("four issues are open");
 	});
 
+	it("hands the operator the answer in pieces, as the agent writes it", async () => {
+		await plane.attach("scout", {
+			run: async (_id, _prompt, onText) => {
+				onText?.("cuatro ");
+				onText?.("issues abiertos");
+				return { text: "cuatro issues abiertos", exitCode: 0, stderr: "" };
+			},
+		});
+
+		const chunks: string[] = [];
+		const text = await client.wake("scout", "revisá los issues", (chunk) => chunks.push(chunk));
+
+		expect(chunks).toEqual(["cuatro ", "issues abiertos"]);
+		expect(text).toBe("cuatro issues abiertos");
+	});
+
+	it("keeps the pieces of an answer out of everyone else's terminal", async () => {
+		// A turn is one line in a feed. Half-sentences belong to the person waiting for them, and a
+		// log with two agents talking at once would be unreadable if it carried every word twice.
+		await plane.attach("scribe", {
+			run: async (_id, _prompt, onText) => {
+				onText?.("anot");
+				onText?.("ado");
+				return { text: "anotado", exitCode: 0, stderr: "" };
+			},
+		});
+		const seen: PlaneEvent[] = [];
+		client.logs((event) => seen.push(event));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		await client.wake("scribe", "anotalo");
+
+		expect(seen.map((event) => event.kind)).not.toContain("say");
+		expect(seen).toContainEqual(expect.objectContaining({ kind: "turn", agentId: "scribe" }));
+	});
+
 	it("tells the operator the turn failed instead of waiting out the timeout", async () => {
 		// The events stay queued for a retry either way. What must not happen is that the person who
 		// typed the command sits through waitMs and is then told the agent said nothing.

@@ -57,6 +57,26 @@ suite("taking a turn in a live sandbox", () => {
 		expect(result.exitCode).toBe(3);
 	}, 60_000);
 
+	it("hands over stdout while the command is still running", async () => {
+		// Waiting for the exit is what a spinner is: the answer exists and nobody is allowed to see it.
+		const seen: string[] = [];
+		await manager.run(AGENT_ID, ["sh", "-c", "echo uno; sleep 0.4; echo dos"], "", {
+			onStdout: (chunk) => seen.push(`${chunk.trim()} @${seen.length}`),
+		});
+
+		expect(seen.length).toBeGreaterThan(1);
+	}, 60_000);
+
+	it("keeps a multibyte character whole across the daemon's frames", async () => {
+		// The daemon frames its writes wherever it likes, and a character split down the middle used to
+		// come back as two replacement characters. Three bytes wide, so the split is not a coincidence
+		// waiting to happen: no buffer size the daemon might use is a multiple of it.
+		const text = "€".repeat(200_000);
+		const result = await manager.run(AGENT_ID, ["cat"], text);
+
+		expect(result.stdout).toBe(text);
+	}, 60_000);
+
 	it("gives up on a command that never exits", async () => {
 		await expect(manager.run(AGENT_ID, ["sleep", "60"], "", { timeoutMs: 500 })).rejects.toThrow(
 			SandboxTimeoutError,
