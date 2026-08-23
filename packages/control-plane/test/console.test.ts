@@ -6,12 +6,12 @@ import {
 	append,
 	Chat,
 	extend,
+	mouse,
 	saidBy,
 	scrolled,
 	type Thinking,
 	transcript,
 	visible,
-	wheel,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 
@@ -88,27 +88,36 @@ describe("visible", () => {
 });
 
 /**
- * The wheel arrives as text, on the same stream as everything the operator types, and everything
+ * The mouse arrives as text, on the same stream as everything the operator types, and everything
  * downstream of this either scrolls on it or types it into the prompt.
  */
-describe("wheel", () => {
+describe("mouse", () => {
 	const roll = (button: number): string => `\u001b[<${button};40;12M`;
 
 	it("reads the wheel in both directions", () => {
-		expect(wheel(roll(64))).toBeLessThan(0);
-		expect(wheel(roll(65))).toBeGreaterThan(0);
+		expect(mouse(roll(64))).toBeLessThan(0);
+		expect(mouse(roll(65))).toBeGreaterThan(0);
 	});
 
 	// One flick of a trackpad arrives as several reports in a single chunk, and a pane that moved
 	// once for the flick would take a minute to cross a long answer.
 	it("adds up the reports that arrived together", () => {
-		expect(wheel(roll(64).repeat(3))).toBe(wheel(roll(64)) * 3);
+		const one = mouse(roll(64)) ?? 0;
+
+		expect(mouse(roll(64).repeat(3))).toBe(one * 3);
 	});
 
-	it("asks for nothing on a click, or on anything that is not the wheel", () => {
-		expect(wheel(roll(0))).toBe(0);
-		expect(wheel("hola")).toBe(0);
-		expect(wheel("")).toBe(0);
+	// The bug this was extracted for. Asking the terminal for the wheel asks it for the clicks too,
+	// and a click nobody answers for is `[<0;39;15M[<0;39;15m` typed into the prompt.
+	it("answers for a click, which moves nothing and must still not be typed", () => {
+		const press = roll(0);
+
+		expect(mouse(press + press.replace(/M$/, "m"))).toBe(0);
+	});
+
+	it("leaves what is not the mouse to whoever it was meant for", () => {
+		expect(mouse("hola")).toBeUndefined();
+		expect(mouse("")).toBeUndefined();
 	});
 });
 

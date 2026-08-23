@@ -174,21 +174,27 @@ export function scrolled(
 }
 
 /**
- * The rows a chunk of input asks a pane to move, negative for back through what it has already
- * shown. Nothing but the wheel counts, and a chunk with no wheel in it asks for nothing.
+ * The rows a chunk of mouse reporting asks a pane to move, negative for back through what it has
+ * already shown — and nothing at all if the chunk is not the mouse, which is how the caller knows
+ * to hand it on.
  *
- * Reported as `ESC [ < button ; column ; row M`, where the wheel is buttons 64 and 65. Counted
- * rather than switched on, because one flick of a trackpad arrives as several of them in a single
- * chunk and a pane that moved three rows for the flick would be unusable.
+ * Reported as `ESC [ < button ; column ; row M`, where the wheel is buttons 64 and 65. A click is
+ * every other button and asks for no movement, but it is still the mouse and still has to be
+ * answered here: once the terminal has been asked to report it, a click nobody claims is an escape
+ * sequence typed into the prompt. Movement is counted rather than switched on, because one flick of
+ * a trackpad arrives as several reports in a single chunk.
  */
-export function wheel(input: string): number {
+export function mouse(input: string): number | undefined {
+	let reported = false;
 	let by = 0;
 	for (const piece of input.split(ESC)) {
 		const button = /^\[<(\d+);\d+;\d+[Mm]/.exec(piece)?.[1];
+		if (button === undefined) continue;
+		reported = true;
 		if (button === "64") by -= WHEEL_ROWS;
 		else if (button === "65") by += WHEEL_ROWS;
 	}
-	return by;
+	return reported ? by : undefined;
 }
 
 export function Agents({
@@ -435,11 +441,11 @@ function App({
 			setTop((prev) => scrolled(prev, by + Math.round(pages * height), { total, height }));
 		};
 
-		// First, and before anything looks at the key: a wheel report is an escape sequence, and every
+		// First, and before anything looks at the key: a mouse report is an escape sequence, and every
 		// branch below this one would take it for either a keystroke or something to type.
-		const rolled = wheel(input);
-		if (rolled !== 0) {
-			scroll(rolled, 0);
+		const rolled = mouse(input);
+		if (rolled !== undefined) {
+			if (rolled !== 0) scroll(rolled, 0);
 			return;
 		}
 		// Half a pane at a time, from less and from vim. Chords, because every unmodified key that
