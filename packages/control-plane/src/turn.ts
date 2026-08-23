@@ -134,6 +134,8 @@ export interface TurnHandlerOptions {
 	readonly runner: TurnRunner;
 	readonly router?: ReplyRouter;
 	readonly onTurn?: (agentId: string, result: TurnResult) => void;
+	/** A reply that had nowhere to go. The turn still counts as taken. */
+	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
 
 /**
@@ -149,8 +151,14 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		options.onTurn?.(agentId, result);
 		if (!options.router || result.text.length === 0) return;
 
+		// Every destination is tried, and none of them can undo the turn. The model has been paid and
+		// the agent has answered; throwing here would queue the events for a retry that costs another
+		// turn and, on a channel that simply cannot carry replies, never stops — one hook without a
+		// reply URL would be enough to make the agent unable to finish a turn ever again.
 		for (const channel of new Set(events.map((event) => event.channel))) {
-			await options.router.send({ agentId, channel, body: result.text });
+			await options.router
+				.send({ agentId, channel, body: result.text })
+				.catch((error: Error) => options.onUndelivered?.(agentId, channel, error));
 		}
 	};
 }

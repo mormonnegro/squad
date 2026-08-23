@@ -174,6 +174,37 @@ describe("createTurnHandler", () => {
 		expect(channels).toEqual(["webhook:deploys", "slack:C1"]);
 	});
 
+	it("keeps a taken turn when a channel cannot carry the reply", async () => {
+		// A hook without a reply URL is a legitimate one-way channel, and it used to be fatal: the
+		// send threw, the handler threw, the events were requeued, and the next attempt hit the same
+		// hook. That agent could never finish a turn again, and paid for the model every time round.
+		const undelivered: Array<{ channel: string; message: string }> = [];
+		const delivered: string[] = [];
+		const handler = createTurnHandler({
+			runner: { run: async () => ({ text: "on it", exitCode: 0, stderr: "" }) },
+			router: {
+				send: async (reply) => {
+					if (reply.channel.startsWith("webhook:")) throw new Error("no reply URL configured");
+					delivered.push(reply.channel);
+				},
+			},
+			onUndelivered: (_id, channel, error) => undelivered.push({ channel, message: error.message }),
+		});
+
+		await expect(
+			handler({
+				agentId: "a1",
+				events: [wakeup("webhook:ping", "one"), wakeup("cli:abc", "two")],
+				prompt: "p",
+			}),
+		).resolves.toBeUndefined();
+
+		// And the operator who could be answered still was, rather than losing their turn to a
+		// destination that has nothing to do with them.
+		expect(delivered).toEqual(["cli:abc"]);
+		expect(undelivered).toEqual([{ channel: "webhook:ping", message: "no reply URL configured" }]);
+	});
+
 	it("says nothing when the turn produced nothing", async () => {
 		const sent: string[] = [];
 		const handler = createTurnHandler({

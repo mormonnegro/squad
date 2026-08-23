@@ -192,6 +192,9 @@ export class ControlPlane {
 					this.#onTurn?.(id, result);
 					this.#emit({ kind: "turn", agentId: id, result });
 				},
+				// Named by destination, not by agent, so an operator waiting on their own reply is not
+				// told that somebody else's channel is the reason.
+				onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
 			}),
 		);
 	}
