@@ -2,6 +2,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ControlClient } from "../src/control-client.ts";
+import { CONTROL_PLANE_LABEL } from "../src/control-relay.ts";
 
 const CONTROL_PLANE_IMAGE = "agent-dive/control-plane:dev";
 const AGENT_ID = "deploy-itest";
@@ -75,6 +77,7 @@ suite("a control plane deployed inside the sandbox network", () => {
 			{
 				Image: CONTROL_PLANE_IMAGE,
 				Cmd: ["run", join(stateRoot, "config.yaml")],
+				Labels: { [CONTROL_PLANE_LABEL]: stateRoot },
 				HostConfig: {
 					Binds: [`${stateRoot}:${stateRoot}`, "/var/run/docker.sock:/var/run/docker.sock"],
 					NetworkMode: EGRESS_NETWORK,
@@ -119,6 +122,18 @@ suite("a control plane deployed inside the sandbox network", () => {
 	it("gave the agent its repository, from a control plane that is itself in a container", async () => {
 		const manifest = await manager.exec(AGENT_ID, ["cat", "/home/agent/.self/agent.yaml"]);
 		expect(manifest.stdout).toContain(`name: ${AGENT_ID}`);
+	}, 90_000);
+
+	it("answers the operator on the host, over the socket in the shared state directory", async () => {
+		// The whole control surface rests on this: the plane is in a container, the operator is not,
+		// and the only thing between them is a socket file both sides see at the same path.
+		const client = new ControlClient(stateRoot);
+		await client.connect();
+		try {
+			expect((await client.agents()).map((agent) => agent.id)).toEqual([AGENT_ID]);
+		} finally {
+			client.close();
+		}
 	}, 90_000);
 
 	it("has no route off the network except the proxy", async () => {

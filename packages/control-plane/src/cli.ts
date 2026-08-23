@@ -1,7 +1,6 @@
-#!/usr/bin/env node
 import { ConfigError, loadConfig } from "./config.ts";
 import { ControlClient, ControlError } from "./control-client.ts";
-import { ControlPlane, type PlaneEvent } from "./control-plane.ts";
+import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
 import { ControlServer } from "./control-server.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
@@ -51,12 +50,15 @@ async function run(path: string): Promise<number> {
 
 	plane.observe((event) => process.stdout.write(`${describe(event)}\n`));
 
-	await plane.start();
+	// The socket opens before the agents do. Starting them means pulling an image, creating a volume
+	// and scaffolding a repository, and an operator who asks what is happening during that minute
+	// should get an answer rather than find nothing listening.
 	await server.listen();
 	process.stdout.write(
 		`agent-dive running with ${config.agents.length} agent(s)\n` +
 			`control socket at ${server.socketPath}\n`,
 	);
+	await plane.start();
 
 	await new Promise<void>((resolve) => {
 		const shutdown = (): void => {
@@ -78,25 +80,65 @@ async function connect(stateDir: string): Promise<ControlClient> {
 	return client;
 }
 
-async function agents(argv: readonly string[]): Promise<number> {
-	const client = await connect(parseArgs(argv).stateDir);
+async function agents(args: Args): Promise<number> {
+	const client = await connect(args.stateDir);
 	try {
 		const summaries = await client.agents();
 		if (summaries.length === 0) process.stdout.write("no agents\n");
-		for (const agent of summaries) {
-			process.stdout.write(
-				`${agent.id}\t${agent.running ? "running" : "stopped"}` +
-					`\t${agent.grants} grant(s)\t${agent.schedules} schedule(s)\n`,
-			);
-		}
+		for (const agent of summaries) process.stdout.write(`${describeAgent(agent)}\n`);
 		return 0;
 	} finally {
 		client.close();
 	}
 }
 
-async function wake(argv: readonly string[]): Promise<number> {
-	const { stateDir, rest } = parseArgs(argv);
+function describeAgent(agent: AgentSummary): string {
+	return (
+		`${agent.id}\t${agent.running ? "running" : "stopped"}` +
+		`\t${agent.grants} grant(s)\t${agent.schedules} schedule(s)`
+	);
+}
+
+/**
+ * What `agent` alone says: where the state is, whether a plane is up, and what is in it.
+ *
+ * The first thing an operator types is the command with nothing after it, and the useful answer to
+ * that is the current state rather than a list of the other things they could have typed.
+ */
+async function status(args: Args): Promise<number> {
+	const { stateDir } = args;
+	process.stdout.write(`state   ${stateDir}\n`);
+
+	let client: ControlClient;
+	try {
+		client = await connect(stateDir);
+	} catch (error) {
+		if (!(error instanceof ControlError)) throw error;
+		process.stdout.write(`plane   not running\n\n${error.message}\n\n`);
+		process.stdout.write(
+			"  agent run <config.yaml>   start one\n" +
+				"  ./deploy/demo.sh up       or watch the whole thing run on throwaway names\n",
+		);
+		return 1;
+	}
+
+	try {
+		const summaries = await client.agents();
+		process.stdout.write("plane   running\n\n");
+		if (summaries.length === 0) process.stdout.write("no agents\n");
+		for (const agent of summaries) process.stdout.write(`${describeAgent(agent)}\n`);
+		process.stdout.write(
+			'\n  agent wake <name> "..."   take a turn, as the operator\n' +
+				"  agent logs                follow turns and egress decisions\n",
+		);
+		return 0;
+	} finally {
+		client.close();
+	}
+}
+
+async function wake(args: Args): Promise<number> {
+	const { stateDir, rest } = args;
 	const [agentId, ...words] = rest;
 	const body = words.join(" ");
 	if (agentId === undefined || body.length === 0) {
@@ -114,8 +156,8 @@ async function wake(argv: readonly string[]): Promise<number> {
 	}
 }
 
-async function logs(argv: readonly string[]): Promise<number> {
-	const client = await connect(parseArgs(argv).stateDir);
+async function logs(args: Args): Promise<number> {
+	const client = await connect(args.stateDir);
 	client.logs((event) => process.stdout.write(`${describe(event)}\n`));
 	await new Promise<void>((resolve) => {
 		process.once("SIGINT", () => resolve());
@@ -126,11 +168,15 @@ async function logs(argv: readonly string[]): Promise<number> {
 }
 
 async function main(argv: readonly string[]): Promise<number> {
-	const [command, ...rest] = argv;
+	// Flags are taken out before the command is chosen, so `agent --state <dir>` on its own is the
+	// status of that directory rather than an unknown command.
+	const { stateDir, rest } = parseArgs(argv);
+	const [command, ...words] = rest;
+	const args: Args = { stateDir, rest: words };
 
 	switch (command) {
 		case "run": {
-			const path = rest[0];
+			const path = words[0];
 			if (path === undefined) {
 				process.stderr.write("usage: agent run <config.yaml>\n");
 				return 1;
@@ -138,14 +184,13 @@ async function main(argv: readonly string[]): Promise<number> {
 			return run(path);
 		}
 		case "agents":
-			return agents(rest);
+			return agents(args);
 		case "wake":
-			return wake(rest);
+			return wake(args);
 		case "logs":
-			return logs(rest);
+			return logs(args);
 		case undefined:
-			process.stdout.write(`${USAGE}\n`);
-			return 1;
+			return status(args);
 		case "--help":
 		case "-h":
 			process.stdout.write(`${USAGE}\n`);

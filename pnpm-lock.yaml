@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@agent-dive/control-plane':
+        specifier: workspace:*
+        version: link:packages/control-plane
       '@biomejs/biome':
         specifier: ^2.0.0
         version: 2.5.10

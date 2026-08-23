@@ -7,6 +7,10 @@ services:
       dockerfile: deploy/Dockerfile
     restart: unless-stopped
     env_file: .env
+    labels:
+      # How `agent` finds this container when it cannot open the socket directly, which is every
+      # machine where Docker runs in a VM. The value is the state directory it serves.
+      agent-dive.state: /var/lib/agent-dive
     volumes:
       # The daemon resolves bind sources on the host, so the path the control plane uses to mount
       # the CA into a sandbox has to mean the same thing in both places. Mounting the state

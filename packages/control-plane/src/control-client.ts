@@ -1,5 +1,7 @@
 import net from "node:net";
+import type { Duplex } from "node:stream";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
+import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
 
 export class ControlError extends Error {
@@ -16,27 +18,19 @@ export class ControlError extends Error {
  * request is answered, and the id is what tells them apart.
  */
 export class ControlClient {
+	readonly #stateDir: string;
 	readonly #socketPath: string;
-	#socket: net.Socket | undefined;
+	#socket: Duplex | undefined;
 	#nextId = 1;
 	readonly #handlers = new Map<string, (response: ControlResponse) => void>();
 
 	constructor(stateDir: string) {
+		this.#stateDir = stateDir;
 		this.#socketPath = controlSocketPath(stateDir);
 	}
 
 	async connect(): Promise<void> {
-		const socket = net.createConnection(this.#socketPath);
-		await new Promise<void>((resolve, reject) => {
-			socket.once("connect", resolve);
-			socket.once("error", (error: NodeJS.ErrnoException) => {
-				reject(
-					error.code === "ENOENT" || error.code === "ECONNREFUSED"
-						? new ControlError(`No control plane is listening at ${this.#socketPath}`)
-						: error,
-				);
-			});
-		});
+		const socket = await this.#open();
 
 		let buffer = "";
 		socket.on("data", (chunk) => {
@@ -51,12 +45,44 @@ export class ControlClient {
 				this.#handlers.get(response.id)?.(response);
 			}
 		});
+		// A connection that breaks mid-request is an answer that will never come, so it is reported
+		// as that request failing rather than left to take the process down as an unhandled error.
+		socket.on("error", (error: Error) => {
+			for (const [id, handler] of this.#handlers) {
+				this.#handlers.delete(id);
+				handler({ id, ok: false, error: error.message });
+			}
+		});
 		this.#socket = socket;
 	}
 
 	close(): void {
 		this.#socket?.end();
 		this.#socket = undefined;
+	}
+
+	/**
+	 * Opens the socket, and failing that reaches the same socket from inside the plane's container.
+	 *
+	 * Both are the one control surface. Which one works is a property of the machine, not of the
+	 * deployment: on Linux the bind-mounted socket opens, and on Docker Desktop it is visible in the
+	 * directory but unreachable across the VM boundary.
+	 */
+	async #open(): Promise<Duplex> {
+		try {
+			const socket = net.createConnection(this.#socketPath);
+			await new Promise<void>((resolve, reject) => {
+				socket.once("connect", resolve);
+				socket.once("error", reject);
+			});
+			return socket;
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT" && code !== "ECONNREFUSED") throw error;
+			return relayToPlane(this.#stateDir).catch((relayError: Error) => {
+				throw new ControlError(relayError.message);
+			});
+		}
 	}
 
 	async agents(): Promise<readonly AgentSummary[]> {

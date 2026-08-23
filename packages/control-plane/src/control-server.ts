@@ -89,7 +89,13 @@ export class ControlServer {
 			});
 		});
 		// Only the owner. The socket is the authority, so its permissions are the access control.
-		await chmod(this.socketPath, 0o600);
+		//
+		// A directory shared into a VM, which is how Docker Desktop does bind mounts, refuses chmod
+		// on a socket outright. There the mode is the mount's to decide and not this process's, and
+		// failing to start over it would be refusing to run on every machine that is not Linux.
+		await chmod(this.socketPath, 0o600).catch((error: NodeJS.ErrnoException) => {
+			if (error.code !== "EINVAL" && error.code !== "ENOTSUP") throw error;
+		});
 	}
 
 	async close(): Promise<void> {

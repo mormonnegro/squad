@@ -37,10 +37,19 @@ down() {
 up() {
   docker info >/dev/null 2>&1 || { echo "Docker is not running." >&2; exit 1; }
 
+  # Asked for here rather than required up front: the key is only needed at the model, and a demo
+  # that stops to say "export this first" is a demo nobody gets to the end of.
+  if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; then
+    say "an Anthropic API key"
+    echo "Only the turn needs it. Everything else runs without one, and the wakeup stays queued."
+    printf '  paste a key, or press enter to go on without it: '
+    read -rs ANTHROPIC_API_KEY || true
+    echo
+  fi
   if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    say "ANTHROPIC_API_KEY is not set"
+    say "no ANTHROPIC_API_KEY"
     echo "Everything will run, but the turn itself will fail at the model and the wakeup will stay"
-    echo "queued for a retry. Export a key to see the agent actually answer."
+    echo "queued for a retry."
   fi
 
   docker image inspect agent-dive/sandbox:dev >/dev/null 2>&1 ||
@@ -80,6 +89,7 @@ YAML
   say "starting the control plane inside $EGRESS"
   docker run -d --name "$PLANE" \
     --network "$EGRESS" --network-alias egress \
+    --label "agent-dive.state=$STATE" \
     -e MODEL_KEY="${ANTHROPIC_API_KEY:-sk-ant-placeholder}" \
     -e HOOK_SECRET="$HOOK_SECRET" \
     -v "$STATE:$STATE" \
@@ -98,10 +108,10 @@ YAML
   say "the agent is up"
   docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
 
-  # From the host, over the control socket in $STATE. The state directory is mounted at the same
-  # path inside the container, so the socket the plane created is the socket this CLI opens.
+  # From the host, over the control socket in $STATE, which the plane's container shares at the same
+  # path. Where the share cannot carry a socket, the CLI finds the container by its label instead.
   say "asking the plane from outside the container"
-  node packages/control-plane/src/cli.ts agents --state "$STATE" | sed 's/^/  /'
+  node packages/control-plane/bin/agent.mjs agents --state "$STATE" | sed 's/^/  /'
 
   say "what the agent can reach"
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)    -> %{http_code}\n' https://example.com/ || true
@@ -129,7 +139,7 @@ YAML
   docker logs "$PLANE" 2>&1 | tail -20
 
   say "next"
-  local cli="node packages/control-plane/src/cli.ts"
+  local cli="node packages/control-plane/bin/agent.mjs"
   echo "  $cli wake $AGENT \"...\" --state $STATE"
   echo "      say something as the operator, and wait for the answer"
   echo "  $cli logs --state $STATE"

@@ -79,8 +79,7 @@ authority into the system:
 ## Trying it
 
 ```sh
-export ANTHROPIC_API_KEY=...   # without it everything runs but the turn fails at the model
-./deploy/demo.sh up
+./deploy/demo.sh up            # it asks for an ANTHROPIC_API_KEY if the environment has none
 ```
 
 It builds what is missing, starts a control plane on a throwaway network, shows what the agent can
@@ -122,15 +121,23 @@ boundary is the sandbox around the agent, not the process managing it.
 A running plane listens on a unix socket in its state directory. That is the whole control surface:
 
 ```sh
-agent agents                             what each agent is and whether it is up
+agent                                    where the state is, and what is running in it
 agent wake demo "check the open issues"  take a turn, and wait for the answer
 agent logs                               follow turns and egress decisions live
 ```
 
+`agent` on its own answers with the current state, because that is what someone typing the command
+with nothing after it wants to know. `agent --help` lists the rest.
+
 Each takes `--state <dir>`, or reads `AGENT_DIVE_STATE`, defaulting to `/var/lib/agent-dive`. The
 state directory is bind-mounted at the same path on the host, so these run outside the container
-against the plane inside it — or inside it, with `docker compose exec control-plane agent agents`.
-From a checkout, `node packages/control-plane/src/cli.ts` is the same command.
+against the plane inside it. Where Docker runs in a VM — Docker Desktop, so every Mac — the shared
+directory shows the socket but will not carry a connection through it, and the CLI reaches the same
+socket from inside the container it labels `agent-dive.state=<dir>`. Either way it is one control
+surface, and `docker compose exec control-plane agent` is the same command from the other side.
+
+From a checkout, `pnpm link --global` in `packages/control-plane` puts `agent` on the path;
+`node packages/control-plane/bin/agent.mjs` is the same command without installing anything.
 
 There is no password because there is nothing to authenticate: the socket is `0600`, and reaching
 it already means holding a file the operator owns. That is also why `wake` is the only way into the
