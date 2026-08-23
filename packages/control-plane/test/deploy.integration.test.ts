@@ -74,7 +74,7 @@ suite("a control plane deployed inside the sandbox network", () => {
 			`/containers/create?name=${PLANE_CONTAINER}`,
 			{
 				Image: CONTROL_PLANE_IMAGE,
-				Cmd: [join(stateRoot, "config.yaml")],
+				Cmd: ["run", join(stateRoot, "config.yaml")],
 				HostConfig: {
 					Binds: [`${stateRoot}:${stateRoot}`, "/var/run/docker.sock:/var/run/docker.sock"],
 					NetworkMode: EGRESS_NETWORK,

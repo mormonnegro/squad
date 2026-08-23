@@ -11,4 +11,5 @@ COPY packages ./packages
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
 
 ENTRYPOINT ["node", "packages/control-plane/src/cli.ts"]
-CMD ["/etc/agent-dive/config.yaml"]
+# Overridable, so the same image serves the other subcommands: `docker exec ... agents`, `wake`.
+CMD ["run", "/etc/agent-dive/config.yaml"]

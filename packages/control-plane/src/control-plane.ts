@@ -14,7 +14,7 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
-import { createTurnHandler, PiTurnRunner, type TurnResult } from "./turn.ts";
+import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
 
 export interface AgentConfig {
 	readonly id: string;
@@ -57,6 +57,20 @@ export interface ControlPlaneOptions {
 	readonly onTurn?: (agentId: string, result: TurnResult) => void;
 }
 
+/** Everything worth watching from outside, in one shape so a subscriber can render a single feed. */
+export type PlaneEvent =
+	| { readonly kind: "audit"; readonly entry: AuditEntry }
+	| { readonly kind: "turn"; readonly agentId: string; readonly result: TurnResult }
+	| { readonly kind: "error"; readonly context: string; readonly message: string };
+
+export interface AgentSummary {
+	readonly id: string;
+	readonly running: boolean;
+	readonly startedAt: string | undefined;
+	readonly grants: number;
+	readonly schedules: number;
+}
+
 const DEFAULT_IMAGE = "agent-dive/sandbox:dev";
 const DEFAULT_NETWORK = "agent-dive-egress";
 const DEFAULT_PROXY_PORT = 8080;
@@ -88,6 +102,7 @@ export class ControlPlane {
 	readonly #tokens = new Map<string, string>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
 	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
+	readonly #watchers = new Set<(event: PlaneEvent) => void>();
 	#started = false;
 
 	constructor(options: ControlPlaneOptions) {
@@ -107,20 +122,21 @@ export class ControlPlane {
 		);
 		this.bus = new EventBus({
 			store: new FileEventStore(join(this.#stateDir, "events")),
-			...(this.#onError ? { onError: (agentId, error) => this.#onError?.(agentId, error) } : {}),
+			onError: (agentId, error) => this.#reportError(agentId, error),
 		});
 		this.scheduler = new Scheduler({
 			publisher: this.bus,
 			store: new FileScheduleStore(join(this.#stateDir, "schedules.json")),
-			...(this.#onError
-				? { onError: (schedule, error) => this.#onError?.(`schedule ${schedule.id}`, error) }
-				: {}),
+			onError: (schedule, error) => this.#reportError(`schedule ${schedule.id}`, error),
 		});
 		this.broker = new EgressBroker({
 			ca: loadOrCreateCertificateAuthority(join(this.#stateDir, "pki")),
 			secrets: options.secrets ?? new EnvSecretStore(),
 			directory: this.directory,
-			...(options.onAudit ? { onAudit: options.onAudit } : {}),
+			onAudit: (entry) => {
+				options.onAudit?.(entry);
+				this.#emit({ kind: "audit", entry });
+			},
 		});
 		this.webhooks = new WebhookChannel({ hooks: options.hooks ?? [], publisher: this.bus });
 		this.router.register(this.webhooks);
@@ -129,6 +145,61 @@ export class ControlPlane {
 	/** Host path of the CA certificate mounted into every sandbox. */
 	get caCertPath(): string {
 		return join(this.#stateDir, "pki", "ca.crt");
+	}
+
+	get stateDir(): string {
+		return this.#stateDir;
+	}
+
+	/** Subscribes to everything the plane does. Returns the unsubscribe. */
+	observe(listener: (event: PlaneEvent) => void): () => void {
+		this.#watchers.add(listener);
+		return () => this.#watchers.delete(listener);
+	}
+
+	/** What each agent is and whether its sandbox is up. */
+	async agents(): Promise<AgentSummary[]> {
+		return Promise.all(
+			this.#agents.map(async (agent) => {
+				const status = await this.sandboxes.status(agent.id).catch(() => undefined);
+				return {
+					id: agent.id,
+					running: status?.running ?? false,
+					startedAt: status?.startedAt,
+					grants: agent.grants?.length ?? 0,
+					schedules: agent.schedules?.length ?? 0,
+				};
+			}),
+		);
+	}
+
+	/**
+	 * Puts a runtime behind an agent id: from here on, events for it become turns.
+	 *
+	 * Separate from starting a sandbox so that what an agent runs in is one decision and what it
+	 * answers with is another, and so a caller with its own runner still gets the plane's wiring.
+	 */
+	async attach(agentId: string, runner: TurnRunner): Promise<void> {
+		await this.bus.register(
+			agentId,
+			createTurnHandler({
+				runner,
+				router: this.router,
+				onTurn: (id, result) => {
+					this.#onTurn?.(id, result);
+					this.#emit({ kind: "turn", agentId: id, result });
+				},
+			}),
+		);
+	}
+
+	#emit(event: PlaneEvent): void {
+		for (const watcher of this.#watchers) watcher(event);
+	}
+
+	#reportError(context: string, error: Error): void {
+		this.#onError?.(context, error);
+		this.#emit({ kind: "error", context, message: error.message });
 	}
 
 	/** The proxy credential issued to an agent. Present only after start. */
@@ -190,14 +261,7 @@ export class ControlPlane {
 			...(agent.model !== undefined ? { model: agent.model } : {}),
 			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),
 		});
-		await this.bus.register(
-			agent.id,
-			createTurnHandler({
-				runner,
-				router: this.router,
-				...(this.#onTurn ? { onTurn: this.#onTurn } : {}),
-			}),
-		);
+		await this.attach(agent.id, runner);
 
 		for (const schedule of agent.schedules ?? []) {
 			await this.scheduler.add({ ...schedule, agentId: agent.id });

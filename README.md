@@ -65,7 +65,8 @@ export ANTHROPIC_API_KEY=...   # without it everything runs but the turn fails a
 ```
 
 It builds what is missing, starts a control plane on a throwaway network, shows what the agent can
-and cannot reach, wakes it with a signed webhook and prints the turn. `./deploy/demo.sh down`
+and cannot reach, asks the plane over its control socket, wakes the agent with a signed webhook and
+prints the turn. `./deploy/demo.sh down`
 removes everything. State lives under the working tree rather than `/var/lib`, which is the one way
 it differs from the real deployment below.
 
@@ -97,7 +98,30 @@ Two things in the deployment are load-bearing and easy to get wrong:
 The control plane holds the Docker socket, so it is root-equivalent on the machine. The trust
 boundary is the sandbox around the agent, not the process managing it.
 
-## Waking an agent
+## Driving it
+
+A running plane listens on a unix socket in its state directory. That is the whole control surface:
+
+```sh
+agent-dive agents                             what each agent is and whether it is up
+agent-dive wake demo "check the open issues"  take a turn, and wait for the answer
+agent-dive logs                               follow turns and egress decisions live
+```
+
+Each takes `--state <dir>`, or reads `AGENT_DIVE_STATE`, defaulting to `/var/lib/agent-dive`. The
+state directory is bind-mounted at the same path on the host, so these run outside the container
+against the plane inside it. From a checkout, `node packages/control-plane/src/cli.ts` is the same
+command.
+
+There is no password because there is nothing to authenticate: the socket is `0600`, and reaching
+it already means holding a file the operator owns. That is also why `wake` is the only way into the
+system that carries operator trust. The same sentence arriving by webhook is data the agent may
+read; typed here it is an instruction the agent may follow.
+
+`wake` waits for the turn to finish, which is as long as the agent takes to think. It prints what
+the agent said, and nothing if the agent chose to say nothing.
+
+## Waking an agent from elsewhere
 
 ```sh
 BODY='{"text":"the nightly build failed"}'

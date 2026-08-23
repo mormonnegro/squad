@@ -1,9 +1,21 @@
 export { ConfigError, type LoadedConfig, loadConfig, parseConfig } from "./config.ts";
+export { ControlClient, ControlError } from "./control-client.ts";
 export {
 	type AgentConfig,
+	type AgentSummary,
 	ControlPlane,
 	type ControlPlaneOptions,
+	type PlaneEvent,
 } from "./control-plane.ts";
+export {
+	CLI_CHANNEL,
+	CONTROL_SOCKET_FILE,
+	type ControlRequest,
+	type ControlResponse,
+	ControlServer,
+	type ControlServerOptions,
+	controlSocketPath,
+} from "./control-server.ts";
 export {
 	PI_SOCKET_PATH,
 	PiSessionChannel,

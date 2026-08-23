@@ -85,7 +85,7 @@ YAML
     -v "$STATE:$STATE" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -p 8787:8787 \
-    agent-dive/control-plane:dev "$STATE/config.yaml" >/dev/null
+    agent-dive/control-plane:dev run "$STATE/config.yaml" >/dev/null
   docker network connect "$UPLINK" "$PLANE"
 
   for _ in $(seq 60); do
@@ -97,6 +97,11 @@ YAML
 
   say "the agent is up"
   docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
+
+  # From the host, over the control socket in $STATE. The state directory is mounted at the same
+  # path inside the container, so the socket the plane created is the socket this CLI opens.
+  say "asking the plane from outside the container"
+  node packages/control-plane/src/cli.ts agents --state "$STATE" | sed 's/^/  /'
 
   say "what the agent can reach"
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)    -> %{http_code}\n' https://example.com/ || true
@@ -124,8 +129,13 @@ YAML
   docker logs "$PLANE" 2>&1 | tail -20
 
   say "next"
-  echo "  ./deploy/demo.sh logs    follow it"
-  echo "  ./deploy/demo.sh down    remove everything"
+  local cli="node packages/control-plane/src/cli.ts"
+  echo "  $cli wake $AGENT \"...\" --state $STATE"
+  echo "      say something as the operator, and wait for the answer"
+  echo "  $cli logs --state $STATE"
+  echo "      follow turns and egress decisions"
+  echo "  ./deploy/demo.sh down"
+  echo "      remove everything"
 }
 
 case "${1:-up}" in
