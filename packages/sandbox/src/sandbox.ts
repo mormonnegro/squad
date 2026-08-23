@@ -22,6 +22,14 @@ export interface SandboxStatus {
 	 * environment being set, and there is nothing to recover.
 	 */
 	readonly proxyUrl: string | undefined;
+	/**
+	 * The environment the container was created with.
+	 *
+	 * Docker cannot change it on a container that exists, so this is what the agent will actually be
+	 * run with for as long as this container is the agent — whatever the configuration has since been
+	 * edited to say.
+	 */
+	readonly env: Readonly<Record<string, string>>;
 }
 
 export interface ExecResult {
@@ -51,6 +59,15 @@ export function volumeName(agentId: string): string {
 function readEnv(env: readonly string[] | undefined, name: string): string | undefined {
 	const found = env?.find((entry) => entry.startsWith(`${name}=`));
 	return found?.slice(name.length + 1);
+}
+
+function parseEnv(env: readonly string[] | undefined): Record<string, string> {
+	const parsed: Record<string, string> = {};
+	for (const entry of env ?? []) {
+		const split = entry.indexOf("=");
+		if (split > 0) parsed[entry.slice(0, split)] = entry.slice(split + 1);
+	}
+	return parsed;
 }
 
 /**
@@ -133,6 +150,7 @@ export class DockerSandboxManager {
 				running: response.body.State.Running,
 				startedAt: response.body.State.Running ? response.body.State.StartedAt : undefined,
 				proxyUrl: readEnv(response.body.Config?.Env, "HTTPS_PROXY"),
+				env: parseEnv(response.body.Config?.Env),
 			};
 		} catch (error) {
 			if (error instanceof DockerError && error.status === 404) return undefined;

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ControlPlane, proxyTokenOf, withDefaults } from "../src/control-plane.ts";
+import { ControlPlane, carriesEnv, proxyTokenOf, withDefaults } from "../src/control-plane.ts";
 
 describe("ControlPlane", () => {
 	let stateDir: string;
@@ -141,5 +141,43 @@ describe("proxyTokenOf", () => {
 		expect(proxyTokenOf(url(encodeURIComponent("a.b"), encodeURIComponent("t/k+n=")), "a.b")).toBe(
 			"t/k+n=",
 		);
+	});
+});
+
+/**
+ * The other half of adopting a sandbox: it is only the agent the operator means if it still holds
+ * what the configuration says. Docker freezes an environment at creation, so this is the only place
+ * an edited config and a running container can be reconciled.
+ */
+describe("carriesEnv", () => {
+	it("adopts a sandbox holding what the configuration declares", () => {
+		expect(
+			carriesEnv({ PATH: "/usr/bin", MODEL_KEY: "placeholder" }, { MODEL_KEY: "placeholder" }),
+		).toBe(true);
+	});
+
+	// The switch this was written for: the provider changed, and the sandbox that is still up has the
+	// old provider's variable and not the new one's.
+	it("refuses one born before the operator changed providers", () => {
+		expect(
+			carriesEnv({ ANTHROPIC_API_KEY: "placeholder" }, { DEEPSEEK_API_KEY: "placeholder" }),
+		).toBe(false);
+	});
+
+	it("refuses one whose value has since been edited", () => {
+		expect(carriesEnv({ TZ: "UTC" }, { TZ: "America/Montevideo" })).toBe(false);
+	});
+
+	// Everything else in there is the image's and the plane's own, and it changes for reasons that
+	// have nothing to do with the agent.
+	it("ignores what the container holds beyond what was declared", () => {
+		expect(
+			carriesEnv({ TZ: "UTC", HOSTNAME: "9f2c", HTTPS_PROXY: "http://a:b@egress" }, { TZ: "UTC" }),
+		).toBe(true);
+	});
+
+	it("adopts an agent that declared no environment at all", () => {
+		expect(carriesEnv({ PATH: "/usr/bin" }, undefined)).toBe(true);
+		expect(carriesEnv({}, {})).toBe(true);
 	});
 });

@@ -397,7 +397,7 @@ export class ControlPlane {
 		const existing = await this.sandboxes.status(agent.id);
 		if (existing !== undefined) {
 			const adopted = proxyTokenOf(existing.proxyUrl, agent.id);
-			if (adopted !== undefined) return adopted;
+			if (adopted !== undefined && carriesEnv(existing.env, agent.env)) return adopted;
 			await this.sandboxes.destroy(agent.id, { discardState: false });
 		}
 
@@ -413,6 +413,25 @@ export class ControlPlane {
 		});
 		return proxyToken;
 	}
+}
+
+/**
+ * Whether a running sandbox still holds what the configuration says the agent is run with.
+ *
+ * Adoption keeps an agent alive across restarts, but a container's environment cannot be edited, so
+ * an adopted sandbox is running on whatever it was born with. Change the provider and the agents
+ * still up keep the old one's variables: every turn then dies inside pi, complaining about models,
+ * naming nothing the operator edited. Recreating is cheap and the volume — the agent — is not what
+ * goes away.
+ *
+ * Only the declared names are compared. The rest of the environment is the image's and the plane's
+ * own, and demanding they match would recreate every sandbox on every unrelated change.
+ */
+export function carriesEnv(
+	actual: Readonly<Record<string, string>>,
+	declared: Readonly<Record<string, string>> | undefined,
+): boolean {
+	return Object.entries(declared ?? {}).every(([name, value]) => actual[name] === value);
 }
 
 /**
