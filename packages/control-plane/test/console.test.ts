@@ -1,4 +1,4 @@
-import { renderToString } from "ink";
+import { Box, renderToString, Text } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
 import { Agents, append, Chat, extend, saidBy, tail, transcript } from "../src/console.ts";
@@ -102,6 +102,22 @@ describe("Agents", () => {
 		expect(drawn).toContain("● scout");
 		expect(drawn).toContain("◐ scribe");
 		expect(drawn).toContain("○ sleeper");
+	});
+
+	// The list is what you read while an answer streams past it, and one that resizes as it streams
+	// is unreadable. Flex would otherwise take the column's width as a preference.
+	it("keeps its width beside a pane whose text does not fit", () => {
+		const drawn = renderToString(
+			h(
+				Box,
+				{ flexDirection: "row" },
+				h(Agents, { agents: three, cursor: 0, busy: new Set<string>(), rows: 10 }),
+				h(Box, { flexGrow: 1 }, h(Text, null, "unbreakable".repeat(20))),
+			),
+			{ columns: 80 },
+		);
+
+		expect(drawn.split("\n")[0]).toMatch(/^╭─{16}╮/);
 	});
 
 	it("shows only what the pane has room for", () => {

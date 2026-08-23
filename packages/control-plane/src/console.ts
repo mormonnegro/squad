@@ -87,7 +87,16 @@ export function Agents({
 }): ReactElement {
 	return h(
 		Box,
-		{ flexDirection: "column", width: AGENTS_WIDTH, borderStyle: "round", paddingX: 1 },
+		{
+			flexDirection: "column",
+			width: AGENTS_WIDTH,
+			// A width is what a box asks for, not what it keeps: flex shrinks it below that when a
+			// sibling's content will not fit. A long line of chat was enough, so the column narrowed
+			// while an answer streamed and widened again when the next one was shorter.
+			flexShrink: 0,
+			borderStyle: "round",
+			paddingX: 1,
+		},
 		h(Text, { dimColor: true, key: "title" }, "agents"),
 		...agents.slice(0, rows).map((agent, index) =>
 			h(
