@@ -12,6 +12,6 @@
 		}
 	},
 	"files": {
-		"includes": ["**", "!**/node_modules", "!**/.pki", "!.demo"]
+		"includes": ["**", "!**/node_modules", "!**/.pki", "!.demo", "!.claude"]
 	}
 }
