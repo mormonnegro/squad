@@ -16,6 +16,7 @@ export {
 	DockerSandboxManager,
 	type ExecResult,
 	type SandboxStatus,
+	SandboxTimeoutError,
 	volumeName,
 } from "./sandbox.ts";
 export {

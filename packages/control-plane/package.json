@@ -13,6 +13,10 @@
 	},
 	"dependencies": {
 		"@agent-dive/agent-repo": "workspace:*",
-		"@agent-dive/sandbox": "workspace:*"
+		"@agent-dive/channels": "workspace:*",
+		"@agent-dive/events": "workspace:*",
+		"@agent-dive/proxy": "workspace:*",
+		"@agent-dive/sandbox": "workspace:*",
+		"@agent-dive/scheduler": "workspace:*"
 	}
 }

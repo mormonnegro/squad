@@ -38,9 +38,21 @@ importers:
       '@agent-dive/agent-repo':
         specifier: workspace:*
         version: link:../agent-repo
+      '@agent-dive/channels':
+        specifier: workspace:*
+        version: link:../channels
+      '@agent-dive/events':
+        specifier: workspace:*
+        version: link:../events
+      '@agent-dive/proxy':
+        specifier: workspace:*
+        version: link:../proxy
       '@agent-dive/sandbox':
         specifier: workspace:*
         version: link:../sandbox
+      '@agent-dive/scheduler':
+        specifier: workspace:*
+        version: link:../scheduler
 
   packages/events: {}
 

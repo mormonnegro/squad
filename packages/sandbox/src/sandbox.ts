@@ -1,5 +1,5 @@
 import { DockerEngine, DockerError, type HijackedStream } from "./engine.ts";
-import { demultiplex } from "./frames.ts";
+import { demultiplex, FrameSplitter, STDERR } from "./frames.ts";
 import {
 	buildContainerConfig,
 	buildNetworkConfig,
@@ -19,6 +19,13 @@ export interface ExecResult {
 	readonly exitCode: number;
 	readonly stdout: string;
 	readonly stderr: string;
+}
+
+export class SandboxTimeoutError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SandboxTimeoutError";
+	}
 }
 
 interface ContainerInspect {
@@ -134,6 +141,72 @@ export class DockerSandboxManager {
 			`/exec/${created.body.Id}/json`,
 		);
 		return { exitCode: inspected.body.ExitCode ?? -1, stdout, stderr };
+	}
+
+	/**
+	 * Runs a command with `input` on its stdin and waits for it to exit.
+	 *
+	 * The input goes over stdin rather than in the command line because it carries a wakeup prompt:
+	 * arguments are visible to every process in the container and are bounded by ARG_MAX, and
+	 * neither is a property one wants attached to whatever a stranger wrote into a webhook.
+	 */
+	async run(
+		agentId: string,
+		cmd: readonly string[],
+		input: string,
+		options: { timeoutMs?: number } = {},
+	): Promise<ExecResult> {
+		const created = await this.engine.request<{ Id: string }>(
+			"POST",
+			`/containers/${containerName(agentId)}/exec`,
+			{ AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: false, Cmd: cmd },
+		);
+
+		const stream = await this.engine.hijack("POST", `/exec/${created.body.Id}/start`, {
+			Detach: false,
+			Tty: false,
+		});
+
+		const splitter = new FrameSplitter();
+		const stdout: string[] = [];
+		const stderr: string[] = [];
+		const collect = (chunk: Buffer): void => {
+			for (const frame of splitter.push(chunk)) {
+				(frame.stream === STDERR ? stderr : stdout).push(frame.payload.toString("utf8"));
+			}
+		};
+
+		collect(stream.head);
+		let timer: NodeJS.Timeout | undefined;
+		try {
+			await new Promise<void>((resolve, reject) => {
+				if (options.timeoutMs !== undefined) {
+					timer = setTimeout(() => {
+						stream.socket.destroy();
+						reject(new SandboxTimeoutError(`Command timed out after ${options.timeoutMs}ms`));
+					}, options.timeoutMs);
+				}
+
+				stream.socket.on("data", collect);
+				stream.socket.once("error", reject);
+				stream.socket.once("close", resolve);
+				// Half-closing is the EOF the command waits for; without it a reader never returns.
+				stream.socket.end(input);
+			});
+		} finally {
+			if (timer) clearTimeout(timer);
+			stream.socket.removeListener("data", collect);
+		}
+
+		const inspected = await this.engine.request<{ ExitCode: number | null }>(
+			"GET",
+			`/exec/${created.body.Id}/json`,
+		);
+		return {
+			exitCode: inspected.body.ExitCode ?? -1,
+			stdout: stdout.join(""),
+			stderr: stderr.join(""),
+		};
 	}
 
 	/**
