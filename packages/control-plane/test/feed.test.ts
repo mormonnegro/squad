@@ -2,6 +2,7 @@ import type { AuditEntry } from "@agent-dive/proxy";
 import { describe, expect, it } from "vitest";
 import type { PlaneEvent } from "../src/control-plane.ts";
 import { LogFeed } from "../src/feed.ts";
+import type { TurnResult } from "../src/turn.ts";
 
 const AT = "2026-08-23T20:39:10.545Z";
 
@@ -161,6 +162,19 @@ describe("LogFeed", () => {
 		expect(lines).toHaveLength(1);
 		expect(lines[0]).toContain("spent");
 		expect(lines[0]).toContain("900ms");
+	});
+
+	it("says nothing about what a plane a build behind never measured", () => {
+		// The CLI runs on the host against a plane in a container, so the two are routinely a build
+		// apart. A turn from before the measurement existed used to render as "NaNmNaNs".
+		const { lines, log } = feed();
+		const old = { text: "listo", exitCode: 0, stderr: "" } as unknown as TurnResult;
+
+		log.push(allowed("maxi", "api.anthropic.com"));
+		log.push({ kind: "turn", agentId: "maxi", result: old });
+
+		expect(lines.join("\n")).not.toContain("NaN");
+		expect(lines.at(-1)).toMatch(/spent {7}api\.anthropic\.com$/);
 	});
 
 	it("keeps the price of a cheap turn visible", () => {

@@ -47,8 +47,9 @@ export class LogFeed {
 			this.#line(now(), agentId, step.action, "", step.detail);
 			return;
 		}
-		const took = step.ms !== undefined ? `after ${duration(step.ms)}: ` : "";
-		this.#line(now(), agentId, step.action, FAILED, `${took}${step.detail}`);
+		const took = duration(step.ms);
+		const after = took !== undefined ? `after ${took}: ` : "";
+		this.#line(now(), agentId, step.action, FAILED, `${after}${step.detail}`);
 	}
 
 	#error(context: string, message: string): void {
@@ -82,12 +83,22 @@ export class LogFeed {
 	#turn(agentId: string, result: TurnResult): void {
 		const at = now();
 		if (result.text.length > 0) this.#line(at, agentId, "answer", "", result.text);
-		this.#line(at, agentId, "spent", "", this.#spent(agentId, result));
+		const spent = this.#spent(agentId, result);
+		if (spent.length > 0) this.#line(at, agentId, "spent", "", spent);
 	}
 
-	/** What the turn took, and what it talked to while taking it. */
+	/**
+	 * What the turn took, and what it talked to while taking it.
+	 *
+	 * Every part is left out when it is not known. The CLI runs on the host against a plane in a
+	 * container, so the two are separately deployed and routinely a build apart, and a feed that
+	 * printed `NaNmNaNs` for a plane that predates the measurement is worse than one that says
+	 * nothing about it.
+	 */
 	#spent(agentId: string, result: TurnResult): string {
-		const parts = [duration(result.ms)];
+		const parts: string[] = [];
+		const took = duration(result.ms);
+		if (took !== undefined) parts.push(took);
 		if (result.tokens > 0) parts.push(`${thousands(result.tokens)} tokens`);
 		if (result.costUsd > 0) parts.push(money(result.costUsd));
 
@@ -128,8 +139,9 @@ function now(): string {
 	return time(new Date().toISOString());
 }
 
-function duration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
+function duration(ms: number | undefined): string | undefined {
+	if (typeof ms !== "number" || !Number.isFinite(ms)) return undefined;
+	if (ms < 1000) return `${Math.round(ms)}ms`;
 	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
 	return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
 }
