@@ -1,6 +1,7 @@
 export { DockerEngine, DockerError, type DockerResponse, resolveSocketPath } from "./engine.ts";
 export {
 	DockerSandboxManager,
+	type ExecResult,
 	type SandboxStatus,
 	volumeName,
 } from "./sandbox.ts";

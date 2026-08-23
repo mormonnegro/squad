@@ -22,6 +22,8 @@ export interface SandboxSpec {
 	readonly memoryBytes?: number;
 	readonly nanoCpus?: number;
 	readonly env?: Readonly<Record<string, string>>;
+	/** Overrides the image's default command. */
+	readonly cmd?: readonly string[];
 }
 
 export function containerName(agentId: string): string {
@@ -62,6 +64,7 @@ export interface ContainerConfig {
 	readonly User: string;
 	readonly Env: readonly string[];
 	readonly WorkingDir: string;
+	readonly Cmd?: readonly string[];
 	readonly Labels: Readonly<Record<string, string>>;
 	readonly HostConfig: Readonly<Record<string, unknown>>;
 }
@@ -72,6 +75,7 @@ export function buildContainerConfig(spec: SandboxSpec): ContainerConfig {
 		User: SANDBOX_USER,
 		Env: buildEnv(spec),
 		WorkingDir: SANDBOX_HOME,
+		...(spec.cmd !== undefined ? { Cmd: spec.cmd } : {}),
 		Labels: {
 			"dev.agent-dive.agent-id": spec.agentId,
 			"dev.agent-dive.managed": "true",

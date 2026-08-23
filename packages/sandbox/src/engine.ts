@@ -86,6 +86,41 @@ export class DockerEngine {
 		});
 	}
 
+	/** Returns the raw response body, for endpoints that stream instead of returning JSON. */
+	async requestRaw(method: string, path: string, body?: unknown): Promise<Buffer> {
+		const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");
+
+		return new Promise<Buffer>((resolve, reject) => {
+			const request = http.request(
+				{
+					socketPath: this.socketPath,
+					method,
+					path,
+					headers: {
+						"content-type": "application/json",
+						...(payload ? { "content-length": String(payload.byteLength) } : {}),
+					},
+				},
+				(response) => {
+					const chunks: Buffer[] = [];
+					response.on("data", (chunk: Buffer) => chunks.push(chunk));
+					response.on("end", () => {
+						const buffer = Buffer.concat(chunks);
+						const status = response.statusCode ?? 0;
+						if (status >= 400) {
+							reject(new DockerError(status, buffer.toString("utf8")));
+							return;
+						}
+						resolve(buffer);
+					});
+				},
+			);
+			request.on("error", reject);
+			if (payload) request.write(payload);
+			request.end();
+		});
+	}
+
 	async isAvailable(): Promise<boolean> {
 		try {
 			await this.request("GET", "/_ping");

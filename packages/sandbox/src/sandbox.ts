@@ -14,6 +14,38 @@ export interface SandboxStatus {
 	readonly startedAt: string | undefined;
 }
 
+export interface ExecResult {
+	readonly exitCode: number;
+	readonly stdout: string;
+	readonly stderr: string;
+}
+
+/**
+ * Splits Docker's multiplexed exec stream. Each frame is an 8-byte header whose first byte is
+ * the stream (1 stdout, 2 stderr) and whose last four are the payload length, big endian.
+ */
+function demultiplex(buffer: Buffer): { stdout: string; stderr: string } {
+	const stdout: Buffer[] = [];
+	const stderr: Buffer[] = [];
+	let offset = 0;
+
+	while (offset + 8 <= buffer.length) {
+		const stream = buffer[offset];
+		const length = buffer.readUInt32BE(offset + 4);
+		const start = offset + 8;
+		const end = Math.min(start + length, buffer.length);
+		const payload = buffer.subarray(start, end);
+		if (stream === 2) stderr.push(payload);
+		else stdout.push(payload);
+		offset = end;
+	}
+
+	return {
+		stdout: Buffer.concat(stdout).toString("utf8"),
+		stderr: Buffer.concat(stderr).toString("utf8"),
+	};
+}
+
 interface ContainerInspect {
 	Id: string;
 	State: { Running: boolean; StartedAt: string };
@@ -107,6 +139,26 @@ export class DockerSandboxManager {
 			if (error instanceof DockerError && error.status === 404) return undefined;
 			throw error;
 		}
+	}
+
+	async exec(agentId: string, cmd: readonly string[]): Promise<ExecResult> {
+		const created = await this.engine.request<{ Id: string }>(
+			"POST",
+			`/containers/${containerName(agentId)}/exec`,
+			{ AttachStdout: true, AttachStderr: true, Cmd: cmd },
+		);
+
+		const raw = await this.engine.requestRaw("POST", `/exec/${created.body.Id}/start`, {
+			Detach: false,
+			Tty: false,
+		});
+		const { stdout, stderr } = demultiplex(raw);
+
+		const inspected = await this.engine.request<{ ExitCode: number | null }>(
+			"GET",
+			`/exec/${created.body.Id}/json`,
+		);
+		return { exitCode: inspected.body.ExitCode ?? -1, stdout, stderr };
 	}
 
 	/** Removes the container. The volume is kept unless explicitly discarded, since it is the agent. */
