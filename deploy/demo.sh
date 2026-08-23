@@ -34,6 +34,19 @@ HOOK_SECRET=demo-secret-not-for-production
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
+# The proxy lives in the control plane, and both `up` and `reload` have just replaced it. Asking
+# before it listens answers 000, and 000 as the last line a command prints reads as the thing having
+# failed rather than as having been asked too early. An empty answer is the sandbox not being there
+# yet, which is its own kind of early: the plane recreates one whose environment no longer matches.
+wait_for_egress() {
+  local code
+  for _ in $(seq 60); do
+    code=$(docker exec "$SANDBOX" curl -s -o /dev/null -w '%{http_code}' \
+      https://api.deepseek.com/models 2>/dev/null || true)
+    case "$code" in "" | 000) sleep 0.5 ;; *) return 0 ;; esac
+  done
+}
+
 down() {
   # Whatever ended up on the demo's network, not only what this script started: `agent chat <name>`
   # makes agents nothing here ever named, and they are the demo's to clean up too.
@@ -54,6 +67,12 @@ down() {
 # had on its first network, and an internal network drops anything that did not come from inside it
 # — so a plane that joins $EGRESS first has a webhook port nothing can reach.
 start_plane() {
+  # A socket left behind by the plane this one replaces, which was killed and never got to clean up.
+  # The plane unlinks it on its way up, but a directory shared into Docker Desktop's VM does not let
+  # the container remove one, and the bind then fails with ENOTSUP against a path that looks free.
+  # From the host it is an ordinary file, and the host is what is starting the plane.
+  rm -f "$STATE/control.sock"
+
   docker run -d --name "$PLANE" \
     --network "$UPLINK" \
     --label "agent-dive.state=$STATE" \
@@ -129,6 +148,10 @@ reload() {
   docker rm -f "$PLANE" >/dev/null
   start_plane "${DEEPSEEK_API_KEY:-${key:-no-key-configured}}"
 
+  # Before listing them, so the list is what settled rather than what was mid-flight: an agent whose
+  # environment the new config changed is replaced here, and its old container is still up until it is.
+  wait_for_egress
+
   say "the plane is new, the agent is the one you had"
   docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
@@ -179,6 +202,8 @@ up() {
   done
   docker inspect -f '{{.State.Running}}' "$SANDBOX" >/dev/null 2>&1 ||
     { docker logs "$PLANE"; echo "the control plane never started the sandbox" >&2; exit 1; }
+
+  wait_for_egress
 
   say "the agent is up"
   docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
