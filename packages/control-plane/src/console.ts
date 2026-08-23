@@ -109,9 +109,51 @@ function wrapped(lines: readonly string[], columns: number): readonly string[] {
 	return rows;
 }
 
-/** The last rows that fit, because a terminal pane has a bottom and a conversation does not. */
-export function tail(lines: readonly string[], rows: number): readonly string[] {
-	return rows <= 0 ? [] : lines.slice(-rows);
+/**
+ * The rows a pane draws: the last ones that fit, or the ones from `top` once it has been scrolled
+ * back. A pane has a bottom and a conversation does not, so something always has to be left out.
+ *
+ * Where it is scrolled to is a line, not a distance from the end, and that is the whole difference
+ * between scrolling that works and scrolling that does not: a feed keeps arriving while it is being
+ * read, and measured from the end the paragraph worth stopping on would slide up out of the pane at
+ * exactly the rate that made it worth stopping on.
+ */
+export function visible(
+	lines: readonly string[],
+	rows: number,
+	top: number | undefined,
+): readonly string[] {
+	if (rows <= 0) return [];
+	// Never past the last page: scrolling down arrives at the end of the feed rather than below it.
+	const last = Math.max(0, lines.length - rows);
+	if (top === undefined) return lines.slice(last);
+	const from = Math.min(Math.max(0, top), last);
+	return lines.slice(from, from + rows);
+}
+
+/** The rows a chat pane of this height has for the conversation, once the prompt has taken its own. */
+export function chatRows(rows: number): number {
+	return Math.max(0, rows - (rows > PROMPT_ROWS ? PROMPT_ROWS : 1));
+}
+
+/**
+ * Where a pane is scrolled to once it has been moved `by` rows, or nothing at all when that is its
+ * end.
+ *
+ * Nothing rather than the number of the last row, because the two stop meaning the same thing one
+ * line later: a pane at its end follows whatever arrives after it, and a pane parked on the row that
+ * happens to be last right now stops dead as soon as there is a row after it.
+ */
+export function scrolled(
+	top: number | undefined,
+	by: number,
+	pane: { readonly total: number; readonly height: number },
+): number | undefined {
+	const last = Math.max(0, pane.total - pane.height);
+	// Held at the first row before it is compared with the last, so that a pane whose content fits is
+	// at its end already and never reports having been scrolled away from it.
+	const next = Math.max(0, (top ?? last) + by);
+	return next >= last ? undefined : next;
 }
 
 export function Agents({
@@ -164,17 +206,20 @@ export function Chat({
 	rows,
 	columns,
 	thinking,
+	top,
 }: {
 	readonly history: readonly Said[];
 	readonly draft: string;
 	readonly rows: number;
 	readonly columns: number;
 	readonly thinking: Thinking | undefined;
+	/** The first row of conversation to show, or the end of it when nothing has been scrolled back to. */
+	readonly top: number | undefined;
 }): ReactElement {
 	// The box around the prompt costs two rows. A pane with no room for them keeps the prompt and
 	// gives up the border, because a border drawn where there is no room is the broken screen again.
 	const boxed = rows > PROMPT_ROWS;
-	const lines = tail(wrapped(transcript(history), columns), rows - (boxed ? PROMPT_ROWS : 1));
+	const lines = visible(wrapped(transcript(history), columns), chatRows(rows), top);
 	// A spinner alone says something is happening; the number rising beside it is what separates
 	// slow from stuck, and twice now the thing that looked slow was a hang.
 	const mark = thinking === undefined ? "> " : `${thinking.frame} ${thinking.seconds}s `;
@@ -215,15 +260,17 @@ export function Chat({
 function Logs({
 	lines,
 	rows,
+	top,
 }: {
 	readonly lines: readonly string[];
 	readonly rows: number;
+	readonly top: number | undefined;
 }): ReactElement {
 	return h(
 		Box,
 		// The newest line against the bottom edge, which is where a feed being watched is read.
 		{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end" },
-		...tail(lines, rows).map((line, index) =>
+		...visible(lines, rows, top).map((line, index) =>
 			h(Text, { key: `${index}`, wrap: "truncate" }, line === "" ? " " : line),
 		),
 	);
@@ -247,8 +294,28 @@ function App({
 	// When each turn started, rather than merely that one did: the elapsed seconds come from here.
 	const [busy, setBusy] = useState<ReadonlyMap<string, number>>(new Map());
 	const [frame, setFrame] = useState(0);
+	// The row the panel has been scrolled back to, or nothing at all while it is following the end.
+	const [top, setTop] = useState<number | undefined>(undefined);
 
 	const selected = agents[Math.min(cursor, agents.length - 1)];
+	const said = selected === undefined ? [] : saidBy(talk, selected.id);
+
+	// Two borders, the title row and the footer are the rows the panel does not get; its own border
+	// and padding are the columns. What is left is what the chat has to wrap itself into, and it has
+	// to know: nothing downstream can put a paragraph back once it has been drawn too wide.
+	const body = Math.max(1, rows - 4);
+	const width = Math.max(1, columns - AGENTS_WIDTH - 4);
+
+	// Scrolled back is a place in one conversation or one feed, and it does not survive being pointed
+	// at another: arriving in the middle of something nobody asked for is disorienting. Dropped during
+	// the render that changes what is being shown rather than in an effect, which would draw the old
+	// place once before correcting it.
+	const showing = `${panel}:${selected?.id ?? ""}`;
+	const [shown, setShown] = useState(showing);
+	if (shown !== showing) {
+		setShown(showing);
+		setTop(undefined);
+	}
 
 	// Once, for the life of the console: the plane streams until the socket closes, and asking twice
 	// would double every line.
@@ -329,6 +396,28 @@ function App({
 			setPanel((prev) => (prev === "chat" ? "logs" : "chat"));
 			return;
 		}
+		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
+		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
+		const scroll = (by: number, pages: number): void => {
+			const height = panel === "logs" ? body - 1 : chatRows(body - 1);
+			const total = panel === "logs" ? lines.length : wrapped(transcript(said), width).length;
+			setTop((prev) => scrolled(prev, by + pages * height, { total, height }));
+		};
+
+		if (key.pageUp) {
+			scroll(0, -1);
+			return;
+		}
+		if (key.pageDown) {
+			scroll(0, 1);
+			return;
+		}
+		// Before the plain arrows, which are how an agent is chosen: shift is what says this one is
+		// about moving through what the pane is showing instead.
+		if (key.shift && (key.upArrow || key.downArrow)) {
+			scroll(key.upArrow ? -1 : 1, 0);
+			return;
+		}
 		if (key.upArrow) {
 			setCursor((prev) => Math.max(0, prev - 1));
 			return;
@@ -340,11 +429,14 @@ function App({
 		if (panel !== "chat" || selected === undefined) return;
 
 		const send = (line: string): void => {
-			const body = line.trim();
+			const text = line.trim();
 			setDraft("");
+			// Asking something is asking to see the answer, so a conversation being read back through
+			// returns to its end rather than leaving the answer to arrive out of sight.
+			setTop(undefined);
 			// Deliberately not awaited: the turn runs while the console keeps taking keys, which is what
 			// lets an agent be asked something and another one be watched while it thinks.
-			if (body.length > 0) void ask(selected.id, body);
+			if (text.length > 0) void ask(selected.id, text);
 		};
 
 		if (key.return) {
@@ -371,11 +463,6 @@ function App({
 		setDraft(rest.join(" ").trim());
 	});
 
-	// Two borders, the title row and the footer are the rows the panel does not get; its own border
-	// and padding are the columns. What is left is what the chat has to wrap itself into, and it has
-	// to know: nothing downstream can put a paragraph back once it has been drawn too wide.
-	const body = Math.max(1, rows - 4);
-	const width = Math.max(1, columns - AGENTS_WIDTH - 4);
 	const title = selected === undefined ? "no agents" : selected.id;
 	const started = selected === undefined ? undefined : busy.get(selected.id);
 	const thinking: Thinking | undefined =
@@ -411,17 +498,21 @@ function App({
 					h(Text, { bold: panel === "chat", dimColor: panel !== "chat" }, "chat"),
 					h(Text, { dimColor: true }, " · "),
 					h(Text, { bold: panel === "logs", dimColor: panel !== "logs" }, "logs"),
+					// What a pane showing the end of things cannot say for itself: that this one is not.
+					// Without it, an answer arriving out of sight looks like an agent that said nothing.
+					top === undefined ? null : h(Text, { color: "yellow" }, "   ↑ scrolled"),
 				),
 				panel === "chat"
 					? h(Chat, {
-							history: selected === undefined ? [] : saidBy(talk, selected.id),
+							history: said,
 							draft,
 							rows: body - 1,
 							columns: width,
 							thinking,
+							top,
 							key: "chat",
 						})
-					: h(Logs, { lines, rows: body - 1, key: "logs" }),
+					: h(Logs, { lines, rows: body - 1, top, key: "logs" }),
 			),
 		),
 		h(
@@ -431,6 +522,7 @@ function App({
 			// The key stands out from what it does, because the key is the part being looked for.
 			...[
 				["↑↓", "agent"],
+				["⇧↑↓", "scroll"],
 				["tab", panel === "chat" ? "logs" : "chat"],
 				["^C", "quit"],
 			].flatMap(([stroke, does], index) => [

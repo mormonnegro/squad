@@ -153,16 +153,25 @@ asking to see the thing, not to be told a fact about it:
 │                ││ servicios: cuando ocurre un evento en un sistema, ese sistema│
 │                ││  envía una petición HTTP a una URL configurada de antemano.  │
 │                ││                                                              │
-│                ││ >                                                            │
+│                ││ ╭──────────────────────────────────────────────────────────╮ │
+│                ││ │ >                                                        │ │
+│                ││ ╰──────────────────────────────────────────────────────────╯ │
 ╰────────────────╯╰──────────────────────────────────────────────────────────────╯
- ↑↓ agent   tab logs   ^C quit
+ ↑↓ agent   ⇧↑↓ scroll   tab logs   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
 gets a mark of its own because with several agents on screen it is the one thing you cannot find
 out by asking again in a second. `↑↓` moves between them and `tab` swaps the panel between that
 agent's conversation and the log feed, which is the same feed `agent logs` prints and runs the
-whole time either way.
+whole time either way. The prompt shows the spinner and the seconds while that agent is thinking,
+because a spinner alone says something is happening and the number rising beside it is what says
+whether it still is.
+
+`⇧↑↓` scrolls the panel a line and `⇞⇟` a page, and the tab row says `↑ scrolled` while it is not
+at the end — without that, an answer arriving out of sight reads as an agent that said nothing.
+Where it is scrolled to is a line and not a distance from the bottom, so the feed goes on arriving
+underneath what is being read instead of pushing it up out of the pane.
 
 A turn is not waited on, so asking one agent something and then watching another think is a matter
 of pressing `↑`. Each agent keeps its own conversation, and the answer streams into it with its

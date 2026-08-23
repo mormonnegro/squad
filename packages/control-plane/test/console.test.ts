@@ -7,9 +7,10 @@ import {
 	Chat,
 	extend,
 	saidBy,
+	scrolled,
 	type Thinking,
-	tail,
 	transcript,
+	visible,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 
@@ -46,20 +47,73 @@ describe("transcript", () => {
 	});
 });
 
-describe("tail", () => {
+describe("visible", () => {
 	it("keeps the last lines, which are the ones still worth reading", () => {
-		expect(tail(["a", "b", "c"], 2)).toEqual(["b", "c"]);
+		expect(visible(["a", "b", "c"], 2, undefined)).toEqual(["b", "c"]);
 	});
 
 	it("shows all of a conversation that fits", () => {
-		expect(tail(["a", "b"], 10)).toEqual(["a", "b"]);
+		expect(visible(["a", "b"], 10, undefined)).toEqual(["a", "b"]);
 	});
 
 	// A pane can be given no rows at all while the window is being dragged, and slice(-0) is the
 	// whole array rather than none of it.
 	it("has nothing to show a pane with no room", () => {
-		expect(tail(["a", "b"], 0)).toEqual([]);
-		expect(tail(["a", "b"], -3)).toEqual([]);
+		expect(visible(["a", "b"], 0, undefined)).toEqual([]);
+		expect(visible(["a", "b"], -3, undefined)).toEqual([]);
+	});
+
+	it("shows the rows from where it was scrolled to", () => {
+		expect(visible(["a", "b", "c", "d"], 2, 1)).toEqual(["b", "c"]);
+	});
+
+	/**
+	 * Why the position is a line and not a distance from the end. A feed goes on arriving while it is
+	 * being read, and measured from the end the paragraph worth stopping on slides up out of the pane
+	 * at exactly the rate that made it worth stopping on.
+	 */
+	it("holds its place while the feed grows underneath it", () => {
+		const before = visible(["a", "b", "c", "d"], 2, 1);
+
+		expect(visible(["a", "b", "c", "d", "e", "f"], 2, 1)).toEqual(before);
+	});
+
+	// Scrolling down arrives at the end of the feed rather than below it, and scrolling up past the
+	// start stops at the start: a pane of blank rows is a console that looks like it has crashed.
+	it("does not scroll past either end", () => {
+		expect(visible(["a", "b", "c"], 2, 99)).toEqual(["b", "c"]);
+		expect(visible(["a", "b", "c"], 2, -99)).toEqual(["a", "b"]);
+	});
+});
+
+/**
+ * Following the end and being parked on a row are different states, and the whole of scrolling is
+ * knowing which one it is in.
+ */
+describe("scrolled", () => {
+	const pane = { total: 100, height: 10 };
+
+	it("leaves the end when it is moved off it", () => {
+		expect(scrolled(undefined, -1, pane)).toBe(89);
+		expect(scrolled(undefined, -10, pane)).toBe(80);
+	});
+
+	// Arriving back at the end is arriving back at following it: an agent asked something while the
+	// pane was parked one row above the bottom would answer permanently out of sight.
+	it("follows the end again once it is scrolled back to it", () => {
+		expect(scrolled(89, 1, pane)).toBeUndefined();
+		expect(scrolled(20, 500, pane)).toBeUndefined();
+	});
+
+	it("stops at the first row rather than above it", () => {
+		expect(scrolled(3, -50, pane)).toBe(0);
+	});
+
+	// The bug this was extracted for: a pane showing everything it has is at its end whatever is
+	// pressed at it, and one that says otherwise is telling the operator to go looking for nothing.
+	it("is at the end already when everything fits", () => {
+		expect(scrolled(undefined, -10, { total: 3, height: 20 })).toBeUndefined();
+		expect(scrolled(undefined, -10, { total: 0, height: 20 })).toBeUndefined();
 	});
 });
 
@@ -152,6 +206,7 @@ describe("Chat", () => {
 		rows?: number;
 		columns?: number;
 		thinking?: Thinking | undefined;
+		top?: number | undefined;
 	}) =>
 		renderToString(
 			h(Chat, {
@@ -159,6 +214,7 @@ describe("Chat", () => {
 				rows: 4,
 				columns: 40,
 				thinking: undefined,
+				top: undefined,
 				...props,
 			}),
 			{ columns: 40 },
@@ -170,6 +226,16 @@ describe("Chat", () => {
 		expect(drawn).toContain("line 19");
 		expect(drawn).not.toContain("line 17");
 		expect(drawn).toContain(">");
+	});
+
+	// Scrolled back, the pane is showing history — but it is still a pane with a bottom, and the row
+	// budget is the same one whether the rows are the newest or the oldest.
+	it("shows an older stretch without giving up a row to do it", () => {
+		const drawn = chat({ history: long, rows: 8, top: 2 }).split("\n");
+
+		expect(drawn).toHaveLength(8);
+		expect(drawn.join("\n")).toContain("line 2");
+		expect(drawn.join("\n")).not.toContain("line 19");
 	});
 
 	it("shows the line being typed", () => {
