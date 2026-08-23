@@ -132,8 +132,13 @@ agent help                               the rest
 ```
 
 `agent` on its own answers with the current state, because that is what someone typing the command
-with nothing after it wants to know. The agent's name is optional wherever it appears: a plane
-running one agent already knows which one is meant.
+with nothing after it wants to know. `chat` and `rm` take the name only when there is a choice to
+make: a plane running one agent already knows which one is meant. `wake` always wants it, because
+its next argument is a sentence and guessing which of the two you meant is not worth the ambiguity.
+
+A name that no agent answers to is refused before anything is queued. The plane would have accepted
+the event and delivered it to nobody, and that wait is fifteen minutes long and looks exactly like
+an agent thinking.
 
 Told nothing, it looks for the plane that is running rather than the one that would be there in a
 deployment: planes label their container with the directory they serve, so `agent` in a checkout

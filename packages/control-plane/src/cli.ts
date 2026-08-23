@@ -269,22 +269,36 @@ async function pickAgent(client: ControlClient, named: string | undefined): Prom
 	return only;
 }
 
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 /**
  * Something to watch while the agent thinks.
  *
  * A turn takes as long as it takes, and a terminal that has printed nothing for a minute reads as
- * one that has hung. Only on a TTY: piped into a file this would be noise in the transcript.
+ * one that has hung. The elapsed count is the part that earns its place: it says the wait is being
+ * measured rather than merely animated, so a turn that is slow looks different from one that is
+ * stuck. Only on a TTY, since piped into a file this is a line of noise per frame.
+ *
+ * Stopping is idempotent, because callers stop it before printing and again on the way out.
  */
 function thinking(): () => void {
 	if (!process.stdout.isTTY) return () => {};
-	const frames = ["·  ", "·· ", "···"];
+	const started = Date.now();
 	let frame = 0;
-	const timer = setInterval(() => {
-		process.stdout.write(`\r${frames[frame++ % frames.length]}`);
-	}, 300);
+	const draw = () => {
+		const seconds = Math.round((Date.now() - started) / 1000);
+		// Erase the whole line first: the frame that follows is shorter once the count rolls over.
+		process.stdout.write(`\r\u001b[2K${SPINNER[frame++ % SPINNER.length]} thinking  ${seconds}s`);
+	};
+	draw();
+	const timer = setInterval(draw, 120);
+
+	let stopped = false;
 	return () => {
+		if (stopped) return;
+		stopped = true;
 		clearInterval(timer);
-		process.stdout.write("\r   \r");
+		process.stdout.write("\r\u001b[2K");
 	};
 }
 
@@ -349,11 +363,18 @@ async function wake(args: Args): Promise<number> {
 	}
 
 	const client = await connect(stateDir);
+	let stop = (): void => {};
 	try {
-		const text = await client.wake(agentId, body);
+		// Checked here rather than left to the plane, which queues an event for an agent it does not
+		// run and answers nobody. That wait is fifteen minutes and looks exactly like thinking.
+		const agent = await pickAgent(client, agentId);
+		stop = thinking();
+		const text = await client.wake(agent.id, body);
+		stop();
 		process.stdout.write(text.length > 0 ? `${text}\n` : "the agent said nothing\n");
 		return 0;
 	} finally {
+		stop();
 		client.close();
 	}
 }
