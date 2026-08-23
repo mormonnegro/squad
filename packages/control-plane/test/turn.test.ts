@@ -1,7 +1,13 @@
 import { EventBus } from "@agent-dive/events";
 import type { ExecResult } from "@agent-dive/sandbox";
 import { describe, expect, it } from "vitest";
-import { createTurnHandler, PiTurnRunner, TurnError, type TurnSandbox } from "../src/turn.ts";
+import {
+	createTurnHandler,
+	PiTurnRunner,
+	TurnError,
+	type TurnResult,
+	type TurnSandbox,
+} from "../src/turn.ts";
 
 interface Invocation {
 	readonly agentId: string;
@@ -16,6 +22,16 @@ const said = (text: string): string =>
 	`${JSON.stringify({ assistantMessageEvent: { type: "text_start" } })}\n${JSON.stringify({
 		assistantMessageEvent: { type: "text_delta", delta: text },
 	})}\n${JSON.stringify({ assistantMessageEvent: { type: "text_end", content: text } })}\n`;
+
+/** A turn that went fine, for the handler tests, which are about where the answer goes. */
+const answered = (text: string): TurnResult => ({
+	text,
+	exitCode: 0,
+	stderr: "",
+	ms: 0,
+	tokens: 0,
+	costUsd: 0,
+});
 
 class StubSandbox implements TurnSandbox {
 	readonly calls: Invocation[] = [];
@@ -169,7 +185,7 @@ describe("createTurnHandler", () => {
 	it("answers on the channel the wakeup came from", async () => {
 		const sent: Array<{ channel: string; body: string }> = [];
 		const handler = createTurnHandler({
-			runner: { run: async () => ({ text: "on it", exitCode: 0, stderr: "" }) },
+			runner: { run: async () => answered("on it") },
 			router: {
 				send: async (reply) => {
 					sent.push({ channel: reply.channel, body: reply.body });
@@ -185,7 +201,7 @@ describe("createTurnHandler", () => {
 	it("answers everyone whose message was folded into the turn", async () => {
 		const channels: string[] = [];
 		const handler = createTurnHandler({
-			runner: { run: async () => ({ text: "on it", exitCode: 0, stderr: "" }) },
+			runner: { run: async () => answered("on it") },
 			router: {
 				send: async (reply) => {
 					channels.push(reply.channel);
@@ -213,7 +229,7 @@ describe("createTurnHandler", () => {
 		const undelivered: Array<{ channel: string; message: string }> = [];
 		const delivered: string[] = [];
 		const handler = createTurnHandler({
-			runner: { run: async () => ({ text: "on it", exitCode: 0, stderr: "" }) },
+			runner: { run: async () => answered("on it") },
 			router: {
 				send: async (reply) => {
 					if (reply.channel.startsWith("webhook:")) throw new Error("no reply URL configured");
@@ -240,7 +256,7 @@ describe("createTurnHandler", () => {
 	it("says nothing when the turn produced nothing", async () => {
 		const sent: string[] = [];
 		const handler = createTurnHandler({
-			runner: { run: async () => ({ text: "", exitCode: 0, stderr: "" }) },
+			runner: { run: async () => answered("") },
 			router: {
 				send: async (reply) => {
 					sent.push(reply.body);

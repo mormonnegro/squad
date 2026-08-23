@@ -5,6 +5,7 @@ import { ControlClient, ControlError } from "./control-client.ts";
 import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
 import { runningPlanes } from "./control-relay.ts";
 import { ControlServer, controlSocketPath } from "./control-server.ts";
+import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
@@ -16,7 +17,7 @@ const USAGE = `agent - run self-hosted cloud agents
                                answers to offers to make one
   agent ls                     what each agent is and whether it is up
   agent wake [name] <text>     take one turn, as the operator
-  agent logs                   follow turns and egress decisions
+  agent logs                   follow what every agent runs, answers and spends
   agent rm <name> [--purge]    take the sandbox away, and with --purge its
                                repository: soul, memory, skills, tools
   agent run <config.yaml>      start the control plane
@@ -69,20 +70,9 @@ async function resolveStateDir(args: Args): Promise<Args> {
 	return { ...args, stateDir: only };
 }
 
-/** A line for a feed, or nothing for the events that are not lines. */
-function describe(event: PlaneEvent): string | undefined {
-	// Half a sentence at a time is for whoever is waiting on the answer. A feed gets the turn whole,
-	// one line, once, which is what makes it readable with several agents talking at once.
-	if (event.kind === "say") return undefined;
-	if (event.kind === "turn") return `[${event.agentId}] ${event.result.text}`;
-	if (event.kind === "error") return `[${event.context}] ${event.message}`;
-	const { at, agentId, outcome, method, host, path, reason } = event.entry;
-	return `${at} ${agentId ?? "-"} ${outcome} ${method} ${host}${path}${reason ? ` (${reason})` : ""}`;
-}
-
-function report(event: PlaneEvent): void {
-	const line = describe(event);
-	if (line !== undefined) process.stdout.write(`${line}\n`);
+function feed(): (event: PlaneEvent) => void {
+	const log = new LogFeed((line) => process.stdout.write(line));
+	return (event) => log.push(event);
 }
 
 async function run(path: string): Promise<number> {
@@ -90,7 +80,7 @@ async function run(path: string): Promise<number> {
 	const plane = new ControlPlane(config);
 	const server = new ControlServer({ plane });
 
-	plane.observe(report);
+	plane.observe(feed());
 
 	// The socket opens before the agents do. Starting them means pulling an image, creating a volume
 	// and scaffolding a repository, and an operator who asks what is happening during that minute
@@ -250,7 +240,7 @@ async function status(args: Args): Promise<number> {
 		for (const agent of summaries) process.stdout.write(`${describeAgent(agent)}\n`);
 		process.stdout.write(
 			"\n  agent chat                talk to it\n" +
-				"  agent logs                follow turns and egress decisions\n",
+				"  agent logs                watch what it runs, answers and spends\n",
 		);
 		return 0;
 	} finally {
@@ -562,7 +552,7 @@ async function wake(args: Args): Promise<number> {
 
 async function logs(args: Args): Promise<number> {
 	const client = await connect(args.stateDir);
-	client.logs(report);
+	client.logs(feed());
 	await new Promise<void>((resolve) => {
 		process.once("SIGINT", () => resolve());
 		process.once("SIGTERM", () => resolve());

@@ -15,7 +15,14 @@ describe("the control socket", () => {
 	/** Stands in for a sandbox: answers the turn without needing Docker. */
 	const answerWith = async (agentId: string, say: (prompt: string) => string) => {
 		await plane.attach(agentId, {
-			run: async (_id, prompt) => ({ text: say(prompt), exitCode: 0, stderr: "" }),
+			run: async (_id, prompt) => ({
+				text: say(prompt),
+				exitCode: 0,
+				stderr: "",
+				ms: 0,
+				tokens: 0,
+				costUsd: 0,
+			}),
 		});
 	};
 
@@ -58,7 +65,14 @@ describe("the control socket", () => {
 			run: async (_id, _prompt, onText) => {
 				onText?.("cuatro ");
 				onText?.("issues abiertos");
-				return { text: "cuatro issues abiertos", exitCode: 0, stderr: "" };
+				return {
+					text: "cuatro issues abiertos",
+					exitCode: 0,
+					stderr: "",
+					ms: 0,
+					tokens: 0,
+					costUsd: 0,
+				};
 			},
 		});
 
@@ -76,7 +90,7 @@ describe("the control socket", () => {
 			run: async (_id, _prompt, onText) => {
 				onText?.("anot");
 				onText?.("ado");
-				return { text: "anotado", exitCode: 0, stderr: "" };
+				return { text: "anotado", exitCode: 0, stderr: "", ms: 0, tokens: 0, costUsd: 0 };
 			},
 		});
 		const seen: PlaneEvent[] = [];

@@ -40,8 +40,13 @@ interface PiEvent {
 /** A log line is not where a 50KB build failure belongs, so the cut is made here and not by a reader. */
 const MAX_DETAIL = 300;
 
-/** The argument that says what a tool call was, tried in the order pi's built-in tools use them. */
-const SUBJECTS = ["command", "path", "file_path", "pattern", "query", "url"] as const;
+/**
+ * The argument that says what a tool call was, most telling first.
+ *
+ * A search takes both a pattern and a path, and it is the pattern that says what was being looked
+ * for, so it has to be asked about before the directory it was looked for in.
+ */
+const SUBJECTS = ["command", "pattern", "path", "file_path", "query", "url"] as const;
 
 /**
  * Reads pi's JSON event stream and keeps the two things it is worth having: the answer, and what the

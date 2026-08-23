@@ -136,7 +136,7 @@ agent chat demo                          talk to it, turn after turn
 agent chat maxi                          a name nothing answers to: it offers to make one
 agent ls                                 what each agent is and whether it is up
 agent wake "check the open issues"       take one turn, and wait for the answer
-agent logs                               follow turns and egress decisions live
+agent logs                               follow what every agent runs, answers and spends
 agent rm demo [--purge]                  take the sandbox away, and with --purge the repository
 agent help                               the rest
 ```
@@ -162,6 +162,24 @@ Created agents are written down in the state directory, since the config file is
 no plane may write it. That is also the only thing `--purge` can truly delete: a declared agent
 comes back on the next start no matter what, and one made from the CLI has nowhere else to come back
 from.
+
+`logs` is everything at once: the commands each agent runs inside its sandbox as it runs them, what
+a failed one printed and how long it took to fail, the answer when the turn ends, and what the turn
+spent.
+
+```
+18:12:53  maxi      bash        pnpm -r test
+18:12:53  maxi      bash      ✗ after 12.4s: FAIL test/turn.test.ts > carries the failure detail
+18:12:53  maxi      read        packages/control-plane/src/turn.ts
+18:12:53  scout     egress    ✗ denied GET api.github.com/repos — no_matching_host
+18:12:53  maxi      answer      El test esperaba el mensaje viejo.
+18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.47 · api.anthropic.com ×12
+```
+
+Model round-trips that worked are counted rather than printed, and the count arrives with the turn
+that made them: one identical `allowed POST api.anthropic.com` per request is what the lines that
+matter used to be buried in. A request that was denied, or came back 401 or 429, is said the moment
+it happens, because it is the reason the agent is about to misbehave.
 
 Told nothing, it looks for the plane that is running rather than the one that would be there in a
 deployment: planes label their container with the directory they serve, so `agent` in a checkout

@@ -16,6 +16,8 @@ export {
 	type ControlServerOptions,
 	controlSocketPath,
 } from "./control-server.ts";
+export { LogFeed } from "./feed.ts";
+export { type AgentStep, PiOutput, type PiOutputOptions } from "./pi-output.ts";
 export {
 	PI_SOCKET_PATH,
 	PiSessionChannel,
