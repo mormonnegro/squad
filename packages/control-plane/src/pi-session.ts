@@ -12,19 +12,24 @@ const TOKEN_PATH = "/home/agent/.run/pi.token";
 export interface PiSessionChannelOptions {
 	readonly manager: DockerSandboxManager;
 	readonly agentId: string;
-	/** Overrides the pi executable, mainly so tests can substitute a stand-in server. */
-	readonly command?: readonly string[];
+	/** Argv of the server to run in the sandbox. It must bind socketPath. */
+	readonly command: readonly string[];
 	readonly socketPath?: string;
 	readonly connectTimeoutMs?: number;
 	readonly onStderr?: (text: string) => void;
 }
 
 /**
- * Runs pi's server inside the sandbox and exposes it as a pi byte transport.
+ * Runs a socket server inside the sandbox and exposes it to the host as a byte transport.
  *
- * pi's server listens on a unix socket in its own filesystem namespace, so the control plane
- * reaches it by exec'ing a relay rather than by binding a port. The auth token never leaves the
- * container's filesystem: both ends read it from the same path.
+ * The intended occupant is pi's server, which listens on a unix socket in its own filesystem
+ * namespace, so the control plane reaches it by exec'ing a relay rather than by binding a port.
+ * The auth token never leaves the container's filesystem: both ends read it from the same path.
+ *
+ * The command is supplied rather than defaulted because pi 0.84.2, the current release, does not
+ * expose a server entry point: `pi experimental server` exists only on pi's main branch. Hosting
+ * one on the published @earendil-works/pi-server means implementing PiServerService, since pi
+ * ships no production implementation of it.
  */
 export class PiSessionChannel {
 	readonly #manager: DockerSandboxManager;
@@ -40,15 +45,7 @@ export class PiSessionChannel {
 		this.#socketPath = options.socketPath ?? PI_SOCKET_PATH;
 		this.#connectTimeoutMs = options.connectTimeoutMs ?? 30_000;
 		this.#onStderr = options.onStderr;
-		this.#command = options.command ?? [
-			"pi",
-			"experimental",
-			"server",
-			"--listen",
-			`unix://${this.#socketPath}`,
-			"--auth-token-file",
-			TOKEN_PATH,
-		];
+		this.#command = options.command;
 	}
 
 	/**

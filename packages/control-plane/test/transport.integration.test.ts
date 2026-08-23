@@ -1,6 +1,6 @@
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { RELAY_PATH } from "../src/pi-session.ts";
+import { PiSessionChannel, RELAY_PATH } from "../src/pi-session.ts";
 import { type ByteTransportHandlers, createExecTransportFactory } from "../src/transport.ts";
 
 const IMAGE = "agent-dive/sandbox:dev";
@@ -133,6 +133,28 @@ suite("exec transport against a live daemon", () => {
 		expect(sink.text().length).toBeGreaterThanOrEqual(payload.length);
 		expect(sink.errors).toEqual([]);
 		transport.close();
+	}, 60_000);
+
+	it("starts a hosted server once and bridges to it", async () => {
+		const socketPath = "/home/agent/.run/hosted.sock";
+		const channel = new PiSessionChannel({
+			manager,
+			agentId: AGENT_ID,
+			socketPath,
+			command: ["node", "/home/agent/.run/echo.mjs", socketPath],
+		});
+
+		expect(await channel.ensureServer()).toBe(true);
+		// The socket appears asynchronously, so the relay's own retry is what closes the gap.
+		expect(await channel.authToken()).toMatch(/^[0-9a-f]{64}$/);
+
+		const sink = collect();
+		const transport = await channel.transportFactory()(sink.handlers);
+		await transport.send(new TextEncoder().encode("hosted"));
+		await sink.waitFor("HOSTED");
+		transport.close();
+
+		expect(await channel.ensureServer()).toBe(false);
 	}, 60_000);
 
 	it("surfaces relay failure on stderr instead of hanging", async () => {
