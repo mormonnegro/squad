@@ -162,10 +162,20 @@ export class ControlServer {
 	async #wake(agentId: string, body: string): Promise<string> {
 		const requestId = randomUUID();
 		let answered: (text: string) => void = () => {};
-		const reply = new Promise<string>((resolve) => {
+		let failed: (error: Error) => void = () => {};
+		const reply = new Promise<string>((resolve, reject) => {
 			answered = resolve;
+			failed = reject;
 		});
 		const stop = this.#cli.expect(requestId, answered);
+
+		// A turn that throws is left queued for another attempt, which is right for durability and
+		// silent for whoever is standing at a terminal: they would wait out the timeout and be told
+		// the agent said nothing. Turns are serialised per agent and this one's event is folded into
+		// whatever batch is running, so a failure reported while this call waits is this call's.
+		const unobserve = this.#plane.observe((event) => {
+			if (event.kind === "error" && event.context === agentId) failed(new Error(event.message));
+		});
 
 		try {
 			await this.#plane.bus.publish({
@@ -181,6 +191,7 @@ export class ControlServer {
 			return await Promise.race([reply, timeout]);
 		} finally {
 			stop();
+			unobserve();
 		}
 	}
 

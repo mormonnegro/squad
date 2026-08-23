@@ -53,6 +53,18 @@ describe("the control socket", () => {
 		expect(await client.wake("scout", "check the issues")).toBe("four issues are open");
 	});
 
+	it("tells the operator the turn failed instead of waiting out the timeout", async () => {
+		// The events stay queued for a retry either way. What must not happen is that the person who
+		// typed the command sits through waitMs and is then told the agent said nothing.
+		await plane.attach("scout", {
+			run: async () => {
+				throw new Error('Turn for "scout" exited 1: denied CONNECT api.anthropic.com');
+			},
+		});
+
+		await expect(client.wake("scout", "check the issues")).rejects.toThrow(/denied CONNECT/);
+	});
+
 	it("wakes the agent with operator trust, so the message may instruct", async () => {
 		let prompt = "";
 		await answerWith("scout", (received) => {

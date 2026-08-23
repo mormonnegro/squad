@@ -110,7 +110,13 @@ export class PiTurnRunner {
 		// Throwing leaves the events queued, so a turn lost to a bad key is retried rather than
 		// acknowledged as if the agent had answered.
 		if (result.exitCode !== 0) {
-			throw new TurnError(`Turn for "${agentId}" exited ${result.exitCode}`, result);
+			// What pi said last is what went wrong, and an exit code on its own sends the operator to
+			// the logs to learn something the failure already knew.
+			const said = result.stderr.split("\n").at(-1)?.trim();
+			throw new TurnError(
+				`Turn for "${agentId}" exited ${result.exitCode}${said ? `: ${said}` : ""}`,
+				result,
+			);
 		}
 		return result;
 	}
