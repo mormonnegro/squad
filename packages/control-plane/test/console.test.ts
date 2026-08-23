@@ -135,9 +135,26 @@ describe("Chat", () => {
 		from: "agent" as const,
 		text: `line ${index}`,
 	}));
+	const chat = (props: {
+		history: readonly { from: "operator" | "agent"; text: string }[];
+		draft?: string;
+		rows?: number;
+		columns?: number;
+		thinking?: boolean;
+	}) =>
+		renderToString(
+			h(Chat, {
+				draft: "",
+				rows: 4,
+				columns: 40,
+				thinking: false,
+				...props,
+			}),
+			{ columns: 40 },
+		);
 
 	it("keeps the room the prompt needs, at the cost of the oldest line", () => {
-		const drawn = renderToString(h(Chat, { history: long, draft: "", rows: 4, thinking: false }));
+		const drawn = chat({ history: long });
 
 		expect(drawn).toContain("line 19");
 		expect(drawn).not.toContain("line 17");
@@ -145,18 +162,45 @@ describe("Chat", () => {
 	});
 
 	it("shows the line being typed", () => {
-		const drawn = renderToString(
-			h(Chat, { history: [], draft: "que es", rows: 4, thinking: false }),
-		);
-
-		expect(drawn).toContain("que es");
+		expect(chat({ history: [], draft: "que es" })).toContain("que es");
 	});
 
 	// Nothing typed now will be lost, but it will be answered after this turn, and the prompt is
 	// where that is said.
 	it("says the agent is thinking rather than inviting a line", () => {
-		const drawn = renderToString(h(Chat, { history: [], draft: "", rows: 4, thinking: true }));
+		expect(chat({ history: [], thinking: true })).toContain("…");
+	});
 
-		expect(drawn).toContain("…");
+	/**
+	 * The one thing a pane may never do. Anything it draws past its last row lands on the border, on
+	 * the column beside it, and below the bottom of the terminal — the screen does not scroll, it
+	 * breaks, and the only way back is to quit.
+	 */
+	it("never draws more rows than it was given", () => {
+		const paragraph = { from: "agent" as const, text: "palabra ".repeat(200).trim() };
+
+		for (const rows of [2, 5, 12]) {
+			expect(chat({ history: [paragraph], rows }).split("\n")).toHaveLength(rows);
+		}
+	});
+
+	// A line being typed outruns the pane long before it is finished. Wrapping it would cost a row
+	// of conversation on every keystroke past the edge; what is worth seeing is the end of it.
+	it("holds the prompt to one row, showing the end of what is typed", () => {
+		const drawn = chat({ history: [], draft: `${"x".repeat(300)}final` });
+
+		expect(drawn.split("\n")).toHaveLength(1);
+		expect(drawn).toContain("final");
+	});
+
+	// Where it breaks matters as much as that it breaks: a path has no space in it, and text that
+	// only broke on spaces would draw it off the edge. The prompt is left out — it is the one row
+	// carrying colour, and colour is not width.
+	it("breaks a word that has nowhere to break", () => {
+		const said = chat({ history: [{ from: "agent", text: "/home/agent/.self/".repeat(20) }] })
+			.split("\n")
+			.slice(0, -1);
+
+		for (const row of said) expect(row.length).toBeLessThanOrEqual(40);
 	});
 });

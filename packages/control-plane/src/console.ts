@@ -1,5 +1,6 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
+import wrapAnsi from "wrap-ansi";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
@@ -64,12 +65,27 @@ export function transcript(history: readonly Said[]): readonly string[] {
 }
 
 /**
- * The last lines that fit, because a terminal pane has a bottom and a conversation does not.
+ * A conversation as the rows it will actually occupy.
  *
- * Counted in lines as written rather than as displayed, so a paragraph wider than the pane takes
- * more room than it is given here and pushes an older line off the top. That is the cheap end of
- * the trade: the alternative is measuring wrapped width on every keystroke.
+ * This has to happen before anything is counted. A paragraph is one line as written and many as
+ * drawn, and a pane that keeps the last twenty lines of a conversation is keeping far more than
+ * twenty rows of screen — which it then draws past its own border, over the pane beside it and
+ * off the bottom of the terminal.
+ *
+ * `hard` breaks a word with nowhere to break, which is a path or a URL. Untrimmed, because the
+ * indentation of a bullet or a fenced block is what makes it read as one.
  */
+function wrapped(lines: readonly string[], columns: number): readonly string[] {
+	if (columns <= 0) return [];
+	const rows: string[] = [];
+	for (const line of lines) {
+		if (line === "") rows.push("");
+		else rows.push(...wrapAnsi(line, columns, { hard: true, trim: false }).split("\n"));
+	}
+	return rows;
+}
+
+/** The last rows that fit, because a terminal pane has a bottom and a conversation does not. */
 export function tail(lines: readonly string[], rows: number): readonly string[] {
 	return rows <= 0 ? [] : lines.slice(-rows);
 }
@@ -114,28 +130,37 @@ export function Chat({
 	history,
 	draft,
 	rows,
+	columns,
 	thinking,
 }: {
 	readonly history: readonly Said[];
 	readonly draft: string;
 	readonly rows: number;
+	readonly columns: number;
 	readonly thinking: boolean;
 }): ReactElement {
 	// One line for the prompt, and one for the room the prompt needs above it.
-	const lines = tail(transcript(history), rows - 1);
+	const lines = tail(wrapped(transcript(history), columns), rows - 1);
+	// The prompt is one row and stays one row: what you need to see of a line you are still typing
+	// is its end, where the cursor is. The mark and the cursor are the two columns it does not have.
+	const room = Math.max(0, columns - 3);
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
 		h(
 			Box,
 			{ flexDirection: "column", flexGrow: 1, key: "said" },
-			...lines.map((line, index) => h(Text, { key: `${index}` }, line === "" ? " " : line)),
+			// Already the width of the pane, so Ink is told not to measure them again — a row it
+			// decided to wrap is a row this one did not budget for.
+			...lines.map((line, index) =>
+				h(Text, { key: `${index}`, wrap: "truncate" }, line === "" ? " " : line),
+			),
 		),
 		h(
 			Text,
-			{ key: "prompt" },
+			{ key: "prompt", wrap: "truncate" },
 			thinking ? h(Text, { dimColor: true }, "… ") : h(Text, { color: "cyan" }, "> "),
-			draft,
+			draft.slice(Math.max(0, draft.length - room)),
 			h(Text, { inverse: true }, " "),
 		),
 	);
@@ -288,8 +313,11 @@ function App({
 		setDraft(rest.join(" ").trim());
 	});
 
-	// Two borders, the title row and the footer are the rows the panel does not get.
+	// Two borders, the title row and the footer are the rows the panel does not get; its own border
+	// and padding are the columns. What is left is what the chat has to wrap itself into, and it has
+	// to know: nothing downstream can put a paragraph back once it has been drawn too wide.
 	const body = Math.max(1, rows - 4);
+	const width = Math.max(1, columns - AGENTS_WIDTH - 4);
 	const title = selected === undefined ? "no agents" : selected.id;
 	const hint = panel === "chat" ? "↑↓ agent   tab logs   ^C quit" : "↑↓ agent   tab chat   ^C quit";
 
@@ -317,6 +345,7 @@ function App({
 							history: selected === undefined ? [] : saidBy(talk, selected.id),
 							draft,
 							rows: body - 1,
+							columns: width,
 							thinking: selected !== undefined && busy.has(selected.id),
 							key: "chat",
 						})

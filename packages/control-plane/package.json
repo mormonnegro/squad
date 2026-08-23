@@ -23,6 +23,7 @@
 		"@agent-dive/scheduler": "workspace:*",
 		"ink": "^7.1.1",
 		"react": "^19.2.8",
+		"wrap-ansi": "^10.0.0",
 		"yaml": "^2.7.0"
 	},
 	"devDependencies": {
