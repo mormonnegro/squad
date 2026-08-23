@@ -27,6 +27,25 @@ around.
 holds a manifest, but a manifest is a request. Grants live in the control plane's config file,
 which the agent cannot write.
 
+## What an agent is made of
+
+On its first boot an agent gets a repository in its own volume, at `/home/agent/.self`:
+
+```
+agent.yaml   name, model, and the capabilities it asks an operator for
+soul.md      who it is; appended to the system prompt on every turn
+skills/      SKILL.md folders, loaded by pi
+memory/      what it chose to remember, partitioned by users, projects and reference
+tools/       scripts it wrote for itself
+```
+
+It is scaffolded once, git-initialised, and then left alone: turns run inside it, so what the agent
+learns and what it can do are files it edits and commits itself. The control plane never writes
+there again, because the second write would be the control plane overwriting the agent's own work.
+
+Nothing in that repository grants anything. `agent.yaml` lists capability *requests*, and an
+operator answers them in the config file the agent cannot reach.
+
 ## The pieces
 
 | Package | What it is |

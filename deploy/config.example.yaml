@@ -8,6 +8,10 @@ agents:
     provider: anthropic
     model: claude-opus-4-7
 
+    # Only used the first time the agent boots, to write its soul.md. After that the agent's
+    # repository is the agent's, and this file stops having an opinion about who it is.
+    description: Watches the issue tracker and answers questions about it.
+
     # What the sandbox gets in its environment. The left side is the name inside the container, the
     # right side names the control plane's variable holding the value, so no key is written here.
     envFrom:

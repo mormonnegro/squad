@@ -14,10 +14,13 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
+import { ensureSelfRepo } from "./self.ts";
 import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
 
 export interface AgentConfig {
 	readonly id: string;
+	/** Written into the agent's repository when it is first created, and its to edit afterwards. */
+	readonly description?: string;
 	/**
 	 * What the agent is allowed to reach. Approved by an operator, never read from the agent's own
 	 * manifest: the manifest lives in a repository the agent can commit to, so a grant taken from it
@@ -254,6 +257,12 @@ export class ControlPlane {
 			});
 		}
 		await this.sandboxes.start(agent.id);
+		await ensureSelfRepo({
+			sandbox: this.sandboxes,
+			agentId: agent.id,
+			...(agent.description !== undefined ? { description: agent.description } : {}),
+			...(agent.model !== undefined ? { model: agent.model } : {}),
+		});
 
 		const runner = new PiTurnRunner({
 			sandbox: this.sandboxes,

@@ -154,12 +154,19 @@ export class DockerSandboxManager {
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options: { timeoutMs?: number } = {},
+		options: { timeoutMs?: number; workingDir?: string } = {},
 	): Promise<ExecResult> {
 		const created = await this.engine.request<{ Id: string }>(
 			"POST",
 			`/containers/${containerName(agentId)}/exec`,
-			{ AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: false, Cmd: cmd },
+			{
+				AttachStdin: true,
+				AttachStdout: true,
+				AttachStderr: true,
+				Tty: false,
+				Cmd: cmd,
+				...(options.workingDir !== undefined ? { WorkingDir: options.workingDir } : {}),
+			},
 		);
 
 		const stream = await this.engine.hijack("POST", `/exec/${created.body.Id}/start`, {

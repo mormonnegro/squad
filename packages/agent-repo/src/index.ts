@@ -15,7 +15,9 @@ export {
 	MEMORY_DIR,
 	MEMORY_PARTITIONS,
 	SANDBOX_REPO_PATH,
+	type ScaffoldFile,
 	SKILLS_DIR,
 	SOUL_FILE,
+	scaffoldAgentRepo,
 	TOOLS_DIR,
 } from "./repo.ts";

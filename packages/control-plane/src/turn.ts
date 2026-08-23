@@ -1,3 +1,4 @@
+import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
 import type { Reply } from "@agent-dive/channels";
 import type { WakeupHandler } from "@agent-dive/events";
 import type { ExecResult } from "@agent-dive/sandbox";
@@ -8,7 +9,7 @@ export interface TurnSandbox {
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options?: { timeoutMs?: number },
+		options?: { timeoutMs?: number; workingDir?: string },
 	): Promise<ExecResult>;
 }
 
@@ -34,11 +35,13 @@ export interface PiTurnRunnerOptions {
 	readonly model?: string;
 	/** Where pi keeps session files. On the agent's volume, so turns survive a new container. */
 	readonly sessionDir?: string;
+	/** The agent's own repository inside the sandbox: its soul, its skills, its memory. */
+	readonly repoPath?: string;
 	readonly timeoutMs?: number;
 	readonly command?: readonly string[];
 }
 
-const DEFAULT_SESSION_DIR = "/home/agent/.self/.sessions";
+const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
 /**
@@ -53,6 +56,7 @@ export class PiTurnRunner {
 	readonly #provider: string | undefined;
 	readonly #model: string | undefined;
 	readonly #sessionDir: string;
+	readonly #repoPath: string;
 	readonly #timeoutMs: number;
 	readonly #command: readonly string[];
 
@@ -60,7 +64,8 @@ export class PiTurnRunner {
 		this.#sandbox = options.sandbox;
 		this.#provider = options.provider;
 		this.#model = options.model;
-		this.#sessionDir = options.sessionDir ?? DEFAULT_SESSION_DIR;
+		this.#repoPath = options.repoPath ?? DEFAULT_REPO_PATH;
+		this.#sessionDir = options.sessionDir ?? `${this.#repoPath}/.sessions`;
 		this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.#command = options.command ?? ["pi"];
 	}
@@ -69,6 +74,10 @@ export class PiTurnRunner {
 		return `agent-dive-${agentId}`;
 	}
 
+	/**
+	 * The soul and skills are passed as paths rather than discovered, because discovery is gated on
+	 * pi trusting the project and the answer to "is this project trusted" is the agent itself.
+	 */
 	commandFor(agentId: string): string[] {
 		return [
 			...this.#command,
@@ -77,14 +86,20 @@ export class PiTurnRunner {
 			this.sessionId(agentId),
 			"--session-dir",
 			this.#sessionDir,
+			"--append-system-prompt",
+			`${this.#repoPath}/${SOUL_FILE}`,
+			"--skill",
+			`${this.#repoPath}/${SKILLS_DIR}`,
 			...(this.#provider !== undefined ? ["--provider", this.#provider] : []),
 			...(this.#model !== undefined ? ["--model", this.#model] : []),
 		];
 	}
 
 	async run(agentId: string, prompt: string): Promise<TurnResult> {
+		// In its own repository, so what it remembers and what it can do are where it works.
 		const executed = await this.#sandbox.run(agentId, this.commandFor(agentId), prompt, {
 			timeoutMs: this.#timeoutMs,
+			workingDir: this.#repoPath,
 		});
 
 		const result: TurnResult = {

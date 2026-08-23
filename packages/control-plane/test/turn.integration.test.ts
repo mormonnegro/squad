@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DockerEngine, DockerSandboxManager, SandboxTimeoutError } from "@agent-dive/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ensureSelfRepo } from "../src/self.ts";
 import { PiTurnRunner, TurnError } from "../src/turn.ts";
 
 const IMAGE = "agent-dive/sandbox:dev";
@@ -78,6 +79,36 @@ suite("taking a turn in a live sandbox", () => {
 		});
 
 		await expect(runner.run(AGENT_ID, "say hi")).rejects.toThrow(TurnError);
+	}, 120_000);
+
+	it("scaffolds the agent's repository in the volume, as a git repository it can commit to", async () => {
+		expect(
+			await ensureSelfRepo({
+				sandbox: manager,
+				agentId: AGENT_ID,
+				description: "an agent with 'quotes' and $(danger) in its description",
+			}),
+		).toBe(true);
+
+		const manifest = await manager.exec(AGENT_ID, ["cat", "/home/agent/.self/agent.yaml"]);
+		expect(manifest.stdout).toContain(`name: ${AGENT_ID}`);
+		expect(manifest.stdout).toContain("$(danger)");
+
+		const log = await manager.exec(AGENT_ID, [
+			"git",
+			"-C",
+			"/home/agent/.self",
+			"log",
+			"--oneline",
+		]);
+		expect(log.exitCode).toBe(0);
+		expect(log.stdout).toContain("scaffold");
+
+		// Second boot: the agent owns these files now, so nothing may be written over them.
+		await manager.exec(AGENT_ID, ["sh", "-c", "echo mine > /home/agent/.self/soul.md"]);
+		expect(await ensureSelfRepo({ sandbox: manager, agentId: AGENT_ID })).toBe(false);
+		const soul = await manager.exec(AGENT_ID, ["cat", "/home/agent/.self/soul.md"]);
+		expect(soul.stdout.trim()).toBe("mine");
 	}, 120_000);
 
 	it("writes pi's session onto the agent's own volume", async () => {

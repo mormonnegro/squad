@@ -8,6 +8,7 @@ interface Invocation {
 	readonly cmd: readonly string[];
 	readonly input: string;
 	readonly timeoutMs: number | undefined;
+	readonly workingDir: string | undefined;
 }
 
 class StubSandbox implements TurnSandbox {
@@ -18,9 +19,15 @@ class StubSandbox implements TurnSandbox {
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options: { timeoutMs?: number } = {},
+		options: { timeoutMs?: number; workingDir?: string } = {},
 	): Promise<ExecResult> {
-		this.calls.push({ agentId, cmd, input, timeoutMs: options.timeoutMs });
+		this.calls.push({
+			agentId,
+			cmd,
+			input,
+			timeoutMs: options.timeoutMs,
+			workingDir: options.workingDir,
+		});
 		return this.result;
 	}
 }
@@ -41,7 +48,32 @@ describe("PiTurnRunner", () => {
 			"agent-dive-a1",
 			"--session-dir",
 			"/home/agent/.self/.sessions",
+			"--append-system-prompt",
+			"/home/agent/.self/soul.md",
+			"--skill",
+			"/home/agent/.self/skills",
 		]);
+	});
+
+	it("gives the agent its own soul and skills, not pi's defaults", () => {
+		const runner = new PiTurnRunner({ sandbox: new StubSandbox(), repoPath: "/srv/self" });
+
+		expect(runner.commandFor("a1")).toEqual(
+			expect.arrayContaining([
+				"--append-system-prompt",
+				"/srv/self/soul.md",
+				"--skill",
+				"/srv/self/skills",
+			]),
+		);
+	});
+
+	it("takes the turn inside the agent's repository, so memory is where it works", async () => {
+		const sandbox = new StubSandbox();
+
+		await new PiTurnRunner({ sandbox }).run("a1", "hello");
+
+		expect(sandbox.calls[0]?.workingDir).toBe("/home/agent/.self");
 	});
 
 	it("keeps every wakeup in one session per agent", () => {
