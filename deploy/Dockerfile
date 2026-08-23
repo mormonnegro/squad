@@ -10,6 +10,10 @@ COPY packages ./packages
 # compiler at runtime. Only the production dependencies are installed.
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
 
+# So `docker compose exec control-plane agent agents` works: the socket is in the state directory,
+# which is reachable from inside the container as well as from the host.
+RUN ln -s /srv/agent-dive/packages/control-plane/src/cli.ts /usr/local/bin/agent
+
 ENTRYPOINT ["node", "packages/control-plane/src/cli.ts"]
 # Overridable, so the same image serves the other subcommands: `docker exec ... agents`, `wake`.
 CMD ["run", "/etc/agent-dive/config.yaml"]

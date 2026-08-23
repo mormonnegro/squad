@@ -9,7 +9,7 @@
 		".": "./src/index.ts"
 	},
 	"bin": {
-		"agent-dive": "./src/cli.ts"
+		"agent": "./src/cli.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc -p tsconfig.json"

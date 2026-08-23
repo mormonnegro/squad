@@ -6,12 +6,12 @@ import { ControlServer } from "./control-server.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
 
-const USAGE = `agent-dive - run self-hosted cloud agents
+const USAGE = `agent - run self-hosted cloud agents
 
-  agent-dive run <config.yaml>      start the control plane
-  agent-dive agents                 what each agent is and whether it is up
-  agent-dive wake <agent> <text>    take a turn, as the operator
-  agent-dive logs                   follow turns and egress decisions
+  agent run <config.yaml>      start the control plane
+  agent agents                 what each agent is and whether it is up
+  agent wake <name> <text>     take a turn, as the operator
+  agent logs                   follow turns and egress decisions
 
 The configuration names its secrets; their values come from the environment.
 Commands other than "run" talk to a running plane over a socket in its state
@@ -100,7 +100,7 @@ async function wake(argv: readonly string[]): Promise<number> {
 	const [agentId, ...words] = rest;
 	const body = words.join(" ");
 	if (agentId === undefined || body.length === 0) {
-		process.stderr.write("usage: agent-dive wake <agent> <text>\n");
+		process.stderr.write("usage: agent wake <name> <text>\n");
 		return 1;
 	}
 
@@ -132,7 +132,7 @@ async function main(argv: readonly string[]): Promise<number> {
 		case "run": {
 			const path = rest[0];
 			if (path === undefined) {
-				process.stderr.write("usage: agent-dive run <config.yaml>\n");
+				process.stderr.write("usage: agent run <config.yaml>\n");
 				return 1;
 			}
 			return run(path);

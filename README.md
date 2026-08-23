@@ -122,15 +122,15 @@ boundary is the sandbox around the agent, not the process managing it.
 A running plane listens on a unix socket in its state directory. That is the whole control surface:
 
 ```sh
-agent-dive agents                             what each agent is and whether it is up
-agent-dive wake demo "check the open issues"  take a turn, and wait for the answer
-agent-dive logs                               follow turns and egress decisions live
+agent agents                             what each agent is and whether it is up
+agent wake demo "check the open issues"  take a turn, and wait for the answer
+agent logs                               follow turns and egress decisions live
 ```
 
 Each takes `--state <dir>`, or reads `AGENT_DIVE_STATE`, defaulting to `/var/lib/agent-dive`. The
 state directory is bind-mounted at the same path on the host, so these run outside the container
-against the plane inside it. From a checkout, `node packages/control-plane/src/cli.ts` is the same
-command.
+against the plane inside it — or inside it, with `docker compose exec control-plane agent agents`.
+From a checkout, `node packages/control-plane/src/cli.ts` is the same command.
 
 There is no password because there is nothing to authenticate: the socket is `0600`, and reaching
 it already means holding a file the operator owns. That is also why `wake` is the only way into the
