@@ -22,6 +22,23 @@ const AGENTS_WIDTH = 18;
 /** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
 const PROMPT_ROWS = 3;
 
+const ESC = "\u001b";
+
+/** What one notch of a wheel moves. Three is what a terminal scrolls, so it is what a hand expects. */
+const WHEEL_ROWS = 3;
+
+/**
+ * Asks the terminal to report the wheel, and to report it in the encoding that still works past the
+ * 223rd column.
+ *
+ * This is the price of drawing a screen the terminal did not draw. Its own scrollback holds the
+ * frames this printed, not the conversation, so a wheel it handles itself scrolls away from a live
+ * console into pictures of an older one — and the keys that would have done it instead, shift with
+ * the arrows and the page keys, are taken by the terminal for exactly that before they are ours.
+ */
+const MOUSE_ON = "\u001b[?1000h\u001b[?1006h";
+const MOUSE_OFF = "\u001b[?1006l\u001b[?1000l";
+
 /**
  * Braille, because it turns in place: every frame is one column wide, so the line beside it does
  * not move while it spins.
@@ -154,6 +171,24 @@ export function scrolled(
 	// at its end already and never reports having been scrolled away from it.
 	const next = Math.max(0, (top ?? last) + by);
 	return next >= last ? undefined : next;
+}
+
+/**
+ * The rows a chunk of input asks a pane to move, negative for back through what it has already
+ * shown. Nothing but the wheel counts, and a chunk with no wheel in it asks for nothing.
+ *
+ * Reported as `ESC [ < button ; column ; row M`, where the wheel is buttons 64 and 65. Counted
+ * rather than switched on, because one flick of a trackpad arrives as several of them in a single
+ * chunk and a pane that moved three rows for the flick would be unusable.
+ */
+export function wheel(input: string): number {
+	let by = 0;
+	for (const piece of input.split(ESC)) {
+		const button = /^\[<(\d+);\d+;\d+[Mm]/.exec(piece)?.[1];
+		if (button === "64") by -= WHEEL_ROWS;
+		else if (button === "65") by += WHEEL_ROWS;
+	}
+	return by;
 }
 
 export function Agents({
@@ -392,18 +427,28 @@ function App({
 			exit();
 			return;
 		}
-		if (key.tab) {
-			setPanel((prev) => (prev === "chat" ? "logs" : "chat"));
-			return;
-		}
 		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
 		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
 		const scroll = (by: number, pages: number): void => {
 			const height = panel === "logs" ? body - 1 : chatRows(body - 1);
 			const total = panel === "logs" ? lines.length : wrapped(transcript(said), width).length;
-			setTop((prev) => scrolled(prev, by + pages * height, { total, height }));
+			setTop((prev) => scrolled(prev, by + Math.round(pages * height), { total, height }));
 		};
 
+		// First, and before anything looks at the key: a wheel report is an escape sequence, and every
+		// branch below this one would take it for either a keystroke or something to type.
+		const rolled = wheel(input);
+		if (rolled !== 0) {
+			scroll(rolled, 0);
+			return;
+		}
+		// Half a pane at a time, from less and from vim. Chords, because every unmodified key that
+		// would have meant this — shift with an arrow, the page keys — is one the terminal keeps for
+		// scrolling its own scrollback and never delivers.
+		if (key.ctrl && (input === "u" || input === "d")) {
+			scroll(0, input === "u" ? -0.5 : 0.5);
+			return;
+		}
 		if (key.pageUp) {
 			scroll(0, -1);
 			return;
@@ -412,10 +457,8 @@ function App({
 			scroll(0, 1);
 			return;
 		}
-		// Before the plain arrows, which are how an agent is chosen: shift is what says this one is
-		// about moving through what the pane is showing instead.
-		if (key.shift && (key.upArrow || key.downArrow)) {
-			scroll(key.upArrow ? -1 : 1, 0);
+		if (key.tab) {
+			setPanel((prev) => (prev === "chat" ? "logs" : "chat"));
 			return;
 		}
 		if (key.upArrow) {
@@ -522,7 +565,7 @@ function App({
 			// The key stands out from what it does, because the key is the part being looked for.
 			...[
 				["↑↓", "agent"],
-				["⇧↑↓", "scroll"],
+				["^U^D", "scroll"],
 				["tab", panel === "chat" ? "logs" : "chat"],
 				["^C", "quit"],
 			].flatMap(([stroke, does], index) => [
@@ -543,7 +586,14 @@ function App({
  */
 export async function openConsole(client: ControlClient): Promise<number> {
 	const initial = await client.agents();
-	const app = render(h(App, { client, initial }), { exitOnCtrlC: false });
-	await app.waitUntilExit();
+	process.stdout.write(MOUSE_ON);
+	try {
+		const app = render(h(App, { client, initial }), { exitOnCtrlC: false });
+		await app.waitUntilExit();
+	} finally {
+		// Whatever happened. A terminal left reporting its mouse prints an escape sequence at whoever
+		// clicks in it next, and they will be at a shell prompt with no idea what did that to them.
+		process.stdout.write(MOUSE_OFF);
+	}
 	return 0;
 }

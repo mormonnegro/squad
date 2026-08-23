@@ -157,7 +157,7 @@ asking to see the thing, not to be told a fact about it:
 │                ││ │ >                                                        │ │
 │                ││ ╰──────────────────────────────────────────────────────────╯ │
 ╰────────────────╯╰──────────────────────────────────────────────────────────────╯
- ↑↓ agent   ⇧↑↓ scroll   tab logs   ^C quit
+ ↑↓ agent   ^U^D scroll   tab logs   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
@@ -168,10 +168,18 @@ whole time either way. The prompt shows the spinner and the seconds while that a
 because a spinner alone says something is happening and the number rising beside it is what says
 whether it still is.
 
-`⇧↑↓` scrolls the panel a line and `⇞⇟` a page, and the tab row says `↑ scrolled` while it is not
-at the end — without that, an answer arriving out of sight reads as an agent that said nothing.
-Where it is scrolled to is a line and not a distance from the bottom, so the feed goes on arriving
-underneath what is being read instead of pushing it up out of the pane.
+The wheel scrolls the panel, and `^U` and `^D` move it half a pane the way they do in `less`. The
+console asks the terminal for the wheel because it has to: the scrollback belongs to the terminal
+and holds the frames this printed rather than the conversation, so a wheel the terminal keeps for
+itself scrolls away from a live console into pictures of an older one. The keys that would have
+meant this without a chord — shift with the arrows, the page keys — are the ones the terminal takes
+for that same scrollback before they are ever ours. While the mouse is being reported, selecting
+text needs the modifier your terminal reserves for it: ⌥ in iTerm2, fn in Terminal.app.
+
+The tab row says `↑ scrolled` while a panel is not at the end — without that, an answer arriving out
+of sight reads as an agent that said nothing. Where it is scrolled to is a line and not a distance
+from the bottom, so the feed goes on arriving underneath what is being read instead of pushing it up
+out of the pane.
 
 A turn is not waited on, so asking one agent something and then watching another think is a matter
 of pressing `↑`. Each agent keeps its own conversation, and the answer streams into it with its

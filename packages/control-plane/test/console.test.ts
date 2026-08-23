@@ -11,6 +11,7 @@ import {
 	type Thinking,
 	transcript,
 	visible,
+	wheel,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 
@@ -83,6 +84,31 @@ describe("visible", () => {
 	it("does not scroll past either end", () => {
 		expect(visible(["a", "b", "c"], 2, 99)).toEqual(["b", "c"]);
 		expect(visible(["a", "b", "c"], 2, -99)).toEqual(["a", "b"]);
+	});
+});
+
+/**
+ * The wheel arrives as text, on the same stream as everything the operator types, and everything
+ * downstream of this either scrolls on it or types it into the prompt.
+ */
+describe("wheel", () => {
+	const roll = (button: number): string => `\u001b[<${button};40;12M`;
+
+	it("reads the wheel in both directions", () => {
+		expect(wheel(roll(64))).toBeLessThan(0);
+		expect(wheel(roll(65))).toBeGreaterThan(0);
+	});
+
+	// One flick of a trackpad arrives as several reports in a single chunk, and a pane that moved
+	// once for the flick would take a minute to cross a long answer.
+	it("adds up the reports that arrived together", () => {
+		expect(wheel(roll(64).repeat(3))).toBe(wheel(roll(64)) * 3);
+	});
+
+	it("asks for nothing on a click, or on anything that is not the wheel", () => {
+		expect(wheel(roll(0))).toBe(0);
+		expect(wheel("hola")).toBe(0);
+		expect(wheel("")).toBe(0);
 	});
 });
 
