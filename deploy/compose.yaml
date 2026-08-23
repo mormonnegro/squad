@@ -29,7 +29,12 @@ services:
       egress:
         aliases:
           - egress
+        priority: 0
+      # Joined first, and that is load-bearing. A published port is forwarded to the address the
+      # container had on its first network, and an internal network drops anything that did not
+      # come from inside it, so joining egress first makes 8787 unreachable from the host.
       uplink:
+        priority: 100
 
 networks:
   # Where the agents live. Internal really is unrouted: a container here cannot reach the host or

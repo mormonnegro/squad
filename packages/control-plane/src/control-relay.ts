@@ -26,6 +26,28 @@ socket.pipe(process.stdout);`;
 
 interface ContainerSummary {
 	readonly Id: string;
+	readonly Labels?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The state directories of every plane running on this machine, read off their containers.
+ *
+ * So that `agent` typed with nothing after it can answer about the plane that is actually up. A
+ * default state directory nobody is using is a worse answer than the truth, and the truth is
+ * already labelled on the container.
+ */
+export async function runningPlanes(engine = new DockerEngine()): Promise<string[]> {
+	if (!(await engine.isAvailable())) return [];
+	const filters = encodeURIComponent(
+		JSON.stringify({ label: [CONTROL_PLANE_LABEL], status: ["running"] }),
+	);
+	const found = await engine.request<readonly ContainerSummary[]>(
+		"GET",
+		`/containers/json?filters=${filters}`,
+	);
+	return found.body
+		.map((container) => container.Labels?.[CONTROL_PLANE_LABEL])
+		.filter((stateDir): stateDir is string => stateDir !== undefined && stateDir.length > 0);
 }
 
 /**

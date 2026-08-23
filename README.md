@@ -21,7 +21,9 @@ as data, in one place, so a new channel adapter cannot forget to do it.
 proxy that matches the request against operator-approved grants and attaches the secret afterwards.
 The sandbox network is `internal`, which really is unrouted — a container on it cannot reach the
 host or the internet by any address — so the proxy is not a convenience the agent could route
-around.
+around. This includes the model: reaching Anthropic is a grant like any other, and the key is
+written onto the request on its way out, so an agent that talks itself into exfiltrating its own
+API key has nothing to send.
 
 **An agent that can edit its own definition can grant itself capabilities.** The agent repository
 holds a manifest, but a manifest is a request. Grants live in the control plane's config file,
@@ -128,6 +130,10 @@ agent logs                               follow turns and egress decisions live
 
 `agent` on its own answers with the current state, because that is what someone typing the command
 with nothing after it wants to know. `agent --help` lists the rest.
+
+Told nothing, it looks for the plane that is running rather than the one that would be there in a
+deployment: planes label their container with the directory they serve, so `agent` in a checkout
+finds the demo instead of reporting that `/var/lib/agent-dive` is empty.
 
 Each takes `--state <dir>`, or reads `AGENT_DIVE_STATE`, defaulting to `/var/lib/agent-dive`. The
 state directory is bind-mounted at the same path on the host, so these run outside the container

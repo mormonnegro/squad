@@ -1,5 +1,9 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ConfigError, parseConfig } from "../src/config.ts";
+
+const EXAMPLE = fileURLToPath(new URL("../../../deploy/config.example.yaml", import.meta.url));
 
 const MINIMAL = `
 stateDir: /var/lib/agent-dive
@@ -190,5 +194,24 @@ hooks:
 
 	it("leaves hooks empty when none are declared", () => {
 		expect(parseConfig(MINIMAL, {}).hooks).toEqual([]);
+	});
+});
+
+/**
+ * The example is the only documentation of the configuration, and documentation drifts silently.
+ * It once shipped without a grant for the model, which parses, deploys and then cannot think.
+ */
+describe("the example configuration", () => {
+	it("parses, and grants its agent the one host without which no turn can finish", async () => {
+		const config = parseConfig(await readFile(EXAMPLE, "utf8"), {
+			ANTHROPIC_API_KEY: "sk-live",
+			GITHUB_TOKEN: "ghp-live",
+			DEPLOY_HOOK_SECRET: "s3cret",
+		});
+
+		const agent = config.agents[0];
+		expect(agent?.grants?.map((grant) => grant.host)).toContain("api.anthropic.com");
+		// And holds no key of its own, because the grant writes the real one on the way out.
+		expect(agent?.env?.ANTHROPIC_API_KEY).not.toBe("sk-live");
 	});
 });

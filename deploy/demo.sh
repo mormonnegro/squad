@@ -67,9 +67,18 @@ stateDir: $STATE
 networkName: $EGRESS
 agents:
   - id: $AGENT
-    envFrom:
-      ANTHROPIC_API_KEY: MODEL_KEY
+    # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
+    # agent's own x-api-key before writing the injected one, so this is the whole credential the
+    # agent ever holds.
+    env:
+      ANTHROPIC_API_KEY: injected-by-the-proxy
     grants:
+      - id: model
+        host: api.anthropic.com
+        injection:
+          kind: header
+          name: x-api-key
+          value: { ref: MODEL_KEY }
       - id: example
         host: example.com
         methods: [GET]
@@ -86,9 +95,12 @@ YAML
   docker network create --internal "$EGRESS" >/dev/null
   docker network create "$UPLINK" >/dev/null
 
-  say "starting the control plane inside $EGRESS"
+  # Uplink first, then the agents' network. A published port is forwarded to the address the
+  # container had on its first network, and an internal network drops anything that did not come
+  # from inside it — so a plane that joins $EGRESS first has a webhook port nothing can reach.
+  say "starting the control plane"
   docker run -d --name "$PLANE" \
-    --network "$EGRESS" --network-alias egress \
+    --network "$UPLINK" \
     --label "agent-dive.state=$STATE" \
     -e MODEL_KEY="${ANTHROPIC_API_KEY:-sk-ant-placeholder}" \
     -e HOOK_SECRET="$HOOK_SECRET" \
@@ -96,7 +108,7 @@ YAML
     -v /var/run/docker.sock:/var/run/docker.sock \
     -p 8787:8787 \
     agent-dive/control-plane:dev run "$STATE/config.yaml" >/dev/null
-  docker network connect "$UPLINK" "$PLANE"
+  docker network connect --alias egress "$EGRESS" "$PLANE"
 
   for _ in $(seq 60); do
     [ "$(docker inspect -f '{{.State.Running}}' "$SANDBOX" 2>/dev/null)" = "true" ] && break
@@ -114,9 +126,13 @@ YAML
   node packages/control-plane/bin/agent.mjs agents --state "$STATE" | sed 's/^/  /'
 
   say "what the agent can reach"
-  docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)    -> %{http_code}\n' https://example.com/ || true
-  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.github.com (not)     -> %{http_code}\n' https://api.github.com/ 2>/dev/null ||
-    echo '  api.github.com (not)     -> refused at CONNECT'
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)         -> %{http_code}\n' https://example.com/ || true
+  # 200 here is the whole point: the request left the sandbox with no key in it, and the proxy put
+  # one in. The agent cannot spend that key anywhere else, because nowhere else matches a grant.
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.anthropic.com (injected)  -> %{http_code}\n' \
+    -H 'anthropic-version: 2023-06-01' https://api.anthropic.com/v1/models || true
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.github.com (not granted)  -> %{http_code}\n' https://api.github.com/ 2>/dev/null ||
+    echo '  api.github.com (not granted)  -> refused at CONNECT'
 
   local body ts sig
   body='{"text":"the nightly build failed on main"}'

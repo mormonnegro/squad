@@ -12,15 +12,26 @@ agents:
     # repository is the agent's, and this file stops having an opinion about who it is.
     description: Watches the issue tracker and answers questions about it.
 
-    # What the sandbox gets in its environment. The left side is the name inside the container, the
-    # right side names the control plane's variable holding the value, so no key is written here.
-    envFrom:
-      ANTHROPIC_API_KEY: ANTHROPIC_API_KEY
+    # What the sandbox gets in its environment. pi wants a key set, and this is not one: the model
+    # grant below strips whatever the agent sends and writes the real key instead. Use `envFrom`
+    # here — which names a variable of the control plane rather than quoting a value — only for
+    # things the agent genuinely has to hold.
+    env:
+      ANTHROPIC_API_KEY: injected-by-the-proxy
 
     # What the agent may reach, and with whose credentials. The agent never sees the token: the
     # proxy attaches it after the request has matched a grant. `ref` names an environment variable
     # of the control plane.
     grants:
+      # Without this the agent cannot think. It is a grant like any other, which is the point: the
+      # model is somewhere the agent is allowed to reach, not somewhere it is trusted to spend.
+      - id: model
+        host: api.anthropic.com
+        injection:
+          kind: header
+          name: x-api-key
+          value: { ref: ANTHROPIC_API_KEY }
+
       - id: github-issues
         host: api.github.com
         pathPrefix: /repos/acme/website/issues

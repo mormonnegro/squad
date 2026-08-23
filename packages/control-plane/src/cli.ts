@@ -1,7 +1,9 @@
+import { existsSync } from "node:fs";
 import { ConfigError, loadConfig } from "./config.ts";
 import { ControlClient, ControlError } from "./control-client.ts";
 import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
-import { ControlServer } from "./control-server.ts";
+import { runningPlanes } from "./control-relay.ts";
+import { ControlServer, controlSocketPath } from "./control-server.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
 
@@ -18,6 +20,8 @@ directory: --state <dir>, or AGENT_DIVE_STATE, defaulting to ${DEFAULT_STATE_DIR
 
 interface Args {
 	readonly stateDir: string;
+	/** Whether the operator named the directory, rather than it being the default. */
+	readonly named: boolean;
 	readonly rest: readonly string[];
 }
 
@@ -33,7 +37,23 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = proc
 		} else if (argument !== undefined) rest.push(argument);
 	}
 
-	return { stateDir: stateDir ?? env.AGENT_DIVE_STATE ?? DEFAULT_STATE_DIR, rest };
+	const named = stateDir ?? env.AGENT_DIVE_STATE;
+	return { stateDir: named ?? DEFAULT_STATE_DIR, named: named !== undefined, rest };
+}
+
+/**
+ * Where to look when the operator did not say: the plane that is actually running.
+ *
+ * The default is right for the deployment and wrong for everything else, and being told "not
+ * running" while a plane is up is the least useful thing this command can do. Planes label their
+ * container with the directory they serve, so the answer is on the machine already. One running
+ * plane is unambiguous; several are not, and there the default stands and status lists them.
+ */
+async function resolveStateDir(args: Args): Promise<Args> {
+	if (args.named || existsSync(controlSocketPath(args.stateDir))) return args;
+	const [only, ...others] = await runningPlanes().catch(() => []);
+	if (only === undefined || others.length > 0) return args;
+	return { ...args, stateDir: only };
 }
 
 function describe(event: PlaneEvent): string {
@@ -115,6 +135,12 @@ async function status(args: Args): Promise<number> {
 	} catch (error) {
 		if (!(error instanceof ControlError)) throw error;
 		process.stdout.write(`plane   not running\n\n${error.message}\n\n`);
+		const elsewhere = (await runningPlanes().catch(() => [])).filter((dir) => dir !== stateDir);
+		if (elsewhere.length > 0) {
+			process.stdout.write("A plane is running somewhere else:\n");
+			for (const dir of elsewhere) process.stdout.write(`  agent --state ${dir}\n`);
+			return 1;
+		}
 		process.stdout.write(
 			"  agent run <config.yaml>   start one\n" +
 				"  ./deploy/demo.sh up       or watch the whole thing run on throwaway names\n",
@@ -170,9 +196,14 @@ async function logs(args: Args): Promise<number> {
 async function main(argv: readonly string[]): Promise<number> {
 	// Flags are taken out before the command is chosen, so `agent --state <dir>` on its own is the
 	// status of that directory rather than an unknown command.
-	const { stateDir, rest } = parseArgs(argv);
-	const [command, ...words] = rest;
-	const args: Args = { stateDir, rest: words };
+	const parsed = parseArgs(argv);
+	const [command, ...words] = parsed.rest;
+
+	// `run` is told where its state goes; the commands that talk to a plane have to find it.
+	const connects = command === undefined || ["agents", "wake", "logs"].includes(command);
+	const args: Args = connects
+		? { ...(await resolveStateDir(parsed)), rest: words }
+		: { ...parsed, rest: words };
 
 	switch (command) {
 		case "run": {
