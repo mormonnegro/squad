@@ -10,4 +10,5 @@ process.emitWarning = (warning, ...rest) => {
 	emitWarning(warning, ...rest);
 };
 
-await import("../src/cli.ts");
+const { cli } = await import("../src/cli.ts");
+await cli(process.argv.slice(2));

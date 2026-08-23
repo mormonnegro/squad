@@ -125,16 +125,17 @@ A running plane listens on a unix socket in its state directory. That is the who
 agent                                    where the state is, and what is running in it
 agent chat demo                          talk to it, turn after turn
 agent ls                                 what each agent is and whether it is up
-agent wake demo "check the open issues"  take one turn, and wait for the answer
+agent wake "check the open issues"       take one turn, and wait for the answer
 agent logs                               follow turns and egress decisions live
 agent rm demo [--purge]                  take the sandbox away, and with --purge the repository
 agent help                               the rest
 ```
 
 `agent` on its own answers with the current state, because that is what someone typing the command
-with nothing after it wants to know. `chat` and `rm` take the name only when there is a choice to
-make: a plane running one agent already knows which one is meant. `wake` always wants it, because
-its next argument is a sentence and guessing which of the two you meant is not worth the ambiguity.
+with nothing after it wants to know. The name is needed only when there is a choice to make: a
+plane running one agent already knows which one is meant. So `agent wake "check the open issues"`
+works, and a first word that names an agent addresses it instead — which costs an agent called
+`hola` the ability to be greeted by that word alone, and saves everyone else from quoting.
 
 A name that no agent answers to is refused before anything is queued. The plane would have accepted
 the event and delivered it to nobody, and that wait is fifteen minutes long and looks exactly like

@@ -13,7 +13,7 @@ const USAGE = `agent - run self-hosted cloud agents
   agent                        where the state is, and what is running in it
   agent chat [name]            talk to an agent, turn after turn
   agent ls                     what each agent is and whether it is up
-  agent wake <name> <text>     take one turn, as the operator
+  agent wake [name] <text>     take one turn, as the operator
   agent logs                   follow turns and egress decisions
   agent rm <name> [--purge]    take the sandbox away, and with --purge its
                                repository: soul, memory, skills, tools
@@ -157,7 +157,7 @@ async function ls(args: Args): Promise<number> {
 async function rm(args: Args): Promise<number> {
 	const client = await connect(args.stateDir);
 	try {
-		const agent = await pickAgent(client, args.rest[0]);
+		const agent = await pickAgent(client, args.rest[0], "rm");
 		if (args.purge) {
 			if (!process.stdin.isTTY) {
 				process.stderr.write("--purge deletes what the agent wrote. Run it in a terminal.\n");
@@ -249,7 +249,11 @@ async function status(args: Args): Promise<number> {
  * Most planes run one agent, and making that operator type its name to reach it is asking for a
  * fact the plane already holds.
  */
-async function pickAgent(client: ControlClient, named: string | undefined): Promise<AgentSummary> {
+async function pickAgent(
+	client: ControlClient,
+	named: string | undefined,
+	command: string,
+): Promise<AgentSummary> {
 	const summaries = await client.agents();
 	if (named !== undefined) {
 		const found = summaries.find((agent) => agent.id === named);
@@ -259,14 +263,46 @@ async function pickAgent(client: ControlClient, named: string | undefined): Prom
 		}
 		return found;
 	}
+	return theOnlyOne(summaries, (agent) => `  agent ${command} ${agent.id}`);
+}
 
+function theOnlyOne(
+	summaries: readonly AgentSummary[],
+	suggest: (agent: AgentSummary) => string,
+): AgentSummary {
 	const [only, ...rest] = summaries;
 	if (only === undefined) throw new ControlError("This plane has no agents");
 	if (rest.length > 0) {
-		const lines = summaries.map((agent) => `  agent chat ${agent.id}`).join("\n");
-		throw new ControlError(`More than one agent here. Which:\n${lines}`);
+		throw new ControlError(
+			`More than one agent here. Which:\n${summaries.map(suggest).join("\n")}`,
+		);
 	}
 	return only;
+}
+
+/**
+ * Who the words are for, and which of them are the words.
+ *
+ * Typing the message straight after `wake` is what people do, and a plane running one agent has no
+ * choice to make, so a first word that names an agent addresses it and anything else is already the
+ * message. The name wins the collision: an agent called "hola" cannot be greeted with that word
+ * alone, which is the cheaper of the two mistakes and the only one that says so out loud.
+ */
+export async function addressee(
+	client: Pick<ControlClient, "agents">,
+	rest: readonly string[],
+): Promise<{ readonly agent: AgentSummary; readonly body: string }> {
+	const summaries = await client.agents();
+	const [first, ...words] = rest;
+	const named = summaries.find((agent) => agent.id === first);
+	if (named === undefined) {
+		const body = rest.join(" ");
+		return { agent: theOnlyOne(summaries, (a) => `  agent wake ${a.id} "${body}"`), body };
+	}
+
+	const body = words.join(" ");
+	if (body.length === 0) throw new ControlError(`usage: agent wake ${named.id} <text>`);
+	return { agent: named, body };
 }
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -309,7 +345,7 @@ function thinking(): () => void {
 async function chat(args: Args): Promise<number> {
 	const client = await connect(args.stateDir);
 	try {
-		const agent = await pickAgent(client, args.rest[0]);
+		const agent = await pickAgent(client, args.rest[0], "chat");
 		if (!agent.running) {
 			process.stdout.write(
 				`${agent.id}'s sandbox is not up. What you type stays queued until it is.\n`,
@@ -355,19 +391,17 @@ async function chat(args: Args): Promise<number> {
 
 async function wake(args: Args): Promise<number> {
 	const { stateDir, rest } = args;
-	const [agentId, ...words] = rest;
-	const body = words.join(" ");
-	if (agentId === undefined || body.length === 0) {
-		process.stderr.write("usage: agent wake <name> <text>\n");
+	if (rest.length === 0) {
+		process.stderr.write("usage: agent wake [name] <text>\n");
 		return 1;
 	}
 
 	const client = await connect(stateDir);
 	let stop = (): void => {};
 	try {
-		// Checked here rather than left to the plane, which queues an event for an agent it does not
+		// Resolved here rather than left to the plane, which queues an event for an agent it does not
 		// run and answers nobody. That wait is fifteen minutes and looks exactly like thinking.
-		const agent = await pickAgent(client, agentId);
+		const { agent, body } = await addressee(client, rest);
 		stop = thinking();
 		const text = await client.wake(agent.id, body);
 		stop();
@@ -434,11 +468,24 @@ async function main(argv: readonly string[]): Promise<number> {
 	}
 }
 
-try {
-	process.exitCode = await main(process.argv.slice(2));
-} catch (error) {
-	if (error instanceof ConfigError || error instanceof ControlError) {
-		process.stderr.write(`${error.message}\n`);
-	} else process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
-	process.exitCode = 1;
+/**
+ * The entry point, called by the bin rather than run on import.
+ *
+ * Importing this module used to take a turn: `main` ran at the top level against whatever argv the
+ * importing process had, so a test that reached in for one function drove the CLI against a live
+ * plane instead.
+ *
+ * A failure prints its message and nothing else. ConfigError and ControlError are the two that are
+ * about the operator's situation rather than a defect, and a stack trace above them would bury the
+ * one line that says what to do.
+ */
+export async function cli(argv: readonly string[]): Promise<void> {
+	try {
+		process.exitCode = await main(argv);
+	} catch (error) {
+		if (error instanceof ConfigError || error instanceof ControlError) {
+			process.stderr.write(`${error.message}\n`);
+		} else process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+		process.exitCode = 1;
+	}
 }
