@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import http from "node:http";
+import type { Socket } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +17,12 @@ export class DockerError extends Error {
 export interface DockerResponse<T> {
 	readonly status: number;
 	readonly body: T;
+}
+
+export interface HijackedStream {
+	readonly socket: Socket;
+	/** Bytes Docker had already sent when the upgrade completed. Must be parsed before socket data. */
+	readonly head: Buffer;
 }
 
 /**
@@ -115,6 +122,51 @@ export class DockerEngine {
 					});
 				},
 			);
+			request.on("error", reject);
+			if (payload) request.write(payload);
+			request.end();
+		});
+	}
+
+	/**
+	 * Upgrades the connection and returns the raw socket, for endpoints Docker hijacks such as
+	 * exec start with stdin attached. The socket is a full duplex: writes go to the process stdin,
+	 * reads arrive as Docker's multiplexed frames unless the exec was created with a TTY.
+	 */
+	async hijack(method: string, path: string, body?: unknown): Promise<HijackedStream> {
+		const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");
+
+		return new Promise<HijackedStream>((resolve, reject) => {
+			const request = http.request({
+				socketPath: this.socketPath,
+				method,
+				path,
+				headers: {
+					"content-type": "application/json",
+					connection: "Upgrade",
+					upgrade: "tcp",
+					...(payload ? { "content-length": String(payload.byteLength) } : {}),
+				},
+			});
+
+			request.on("upgrade", (_response, socket, head) => {
+				socket.setNoDelay(true);
+				resolve({ socket, head });
+			});
+			// Docker answers 200 without upgrading when it decides not to hijack, which for an
+			// attached exec means the request was malformed rather than merely unsupported.
+			request.on("response", (response) => {
+				const chunks: Buffer[] = [];
+				response.on("data", (chunk: Buffer) => chunks.push(chunk));
+				response.on("end", () => {
+					reject(
+						new DockerError(
+							response.statusCode ?? 0,
+							Buffer.concat(chunks).toString("utf8") || "Docker refused to hijack the connection",
+						),
+					);
+				});
+			});
 			request.on("error", reject);
 			if (payload) request.write(payload);
 			request.end();

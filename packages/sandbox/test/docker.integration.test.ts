@@ -59,7 +59,11 @@ suite("Docker sandbox against a live daemon", () => {
 	}, 60_000);
 
 	it("mounts the agent repository volume and the CA", async () => {
-		const mounted = await manager.exec(AGENT_ID, ["sh", "-c", "test -d /home/agent/.self && echo OK"]);
+		const mounted = await manager.exec(AGENT_ID, [
+			"sh",
+			"-c",
+			"test -d /home/agent/.self && echo OK",
+		]);
 		expect(mounted.stdout).toContain("OK");
 
 		const ca = await manager.exec(AGENT_ID, ["cat", "/etc/agent-dive/ca.crt"]);

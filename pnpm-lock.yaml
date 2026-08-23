@@ -27,6 +27,15 @@ importers:
         specifier: ^2.7.0
         version: 2.9.0
 
+  packages/control-plane:
+    dependencies:
+      '@agent-dive/agent-repo':
+        specifier: workspace:*
+        version: link:../agent-repo
+      '@agent-dive/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+
   packages/proxy:
     dependencies:
       node-forge:

@@ -1,4 +1,5 @@
-import { DockerEngine, DockerError } from "./engine.ts";
+import { DockerEngine, DockerError, type HijackedStream } from "./engine.ts";
+import { demultiplex } from "./frames.ts";
 import {
 	buildContainerConfig,
 	buildNetworkConfig,
@@ -18,32 +19,6 @@ export interface ExecResult {
 	readonly exitCode: number;
 	readonly stdout: string;
 	readonly stderr: string;
-}
-
-/**
- * Splits Docker's multiplexed exec stream. Each frame is an 8-byte header whose first byte is
- * the stream (1 stdout, 2 stderr) and whose last four are the payload length, big endian.
- */
-function demultiplex(buffer: Buffer): { stdout: string; stderr: string } {
-	const stdout: Buffer[] = [];
-	const stderr: Buffer[] = [];
-	let offset = 0;
-
-	while (offset + 8 <= buffer.length) {
-		const stream = buffer[offset];
-		const length = buffer.readUInt32BE(offset + 4);
-		const start = offset + 8;
-		const end = Math.min(start + length, buffer.length);
-		const payload = buffer.subarray(start, end);
-		if (stream === 2) stderr.push(payload);
-		else stdout.push(payload);
-		offset = end;
-	}
-
-	return {
-		stdout: Buffer.concat(stdout).toString("utf8"),
-		stderr: Buffer.concat(stderr).toString("utf8"),
-	};
 }
 
 interface ContainerInspect {
@@ -159,6 +134,29 @@ export class DockerSandboxManager {
 			`/exec/${created.body.Id}/json`,
 		);
 		return { exitCode: inspected.body.ExitCode ?? -1, stdout, stderr };
+	}
+
+	/**
+	 * Starts a command with stdin attached and returns the hijacked socket. Unlike exec, this does
+	 * not wait for the process: it is the duplex byte channel a long-lived session speaks over.
+	 */
+	async attach(agentId: string, cmd: readonly string[]): Promise<HijackedStream> {
+		const created = await this.engine.request<{ Id: string }>(
+			"POST",
+			`/containers/${containerName(agentId)}/exec`,
+			{
+				AttachStdin: true,
+				AttachStdout: true,
+				AttachStderr: true,
+				Tty: false,
+				Cmd: cmd,
+			},
+		);
+
+		return this.engine.hijack("POST", `/exec/${created.body.Id}/start`, {
+			Detach: false,
+			Tty: false,
+		});
 	}
 
 	/** Removes the container. The volume is kept unless explicitly discarded, since it is the agent. */
