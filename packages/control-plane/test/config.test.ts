@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ConfigError, parseConfig } from "../src/config.ts";
+import { withDefaults } from "../src/control-plane.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../../deploy/config.example.yaml", import.meta.url));
 
@@ -198,20 +199,72 @@ hooks:
 });
 
 /**
+ * What an agent nobody wrote down is made of. It is the operator's answer, given in advance, to a
+ * name typed months later — so it lives in the file the agent cannot reach, like every other grant.
+ */
+describe("defaults", () => {
+	const WITH_DEFAULTS = `
+stateDir: /state
+defaults:
+  model: claude-opus-4-7
+  envFrom:
+    ANTHROPIC_API_KEY: MODEL_KEY
+  grants:
+    - id: model
+      host: api.anthropic.com
+      injection: { kind: none }
+agents:
+  - id: scout
+`;
+
+	it("resolves its secrets from the environment, like an agent's own", () => {
+		const config = parseConfig(WITH_DEFAULTS, { MODEL_KEY: "sk-live" });
+
+		expect(config.defaults?.env).toEqual({ ANTHROPIC_API_KEY: "sk-live" });
+		expect(config.defaults?.grants?.[0]?.host).toBe("api.anthropic.com");
+	});
+
+	it("refuses to start when the environment does not hold what they name", () => {
+		expect(() => parseConfig(WITH_DEFAULTS, {})).toThrow(ConfigError);
+	});
+
+	it("refuses a default that names an agent, since they describe every agent", () => {
+		expect(() =>
+			parseConfig(`stateDir: /state\ndefaults:\n  id: scout\nagents:\n  - id: scout\n`, {}),
+		).toThrow(ConfigError);
+	});
+
+	it("refuses anything that is not a mapping", () => {
+		expect(() =>
+			parseConfig(`stateDir: /state\ndefaults: [1, 2]\nagents:\n  - id: scout\n`, {}),
+		).toThrow(ConfigError);
+	});
+
+	it("leaves them undefined when the file says nothing", () => {
+		expect(parseConfig(MINIMAL, {}).defaults).toBeUndefined();
+	});
+});
+
+/**
  * The example is the only documentation of the configuration, and documentation drifts silently.
  * It once shipped without a grant for the model, which parses, deploys and then cannot think.
  */
 describe("the example configuration", () => {
-	it("parses, and grants its agent the one host without which no turn can finish", async () => {
+	it("parses, and grants its agents the one host without which no turn can finish", async () => {
 		const config = parseConfig(await readFile(EXAMPLE, "utf8"), {
 			ANTHROPIC_API_KEY: "sk-live",
 			GITHUB_TOKEN: "ghp-live",
 			DEPLOY_HOOK_SECRET: "s3cret",
 		});
 
-		const agent = config.agents[0];
-		expect(agent?.grants?.map((grant) => grant.host)).toContain("api.anthropic.com");
-		// And holds no key of its own, because the grant writes the real one on the way out.
-		expect(agent?.env?.ANTHROPIC_API_KEY).not.toBe("sk-live");
+		// Wherever the file chose to say it: the declared agent and one created later are the same
+		// agent to the proxy, and an example that can only think in the first case is a broken one.
+		const agent = withDefaults(config.agents[0] ?? { id: "none" }, config.defaults);
+		const made = withDefaults({ id: "made-later" }, config.defaults);
+		for (const each of [agent, made]) {
+			expect(each.grants?.map((grant) => grant.host)).toContain("api.anthropic.com");
+			// And it holds no key of its own, because the grant writes the real one on the way out.
+			expect(each.env?.ANTHROPIC_API_KEY).not.toBe("sk-live");
+		}
 	});
 });

@@ -107,8 +107,8 @@ cp config.example.yaml config.yaml
 docker compose up -d --build
 ```
 
-`config.example.yaml` is the whole surface: agents, what each may reach, when each wakes up, and
-which webhooks exist. No secret is in it — it names environment variables, and the process holds
+`config.example.yaml` is the whole surface: agents, what each may reach, when each wakes up, which
+webhooks exist, and — under `defaults` — what an agent made later starts from. No secret is in it — it names environment variables, and the process holds
 the values. That is the point: the file describing what an agent can reach should be committable
 and diffable, because a grant nobody noticed being added is the failure mode.
 
@@ -133,6 +133,7 @@ A running plane listens on a unix socket in its state directory. That is the who
 ```sh
 agent                                    where the state is, and what is running in it
 agent chat demo                          talk to it, turn after turn
+agent chat maxi                          a name nothing answers to: it offers to make one
 agent ls                                 what each agent is and whether it is up
 agent wake "check the open issues"       take one turn, and wait for the answer
 agent logs                               follow turns and egress decisions live
@@ -149,6 +150,18 @@ works, and a first word that names an agent addresses it instead — which costs
 A name that no agent answers to is refused before anything is queued. The plane would have accepted
 the event and delivered it to nobody, and that wait is fifteen minutes long and looks exactly like
 an agent thinking.
+
+`chat` treats that name as a request instead, and asks: naming an agent that does not exist is what
+someone types when they want one, and it is also what a typo looks like, so the question is how the
+terminal tells them apart. Saying yes builds a container, scaffolds a repository and starts a
+session, and the new agent may reach exactly what `defaults` in the config allows — nothing more,
+because the one thing a keyboard may never do here is grant. A plane with no defaults makes an agent
+that cannot reach the model, and says so at the moment it is made rather than mid-turn.
+
+Created agents are written down in the state directory, since the config file is the operator's and
+no plane may write it. That is also the only thing `--purge` can truly delete: a declared agent
+comes back on the next start no matter what, and one made from the CLI has nowhere else to come back
+from.
 
 Told nothing, it looks for the plane that is running rather than the one that would be there in a
 deployment: planes label their container with the directory they serve, so `agent` in a checkout
@@ -176,7 +189,7 @@ remembers the previous line.
 `rm` takes the container and leaves the volume, because the volume is the agent — its soul, what it
 chose to remember, and the tools it wrote for itself. `--purge` deletes that too, and asks for the
 agent's name to be typed first, so a reflexive `y` cannot do it. Neither touches the config file,
-which no plane may write, so a removed agent comes back on the next start.
+which no plane may write, so a declared agent comes back on the next start.
 
 ## Waking an agent from elsewhere
 

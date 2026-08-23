@@ -3,35 +3,39 @@
 
 stateDir: /var/lib/agent-dive
 
+# What every agent starts from, and the whole of what an agent made later is. `agent chat <name>`
+# offers to create a name no agent answers to, and this is the operator's answer, given in advance,
+# to what that agent may reach — because the one thing the keyboard may never do is grant.
+#
+# An agent's own block adds to these rather than replacing them; a grant it declares with the same
+# id wins, which is how one agent is narrowed without narrowing the rest.
+defaults:
+  provider: anthropic
+  model: claude-opus-4-7
+  env:
+    ANTHROPIC_API_KEY: injected-by-the-proxy
+  grants:
+    # Without this a new agent cannot think, and would find that out mid-turn as a refusal at the
+    # proxy. The model is a grant like any other: somewhere the agent may reach, never a key it holds.
+    - id: model
+      host: api.anthropic.com
+      injection:
+        kind: header
+        name: x-api-key
+        value: { ref: ANTHROPIC_API_KEY }
+
 agents:
+  # Everything above is already true of this agent. What is here is what makes it that one.
   - id: scout
-    provider: anthropic
-    model: claude-opus-4-7
 
     # Only used the first time the agent boots, to write its soul.md. After that the agent's
     # repository is the agent's, and this file stops having an opinion about who it is.
     description: Watches the issue tracker and answers questions about it.
 
-    # What the sandbox gets in its environment. pi wants a key set, and this is not one: the model
-    # grant below strips whatever the agent sends and writes the real key instead. Use `envFrom`
-    # here — which names a variable of the control plane rather than quoting a value — only for
-    # things the agent genuinely has to hold.
-    env:
-      ANTHROPIC_API_KEY: injected-by-the-proxy
-
-    # What the agent may reach, and with whose credentials. The agent never sees the token: the
-    # proxy attaches it after the request has matched a grant. `ref` names an environment variable
-    # of the control plane.
+    # What this one may reach on top of the defaults, and with whose credentials. The agent never
+    # sees the token: the proxy attaches it after the request has matched a grant. `ref` names an
+    # environment variable of the control plane.
     grants:
-      # Without this the agent cannot think. It is a grant like any other, which is the point: the
-      # model is somewhere the agent is allowed to reach, not somewhere it is trusted to spend.
-      - id: model
-        host: api.anthropic.com
-        injection:
-          kind: header
-          name: x-api-key
-          value: { ref: ANTHROPIC_API_KEY }
-
       - id: github-issues
         host: api.github.com
         pathPrefix: /repos/acme/website/issues

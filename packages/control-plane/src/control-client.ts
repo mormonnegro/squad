@@ -91,6 +91,13 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to agents");
 	}
 
+	/** Makes an agent that was not in the config, and waits for its sandbox to be up. */
+	async create(agentId: string): Promise<AgentSummary> {
+		const response = await this.#once({ op: "create", agentId });
+		if ("agent" in response) return response.agent;
+		throw new ControlError("unexpected answer to create");
+	}
+
 	async wake(agentId: string, body: string): Promise<string> {
 		const response = await this.#once({ op: "wake", agentId, body });
 		if ("text" in response) return response.text;

@@ -31,6 +31,14 @@ HOOK_SECRET=demo-secret-not-for-production
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 down() {
+  # Whatever ended up on the demo's network, not only what this script started: `agent chat <name>`
+  # makes agents nothing here ever named, and they are the demo's to clean up too.
+  for made in $(docker ps -aq --filter "network=$EGRESS" 2>/dev/null); do
+    local name
+    name=$(docker inspect -f '{{.Name}}' "$made" 2>/dev/null | sed 's|^/||')
+    docker rm -f "$made" >/dev/null 2>&1 || true
+    [ -n "$name" ] && docker volume rm "$name" >/dev/null 2>&1 || true
+  done
   docker rm -f "$PLANE" "$SANDBOX" >/dev/null 2>&1 || true
   docker volume rm "$VOLUME" >/dev/null 2>&1 || true
   docker network rm "$EGRESS" "$UPLINK" >/dev/null 2>&1 || true
@@ -113,20 +121,24 @@ up() {
   cat > "$STATE/config.yaml" <<YAML
 stateDir: $STATE
 networkName: $EGRESS
+# What every agent starts from, including one made later with \`agent chat <name>\`. Without a model
+# grant here, an agent created at the keyboard would be born unable to think.
+defaults:
+  # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
+  # agent's own x-api-key before writing the injected one, so this is the whole credential the
+  # agent ever holds.
+  env:
+    ANTHROPIC_API_KEY: injected-by-the-proxy
+  grants:
+    - id: model
+      host: api.anthropic.com
+      injection:
+        kind: header
+        name: x-api-key
+        value: { ref: MODEL_KEY }
 agents:
   - id: $AGENT
-    # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
-    # agent's own x-api-key before writing the injected one, so this is the whole credential the
-    # agent ever holds.
-    env:
-      ANTHROPIC_API_KEY: injected-by-the-proxy
     grants:
-      - id: model
-        host: api.anthropic.com
-        injection:
-          kind: header
-          name: x-api-key
-          value: { ref: MODEL_KEY }
       - id: example
         host: example.com
         methods: [GET]
@@ -194,6 +206,8 @@ YAML
   local cli="node packages/control-plane/bin/agent.mjs"
   echo "  $cli chat $AGENT --state $STATE"
   echo "      talk to it, turn after turn"
+  echo "  $cli chat maxi --state $STATE"
+  echo "      a name no agent answers to: it offers to make one"
   echo "  $cli ls --state $STATE"
   echo "      what each agent is and whether it is up"
   echo "  $cli logs --state $STATE"

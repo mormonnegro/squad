@@ -20,10 +20,12 @@ export type ControlRequest =
 			readonly agentId: string;
 			readonly purge: boolean;
 	  }
+	| { readonly id: string; readonly op: "create"; readonly agentId: string }
 	| { readonly id: string; readonly op: "logs" };
 
 export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agents: readonly AgentSummary[] }
+	| { readonly id: string; readonly ok: true; readonly agent: AgentSummary }
 	| { readonly id: string; readonly ok: true; readonly text: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
 	| { readonly id: string; readonly event: PlaneEvent };
@@ -149,6 +151,12 @@ export class ControlServer {
 					id: request.id,
 					ok: true,
 					text: await this.#wake(request.agentId, request.body),
+				});
+			} else if (request.op === "create") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					agent: await this.#plane.create(request.agentId),
 				});
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });

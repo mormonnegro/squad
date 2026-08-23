@@ -11,7 +11,8 @@ const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
 const USAGE = `agent - run self-hosted cloud agents
 
   agent                        where the state is, and what is running in it
-  agent chat [name]            talk to an agent, turn after turn
+  agent chat [name]            talk to an agent, turn after turn. A name no agent
+                               answers to offers to make one
   agent ls                     what each agent is and whether it is up
   agent wake [name] <text>     take one turn, as the operator
   agent logs                   follow turns and egress decisions
@@ -85,11 +86,11 @@ async function run(path: string): Promise<number> {
 	// and scaffolding a repository, and an operator who asks what is happening during that minute
 	// should get an answer rather than find nothing listening.
 	await server.listen();
-	process.stdout.write(
-		`agent-dive running with ${config.agents.length} agent(s)\n` +
-			`control socket at ${server.socketPath}\n`,
-	);
+	process.stdout.write(`control socket at ${server.socketPath}\n`);
 	await plane.start();
+	// Counted after starting, not from the config: the agents made from the CLI in an earlier life
+	// are not in that file, and a plane that reports fewer agents than it runs is worse than silence.
+	process.stdout.write(`agent-dive running with ${(await plane.agents()).length} agent(s)\n`);
 
 	await new Promise<void>((resolve) => {
 		const shutdown = (): void => {
@@ -185,9 +186,13 @@ async function rm(args: Args): Promise<number> {
 				? `removed ${agent.id} and its repository\n`
 				: `removed ${agent.id}'s sandbox, kept its repository\n`,
 		);
-		// The config file is the operator's, and no plane may write it. Saying so beats letting them
-		// discover it when the agent is back after a restart.
-		process.stdout.write(`still in the config, so it returns when the plane restarts\n`);
+		// A declared agent comes back, because the config file is the operator's and no plane may write
+		// it. Saying so beats letting them discover it when the agent is up again after a restart.
+		process.stdout.write(
+			args.purge && agent.created
+				? "made here rather than declared, so that was the last of it\n"
+				: "still declared, so it returns when the plane restarts\n",
+		);
 		return 0;
 	} finally {
 		client.close();
@@ -308,7 +313,7 @@ export async function addressee(
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /**
- * Something to watch while the agent thinks.
+ * Something to watch while the agent thinks, or while one is being built.
  *
  * A turn takes as long as it takes, and a terminal that has printed nothing for a minute reads as
  * one that has hung. The elapsed count is the part that earns its place: it says the wait is being
@@ -317,14 +322,14 @@ const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
  *
  * Stopping is idempotent, because callers stop it before printing and again on the way out.
  */
-function thinking(): () => void {
+function waiting(label: string): () => void {
 	if (!process.stdout.isTTY) return () => {};
 	const started = Date.now();
 	let frame = 0;
 	const draw = () => {
 		const seconds = Math.round((Date.now() - started) / 1000);
 		// Erase the whole line first: the frame that follows is shorter once the count rolls over.
-		process.stdout.write(`\r\u001b[2K${SPINNER[frame++ % SPINNER.length]} thinking  ${seconds}s`);
+		process.stdout.write(`\r\u001b[2K${SPINNER[frame++ % SPINNER.length]} ${label}  ${seconds}s`);
 	};
 	draw();
 	const timer = setInterval(draw, 120);
@@ -339,13 +344,99 @@ function thinking(): () => void {
 }
 
 /**
+ * The agent to talk to, made first if there is no such agent yet.
+ *
+ * Naming one that does not exist is how a new agent is asked for, because it is what an operator
+ * types when they want one. It asks first: the same keystrokes are also how a typo looks, and the
+ * difference between "make me an agent" and "I misspelled scout" is one the terminal can settle in
+ * a second and nothing else can settle at all.
+ *
+ * Undefined means the operator said no, which is an answer rather than a failure.
+ */
+async function reach(
+	client: ControlClient,
+	named: string | undefined,
+): Promise<AgentSummary | undefined> {
+	if (named === undefined) return pickAgent(client, undefined, "chat");
+
+	const summaries = await client.agents();
+	const found = summaries.find((agent) => agent.id === named);
+	if (found !== undefined) return found;
+
+	const known = summaries.map((agent) => agent.id).join(", ");
+	process.stdout.write(`No agent "${named}" here. This plane runs: ${known || "none"}\n\n`);
+	if (!(await confirm(`create ${named}?`))) {
+		process.stdout.write("nothing made\n");
+		return undefined;
+	}
+
+	const stop = waiting(`creating ${named}`);
+	try {
+		const agent = await client.create(named);
+		stop();
+		process.stdout.write(`${named} is up, with its own repository and nothing in its memory.\n`);
+		if (agent.grants === 0) process.stdout.write(UNGRANTED);
+		return agent;
+	} finally {
+		stop();
+	}
+}
+
+/**
+ * What a new agent is missing when the config never said what an agent may reach.
+ *
+ * The model is a grant like any other here, so an agent without one cannot think — and it would
+ * find that out mid-turn, as a refusal at the proxy that reads like a broken API key. Better said
+ * at the moment the agent is made, with the block that fixes it.
+ */
+const UNGRANTED = `
+It cannot reach anything yet, the model included: this plane's config has no defaults
+for a new agent. Add them to it, and restart the plane:
+
+  defaults:
+    provider: anthropic
+    model: claude-opus-4-7
+    env:
+      ANTHROPIC_API_KEY: injected-by-the-proxy
+    grants:
+      - id: model
+        host: api.anthropic.com
+        injection:
+          kind: header
+          name: x-api-key
+          value: { ref: ANTHROPIC_API_KEY }
+`;
+
+/**
+ * Asks, with enter meaning yes.
+ *
+ * No terminal to ask with is a yes, because whoever piped this in already said what they wanted and
+ * there is nobody to answer. Ctrl-D is the opposite: someone is there and declined to say, which is
+ * near enough to no, and certainly not a stack trace about an aborted question.
+ */
+async function confirm(question: string): Promise<boolean> {
+	if (!process.stdin.isTTY) return true;
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	try {
+		const answer = await rl.question(`${question} [Y/n] `);
+		return !/^n/i.test(answer.trim());
+	} catch {
+		process.stdout.write("\n");
+		return false;
+	} finally {
+		rl.close();
+	}
+}
+
+/**
  * A conversation with an agent: a turn per line, on the connection that already carries operator
  * trust. pi keeps a session per agent, so the agent remembers the previous line.
  */
 async function chat(args: Args): Promise<number> {
 	const client = await connect(args.stateDir);
 	try {
-		const agent = await pickAgent(client, args.rest[0], "chat");
+		const agent = await reach(client, args.rest[0]);
+		if (agent === undefined) return 1;
 		if (!agent.running) {
 			process.stdout.write(
 				`${agent.id}'s sandbox is not up. What you type stays queued until it is.\n`,
@@ -368,7 +459,7 @@ async function chat(args: Args): Promise<number> {
 			}
 			if (line.trim().length === 0) continue;
 
-			const stop = thinking();
+			const stop = waiting("thinking");
 			try {
 				const text = await client.wake(agent.id, line);
 				stop();
@@ -402,7 +493,7 @@ async function wake(args: Args): Promise<number> {
 		// Resolved here rather than left to the plane, which queues an event for an agent it does not
 		// run and answers nobody. That wait is fifteen minutes and looks exactly like thinking.
 		const { agent, body } = await addressee(client, rest);
-		stop = thinking();
+		stop = waiting("thinking");
 		const text = await client.wake(agent.id, body);
 		stop();
 		process.stdout.write(text.length > 0 ? `${text}\n` : "the agent said nothing\n");

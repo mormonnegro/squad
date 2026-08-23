@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
 import { ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
 import { EventBus, FileEventStore } from "@agent-dive/events";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
+import { CreatedAgentStore } from "./created-agents.ts";
 import { ProxyTokenStore } from "./proxy-tokens.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
@@ -35,8 +37,40 @@ export interface AgentConfig {
 	readonly schedules?: readonly Omit<NewSchedule, "agentId">[];
 }
 
+/** What every agent starts from: the same shape as an agent, minus the one thing that names it. */
+export type AgentDefaults = Omit<AgentConfig, "id">;
+
+/**
+ * Fills in what an agent did not say for itself.
+ *
+ * Lists are joined rather than replaced, so an agent that asks for one host of its own keeps the
+ * grant that lets it reach the model. An id declared twice is the agent's, which is the only way to
+ * narrow a default rather than add to it.
+ */
+export function withDefaults(agent: AgentConfig, defaults?: AgentDefaults): AgentConfig {
+	if (defaults === undefined) return agent;
+	const grants = [
+		...(agent.grants ?? []),
+		...(defaults.grants ?? []).filter(
+			(grant) => !(agent.grants ?? []).some((own) => own.id === grant.id),
+		),
+	];
+	const env = { ...defaults.env, ...agent.env };
+	const schedules = [...(defaults.schedules ?? []), ...(agent.schedules ?? [])];
+
+	return {
+		...defaults,
+		...agent,
+		...(grants.length > 0 ? { grants } : {}),
+		...(Object.keys(env).length > 0 ? { env } : {}),
+		...(schedules.length > 0 ? { schedules } : {}),
+	};
+}
+
 export interface ControlPlaneOptions {
 	readonly agents: readonly AgentConfig[];
+	/** Applied to every agent, and the whole of what an agent created at runtime is. */
+	readonly defaults?: AgentDefaults;
 	/** Host directory for durable state: event queues, schedules and the proxy CA. */
 	readonly stateDir: string;
 	readonly image?: string;
@@ -72,6 +106,8 @@ export interface AgentSummary {
 	readonly startedAt: string | undefined;
 	readonly grants: number;
 	readonly schedules: number;
+	/** Made here rather than declared in the config, which is the only kind the plane may forget. */
+	readonly created: boolean;
 }
 
 const DEFAULT_IMAGE = "agent-dive/sandbox:dev";
@@ -95,7 +131,10 @@ export class ControlPlane {
 	readonly broker: EgressBroker;
 	readonly webhooks: WebhookChannel;
 
-	readonly #agents: readonly AgentConfig[];
+	readonly #agents: AgentConfig[];
+	readonly #defaults: AgentDefaults | undefined;
+	readonly #created: CreatedAgentStore;
+	readonly #createdIds = new Set<string>();
 	readonly #stateDir: string;
 	readonly #image: string;
 	readonly #proxyPort: number;
@@ -110,7 +149,8 @@ export class ControlPlane {
 	#started = false;
 
 	constructor(options: ControlPlaneOptions) {
-		this.#agents = options.agents;
+		this.#defaults = options.defaults;
+		this.#agents = options.agents.map((agent) => withDefaults(agent, options.defaults));
 		this.#stateDir = options.stateDir;
 		this.#image = options.image ?? DEFAULT_IMAGE;
 		this.#proxyPort = options.proxyPort ?? DEFAULT_PROXY_PORT;
@@ -120,6 +160,7 @@ export class ControlPlane {
 		this.#onError = options.onError;
 		this.#onTurn = options.onTurn;
 		this.#proxyTokens = new ProxyTokenStore(join(this.#stateDir, "proxy-tokens.json"));
+		this.#created = new CreatedAgentStore(join(this.#stateDir, "agents.json"));
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -164,18 +205,48 @@ export class ControlPlane {
 
 	/** What each agent is and whether its sandbox is up. */
 	async agents(): Promise<AgentSummary[]> {
-		return Promise.all(
-			this.#agents.map(async (agent) => {
-				const status = await this.sandboxes.status(agent.id).catch(() => undefined);
-				return {
-					id: agent.id,
-					running: status?.running ?? false,
-					startedAt: status?.startedAt,
-					grants: agent.grants?.length ?? 0,
-					schedules: agent.schedules?.length ?? 0,
-				};
-			}),
-		);
+		return Promise.all(this.#agents.map((agent) => this.#summarise(agent)));
+	}
+
+	async #summarise(agent: AgentConfig): Promise<AgentSummary> {
+		const status = await this.sandboxes.status(agent.id).catch(() => undefined);
+		return {
+			id: agent.id,
+			running: status?.running ?? false,
+			startedAt: status?.startedAt,
+			grants: agent.grants?.length ?? 0,
+			schedules: agent.schedules?.length ?? 0,
+			created: this.#createdIds.has(agent.id),
+		};
+	}
+
+	/**
+	 * Brings a new agent into being: a sandbox, a repository, and whatever the defaults allow it to
+	 * reach.
+	 *
+	 * It is everything the config would have done, decided at runtime, except for the part that
+	 * cannot be: the capabilities are the operator's defaults and nothing else. Whoever types a name
+	 * chooses a name, never what the agent behind it may spend.
+	 *
+	 * Written down before it is started. A create that dies halfway leaves an agent the next start
+	 * finishes, which is recoverable; the reverse leaves a container nothing remembers.
+	 */
+	async create(agentId: string): Promise<AgentSummary> {
+		if (!AGENT_NAME_PATTERN.test(agentId)) {
+			throw new Error(
+				`"${agentId}" is not a name: lowercase, digits and dashes, e.g. "support-emma"`,
+			);
+		}
+		if (this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`"${agentId}" is already here`);
+		}
+
+		const agent = withDefaults({ id: agentId }, this.#defaults);
+		await this.#created.add(agentId);
+		this.#createdIds.add(agentId);
+		this.#agents.push(agent);
+		await this.#startAgent(agent);
+		return this.#summarise(agent);
 	}
 
 	/**
@@ -183,18 +254,26 @@ export class ControlPlane {
 	 *
 	 * The volume is kept by default because it is the agent: its soul, what it chose to remember and
 	 * the tools it wrote for itself. A container is replaceable and none of that is, so discarding it
-	 * has to be asked for. Either way the agent is still in the config file, which this cannot write,
-	 * so it comes back when the plane next starts.
+	 * has to be asked for. A declared agent comes back on the next start either way, because it is in
+	 * the config file, which this cannot write.
+	 *
+	 * An agent created at runtime is the exception, and only under --purge: nothing but this plane
+	 * ever knew its name, so if the plane keeps it there is no file anywhere to take it out of.
 	 */
 	async remove(agentId: string, options: { purge?: boolean } = {}): Promise<void> {
-		if (!this.#agents.some((agent) => agent.id === agentId)) {
-			throw new Error(`No agent "${agentId}" in this plane`);
-		}
+		const index = this.#agents.findIndex((agent) => agent.id === agentId);
+		if (index === -1) throw new Error(`No agent "${agentId}" in this plane`);
+
 		this.bus.unregister(agentId);
 		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
 		// The token was baked into the container that just went away, so nothing holds it any more.
 		await this.#proxyTokens.forget(agentId);
 		this.#tokens.delete(agentId);
+
+		if (options.purge === true && this.#createdIds.delete(agentId)) {
+			await this.#created.forget(agentId);
+			this.#agents.splice(index, 1);
+		}
 	}
 
 	/**
@@ -242,6 +321,15 @@ export class ControlPlane {
 		await this.broker.listen(this.#proxyPort, "0.0.0.0");
 		await this.webhooks.listen(this.#webhookPort, "0.0.0.0");
 		await this.sandboxes.ensureNetwork();
+
+		// The ones made from the CLI in an earlier life. A name the config has since claimed is the
+		// config's: it says more about the agent than a name on its own ever could.
+		for (const agentId of await this.#created.list()) {
+			this.#createdIds.add(agentId);
+			if (!this.#agents.some((agent) => agent.id === agentId)) {
+				this.#agents.push(withDefaults({ id: agentId }, this.#defaults));
+			}
+		}
 
 		for (const agent of this.#agents) await this.#startAgent(agent);
 

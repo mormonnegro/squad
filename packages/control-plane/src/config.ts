@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
 import type { Hook } from "@agent-dive/channels";
 import { parse as parseYaml } from "yaml";
-import type { AgentConfig, ControlPlaneOptions } from "./control-plane.ts";
+import type { AgentConfig, AgentDefaults, ControlPlaneOptions } from "./control-plane.ts";
 
 export class ConfigError extends Error {
 	readonly issues: readonly string[];
@@ -138,6 +138,39 @@ function parseAgent(
 	} as unknown as AgentConfig;
 }
 
+/**
+ * What every agent starts from, including one made from the CLI a month after this file was
+ * written.
+ *
+ * An agent with no grants cannot reach the model, so without this an agent created at runtime
+ * would be born unable to think, and the only cure would be editing the config and restarting the
+ * plane. Putting the answer here keeps the rule intact: capabilities come from the operator's
+ * file, never from the agent or from whoever typed its name.
+ */
+function parseDefaults(
+	raw: unknown,
+	env: NodeJS.ProcessEnv,
+	issues: string[],
+): AgentDefaults | undefined {
+	if (raw === undefined) return undefined;
+	if (!isRecord(raw)) {
+		issues.push("defaults must be a mapping");
+		return undefined;
+	}
+	if ("id" in raw) issues.push("defaults.id: defaults describe every agent, so they name none");
+
+	const { envFrom, env: literal, ...rest } = raw;
+	const resolved = {
+		...(isRecord(literal) ? literal : {}),
+		...parseEnvFrom(envFrom, "defaults", env, issues),
+	};
+
+	return {
+		...rest,
+		...(Object.keys(resolved).length > 0 ? { env: resolved } : {}),
+	} as unknown as AgentDefaults;
+}
+
 export interface LoadedConfig extends ControlPlaneOptions {
 	readonly agents: readonly AgentConfig[];
 	readonly stateDir: string;
@@ -157,6 +190,8 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 	const { stateDir, agents, hooks } = raw;
 	if (typeof stateDir !== "string" || stateDir.length === 0) issues.push("stateDir is required");
 	if (!Array.isArray(agents) || agents.length === 0) issues.push("agents must be a non-empty list");
+
+	const defaults = parseDefaults(raw.defaults, env, issues);
 
 	const parsedAgents: AgentConfig[] = [];
 	if (Array.isArray(agents)) {
@@ -190,6 +225,8 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 		stateDir: stateDir as string,
 		agents: parsedAgents,
 		hooks: parsedHooks,
+		// After the spread, so the resolved block replaces the one still holding envFrom names.
+		defaults,
 	} as LoadedConfig;
 }
 
