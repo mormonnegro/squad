@@ -27,6 +27,12 @@ importers:
         specifier: ^2.7.0
         version: 2.9.0
 
+  packages/channels:
+    dependencies:
+      '@agent-dive/events':
+        specifier: workspace:*
+        version: link:../events
+
   packages/control-plane:
     dependencies:
       '@agent-dive/agent-repo':
