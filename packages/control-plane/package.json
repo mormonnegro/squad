@@ -8,6 +8,9 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
+	"bin": {
+		"agent-dive": "./src/cli.ts"
+	},
 	"scripts": {
 		"typecheck": "tsc -p tsconfig.json"
 	},
@@ -17,6 +20,7 @@
 		"@agent-dive/events": "workspace:*",
 		"@agent-dive/proxy": "workspace:*",
 		"@agent-dive/sandbox": "workspace:*",
-		"@agent-dive/scheduler": "workspace:*"
+		"@agent-dive/scheduler": "workspace:*",
+		"yaml": "^2.7.0"
 	}
 }

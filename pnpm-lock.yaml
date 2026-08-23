@@ -53,6 +53,9 @@ importers:
       '@agent-dive/scheduler':
         specifier: workspace:*
         version: link:../scheduler
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
 
   packages/events: {}
 

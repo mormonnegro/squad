@@ -1,3 +1,9 @@
+export { ConfigError, type LoadedConfig, loadConfig, parseConfig } from "./config.ts";
+export {
+	type AgentConfig,
+	ControlPlane,
+	type ControlPlaneOptions,
+} from "./control-plane.ts";
 export {
 	PI_SOCKET_PATH,
 	PiSessionChannel,
