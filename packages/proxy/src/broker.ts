@@ -52,24 +52,35 @@ function flattenHeaders(headers: http.IncomingHttpHeaders): Record<string, strin
 	return result;
 }
 
-function parseProxyAuth(header: string | undefined): { username: string; password: string } | undefined {
+function parseProxyAuth(
+	header: string | undefined,
+): { username: string; password: string } | undefined {
 	if (header === undefined) return undefined;
 	const [scheme, encoded] = header.split(" ");
 	if (scheme?.toLowerCase() !== "basic" || encoded === undefined) return undefined;
 	const decoded = Buffer.from(encoded, "base64").toString("utf8");
 	const separator = decoded.indexOf(":");
 	if (separator === -1) return undefined;
-	return { username: decoded.slice(0, separator), password: decoded.slice(separator + 1) };
+	return {
+		username: decoded.slice(0, separator),
+		password: decoded.slice(separator + 1),
+	};
 }
 
 function parseAuthority(authority: string, fallbackPort: number): { host: string; port: number } {
 	const match = /^\[(?<v6>.+)\](?::(?<p6>\d+))?$/.exec(authority);
 	if (match?.groups) {
-		return { host: match.groups.v6 ?? "", port: Number(match.groups.p6 ?? fallbackPort) };
+		return {
+			host: match.groups.v6 ?? "",
+			port: Number(match.groups.p6 ?? fallbackPort),
+		};
 	}
 	const separator = authority.lastIndexOf(":");
 	if (separator === -1) return { host: authority, port: fallbackPort };
-	return { host: authority.slice(0, separator), port: Number(authority.slice(separator + 1)) };
+	return {
+		host: authority.slice(0, separator),
+		port: Number(authority.slice(separator + 1)),
+	};
 }
 
 /**
@@ -133,7 +144,11 @@ export class EgressBroker {
 		return this.options.directory.authenticate(credentials.username, credentials.password);
 	}
 
-	private handleConnect(req: http.IncomingMessage, socket: import("node:stream").Duplex, head: Buffer): void {
+	private handleConnect(
+		req: http.IncomingMessage,
+		socket: import("node:stream").Duplex,
+		head: Buffer,
+	): void {
 		const { host, port } = parseAuthority(req.url ?? "", 443);
 		const normalizedHost = normalizeHost(host);
 		const agentId = this.authenticate(req.headers);
@@ -148,7 +163,9 @@ export class EgressBroker {
 				outcome: "denied",
 				reason: "unauthenticated",
 			});
-			socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="agent-dive"\r\n\r\n');
+			socket.end(
+				'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="agent-dive"\r\n\r\n',
+			);
 			return;
 		}
 
@@ -206,9 +223,7 @@ export class EgressBroker {
 				outcome: "denied",
 				reason: "unauthenticated",
 			});
-			res
-				.writeHead(407, { "proxy-authenticate": 'Basic realm="agent-dive"' })
-				.end();
+			res.writeHead(407, { "proxy-authenticate": 'Basic realm="agent-dive"' }).end();
 			return;
 		}
 
@@ -233,7 +248,11 @@ export class EgressBroker {
 		const at = new Date().toISOString();
 
 		const grants = this.options.directory.grantsFor(context.agentId);
-		const decision = grants?.resolve({ host: context.host, method, path: rawPath });
+		const decision = grants?.resolve({
+			host: context.host,
+			method,
+			path: rawPath,
+		});
 
 		if (decision === undefined || !decision.allow) {
 			const reason: DenyReason = decision?.allow === false ? decision.reason : "no_matching_host";
@@ -247,7 +266,14 @@ export class EgressBroker {
 				reason,
 			});
 			res.writeHead(403, { "content-type": "application/json" });
-			res.end(JSON.stringify({ error: "egress_denied", reason, host: context.host, path: auditPath }));
+			res.end(
+				JSON.stringify({
+					error: "egress_denied",
+					reason,
+					host: context.host,
+					path: auditPath,
+				}),
+			);
 			return;
 		}
 

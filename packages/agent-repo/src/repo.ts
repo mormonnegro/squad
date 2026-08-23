@@ -59,7 +59,9 @@ export async function loadAgentRepo(root: string): Promise<AgentDefinition> {
 		manifest = parseManifest(manifestSource);
 	} catch (error) {
 		if (error instanceof ManifestError) {
-			throw new AgentRepoError(`${manifestPath}: ${error.message}`, { cause: error });
+			throw new AgentRepoError(`${manifestPath}: ${error.message}`, {
+				cause: error,
+			});
 		}
 		throw error;
 	}

@@ -41,7 +41,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseRequest(raw: unknown, index: number, issues: string[]): CapabilityRequest | undefined {
+function parseRequest(
+	raw: unknown,
+	index: number,
+	issues: string[],
+): CapabilityRequest | undefined {
 	const label = `requests[${index}]`;
 	if (!isRecord(raw)) {
 		issues.push(`${label} must be a mapping`);
@@ -103,7 +107,9 @@ export function parseManifest(source: string): AgentManifest {
 	const { name, description, model, requests } = raw;
 
 	if (typeof name !== "string" || !NAME_PATTERN.test(name)) {
-		issues.push('name is required and must be lowercase alphanumeric with dashes, e.g. "support-emma"');
+		issues.push(
+			'name is required and must be lowercase alphanumeric with dashes, e.g. "support-emma"',
+		);
 	}
 	if (description !== undefined && typeof description !== "string") {
 		issues.push("description must be a string");

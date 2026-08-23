@@ -9,9 +9,17 @@ export type SecretRef = { readonly ref: string };
 export type Injection =
 	| { readonly kind: "none" }
 	| { readonly kind: "bearer"; readonly token: SecretRef }
-	| { readonly kind: "header"; readonly name: string; readonly value: SecretRef }
+	| {
+			readonly kind: "header";
+			readonly name: string;
+			readonly value: SecretRef;
+	  }
 	| { readonly kind: "query"; readonly name: string; readonly value: SecretRef }
-	| { readonly kind: "basic"; readonly username: SecretRef; readonly password: SecretRef };
+	| {
+			readonly kind: "basic";
+			readonly username: SecretRef;
+			readonly password: SecretRef;
+	  };
 
 export interface Grant {
 	readonly id: string;
@@ -125,7 +133,8 @@ export class GrantSet {
 
 		// Most specific grant wins, so a narrow grant can override a broad one on the same host.
 		const chosen = methodMatched.reduce((best, candidate) =>
-			normalizePath(candidate.pathPrefix ?? "/").length > normalizePath(best.pathPrefix ?? "/").length
+			normalizePath(candidate.pathPrefix ?? "/").length >
+			normalizePath(best.pathPrefix ?? "/").length
 				? candidate
 				: best,
 		);

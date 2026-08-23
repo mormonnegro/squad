@@ -82,7 +82,10 @@ async function requestThroughTunnel(options: {
 	const chunks: Buffer[] = [];
 	for await (const chunk of response) chunks.push(chunk as Buffer);
 	tlsSocket.destroy();
-	return { status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") };
+	return {
+		status: response.statusCode ?? 0,
+		body: Buffer.concat(chunks).toString("utf8"),
+	};
 }
 
 describe("EgressBroker", () => {
@@ -126,9 +129,7 @@ describe("EgressBroker", () => {
 		broker = new EgressBroker({
 			ca: brokerCa,
 			secrets: new MemorySecretStore({ GH: SECRET }),
-			directory: new StaticAgentDirectory([
-				{ agentId: AGENT_ID, proxyToken: PROXY_TOKEN, grants },
-			]),
+			directory: new StaticAgentDirectory([{ agentId: AGENT_ID, proxyToken: PROXY_TOKEN, grants }]),
 			onAudit: (entry) => audit.push(entry),
 			upstreamAgent: new https.Agent({ ca: upstreamCa.caCertPem }),
 		});
@@ -203,7 +204,9 @@ describe("EgressBroker", () => {
 		});
 
 		expect(response.status).toBe(403);
-		expect(JSON.parse(response.body)).toMatchObject({ reason: "method_not_granted" });
+		expect(JSON.parse(response.body)).toMatchObject({
+			reason: "method_not_granted",
+		});
 	});
 
 	it("refuses to tunnel to an ungranted host", async () => {
@@ -232,8 +235,12 @@ describe("EgressBroker", () => {
 	});
 
 	it("records allow and deny outcomes", () => {
-		expect(audit.some((entry) => entry.outcome === "allowed" && entry.grantId === "gh-repos")).toBe(true);
-		expect(audit.some((entry) => entry.outcome === "denied" && entry.reason === "path_not_granted")).toBe(true);
+		expect(audit.some((entry) => entry.outcome === "allowed" && entry.grantId === "gh-repos")).toBe(
+			true,
+		);
+		expect(
+			audit.some((entry) => entry.outcome === "denied" && entry.reason === "path_not_granted"),
+		).toBe(true);
 		expect(audit.some((entry) => entry.reason === "unauthenticated")).toBe(true);
 	});
 });

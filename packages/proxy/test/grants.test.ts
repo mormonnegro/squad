@@ -59,33 +59,63 @@ describe("GrantSet host matching", () => {
 
 describe("GrantSet path scoping", () => {
 	const grants = new GrantSet([
-		{ id: "repos", host: "api.github.com", pathPrefix: "/repos", injection: bearer("GH") },
+		{
+			id: "repos",
+			host: "api.github.com",
+			pathPrefix: "/repos",
+			injection: bearer("GH"),
+		},
 	]);
 
 	it("allows paths at or below the prefix", () => {
-		expect(grants.resolve({ host: "api.github.com", method: "GET", path: "/repos" }).allow).toBe(true);
-		expect(grants.resolve({ host: "api.github.com", method: "GET", path: "/repos/a/b" }).allow).toBe(true);
+		expect(grants.resolve({ host: "api.github.com", method: "GET", path: "/repos" }).allow).toBe(
+			true,
+		);
+		expect(
+			grants.resolve({
+				host: "api.github.com",
+				method: "GET",
+				path: "/repos/a/b",
+			}).allow,
+		).toBe(true);
 	});
 
 	it("denies sibling paths that share a string prefix", () => {
-		const decision = grants.resolve({ host: "api.github.com", method: "GET", path: "/repositories" });
+		const decision = grants.resolve({
+			host: "api.github.com",
+			method: "GET",
+			path: "/repositories",
+		});
 		expect(decision).toEqual({ allow: false, reason: "path_not_granted" });
 	});
 
 	it("cannot be escaped with traversal", () => {
-		const decision = grants.resolve({ host: "api.github.com", method: "GET", path: "/repos/../user/keys" });
+		const decision = grants.resolve({
+			host: "api.github.com",
+			method: "GET",
+			path: "/repos/../user/keys",
+		});
 		expect(decision).toEqual({ allow: false, reason: "path_not_granted" });
 	});
 
 	it("cannot be escaped with encoded traversal", () => {
-		const decision = grants.resolve({ host: "api.github.com", method: "GET", path: "/repos/%2e%2e/user/keys" });
+		const decision = grants.resolve({
+			host: "api.github.com",
+			method: "GET",
+			path: "/repos/%2e%2e/user/keys",
+		});
 		expect(decision).toEqual({ allow: false, reason: "path_not_granted" });
 	});
 });
 
 describe("GrantSet method scoping", () => {
 	const grants = new GrantSet([
-		{ id: "ro", host: "api.github.com", methods: ["GET", "HEAD"], injection: bearer("GH") },
+		{
+			id: "ro",
+			host: "api.github.com",
+			methods: ["GET", "HEAD"],
+			injection: bearer("GH"),
+		},
 	]);
 
 	it("allows granted methods case-insensitively", () => {
@@ -101,7 +131,11 @@ describe("GrantSet method scoping", () => {
 });
 
 describe("GrantSet specificity", () => {
-	const broad: Grant = { id: "broad", host: "api.github.com", injection: bearer("READ_ONLY") };
+	const broad: Grant = {
+		id: "broad",
+		host: "api.github.com",
+		injection: bearer("READ_ONLY"),
+	};
 	const narrow: Grant = {
 		id: "narrow",
 		host: "api.github.com",
@@ -111,14 +145,22 @@ describe("GrantSet specificity", () => {
 
 	it("picks the most specific grant regardless of declaration order", () => {
 		for (const grants of [new GrantSet([broad, narrow]), new GrantSet([narrow, broad])]) {
-			const decision = grants.resolve({ host: "api.github.com", method: "GET", path: "/repos/acme/x" });
+			const decision = grants.resolve({
+				host: "api.github.com",
+				method: "GET",
+				path: "/repos/acme/x",
+			});
 			expect(decision.allow && decision.grant.id).toBe("narrow");
 		}
 	});
 
 	it("falls back to the broad grant elsewhere", () => {
 		const grants = new GrantSet([broad, narrow]);
-		const decision = grants.resolve({ host: "api.github.com", method: "GET", path: "/user" });
+		const decision = grants.resolve({
+			host: "api.github.com",
+			method: "GET",
+			path: "/user",
+		});
 		expect(decision.allow && decision.grant.id).toBe("broad");
 	});
 });

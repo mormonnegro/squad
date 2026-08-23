@@ -104,7 +104,10 @@ export async function applyInjection(
 
 		case "query": {
 			const value = await requireSecret(store, injection.value);
-			return { path: setQueryParam(request.path, injection.name, value), headers };
+			return {
+				path: setQueryParam(request.path, injection.name, value),
+				headers,
+			};
 		}
 	}
 }

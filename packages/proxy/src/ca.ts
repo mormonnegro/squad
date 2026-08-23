@@ -28,7 +28,10 @@ type CertificateExtension = Parameters<forge.pki.Certificate["setExtensions"]>[0
 
 function subjectAltName(host: string): CertificateExtension {
 	const type = isIP(host) !== 0 ? 7 : 2;
-	return { name: "subjectAltName", altNames: [type === 7 ? { type, ip: host } : { type, value: host }] };
+	return {
+		name: "subjectAltName",
+		altNames: [type === 7 ? { type, ip: host } : { type, value: host }],
+	};
 }
 
 class ForgeCertificateAuthority implements CertificateAuthority {

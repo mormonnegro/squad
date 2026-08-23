@@ -37,15 +37,15 @@ requests:
 	});
 
 	it("rejects a pathPrefix that is not absolute", () => {
-		expect(() => parseManifest("name: emma\nrequests:\n  - host: a.com\n    pathPrefix: repos\n")).toThrow(
-			ManifestError,
-		);
+		expect(() =>
+			parseManifest("name: emma\nrequests:\n  - host: a.com\n    pathPrefix: repos\n"),
+		).toThrow(ManifestError);
 	});
 
 	it("rejects unknown methods", () => {
-		expect(() => parseManifest("name: emma\nrequests:\n  - host: a.com\n    methods: [YEET]\n")).toThrow(
-			ManifestError,
-		);
+		expect(() =>
+			parseManifest("name: emma\nrequests:\n  - host: a.com\n    methods: [YEET]\n"),
+		).toThrow(ManifestError);
 	});
 
 	it("reports every issue at once", () => {

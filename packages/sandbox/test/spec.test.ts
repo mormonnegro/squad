@@ -20,7 +20,9 @@ const spec: SandboxSpec = {
 
 describe("network containment", () => {
 	it("is internal, so the proxy is the only route off-host", () => {
-		expect(buildNetworkConfig("agent-dive-egress")).toMatchObject({ Internal: true });
+		expect(buildNetworkConfig("agent-dive-egress")).toMatchObject({
+			Internal: true,
+		});
 	});
 });
 
@@ -46,7 +48,11 @@ describe("container hardening", () => {
 
 	it("applies resource limits only when asked", () => {
 		expect(config.HostConfig.Memory).toBeUndefined();
-		const limited = buildContainerConfig({ ...spec, memoryBytes: 2 ** 31, nanoCpus: 2e9 });
+		const limited = buildContainerConfig({
+			...spec,
+			memoryBytes: 2 ** 31,
+			nanoCpus: 2e9,
+		});
 		expect(limited.HostConfig.Memory).toBe(2 ** 31);
 		expect(limited.HostConfig.NanoCpus).toBe(2e9);
 	});
