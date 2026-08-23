@@ -23,7 +23,11 @@ STATE="$ROOT/.demo"
 AGENT=demo
 PLANE=agent-dive-demo-plane
 SANDBOX=agent-dive-$AGENT
-VOLUME=agent-dive-$AGENT
+# Both names are the sandbox driver's to choose, and this script only echoes them: the container is
+# `agent-dive-<id>` and the volume that holds the agent is that name with `-self` after it. They were
+# assumed equal here once, so every `docker volume rm` was a no-op that `|| true` hid, and a `down`
+# that said it had removed the agent had left it on disk.
+VOLUME=$SANDBOX-self
 EGRESS=agent-dive-demo-egress
 UPLINK=agent-dive-demo-uplink
 HOOK_SECRET=demo-secret-not-for-production
@@ -37,7 +41,7 @@ down() {
     local name
     name=$(docker inspect -f '{{.Name}}' "$made" 2>/dev/null | sed 's|^/||')
     docker rm -f "$made" >/dev/null 2>&1 || true
-    [ -n "$name" ] && docker volume rm "$name" >/dev/null 2>&1 || true
+    [ -n "$name" ] && docker volume rm "$name-self" >/dev/null 2>&1 || true
   done
   docker rm -f "$PLANE" "$SANDBOX" >/dev/null 2>&1 || true
   docker volume rm "$VOLUME" >/dev/null 2>&1 || true
