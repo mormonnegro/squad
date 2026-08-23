@@ -52,10 +52,12 @@ up() {
     echo "queued for a retry."
   fi
 
-  docker image inspect agent-dive/sandbox:dev >/dev/null 2>&1 ||
-    { say "building the sandbox image"; docker build -t agent-dive/sandbox:dev packages/sandbox/image; }
-  docker image inspect agent-dive/control-plane:dev >/dev/null 2>&1 ||
-    { say "building the control plane image"; docker build -f deploy/Dockerfile -t agent-dive/control-plane:dev .; }
+  # Always, not "if missing". The image copies the sources in, so an existing tag is not a current
+  # one, and a demo that silently runs last week's code is worse than one that takes a minute. The
+  # layer cache makes this nearly free when nothing has changed.
+  say "building the images"
+  docker build -q -t agent-dive/sandbox:dev packages/sandbox/image
+  docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev .
 
   down >/dev/null 2>&1 || true
   mkdir -p "$STATE"
