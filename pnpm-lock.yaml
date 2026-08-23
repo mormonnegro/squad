@@ -36,6 +36,8 @@ importers:
         specifier: workspace:*
         version: link:../sandbox
 
+  packages/events: {}
+
   packages/proxy:
     dependencies:
       node-forge:
