@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
@@ -14,6 +13,7 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
+import { ProxyTokenStore } from "./proxy-tokens.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
 
@@ -102,6 +102,7 @@ export class ControlPlane {
 	readonly #proxyOrigin: string;
 	readonly #webhookPort: number;
 	readonly #turnTimeoutMs: number | undefined;
+	readonly #proxyTokens: ProxyTokenStore;
 	readonly #tokens = new Map<string, string>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
 	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
@@ -118,6 +119,7 @@ export class ControlPlane {
 		this.#turnTimeoutMs = options.turnTimeoutMs;
 		this.#onError = options.onError;
 		this.#onTurn = options.onTurn;
+		this.#proxyTokens = new ProxyTokenStore(join(this.#stateDir, "proxy-tokens.json"));
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -190,6 +192,9 @@ export class ControlPlane {
 		}
 		this.bus.unregister(agentId);
 		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
+		// The token was baked into the container that just went away, so nothing holds it any more.
+		await this.#proxyTokens.forget(agentId);
+		this.#tokens.delete(agentId);
 	}
 
 	/**
@@ -256,7 +261,7 @@ export class ControlPlane {
 	}
 
 	async #startAgent(agent: AgentConfig): Promise<void> {
-		const proxyToken = randomBytes(24).toString("base64url");
+		const proxyToken = await this.#proxyTokens.ensure(agent.id);
 		this.#tokens.set(agent.id, proxyToken);
 		this.directory.register({
 			agentId: agent.id,

@@ -82,12 +82,17 @@ authority into the system:
 
 ```sh
 ./deploy/demo.sh up            # it asks for an ANTHROPIC_API_KEY if the environment has none
+./deploy/demo.sh reload        # after changing the code, keeping the agent you have
 ```
 
 It builds the images, starts a control plane on a throwaway network, shows what the agent can and
 cannot reach, asks the plane over its control socket, wakes the agent with a signed webhook and
 prints the turn. `./deploy/demo.sh down` removes everything. State lives under the working tree
 rather than `/var/lib`, which is the one way it differs from the real deployment below.
+
+`up` starts from nothing, so it deletes the volume — the agent's soul, memory, skills and tools.
+`reload` rebuilds the plane and swaps it in around a sandbox that never stops, which is what you
+want after changing the code and the reason the proxy credential is persisted.
 
 ## Running it
 
@@ -113,6 +118,10 @@ Two things in the deployment are load-bearing and easy to get wrong:
   network cannot reach the host at all, so a proxy on the host is one the agents cannot use.
 - The state directory is bind-mounted **at its own path**. The control plane hands the daemon that
   path when mounting the CA into a sandbox, and the daemon resolves bind sources on the host.
+- The state directory is also what makes the plane **restartable**. A sandbox is created with its
+  proxy credential in its environment and outlives the process that made it, so the credential is
+  written down rather than minted per start. Without that, a restart — a deploy, a crash, a reboot
+  — leaves every running agent denied at the proxy, the model included.
 
 The control plane holds the Docker socket, so it is root-equivalent on the machine. The trust
 boundary is the sandbox around the agent, not the process managing it.

@@ -6,9 +6,13 @@
 # This is not the deployment. deploy/compose.yaml is. The difference is that state lives under the
 # working tree here, because /var/lib needs root and is not shared with Docker Desktop on macOS.
 #
-#   ./deploy/demo.sh up      build if needed, start, and send a wakeup
+#   ./deploy/demo.sh up      build, start from nothing, and send a wakeup
+#   ./deploy/demo.sh reload  rebuild the plane and swap it in, keeping the agent
 #   ./deploy/demo.sh logs    follow the control plane
 #   ./deploy/demo.sh down    remove the containers, networks, volume and state
+#
+# `up` starts from nothing, which means it deletes the agent's volume: its soul, memory, skills and
+# tools. `reload` is the one to use after changing the code, and it keeps all of that.
 #
 set -euo pipefail
 
@@ -32,6 +36,48 @@ down() {
   docker network rm "$EGRESS" "$UPLINK" >/dev/null 2>&1 || true
   rm -rf "$STATE"
   say "removed the demo containers, networks, volume and $STATE"
+}
+
+# Uplink first, then the agents' network. A published port is forwarded to the address the container
+# had on its first network, and an internal network drops anything that did not come from inside it
+# — so a plane that joins $EGRESS first has a webhook port nothing can reach.
+start_plane() {
+  docker run -d --name "$PLANE" \
+    --network "$UPLINK" \
+    --label "agent-dive.state=$STATE" \
+    -e MODEL_KEY="$1" \
+    -e HOOK_SECRET="$HOOK_SECRET" \
+    -v "$STATE:$STATE" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -p 8787:8787 \
+    agent-dive/control-plane:dev run "$STATE/config.yaml" >/dev/null
+  docker network connect --alias egress "$EGRESS" "$PLANE"
+}
+
+# Swaps in newly built control plane code without touching the agent.
+#
+# The sandbox keeps running throughout, which is only safe because the proxy token it was created
+# with is written down in $STATE rather than invented on every start. Recreating the container is
+# how the plane picks up new code at all: the image copies the sources in.
+reload() {
+  docker inspect "$PLANE" >/dev/null 2>&1 ||
+    { echo "Nothing to reload. Start it with ./deploy/demo.sh up" >&2; exit 1; }
+
+  say "rebuilding the control plane"
+  docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev . >/dev/null
+
+  # Read back off the running container, so a reload never asks for the key again.
+  local key
+  key=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    sed -n 's/^MODEL_KEY=//p')
+
+  docker rm -f "$PLANE" >/dev/null
+  start_plane "${key:-sk-ant-placeholder}"
+
+  say "the plane is new, the agent is the one you had"
+  docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.anthropic.com (injected)  -> %{http_code}\n' \
+    -H 'anthropic-version: 2023-06-01' https://api.anthropic.com/v1/models || true
 }
 
 up() {
@@ -97,20 +143,8 @@ YAML
   docker network create --internal "$EGRESS" >/dev/null
   docker network create "$UPLINK" >/dev/null
 
-  # Uplink first, then the agents' network. A published port is forwarded to the address the
-  # container had on its first network, and an internal network drops anything that did not come
-  # from inside it — so a plane that joins $EGRESS first has a webhook port nothing can reach.
   say "starting the control plane"
-  docker run -d --name "$PLANE" \
-    --network "$UPLINK" \
-    --label "agent-dive.state=$STATE" \
-    -e MODEL_KEY="${ANTHROPIC_API_KEY:-sk-ant-placeholder}" \
-    -e HOOK_SECRET="$HOOK_SECRET" \
-    -v "$STATE:$STATE" \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    -p 8787:8787 \
-    agent-dive/control-plane:dev run "$STATE/config.yaml" >/dev/null
-  docker network connect --alias egress "$EGRESS" "$PLANE"
+  start_plane "${ANTHROPIC_API_KEY:-sk-ant-placeholder}"
 
   for _ in $(seq 60); do
     [ "$(docker inspect -f '{{.State.Running}}' "$SANDBOX" 2>/dev/null)" = "true" ] && break
@@ -164,13 +198,16 @@ YAML
   echo "      what each agent is and whether it is up"
   echo "  $cli logs --state $STATE"
   echo "      follow turns and egress decisions"
+  echo "  ./deploy/demo.sh reload"
+  echo "      after changing the code, keeping this agent"
   echo "  ./deploy/demo.sh down"
   echo "      remove everything"
 }
 
 case "${1:-up}" in
   up) up ;;
+  reload) reload ;;
   down) down ;;
   logs) docker logs -f "$PLANE" ;;
-  *) echo "usage: $0 [up|logs|down]" >&2; exit 1 ;;
+  *) echo "usage: $0 [up|reload|logs|down]" >&2; exit 1 ;;
 esac
