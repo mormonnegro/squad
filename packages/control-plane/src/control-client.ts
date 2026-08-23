@@ -97,6 +97,10 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to wake");
 	}
 
+	async remove(agentId: string, purge: boolean): Promise<void> {
+		await this.#once({ op: "remove", agentId, purge });
+	}
+
 	/** Streams until the connection is closed. */
 	logs(onEvent: (event: PlaneEvent) => void): void {
 		const id = String(this.#nextId++);

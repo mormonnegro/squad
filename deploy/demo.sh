@@ -125,7 +125,7 @@ YAML
   # From the host, over the control socket in $STATE, which the plane's container shares at the same
   # path. Where the share cannot carry a socket, the CLI finds the container by its label instead.
   say "asking the plane from outside the container"
-  node packages/control-plane/bin/agent.mjs agents --state "$STATE" | sed 's/^/  /'
+  node packages/control-plane/bin/agent.mjs ls --state "$STATE" | sed 's/^/  /'
 
   say "what the agent can reach"
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)         -> %{http_code}\n' https://example.com/ || true
@@ -158,8 +158,10 @@ YAML
 
   say "next"
   local cli="node packages/control-plane/bin/agent.mjs"
-  echo "  $cli wake $AGENT \"...\" --state $STATE"
-  echo "      say something as the operator, and wait for the answer"
+  echo "  $cli chat $AGENT --state $STATE"
+  echo "      talk to it, turn after turn"
+  echo "  $cli ls --state $STATE"
+  echo "      what each agent is and whether it is up"
   echo "  $cli logs --state $STATE"
   echo "      follow turns and egress decisions"
   echo "  ./deploy/demo.sh down"

@@ -140,6 +140,12 @@ describe("the control socket", () => {
 		);
 	});
 
+	it("refuses to remove an agent this plane does not run", async () => {
+		// Named, not matched loosely: `agent rm` takes a name, and the one thing worse than refusing a
+		// typo is destroying something else that answered to it.
+		await expect(client.remove("scou", false)).rejects.toThrow(/No agent "scou"/);
+	});
+
 	it("lets only its owner near it, because holding it is the whole authorization", async () => {
 		const mode = (await stat(server.socketPath)).mode & 0o777;
 		expect(mode).toBe(0o600);

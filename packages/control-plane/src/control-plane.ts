@@ -177,6 +177,22 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Takes an agent's sandbox away, and optionally the repository inside it.
+	 *
+	 * The volume is kept by default because it is the agent: its soul, what it chose to remember and
+	 * the tools it wrote for itself. A container is replaceable and none of that is, so discarding it
+	 * has to be asked for. Either way the agent is still in the config file, which this cannot write,
+	 * so it comes back when the plane next starts.
+	 */
+	async remove(agentId: string, options: { purge?: boolean } = {}): Promise<void> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		this.bus.unregister(agentId);
+		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
+	}
+
+	/**
 	 * Puts a runtime behind an agent id: from here on, events for it become turns.
 	 *
 	 * Separate from starting a sandbox so that what an agent runs in is one decision and what it

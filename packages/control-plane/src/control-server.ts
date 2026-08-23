@@ -14,6 +14,12 @@ export function controlSocketPath(stateDir: string): string {
 export type ControlRequest =
 	| { readonly id: string; readonly op: "agents" }
 	| { readonly id: string; readonly op: "wake"; readonly agentId: string; readonly body: string }
+	| {
+			readonly id: string;
+			readonly op: "remove";
+			readonly agentId: string;
+			readonly purge: boolean;
+	  }
 	| { readonly id: string; readonly op: "logs" };
 
 export type ControlResponse =
@@ -144,6 +150,9 @@ export class ControlServer {
 					ok: true,
 					text: await this.#wake(request.agentId, request.body),
 				});
+			} else if (request.op === "remove") {
+				await this.#plane.remove(request.agentId, { purge: request.purge });
+				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else {
 				this.#write(socket, { id: "?", ok: false, error: "unknown operation" });
 			}

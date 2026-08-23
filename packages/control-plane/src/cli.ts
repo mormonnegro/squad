@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 import { ConfigError, loadConfig } from "./config.ts";
 import { ControlClient, ControlError } from "./control-client.ts";
 import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
@@ -9,36 +10,46 @@ const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
 
 const USAGE = `agent - run self-hosted cloud agents
 
-  agent run <config.yaml>      start the control plane
-  agent agents                 what each agent is and whether it is up
-  agent wake <name> <text>     take a turn, as the operator
+  agent                        where the state is, and what is running in it
+  agent chat [name]            talk to an agent, turn after turn
+  agent ls                     what each agent is and whether it is up
+  agent wake <name> <text>     take one turn, as the operator
   agent logs                   follow turns and egress decisions
+  agent rm <name> [--purge]    take the sandbox away, and with --purge its
+                               repository: soul, memory, skills, tools
+  agent run <config.yaml>      start the control plane
+  agent help                   this
 
 The configuration names its secrets; their values come from the environment.
 Commands other than "run" talk to a running plane over a socket in its state
-directory: --state <dir>, or AGENT_DIVE_STATE, defaulting to ${DEFAULT_STATE_DIR}.`;
+directory: --state <dir>, or AGENT_DIVE_STATE, defaulting to ${DEFAULT_STATE_DIR}.
+Told nothing, they look for the plane that is actually running.`;
 
 interface Args {
 	readonly stateDir: string;
 	/** Whether the operator named the directory, rather than it being the default. */
 	readonly named: boolean;
+	readonly purge: boolean;
 	readonly rest: readonly string[];
 }
 
 export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): Args {
 	const rest: string[] = [];
 	let stateDir: string | undefined;
+	let purge = false;
 
 	for (let i = 0; i < argv.length; i++) {
 		const argument = argv[i];
 		if (argument === "--state") {
 			stateDir = argv[++i];
 			if (stateDir === undefined) throw new ControlError("--state needs a directory");
+		} else if (argument === "--purge") {
+			purge = true;
 		} else if (argument !== undefined) rest.push(argument);
 	}
 
 	const named = stateDir ?? env.AGENT_DIVE_STATE;
-	return { stateDir: named ?? DEFAULT_STATE_DIR, named: named !== undefined, rest };
+	return { stateDir: named ?? DEFAULT_STATE_DIR, named: named !== undefined, purge, rest };
 }
 
 /**
@@ -124,12 +135,59 @@ async function connect(stateDir: string): Promise<ControlClient> {
 	}
 }
 
-async function agents(args: Args): Promise<number> {
+async function ls(args: Args): Promise<number> {
 	const client = await connect(args.stateDir);
 	try {
 		const summaries = await client.agents();
 		if (summaries.length === 0) process.stdout.write("no agents\n");
 		for (const agent of summaries) process.stdout.write(`${describeAgent(agent)}\n`);
+		return 0;
+	} finally {
+		client.close();
+	}
+}
+
+/**
+ * Takes an agent's sandbox away, and with --purge the repository inside it.
+ *
+ * Only the purge asks, because only the purge cannot be undone: a container comes back on the next
+ * start with everything the agent knew, and a deleted volume takes the soul, the memory and the
+ * tools it wrote with it. Typing the name is the confirmation, so a reflexive "y" cannot do it.
+ */
+async function rm(args: Args): Promise<number> {
+	const client = await connect(args.stateDir);
+	try {
+		const agent = await pickAgent(client, args.rest[0]);
+		if (args.purge) {
+			if (!process.stdin.isTTY) {
+				process.stderr.write("--purge deletes what the agent wrote. Run it in a terminal.\n");
+				return 1;
+			}
+			const rl = createInterface({ input: process.stdin, output: process.stdout });
+			try {
+				process.stdout.write(
+					`This deletes ${agent.id}'s repository: its soul, memory, skills and tools.\n` +
+						"There is no copy anywhere else.\n\n",
+				);
+				const typed = await rl.question(`type ${agent.id} to confirm: `);
+				if (typed.trim() !== agent.id) {
+					process.stdout.write("nothing removed\n");
+					return 1;
+				}
+			} finally {
+				rl.close();
+			}
+		}
+
+		await client.remove(agent.id, args.purge);
+		process.stdout.write(
+			args.purge
+				? `removed ${agent.id} and its repository\n`
+				: `removed ${agent.id}'s sandbox, kept its repository\n`,
+		);
+		// The config file is the operator's, and no plane may write it. Saying so beats letting them
+		// discover it when the agent is back after a restart.
+		process.stdout.write(`still in the config, so it returns when the plane restarts\n`);
 		return 0;
 	} finally {
 		client.close();
@@ -176,9 +234,105 @@ async function status(args: Args): Promise<number> {
 		if (summaries.length === 0) process.stdout.write("no agents\n");
 		for (const agent of summaries) process.stdout.write(`${describeAgent(agent)}\n`);
 		process.stdout.write(
-			'\n  agent wake <name> "..."   take a turn, as the operator\n' +
+			"\n  agent chat                talk to it\n" +
 				"  agent logs                follow turns and egress decisions\n",
 		);
+		return 0;
+	} finally {
+		client.close();
+	}
+}
+
+/**
+ * Which agent to talk to: the one named, or the only one there is.
+ *
+ * Most planes run one agent, and making that operator type its name to reach it is asking for a
+ * fact the plane already holds.
+ */
+async function pickAgent(client: ControlClient, named: string | undefined): Promise<AgentSummary> {
+	const summaries = await client.agents();
+	if (named !== undefined) {
+		const found = summaries.find((agent) => agent.id === named);
+		if (found === undefined) {
+			const known = summaries.map((agent) => agent.id).join(", ");
+			throw new ControlError(`No agent "${named}" here. This plane runs: ${known || "none"}`);
+		}
+		return found;
+	}
+
+	const [only, ...rest] = summaries;
+	if (only === undefined) throw new ControlError("This plane has no agents");
+	if (rest.length > 0) {
+		const lines = summaries.map((agent) => `  agent chat ${agent.id}`).join("\n");
+		throw new ControlError(`More than one agent here. Which:\n${lines}`);
+	}
+	return only;
+}
+
+/**
+ * Something to watch while the agent thinks.
+ *
+ * A turn takes as long as it takes, and a terminal that has printed nothing for a minute reads as
+ * one that has hung. Only on a TTY: piped into a file this would be noise in the transcript.
+ */
+function thinking(): () => void {
+	if (!process.stdout.isTTY) return () => {};
+	const frames = ["·  ", "·· ", "···"];
+	let frame = 0;
+	const timer = setInterval(() => {
+		process.stdout.write(`\r${frames[frame++ % frames.length]}`);
+	}, 300);
+	return () => {
+		clearInterval(timer);
+		process.stdout.write("\r   \r");
+	};
+}
+
+/**
+ * A conversation with an agent: a turn per line, on the connection that already carries operator
+ * trust. pi keeps a session per agent, so the agent remembers the previous line.
+ */
+async function chat(args: Args): Promise<number> {
+	const client = await connect(args.stateDir);
+	try {
+		const agent = await pickAgent(client, args.rest[0]);
+		if (!agent.running) {
+			process.stdout.write(
+				`${agent.id}'s sandbox is not up. What you type stays queued until it is.\n`,
+			);
+		}
+		process.stdout.write(`talking to ${agent.id}, as the operator. ctrl-c to leave.\n\n`);
+
+		const rl = createInterface({ input: process.stdin, output: process.stdout });
+		// question() never settles if the interface closes under it, so closing is an abort.
+		const leaving = new AbortController();
+		rl.once("close", () => leaving.abort());
+		rl.on("SIGINT", () => rl.close());
+
+		for (;;) {
+			let line: string;
+			try {
+				line = await rl.question("> ");
+			} catch {
+				break;
+			}
+			if (line.trim().length === 0) continue;
+
+			const stop = thinking();
+			try {
+				const text = await client.wake(agent.id, line);
+				stop();
+				process.stdout.write(`\n${text.length > 0 ? text : "(nothing)"}\n\n`);
+			} catch (error) {
+				stop();
+				// A turn that failed is not a conversation that ended: the events stay queued, and the
+				// next line is a new turn. Leaving over it would throw away the session.
+				process.stdout.write(`\n${(error as Error).message}\n\n`);
+			}
+		}
+
+		rl.close();
+		process.stdout.write("\n");
 		return 0;
 	} finally {
 		client.close();
@@ -222,7 +376,7 @@ async function main(argv: readonly string[]): Promise<number> {
 	const [command, ...words] = parsed.rest;
 
 	// `run` is told where its state goes; the commands that talk to a plane have to find it.
-	const connects = command === undefined || ["agents", "wake", "logs"].includes(command);
+	const connects = command === undefined || ["ls", "chat", "wake", "logs", "rm"].includes(command);
 	const args: Args = connects
 		? { ...(await resolveStateDir(parsed)), rest: words }
 		: { ...parsed, rest: words };
@@ -236,14 +390,19 @@ async function main(argv: readonly string[]): Promise<number> {
 			}
 			return run(path);
 		}
-		case "agents":
-			return agents(args);
+		case "ls":
+			return ls(args);
+		case "chat":
+			return chat(args);
 		case "wake":
 			return wake(args);
 		case "logs":
 			return logs(args);
+		case "rm":
+			return rm(args);
 		case undefined:
 			return status(args);
+		case "help":
 		case "--help":
 		case "-h":
 			process.stdout.write(`${USAGE}\n`);
