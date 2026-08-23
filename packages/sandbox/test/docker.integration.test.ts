@@ -56,6 +56,9 @@ suite("Docker sandbox against a live daemon", () => {
 		const status = await manager.status(AGENT_ID);
 		expect(status?.running).toBe(true);
 		expect(status?.startedAt).toBeDefined();
+		// Read back rather than remembered: the container outlives whatever created it, so this is
+		// where a control plane that restarted finds the credential it has to go on honouring.
+		expect(status?.proxyUrl).toBe("http://itest:token@egress:8080");
 	}, 60_000);
 
 	it("mounts the agent repository volume and the CA", async () => {

@@ -13,6 +13,14 @@ export interface SandboxStatus {
 	readonly containerId: string;
 	readonly running: boolean;
 	readonly startedAt: string | undefined;
+	/**
+	 * The proxy the container was created with, read back off it.
+	 *
+	 * A sandbox outlives the process that made it, and its egress credential is in this URL, so the
+	 * container is the record of what that credential is. Undefined means the container predates the
+	 * environment being set, and there is nothing to recover.
+	 */
+	readonly proxyUrl: string | undefined;
 }
 
 export interface ExecResult {
@@ -31,10 +39,17 @@ export class SandboxTimeoutError extends Error {
 interface ContainerInspect {
 	Id: string;
 	State: { Running: boolean; StartedAt: string };
+	Config?: { Env?: readonly string[] };
 }
 
 export function volumeName(agentId: string): string {
 	return `agent-dive-${agentId}-self`;
+}
+
+/** Docker reports the environment as `NAME=value` strings, where the value may itself hold `=`. */
+function readEnv(env: readonly string[] | undefined, name: string): string | undefined {
+	const found = env?.find((entry) => entry.startsWith(`${name}=`));
+	return found?.slice(name.length + 1);
 }
 
 /**
@@ -116,6 +131,7 @@ export class DockerSandboxManager {
 				containerId: response.body.Id,
 				running: response.body.State.Running,
 				startedAt: response.body.State.Running ? response.body.State.StartedAt : undefined,
+				proxyUrl: readEnv(response.body.Config?.Env, "HTTPS_PROXY"),
 			};
 		} catch (error) {
 			if (error instanceof DockerError && error.status === 404) return undefined;

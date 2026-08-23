@@ -92,7 +92,7 @@ rather than `/var/lib`, which is the one way it differs from the real deployment
 
 `up` starts from nothing, so it deletes the volume — the agent's soul, memory, skills and tools.
 `reload` rebuilds the plane and swaps it in around a sandbox that never stops, which is what you
-want after changing the code and the reason the proxy credential is persisted.
+want after changing the code, and it works because the new plane adopts the sandbox it finds.
 
 ## Running it
 
@@ -118,10 +118,10 @@ Two things in the deployment are load-bearing and easy to get wrong:
   network cannot reach the host at all, so a proxy on the host is one the agents cannot use.
 - The state directory is bind-mounted **at its own path**. The control plane hands the daemon that
   path when mounting the CA into a sandbox, and the daemon resolves bind sources on the host.
-- The state directory is also what makes the plane **restartable**. A sandbox is created with its
-  proxy credential in its environment and outlives the process that made it, so the credential is
-  written down rather than minted per start. Without that, a restart — a deploy, a crash, a reboot
-  — leaves every running agent denied at the proxy, the model included.
+- A sandbox **outlives the plane that made it**, and its proxy credential is in its environment, so
+  a restarting plane reads that credential back off the container rather than deciding it. A plane
+  that decided instead would come back denying every request its own agents made, the model
+  included, with the sandboxes looking perfectly healthy.
 
 The control plane holds the Docker socket, so it is root-equivalent on the machine. The trust
 boundary is the sandbox around the agent, not the process managing it.

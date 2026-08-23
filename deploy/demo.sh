@@ -64,9 +64,9 @@ start_plane() {
 
 # Swaps in newly built control plane code without touching the agent.
 #
-# The sandbox keeps running throughout, which is only safe because the proxy token it was created
-# with is written down in $STATE rather than invented on every start. Recreating the container is
-# how the plane picks up new code at all: the image copies the sources in.
+# The sandbox keeps running throughout, which is only safe because the new plane reads the proxy
+# token off the container it finds rather than deciding one. Recreating the container is how the
+# plane picks up new code at all: the image copies the sources in.
 reload() {
   docker inspect "$PLANE" >/dev/null 2>&1 ||
     { echo "Nothing to reload. Start it with ./deploy/demo.sh up" >&2; exit 1; }

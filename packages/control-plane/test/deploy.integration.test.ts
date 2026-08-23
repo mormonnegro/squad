@@ -52,25 +52,8 @@ suite("a control plane deployed inside the sandbox network", () => {
 			{ timeoutMs: 30_000 },
 		);
 
-	beforeAll(async () => {
-		await rm(stateRoot, { recursive: true, force: true });
-		await mkdir(stateRoot, { recursive: true });
-		await writeFile(
-			join(stateRoot, "config.yaml"),
-			`stateDir: ${stateRoot}\nnetworkName: ${EGRESS_NETWORK}\nagents:\n  - id: ${AGENT_ID}\n    grants:\n      - id: example\n        host: example.com\n        methods: [GET]\n        injection: { kind: none }\n`,
-		);
-
-		for (const [name, internal] of [
-			[EGRESS_NETWORK, true],
-			[UPLINK_NETWORK, false],
-		] as const) {
-			await engine
-				.request("POST", "/networks/create", { Name: name, Driver: "bridge", Internal: internal })
-				.catch(() => {});
-		}
-		await engine.request("DELETE", `/containers/${PLANE_CONTAINER}?force=true`).catch(() => {});
-		await manager.destroy(AGENT_ID, { discardState: true });
-
+	/** Brings up a plane container against $stateRoot and waits for its agent's sandbox to run. */
+	const startPlane = async (): Promise<void> => {
 		const created = await engine.request<{ Id: string }>(
 			"POST",
 			`/containers/create?name=${PLANE_CONTAINER}`,
@@ -98,6 +81,27 @@ suite("a control plane deployed inside the sandbox network", () => {
 			await new Promise((resolve) => setTimeout(resolve, 500));
 		}
 		throw new Error("the control plane never started its agent's sandbox");
+	};
+
+	beforeAll(async () => {
+		await rm(stateRoot, { recursive: true, force: true });
+		await mkdir(stateRoot, { recursive: true });
+		await writeFile(
+			join(stateRoot, "config.yaml"),
+			`stateDir: ${stateRoot}\nnetworkName: ${EGRESS_NETWORK}\nagents:\n  - id: ${AGENT_ID}\n    grants:\n      - id: example\n        host: example.com\n        methods: [GET]\n        injection: { kind: none }\n`,
+		);
+
+		for (const [name, internal] of [
+			[EGRESS_NETWORK, true],
+			[UPLINK_NETWORK, false],
+		] as const) {
+			await engine
+				.request("POST", "/networks/create", { Name: name, Driver: "bridge", Internal: internal })
+				.catch(() => {});
+		}
+		await engine.request("DELETE", `/containers/${PLANE_CONTAINER}?force=true`).catch(() => {});
+		await manager.destroy(AGENT_ID, { discardState: true });
+		await startPlane();
 	}, 180_000);
 
 	afterAll(async () => {
@@ -135,6 +139,34 @@ suite("a control plane deployed inside the sandbox network", () => {
 			client.close();
 		}
 	}, 90_000);
+
+	/**
+	 * A deploy, a crash and a reboot all look like this, and the agent is meant not to notice.
+	 *
+	 * The credential the sandbox presents is baked into it at creation and the sandbox outlives the
+	 * plane, so a plane that decides the token afresh comes back not recognising its own agents —
+	 * every request denied, the model included, with the sandbox looking perfectly healthy. Curling
+	 * afterwards is the assertion that matters: the container being adopted rather than replaced is
+	 * only how it is achieved.
+	 */
+	it("adopts the sandbox it left running, and its egress still works", async () => {
+		const before = await manager.status(AGENT_ID);
+
+		await engine.request("DELETE", `/containers/${PLANE_CONTAINER}?force=true`);
+		await startPlane();
+
+		expect((await manager.status(AGENT_ID))?.containerId).toBe(before?.containerId);
+
+		// Retried because a plane that has only just bound its port refuses exactly as one that never
+		// recognised the agent does, and the difference between them is a second. A plane that truly
+		// failed to adopt never starts answering, so this ends in the same assertion either way.
+		let last = await curl("https://example.com/");
+		for (let attempt = 0; attempt < 30 && last.stdout.trim() !== "200"; attempt++) {
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			last = await curl("https://example.com/");
+		}
+		expect(`${last.stdout.trim()} ${last.stderr}`.trim()).toBe("200");
+	}, 180_000);
 
 	it("has no route off the network except the proxy", async () => {
 		const result = await manager.run(

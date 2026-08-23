@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ControlPlane, withDefaults } from "../src/control-plane.ts";
+import { ControlPlane, proxyTokenOf, withDefaults } from "../src/control-plane.ts";
 
 describe("ControlPlane", () => {
 	let stateDir: string;
@@ -111,5 +111,35 @@ describe("defaults", () => {
 
 	it("changes nothing when the config declared none", () => {
 		expect(withDefaults({ id: "scout" })).toEqual({ id: "scout" });
+	});
+});
+
+/**
+ * Reading the egress credential back off a sandbox, which is what keeps a restart survivable: the
+ * container is the only record of what the proxy will actually be shown.
+ */
+describe("proxyTokenOf", () => {
+	const url = (user: string, token: string) => `http://${user}:${token}@egress:8080`;
+
+	it("recovers the token a sandbox was created with", () => {
+		expect(proxyTokenOf(url("scout", "s3cret-token"), "scout")).toBe("s3cret-token");
+	});
+
+	it("refuses a container carrying another agent's name", () => {
+		// The proxy authenticates on the user too, so adopting this token would only move the failure
+		// to the agent's first request, where it reads as the model being down.
+		expect(proxyTokenOf(url("scribe", "s3cret-token"), "scout")).toBeUndefined();
+	});
+
+	it("has nothing to recover from a sandbox with no proxy", () => {
+		expect(proxyTokenOf(undefined, "scout")).toBeUndefined();
+		expect(proxyTokenOf("http://egress:8080", "scout")).toBeUndefined();
+		expect(proxyTokenOf("not a url", "scout")).toBeUndefined();
+	});
+
+	it("reads through the escaping the URL was built with", () => {
+		expect(proxyTokenOf(url(encodeURIComponent("a.b"), encodeURIComponent("t/k+n=")), "a.b")).toBe(
+			"t/k+n=",
+		);
 	});
 });

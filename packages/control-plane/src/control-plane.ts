@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
@@ -15,7 +16,6 @@ import {
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
 import { CreatedAgentStore } from "./created-agents.ts";
-import { ProxyTokenStore } from "./proxy-tokens.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
 
@@ -141,7 +141,6 @@ export class ControlPlane {
 	readonly #proxyOrigin: string;
 	readonly #webhookPort: number;
 	readonly #turnTimeoutMs: number | undefined;
-	readonly #proxyTokens: ProxyTokenStore;
 	readonly #tokens = new Map<string, string>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
 	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
@@ -159,7 +158,6 @@ export class ControlPlane {
 		this.#turnTimeoutMs = options.turnTimeoutMs;
 		this.#onError = options.onError;
 		this.#onTurn = options.onTurn;
-		this.#proxyTokens = new ProxyTokenStore(join(this.#stateDir, "proxy-tokens.json"));
 		this.#created = new CreatedAgentStore(join(this.#stateDir, "agents.json"));
 
 		this.sandboxes = new DockerSandboxManager(
@@ -266,8 +264,6 @@ export class ControlPlane {
 
 		this.bus.unregister(agentId);
 		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
-		// The token was baked into the container that just went away, so nothing holds it any more.
-		await this.#proxyTokens.forget(agentId);
 		this.#tokens.delete(agentId);
 
 		if (options.purge === true && this.#createdIds.delete(agentId)) {
@@ -349,7 +345,7 @@ export class ControlPlane {
 	}
 
 	async #startAgent(agent: AgentConfig): Promise<void> {
-		const proxyToken = await this.#proxyTokens.ensure(agent.id);
+		const proxyToken = await this.#adoptOrCreateSandbox(agent);
 		this.#tokens.set(agent.id, proxyToken);
 		this.directory.register({
 			agentId: agent.id,
@@ -357,17 +353,6 @@ export class ControlPlane {
 			grants: agent.grants ?? [],
 		});
 
-		if (!(await this.sandboxes.status(agent.id))) {
-			await this.sandboxes.create({
-				agentId: agent.id,
-				image: this.#image,
-				proxyUrl: `http://${encodeURIComponent(agent.id)}:${proxyToken}@${this.#proxyOrigin}`,
-				caCertHostPath: this.caCertPath,
-				...(agent.env !== undefined ? { env: agent.env } : {}),
-				...(agent.memoryBytes !== undefined ? { memoryBytes: agent.memoryBytes } : {}),
-				...(agent.nanoCpus !== undefined ? { nanoCpus: agent.nanoCpus } : {}),
-			});
-		}
 		await this.sandboxes.start(agent.id);
 		await ensureSelfRepo({
 			sandbox: this.sandboxes,
@@ -387,5 +372,56 @@ export class ControlPlane {
 		for (const schedule of agent.schedules ?? []) {
 			await this.scheduler.add({ ...schedule, agentId: agent.id });
 		}
+	}
+
+	/**
+	 * The agent's egress credential, and a sandbox that presents it.
+	 *
+	 * The token is baked into the container's environment when it is created, and the container is
+	 * not recreated while it exists — so the container is the only record of what the proxy will
+	 * actually be shown, and the plane has to read it back rather than decide it. A plane that
+	 * decided instead came back from a restart denying every request its own agents made, the model
+	 * included, and the only cure was destroying the sandbox that holds the agent.
+	 *
+	 * A container with no token to recover is one from before it was written there. It is replaced,
+	 * which is cheap: the volume is the agent, and it is not what goes away.
+	 */
+	async #adoptOrCreateSandbox(agent: AgentConfig): Promise<string> {
+		const existing = await this.sandboxes.status(agent.id);
+		if (existing !== undefined) {
+			const adopted = proxyTokenOf(existing.proxyUrl, agent.id);
+			if (adopted !== undefined) return adopted;
+			await this.sandboxes.destroy(agent.id, { discardState: false });
+		}
+
+		const proxyToken = randomBytes(24).toString("base64url");
+		await this.sandboxes.create({
+			agentId: agent.id,
+			image: this.#image,
+			proxyUrl: `http://${encodeURIComponent(agent.id)}:${proxyToken}@${this.#proxyOrigin}`,
+			caCertHostPath: this.caCertPath,
+			...(agent.env !== undefined ? { env: agent.env } : {}),
+			...(agent.memoryBytes !== undefined ? { memoryBytes: agent.memoryBytes } : {}),
+			...(agent.nanoCpus !== undefined ? { nanoCpus: agent.nanoCpus } : {}),
+		});
+		return proxyToken;
+	}
+}
+
+/**
+ * The token inside a sandbox's proxy URL, if it is this agent's to use.
+ *
+ * The user half is checked because the proxy authenticates on both: a container carrying another
+ * agent's name would be denied whatever the token said, so recovering it would only postpone the
+ * failure to the first request.
+ */
+export function proxyTokenOf(proxyUrl: string | undefined, agentId: string): string | undefined {
+	if (proxyUrl === undefined) return undefined;
+	try {
+		const { username, password } = new URL(proxyUrl);
+		if (password === "" || decodeURIComponent(username) !== agentId) return undefined;
+		return decodeURIComponent(password);
+	} catch {
+		return undefined;
 	}
 }
