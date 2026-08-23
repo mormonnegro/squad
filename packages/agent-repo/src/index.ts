@@ -1,4 +1,5 @@
 export {
+	AGENT_NAME_PATTERN,
 	type AgentManifest,
 	type CapabilityRequest,
 	ManifestError,

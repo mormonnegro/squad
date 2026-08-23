@@ -34,7 +34,8 @@ export class ManifestError extends Error {
 	}
 }
 
-const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
+/** What an agent may be called, and so what an operator may name one in the control plane. */
+export const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const KNOWN_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,7 +107,7 @@ export function parseManifest(source: string): AgentManifest {
 
 	const { name, description, model, requests } = raw;
 
-	if (typeof name !== "string" || !NAME_PATTERN.test(name)) {
+	if (typeof name !== "string" || !AGENT_NAME_PATTERN.test(name)) {
 		issues.push(
 			'name is required and must be lowercase alphanumeric with dashes, e.g. "support-emma"',
 		);

@@ -116,6 +116,11 @@ suite("a control plane deployed inside the sandbox network", () => {
 		expect((await curl("https://api.github.com/")).stderr).toContain("CONNECT tunnel failed");
 	}, 90_000);
 
+	it("gave the agent its repository, from a control plane that is itself in a container", async () => {
+		const manifest = await manager.exec(AGENT_ID, ["cat", "/home/agent/.self/agent.yaml"]);
+		expect(manifest.stdout).toContain(`name: ${AGENT_ID}`);
+	}, 90_000);
+
 	it("has no route off the network except the proxy", async () => {
 		const result = await manager.run(
 			AGENT_ID,

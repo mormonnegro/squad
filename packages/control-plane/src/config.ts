@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
 import type { Hook } from "@agent-dive/channels";
 import { parse as parseYaml } from "yaml";
 import type { AgentConfig, ControlPlaneOptions } from "./control-plane.ts";
@@ -116,8 +117,10 @@ function parseAgent(
 		issues.push(`${label} must be a mapping`);
 		return undefined;
 	}
-	if (typeof raw.id !== "string" || raw.id.length === 0) {
-		issues.push(`${label}.id is required`);
+	// The id becomes the agent's name in its own manifest, so it has to be a name that manifest
+	// accepts, not merely a non-empty string.
+	if (typeof raw.id !== "string" || !AGENT_NAME_PATTERN.test(raw.id)) {
+		issues.push(`${label}.id must be lowercase alphanumeric with dashes, e.g. "support-emma"`);
 		return undefined;
 	}
 

@@ -100,7 +100,13 @@ agents:
 
 	it("refuses an agent without an id", () => {
 		expect(() => parseConfig("stateDir: /state\nagents:\n  - model: opus\n", {})).toThrow(
-			/agents\[0\]\.id is required/,
+			/agents\[0\]\.id/,
+		);
+	});
+
+	it("refuses an id the agent's own manifest could not carry as its name", () => {
+		expect(() => parseConfig("stateDir: /state\nagents:\n  - id: Scout Bot\n", {})).toThrow(
+			/lowercase alphanumeric/,
 		);
 	});
 
