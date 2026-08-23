@@ -21,7 +21,7 @@ as data, in one place, so a new channel adapter cannot forget to do it.
 proxy that matches the request against operator-approved grants and attaches the secret afterwards.
 The sandbox network is `internal`, which really is unrouted — a container on it cannot reach the
 host or the internet by any address — so the proxy is not a convenience the agent could route
-around. This includes the model: reaching Anthropic is a grant like any other, and the key is
+around. This includes the model: reaching the model provider is a grant like any other, and the key is
 written onto the request on its way out, so an agent that talks itself into exfiltrating its own
 API key has nothing to send.
 
@@ -81,7 +81,7 @@ authority into the system:
 ## Trying it
 
 ```sh
-./deploy/demo.sh up            # it asks for an ANTHROPIC_API_KEY if the environment has none
+./deploy/demo.sh up            # it asks for a DEEPSEEK_API_KEY if the environment has none
 ./deploy/demo.sh reload        # after changing the code, keeping the agent you have
 ```
 
@@ -173,11 +173,11 @@ spent.
 18:12:53  maxi      read        packages/control-plane/src/turn.ts
 18:12:53  scout     egress    ✗ denied GET api.github.com/repos — no_matching_host
 18:12:53  maxi      answer      El test esperaba el mensaje viejo.
-18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.47 · api.anthropic.com ×12
+18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12
 ```
 
 Model round-trips that worked are counted rather than printed, and the count arrives with the turn
-that made them: one identical `allowed POST api.anthropic.com` per request is what the lines that
+that made them: one identical `allowed POST api.deepseek.com` per request is what the lines that
 matter used to be buried in. A request that was denied, or came back 401 or 429, is said the moment
 it happens, because it is the reason the agent is about to misbehave.
 

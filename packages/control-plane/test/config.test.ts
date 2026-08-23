@@ -252,7 +252,7 @@ agents:
 describe("the example configuration", () => {
 	it("parses, and grants its agents the one host without which no turn can finish", async () => {
 		const config = parseConfig(await readFile(EXAMPLE, "utf8"), {
-			ANTHROPIC_API_KEY: "sk-live",
+			DEEPSEEK_API_KEY: "sk-live",
 			GITHUB_TOKEN: "ghp-live",
 			DEPLOY_HOOK_SECRET: "s3cret",
 		});
@@ -262,9 +262,22 @@ describe("the example configuration", () => {
 		const agent = withDefaults(config.agents[0] ?? { id: "none" }, config.defaults);
 		const made = withDefaults({ id: "made-later" }, config.defaults);
 		for (const each of [agent, made]) {
-			expect(each.grants?.map((grant) => grant.host)).toContain("api.anthropic.com");
+			expect(each.grants?.map((grant) => grant.host)).toContain("api.deepseek.com");
 			// And it holds no key of its own, because the grant writes the real one on the way out.
-			expect(each.env?.ANTHROPIC_API_KEY).not.toBe("sk-live");
+			expect(each.env?.DEEPSEEK_API_KEY).not.toBe("sk-live");
 		}
+	});
+
+	it("names the provider it grants, rather than leaving pi to pick one", async () => {
+		// Said nowhere, pi falls back to its own default provider, and the grant is then for a host
+		// the agent never calls: every turn dies at the proxy against a perfectly correct config.
+		const config = parseConfig(await readFile(EXAMPLE, "utf8"), {
+			DEEPSEEK_API_KEY: "sk-live",
+			GITHUB_TOKEN: "ghp-live",
+			DEPLOY_HOOK_SECRET: "s3cret",
+		});
+
+		expect(config.defaults?.provider).toBeDefined();
+		expect(config.defaults?.model).toBeDefined();
 	});
 });

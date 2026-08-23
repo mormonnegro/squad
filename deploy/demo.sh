@@ -66,6 +66,46 @@ start_plane() {
   docker network connect --alias egress "$EGRESS" "$PLANE"
 }
 
+# Written by `up` and again by `reload`, because the config is part of what a reload swaps in: an
+# edit here that only took effect on `up` would be one you cannot try without destroying the agent.
+#
+# stateDir is an absolute host path and the control plane is mounted at that same path, because the
+# daemon resolves the CA bind source on the host when it creates the sandbox.
+write_config() {
+  cat > "$STATE/config.yaml" <<YAML
+stateDir: $STATE
+networkName: $EGRESS
+# What every agent starts from, including one made later with \`agent chat <name>\`. Without a model
+# grant here, an agent created at the keyboard would be born unable to think.
+defaults:
+  provider: deepseek
+  model: deepseek-v4-flash
+  # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
+  # agent's own Authorization before writing the injected one, so this is the whole credential the
+  # agent ever holds.
+  env:
+    DEEPSEEK_API_KEY: injected-by-the-proxy
+  grants:
+    - id: model
+      host: api.deepseek.com
+      injection:
+        kind: bearer
+        token: { ref: MODEL_KEY }
+agents:
+  - id: $AGENT
+    grants:
+      - id: example
+        host: example.com
+        methods: [GET]
+        injection: { kind: none }
+hooks:
+  - id: ping
+    agentId: $AGENT
+    secretEnv: HOOK_SECRET
+    trust: participant
+YAML
+}
+
 # Swaps in newly built control plane code without touching the agent.
 #
 # The sandbox keeps running throughout, which is only safe because the new plane reads the proxy
@@ -77,19 +117,22 @@ reload() {
 
   say "rebuilding the control plane"
   docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev . >/dev/null
+  write_config
 
-  # Read back off the running container, so a reload never asks for the key again.
+  # Read back off the running container, so a reload never asks for the key again. A key in the
+  # environment wins, which is how the provider gets changed without going through `up` and losing
+  # the agent: the old key would be offered to the new provider and refused as a bad credential.
   local key
   key=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}' |
     sed -n 's/^MODEL_KEY=//p')
 
   docker rm -f "$PLANE" >/dev/null
-  start_plane "${key:-sk-ant-placeholder}"
+  start_plane "${DEEPSEEK_API_KEY:-${key:-no-key-configured}}"
 
   say "the plane is new, the agent is the one you had"
   docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
-  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.anthropic.com (injected)  -> %{http_code}\n' \
-    -H 'anthropic-version: 2023-06-01' https://api.anthropic.com/v1/models || true
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
+    https://api.deepseek.com/models || true
 }
 
 up() {
@@ -97,15 +140,15 @@ up() {
 
   # Asked for here rather than required up front: the key is only needed at the model, and a demo
   # that stops to say "export this first" is a demo nobody gets to the end of.
-  if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; then
-    say "an Anthropic API key"
+  if [ -z "${DEEPSEEK_API_KEY:-}" ] && [ -t 0 ]; then
+    say "a DeepSeek API key"
     echo "Only the turn needs it. Everything else runs without one, and the wakeup stays queued."
     printf '  paste a key, or press enter to go on without it: '
-    read -rs ANTHROPIC_API_KEY || true
+    read -rs DEEPSEEK_API_KEY || true
     echo
   fi
-  if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    say "no ANTHROPIC_API_KEY"
+  if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
+    say "no DEEPSEEK_API_KEY"
     echo "Everything will run, but the turn itself will fail at the model and the wakeup will stay"
     echo "queued for a retry."
   fi
@@ -120,39 +163,7 @@ up() {
   down >/dev/null 2>&1 || true
   mkdir -p "$STATE"
 
-  # stateDir is an absolute host path and the control plane is mounted at that same path, because
-  # the daemon resolves the CA bind source on the host when it creates the sandbox.
-  cat > "$STATE/config.yaml" <<YAML
-stateDir: $STATE
-networkName: $EGRESS
-# What every agent starts from, including one made later with \`agent chat <name>\`. Without a model
-# grant here, an agent created at the keyboard would be born unable to think.
-defaults:
-  # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
-  # agent's own x-api-key before writing the injected one, so this is the whole credential the
-  # agent ever holds.
-  env:
-    ANTHROPIC_API_KEY: injected-by-the-proxy
-  grants:
-    - id: model
-      host: api.anthropic.com
-      injection:
-        kind: header
-        name: x-api-key
-        value: { ref: MODEL_KEY }
-agents:
-  - id: $AGENT
-    grants:
-      - id: example
-        host: example.com
-        methods: [GET]
-        injection: { kind: none }
-hooks:
-  - id: ping
-    agentId: $AGENT
-    secretEnv: HOOK_SECRET
-    trust: participant
-YAML
+  write_config
 
   # Internal means unrouted: the agent cannot reach the host or the internet from here, so the
   # proxy has to be on this network too. Uplink is how the control plane gets out.
@@ -160,7 +171,7 @@ YAML
   docker network create "$UPLINK" >/dev/null
 
   say "starting the control plane"
-  start_plane "${ANTHROPIC_API_KEY:-sk-ant-placeholder}"
+  start_plane "${DEEPSEEK_API_KEY:-no-key-configured}"
 
   for _ in $(seq 60); do
     [ "$(docker inspect -f '{{.State.Running}}' "$SANDBOX" 2>/dev/null)" = "true" ] && break
@@ -181,8 +192,8 @@ YAML
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)         -> %{http_code}\n' https://example.com/ || true
   # 200 here is the whole point: the request left the sandbox with no key in it, and the proxy put
   # one in. The agent cannot spend that key anywhere else, because nowhere else matches a grant.
-  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.anthropic.com (injected)  -> %{http_code}\n' \
-    -H 'anthropic-version: 2023-06-01' https://api.anthropic.com/v1/models || true
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
+    https://api.deepseek.com/models || true
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.github.com (not granted)  -> %{http_code}\n' https://api.github.com/ 2>/dev/null ||
     echo '  api.github.com (not granted)  -> refused at CONNECT'
 

@@ -10,19 +10,20 @@ stateDir: /var/lib/agent-dive
 # An agent's own block adds to these rather than replacing them; a grant it declares with the same
 # id wins, which is how one agent is narrowed without narrowing the rest.
 defaults:
-  provider: anthropic
-  model: claude-opus-4-7
+  provider: deepseek
+  model: deepseek-v4-flash
   env:
-    ANTHROPIC_API_KEY: injected-by-the-proxy
+    # A placeholder, and enough: pi only needs to see that the provider is configured. The value it
+    # sends is discarded at the proxy and replaced with the real one.
+    DEEPSEEK_API_KEY: injected-by-the-proxy
   grants:
     # Without this a new agent cannot think, and would find that out mid-turn as a refusal at the
     # proxy. The model is a grant like any other: somewhere the agent may reach, never a key it holds.
     - id: model
-      host: api.anthropic.com
+      host: api.deepseek.com
       injection:
-        kind: header
-        name: x-api-key
-        value: { ref: ANTHROPIC_API_KEY }
+        kind: bearer
+        token: { ref: DEEPSEEK_API_KEY }
 
 agents:
   # Everything above is already true of this agent. What is here is what makes it that one.

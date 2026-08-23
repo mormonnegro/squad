@@ -394,17 +394,16 @@ It cannot reach anything yet, the model included: this plane's config has no def
 for a new agent. Add them to it, and restart the plane:
 
   defaults:
-    provider: anthropic
-    model: claude-opus-4-7
+    provider: deepseek
+    model: deepseek-v4-flash
     env:
-      ANTHROPIC_API_KEY: injected-by-the-proxy
+      DEEPSEEK_API_KEY: injected-by-the-proxy
     grants:
       - id: model
-        host: api.anthropic.com
+        host: api.deepseek.com
         injection:
-          kind: header
-          name: x-api-key
-          value: { ref: ANTHROPIC_API_KEY }
+          kind: bearer
+          token: { ref: DEEPSEEK_API_KEY }
 `;
 
 /**
