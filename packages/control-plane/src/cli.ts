@@ -94,10 +94,34 @@ async function run(path: string): Promise<number> {
 	return 0;
 }
 
-async function connect(stateDir: string): Promise<ControlClient> {
+async function open(stateDir: string): Promise<ControlClient> {
 	const client = new ControlClient(stateDir);
 	await client.connect();
 	return client;
+}
+
+/**
+ * The planes that do exist, for the complaint that this one does not.
+ *
+ * Nothing found is nearly always something found somewhere else — a demo alongside a deployment,
+ * or a checkout the default knows nothing about — and "no plane where you did not look" is the
+ * least useful way to say so.
+ */
+async function candidates(stateDir: string): Promise<string> {
+	const elsewhere = (await runningPlanes().catch(() => [])).filter((dir) => dir !== stateDir);
+	if (elsewhere.length === 0) return "";
+	const lines = elsewhere.map((dir) => `  agent --state ${dir}`).join("\n");
+	return `${elsewhere.length === 1 ? "A plane is" : "Planes are"} running elsewhere:\n${lines}\n`;
+}
+
+async function connect(stateDir: string): Promise<ControlClient> {
+	try {
+		return await open(stateDir);
+	} catch (error) {
+		if (!(error instanceof ControlError)) throw error;
+		const found = await candidates(stateDir);
+		throw new ControlError(found.length > 0 ? `${error.message}\n\n${found}` : error.message);
+	}
 }
 
 async function agents(args: Args): Promise<number> {
@@ -131,19 +155,17 @@ async function status(args: Args): Promise<number> {
 
 	let client: ControlClient;
 	try {
-		client = await connect(stateDir);
+		client = await open(stateDir);
 	} catch (error) {
 		if (!(error instanceof ControlError)) throw error;
 		process.stdout.write(`plane   not running\n\n${error.message}\n\n`);
-		const elsewhere = (await runningPlanes().catch(() => [])).filter((dir) => dir !== stateDir);
-		if (elsewhere.length > 0) {
-			process.stdout.write("A plane is running somewhere else:\n");
-			for (const dir of elsewhere) process.stdout.write(`  agent --state ${dir}\n`);
-			return 1;
-		}
+		// Pointing at a plane that is up beats suggesting they start another one.
+		const found = await candidates(stateDir);
 		process.stdout.write(
-			"  agent run <config.yaml>   start one\n" +
-				"  ./deploy/demo.sh up       or watch the whole thing run on throwaway names\n",
+			found.length > 0
+				? found
+				: "  agent run <config.yaml>   start one\n" +
+						"  ./deploy/demo.sh up       or watch the whole thing run on throwaway names\n",
 		);
 		return 1;
 	}
