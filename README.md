@@ -84,11 +84,10 @@ authority into the system:
 ./deploy/demo.sh up            # it asks for an ANTHROPIC_API_KEY if the environment has none
 ```
 
-It builds what is missing, starts a control plane on a throwaway network, shows what the agent can
-and cannot reach, asks the plane over its control socket, wakes the agent with a signed webhook and
-prints the turn. `./deploy/demo.sh down`
-removes everything. State lives under the working tree rather than `/var/lib`, which is the one way
-it differs from the real deployment below.
+It builds the images, starts a control plane on a throwaway network, shows what the agent can and
+cannot reach, asks the plane over its control socket, wakes the agent with a signed webhook and
+prints the turn. `./deploy/demo.sh down` removes everything. State lives under the working tree
+rather than `/var/lib`, which is the one way it differs from the real deployment below.
 
 ## Running it
 
@@ -124,12 +123,17 @@ A running plane listens on a unix socket in its state directory. That is the who
 
 ```sh
 agent                                    where the state is, and what is running in it
-agent wake demo "check the open issues"  take a turn, and wait for the answer
+agent chat demo                          talk to it, turn after turn
+agent ls                                 what each agent is and whether it is up
+agent wake demo "check the open issues"  take one turn, and wait for the answer
 agent logs                               follow turns and egress decisions live
+agent rm demo [--purge]                  take the sandbox away, and with --purge the repository
+agent help                               the rest
 ```
 
 `agent` on its own answers with the current state, because that is what someone typing the command
-with nothing after it wants to know. `agent --help` lists the rest.
+with nothing after it wants to know. The agent's name is optional wherever it appears: a plane
+running one agent already knows which one is meant.
 
 Told nothing, it looks for the plane that is running rather than the one that would be there in a
 deployment: planes label their container with the directory they serve, so `agent` in a checkout
@@ -146,12 +150,18 @@ From a checkout, `pnpm link --global` in `packages/control-plane` puts `agent` o
 `node packages/control-plane/bin/agent.mjs` is the same command without installing anything.
 
 There is no password because there is nothing to authenticate: the socket is `0600`, and reaching
-it already means holding a file the operator owns. That is also why `wake` is the only way into the
-system that carries operator trust. The same sentence arriving by webhook is data the agent may
-read; typed here it is an instruction the agent may follow.
+it already means holding a file the operator owns. That is also why this socket is the only way
+into the system that carries operator trust. The same sentence arriving by webhook is data the
+agent may read; typed here it is an instruction the agent may follow.
 
-`wake` waits for the turn to finish, which is as long as the agent takes to think. It prints what
-the agent said, and nothing if the agent chose to say nothing.
+`wake` waits for the turn to finish, which is as long as the agent takes to think, and prints what
+the agent said. `chat` is the same turn in a loop: pi keeps a session per agent, so the agent
+remembers the previous line.
+
+`rm` takes the container and leaves the volume, because the volume is the agent — its soul, what it
+chose to remember, and the tools it wrote for itself. `--purge` deletes that too, and asks for the
+agent's name to be typed first, so a reflexive `y` cannot do it. Neither touches the config file,
+which no plane may write, so a removed agent comes back on the next start.
 
 ## Waking an agent from elsewhere
 
