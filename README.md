@@ -57,6 +57,18 @@ authority into the system:
   itself with no attacker present to notice or revoke.
 - The fence nonce is random and chosen after the content is written, so nothing inside can close it.
 
+## Trying it
+
+```sh
+export ANTHROPIC_API_KEY=...   # without it everything runs but the turn fails at the model
+./deploy/demo.sh up
+```
+
+It builds what is missing, starts a control plane on a throwaway network, shows what the agent can
+and cannot reach, wakes it with a signed webhook and prints the turn. `./deploy/demo.sh down`
+removes everything. State lives under the working tree rather than `/var/lib`, which is the one way
+it differs from the real deployment below.
+
 ## Running it
 
 Build the sandbox image and start the control plane:

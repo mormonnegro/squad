@@ -22,6 +22,9 @@ async function main(argv: readonly string[]): Promise<number> {
 		onError: (context, error) => {
 			process.stderr.write(`[${context}] ${error.message}\n`);
 		},
+		onTurn: (agentId, result) => {
+			process.stdout.write(`[${agentId}] ${result.text}\n`);
+		},
 		onAudit: (entry) => {
 			process.stdout.write(
 				`${entry.at} ${entry.agentId ?? "-"} ${entry.outcome} ${entry.method} ${entry.host}${entry.path}` +

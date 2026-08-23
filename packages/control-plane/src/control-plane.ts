@@ -14,7 +14,7 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
-import { createTurnHandler, PiTurnRunner } from "./turn.ts";
+import { createTurnHandler, PiTurnRunner, type TurnResult } from "./turn.ts";
 
 export interface AgentConfig {
 	readonly id: string;
@@ -53,6 +53,8 @@ export interface ControlPlaneOptions {
 	readonly turnTimeoutMs?: number;
 	readonly onAudit?: (entry: AuditEntry) => void;
 	readonly onError?: (context: string, error: Error) => void;
+	/** Called with whatever the agent said. Without it a running control plane is silent. */
+	readonly onTurn?: (agentId: string, result: TurnResult) => void;
 }
 
 const DEFAULT_IMAGE = "agent-dive/sandbox:dev";
@@ -85,6 +87,7 @@ export class ControlPlane {
 	readonly #turnTimeoutMs: number | undefined;
 	readonly #tokens = new Map<string, string>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
+	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
 	#started = false;
 
 	constructor(options: ControlPlaneOptions) {
@@ -96,6 +99,7 @@ export class ControlPlane {
 		this.#webhookPort = options.webhookPort ?? DEFAULT_WEBHOOK_PORT;
 		this.#turnTimeoutMs = options.turnTimeoutMs;
 		this.#onError = options.onError;
+		this.#onTurn = options.onTurn;
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -186,7 +190,14 @@ export class ControlPlane {
 			...(agent.model !== undefined ? { model: agent.model } : {}),
 			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),
 		});
-		await this.bus.register(agent.id, createTurnHandler({ runner, router: this.router }));
+		await this.bus.register(
+			agent.id,
+			createTurnHandler({
+				runner,
+				router: this.router,
+				...(this.#onTurn ? { onTurn: this.#onTurn } : {}),
+			}),
+		);
 
 		for (const schedule of agent.schedules ?? []) {
 			await this.scheduler.add({ ...schedule, agentId: agent.id });

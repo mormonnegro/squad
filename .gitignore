@@ -8,3 +8,4 @@ dist/
 *.log
 .pki/
 .deploy-itest/
+.demo/
