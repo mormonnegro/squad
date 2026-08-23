@@ -1,0 +1,38 @@
+name: agent-dive
+
+services:
+  control-plane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # The daemon resolves bind sources on the host, so the path the control plane uses to mount
+      # the CA into a sandbox has to mean the same thing in both places. Mounting the state
+      # directory at its own name is what makes that true; a convenient container path would
+      # produce mounts the daemon cannot find.
+      - /var/lib/agent-dive:/var/lib/agent-dive
+      # Sandboxes are containers, so managing them is root on the host. This is the trust boundary
+      # of the whole system: the sandbox contains the agent, not this process.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config.yaml:/etc/agent-dive/config.yaml:ro
+    ports:
+      # Only webhooks are published. The proxy stays on the container networks, where the agents
+      # are, because publishing it would put a credential-injecting forwarder on the internet.
+      - "8787:8787"
+    networks:
+      egress:
+        aliases:
+          - egress
+      uplink:
+
+networks:
+  # Where the agents live. Internal really is unrouted: a container here cannot reach the host or
+  # the internet by any address, so the only way out is the proxy, which is on this network too.
+  egress:
+    name: agent-dive-egress
+    internal: true
+  # How the control plane reaches the internet on the agents' behalf.
+  uplink:
+    name: agent-dive-uplink

@@ -22,19 +22,70 @@ stateDir: /state
 agents:
   - id: scout
     grants:
-      - host: api.github.com
+      - id: github-read
+        host: api.github.com
         methods: [GET]
+        injection:
+          kind: bearer
+          token: { ref: GITHUB_TOKEN }
     schedules:
       - kind: cron
         expression: "0 9 * * *"
         channel: cron:daily
         body: check the queue
+        trust: operator
+        createdBy: operator
 `,
 			{},
 		);
 
-		expect(config.agents[0]?.grants).toEqual([{ host: "api.github.com", methods: ["GET"] }]);
+		expect(config.agents[0]?.grants).toEqual([
+			{
+				id: "github-read",
+				host: "api.github.com",
+				methods: ["GET"],
+				injection: { kind: "bearer", token: { ref: "GITHUB_TOKEN" } },
+			},
+		]);
 		expect(config.agents[0]?.schedules).toHaveLength(1);
+	});
+
+	it("puts named environment values into the sandbox without writing them down", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+agents:
+  - id: scout
+    envFrom:
+      ANTHROPIC_API_KEY: SCOUT_KEY
+`,
+			{ SCOUT_KEY: "sk-live" },
+		);
+
+		expect(config.agents[0]?.env).toEqual({ ANTHROPIC_API_KEY: "sk-live" });
+	});
+
+	it("refuses to start when an agent's named value is missing", () => {
+		expect(() =>
+			parseConfig("stateDir: /s\nagents:\n  - id: scout\n    envFrom:\n      KEY: SCOUT_KEY\n", {}),
+		).toThrow(/agents\[0\]\.envFrom\.KEY reads SCOUT_KEY/);
+	});
+
+	it("keeps literal env alongside named values", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+agents:
+  - id: scout
+    env:
+      TZ: UTC
+    envFrom:
+      KEY: SCOUT_KEY
+`,
+			{ SCOUT_KEY: "sk-live" },
+		);
+
+		expect(config.agents[0]?.env).toEqual({ TZ: "UTC", KEY: "sk-live" });
 	});
 
 	it("refuses a configuration without a state directory", () => {

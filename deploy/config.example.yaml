@@ -1,0 +1,54 @@
+# Every capability an agent has is in this file. Nothing here is a secret, so commit it and review
+# changes to it: a grant nobody noticed being added is the whole failure mode.
+
+stateDir: /var/lib/agent-dive
+
+agents:
+  - id: scout
+    provider: anthropic
+    model: claude-opus-4-7
+
+    # What the sandbox gets in its environment. The left side is the name inside the container, the
+    # right side names the control plane's variable holding the value, so no key is written here.
+    envFrom:
+      ANTHROPIC_API_KEY: ANTHROPIC_API_KEY
+
+    # What the agent may reach, and with whose credentials. The agent never sees the token: the
+    # proxy attaches it after the request has matched a grant. `ref` names an environment variable
+    # of the control plane.
+    grants:
+      - id: github-issues
+        host: api.github.com
+        pathPrefix: /repos/acme/website/issues
+        methods: [GET, POST]
+        injection:
+          kind: bearer
+          token: { ref: GITHUB_TOKEN }
+
+      - id: docs
+        host: "*.acme.com"
+        methods: [GET]
+        injection:
+          kind: none
+
+    schedules:
+      - kind: cron
+        expression: "0 9 * * 1-5"
+        timeZone: America/Argentina/Buenos_Aires
+        channel: cron:standup
+        body: Summarise yesterday's issues and post the standup note.
+        # An operator wrote this line, so the wakeup may instruct. Anything the agent schedules for
+        # itself cannot carry operator trust, however it asks.
+        trust: operator
+        createdBy: operator
+
+# An HMAC-signed endpoint at POST /hooks/<id> on port 8787.
+hooks:
+  - id: deploys
+    agentId: scout
+    # The name of an environment variable, not the secret itself.
+    secretEnv: DEPLOY_HOOK_SECRET
+    # A hook proves which system sent the request, never that a human meant what is inside it, so
+    # operator trust is refused here. The default is "public".
+    trust: participant
+    replyUrl: https://acme.example.com/agent-replies

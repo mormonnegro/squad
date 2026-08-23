@@ -75,7 +75,42 @@ function parseHook(
 	};
 }
 
-function parseAgent(raw: unknown, index: number, issues: string[]): AgentConfig | undefined {
+/**
+ * Resolves `envFrom`, which names the control plane's variables instead of quoting their values.
+ *
+ * An agent needs at least a model key inside its sandbox, and writing that key here would put a
+ * live credential in the one file that is meant to be committed.
+ */
+function parseEnvFrom(
+	raw: unknown,
+	label: string,
+	env: NodeJS.ProcessEnv,
+	issues: string[],
+): Record<string, string> {
+	if (raw === undefined) return {};
+	if (!isRecord(raw)) {
+		issues.push(`${label}.envFrom must be a mapping of container variable to source variable`);
+		return {};
+	}
+
+	const resolved: Record<string, string> = {};
+	for (const [name, source] of Object.entries(raw)) {
+		if (typeof source !== "string" || source.length === 0) {
+			issues.push(`${label}.envFrom.${name} must name an environment variable`);
+			continue;
+		}
+		const value = secretFromEnv(source, `${label}.envFrom.${name}`, env, issues);
+		if (value !== undefined) resolved[name] = value;
+	}
+	return resolved;
+}
+
+function parseAgent(
+	raw: unknown,
+	index: number,
+	env: NodeJS.ProcessEnv,
+	issues: string[],
+): AgentConfig | undefined {
 	const label = `agents[${index}]`;
 	if (!isRecord(raw)) {
 		issues.push(`${label} must be a mapping`);
@@ -86,9 +121,18 @@ function parseAgent(raw: unknown, index: number, issues: string[]): AgentConfig 
 		return undefined;
 	}
 
+	const { envFrom, env: literal, ...rest } = raw;
+	const resolved = {
+		...(isRecord(literal) ? literal : {}),
+		...parseEnvFrom(envFrom, label, env, issues),
+	};
+
 	// Grants and schedules are handed to the proxy and scheduler as written; both validate their
 	// own shape and report better errors than a second copy of their rules would.
-	return raw as unknown as AgentConfig;
+	return {
+		...rest,
+		...(Object.keys(resolved).length > 0 ? { env: resolved } : {}),
+	} as unknown as AgentConfig;
 }
 
 export interface LoadedConfig extends ControlPlaneOptions {
@@ -114,7 +158,7 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 	const parsedAgents: AgentConfig[] = [];
 	if (Array.isArray(agents)) {
 		agents.forEach((entry, index) => {
-			const agent = parseAgent(entry, index, issues);
+			const agent = parseAgent(entry, index, env, issues);
 			if (agent) parsedAgents.push(agent);
 		});
 	}
