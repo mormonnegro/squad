@@ -19,6 +19,28 @@ const REMEMBERED_LINES = 2000;
 
 const AGENTS_WIDTH = 18;
 
+/** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
+const PROMPT_ROWS = 3;
+
+/**
+ * Braille, because it turns in place: every frame is one column wide, so the line beside it does
+ * not move while it spins.
+ */
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+/** What each mark means, said in colour as well as in shape, for whoever is scanning rather than reading. */
+const MARKS = {
+	busy: { glyph: "◐", color: "yellow" },
+	running: { glyph: "●", color: "green" },
+	stopped: { glyph: "○", color: "gray" },
+} as const;
+
+/** Where a turn has got to, and how long it has been getting there. */
+export interface Thinking {
+	readonly frame: string;
+	readonly seconds: number;
+}
+
 export interface Said {
 	readonly from: "operator" | "agent";
 	readonly text: string;
@@ -57,9 +79,11 @@ export function extend(talk: Talk, agentId: string, chunk: string): Talk {
 export function transcript(history: readonly Said[]): readonly string[] {
 	const lines: string[] = [];
 	for (const said of history) {
+		// Between turns rather than after each: a trailing blank costs the pane a row, and the row it
+		// costs is the oldest line of the conversation, given up to hold a gap nobody is reading.
+		if (lines.length > 0) lines.push("");
 		const body = said.from === "operator" ? `\u001b[36m> ${said.text}\u001b[39m` : said.text;
 		lines.push(...body.split("\n"));
-		lines.push("");
 	}
 	return lines;
 }
@@ -98,7 +122,8 @@ export function Agents({
 }: {
 	readonly agents: readonly AgentSummary[];
 	readonly cursor: number;
-	readonly busy: ReadonlySet<string>;
+	/** Each agent mid-turn, against when its turn started. The column only asks whether. */
+	readonly busy: ReadonlyMap<string, number>;
 	readonly rows: number;
 }): ReactElement {
 	return h(
@@ -111,18 +136,25 @@ export function Agents({
 			// while an answer streamed and widened again when the next one was shorter.
 			flexShrink: 0,
 			borderStyle: "round",
+			borderColor: "gray",
 			paddingX: 1,
 		},
 		h(Text, { dimColor: true, key: "title" }, "agents"),
-		...agents.slice(0, rows).map((agent, index) =>
-			h(
+		...agents.slice(0, rows).map((agent, index) => {
+			// Thinking is worth a different mark from merely being up: with several agents on screen it
+			// is the one thing you cannot find out by asking again in a second.
+			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
+			const here = index === cursor;
+			return h(
 				Text,
-				{ key: agent.id, inverse: index === cursor, wrap: "truncate" },
-				// Thinking is worth a different mark from merely being up: with several agents on screen
-				// it is the one thing you cannot find out by asking again in a second.
-				`${busy.has(agent.id) ? "◐" : agent.running ? "●" : "○"} ${agent.id}`,
-			),
-		),
+				{ key: agent.id, wrap: "truncate" },
+				// A pointer rather than a reversed row: the marks are the colour in this column, and a
+				// highlight behind them takes it away exactly where it is being read.
+				h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
+				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${agent.id}`),
+			);
+		}),
 	);
 }
 
@@ -137,19 +169,27 @@ export function Chat({
 	readonly draft: string;
 	readonly rows: number;
 	readonly columns: number;
-	readonly thinking: boolean;
+	readonly thinking: Thinking | undefined;
 }): ReactElement {
-	// One line for the prompt, and one for the room the prompt needs above it.
-	const lines = tail(wrapped(transcript(history), columns), rows - 1);
-	// The prompt is one row and stays one row: what you need to see of a line you are still typing
-	// is its end, where the cursor is. The mark and the cursor are the two columns it does not have.
-	const room = Math.max(0, columns - 3);
+	// The box around the prompt costs two rows. A pane with no room for them keeps the prompt and
+	// gives up the border, because a border drawn where there is no room is the broken screen again.
+	const boxed = rows > PROMPT_ROWS;
+	const lines = tail(wrapped(transcript(history), columns), rows - (boxed ? PROMPT_ROWS : 1));
+	// A spinner alone says something is happening; the number rising beside it is what separates
+	// slow from stuck, and twice now the thing that looked slow was a hang.
+	const mark = thinking === undefined ? "> " : `${thinking.frame} ${thinking.seconds}s `;
+	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
+	// its end, where the cursor is. The box takes its border and padding out of the width first.
+	const room = Math.max(0, columns - (boxed ? 4 : 0) - mark.length - 1);
+	const hue = thinking === undefined ? "cyan" : "yellow";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
 		h(
 			Box,
-			{ flexDirection: "column", flexGrow: 1, key: "said" },
+			// Resting on the prompt rather than hanging from the top: an answer arrives where the next
+			// question is being typed, instead of at the far end of a pane of blank rows.
+			{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end", key: "said" },
 			// Already the width of the pane, so Ink is told not to measure them again — a row it
 			// decided to wrap is a row this one did not budget for.
 			...lines.map((line, index) =>
@@ -157,11 +197,17 @@ export function Chat({
 			),
 		),
 		h(
-			Text,
-			{ key: "prompt", wrap: "truncate" },
-			thinking ? h(Text, { dimColor: true }, "… ") : h(Text, { color: "cyan" }, "> "),
-			draft.slice(Math.max(0, draft.length - room)),
-			h(Text, { inverse: true }, " "),
+			Box,
+			boxed
+				? { key: "prompt", borderStyle: "round", borderColor: hue, paddingX: 1 }
+				: { key: "prompt" },
+			h(
+				Text,
+				{ wrap: "truncate" },
+				h(Text, { color: hue }, mark),
+				draft.slice(Math.max(0, draft.length - room)),
+				h(Text, { inverse: true }, " "),
+			),
 		),
 	);
 }
@@ -175,7 +221,8 @@ function Logs({
 }): ReactElement {
 	return h(
 		Box,
-		{ flexDirection: "column", flexGrow: 1 },
+		// The newest line against the bottom edge, which is where a feed being watched is read.
+		{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end" },
 		...tail(lines, rows).map((line, index) =>
 			h(Text, { key: `${index}`, wrap: "truncate" }, line === "" ? " " : line),
 		),
@@ -197,18 +244,29 @@ function App({
 	const [lines, setLines] = useState<readonly string[]>([]);
 	const [talk, setTalk] = useState<Talk>(new Map());
 	const [draft, setDraft] = useState("");
-	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+	// When each turn started, rather than merely that one did: the elapsed seconds come from here.
+	const [busy, setBusy] = useState<ReadonlyMap<string, number>>(new Map());
+	const [frame, setFrame] = useState(0);
 
 	const selected = agents[Math.min(cursor, agents.length - 1)];
 
 	// Once, for the life of the console: the plane streams until the socket closes, and asking twice
 	// would double every line.
 	useEffect(() => {
-		const feed = new LogFeed((line) =>
-			setLines((prev) => [...prev, line.replace(/\n$/, "")].slice(-REMEMBERED_LINES)),
+		const feed = new LogFeed(
+			(line) => setLines((prev) => [...prev, line.replace(/\n$/, "")].slice(-REMEMBERED_LINES)),
+			{ color: true },
 		);
 		client.logs((event) => feed.push(event));
 	}, [client]);
+
+	// Only while something is thinking. A console redrawing ten times a second at rest is one that
+	// keeps a laptop awake for nothing.
+	useEffect(() => {
+		if (busy.size === 0) return;
+		const timer = setInterval(() => setFrame((n) => n + 1), 100);
+		return () => clearInterval(timer);
+	}, [busy.size]);
 
 	// An agent can be created, stop or be replaced by something other than this console — the plane
 	// answers webhooks and schedules while nobody is watching — so the list is asked for, not derived.
@@ -230,7 +288,7 @@ function App({
 					text: "",
 				}),
 			);
-			setBusy((prev) => new Set(prev).add(agentId));
+			setBusy((prev) => new Map(prev).set(agentId, Date.now()));
 
 			let streamed = false;
 			const out = new MarkdownStream({
@@ -253,7 +311,7 @@ function App({
 			} finally {
 				out.end();
 				setBusy((prev) => {
-					const next = new Set(prev);
+					const next = new Map(prev);
 					next.delete(agentId);
 					return next;
 				});
@@ -319,7 +377,14 @@ function App({
 	const body = Math.max(1, rows - 4);
 	const width = Math.max(1, columns - AGENTS_WIDTH - 4);
 	const title = selected === undefined ? "no agents" : selected.id;
-	const hint = panel === "chat" ? "↑↓ agent   tab logs   ^C quit" : "↑↓ agent   tab chat   ^C quit";
+	const started = selected === undefined ? undefined : busy.get(selected.id);
+	const thinking: Thinking | undefined =
+		started === undefined
+			? undefined
+			: {
+					frame: SPINNER[frame % SPINNER.length] ?? SPINNER[0],
+					seconds: Math.floor((Date.now() - started) / 1000),
+				};
 
 	return h(
 		Box,
@@ -330,15 +395,22 @@ function App({
 			h(Agents, { agents, cursor, busy, rows: body, key: "agents" }),
 			h(
 				Box,
-				{ flexDirection: "column", flexGrow: 1, borderStyle: "round", paddingX: 1, key: "panel" },
+				{
+					flexDirection: "column",
+					flexGrow: 1,
+					borderStyle: "round",
+					borderColor: "gray",
+					paddingX: 1,
+					key: "panel",
+				},
 				h(
 					Box,
 					{ flexDirection: "row", key: "tabs" },
-					h(Text, { bold: true }, title),
-					h(Text, { dimColor: true }, "   "),
-					h(Text, { underline: panel === "chat", dimColor: panel !== "chat" }, "chat"),
+					h(Text, { bold: true, color: "cyan" }, title),
+					h(Text, null, "   "),
+					h(Text, { bold: panel === "chat", dimColor: panel !== "chat" }, "chat"),
 					h(Text, { dimColor: true }, " · "),
-					h(Text, { underline: panel === "logs", dimColor: panel !== "logs" }, "logs"),
+					h(Text, { bold: panel === "logs", dimColor: panel !== "logs" }, "logs"),
 				),
 				panel === "chat"
 					? h(Chat, {
@@ -346,13 +418,26 @@ function App({
 							draft,
 							rows: body - 1,
 							columns: width,
-							thinking: selected !== undefined && busy.has(selected.id),
+							thinking,
 							key: "chat",
 						})
 					: h(Logs, { lines, rows: body - 1, key: "logs" }),
 			),
 		),
-		h(Text, { dimColor: true, key: "hint" }, ` ${hint}`),
+		h(
+			Box,
+			{ flexDirection: "row", key: "hint" },
+			h(Text, null, " "),
+			// The key stands out from what it does, because the key is the part being looked for.
+			...[
+				["↑↓", "agent"],
+				["tab", panel === "chat" ? "logs" : "chat"],
+				["^C", "quit"],
+			].flatMap(([stroke, does], index) => [
+				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
+				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),
+			]),
+		),
 	);
 }
 

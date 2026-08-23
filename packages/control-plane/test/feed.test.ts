@@ -201,4 +201,34 @@ describe("LogFeed", () => {
 		expect(lines[0]).toContain("maxi -> webhook:deploys");
 		expect(lines[0]).toContain("✗ no reply URL");
 	});
+
+	/**
+	 * A feed on a terminal is scanned down the action column, so the columns are the feature and the
+	 * colour is what makes them findable. Padding a column after painting it pads it to the wrong
+	 * width — an escape sequence is characters that take up no space — and the columns stop lining up.
+	 */
+	it("paints the columns without moving them", () => {
+		const written: string[] = [];
+		const painted = new LogFeed((line) => written.push(line.replace(/\n$/, "")), { color: true });
+		const { lines, log } = feed();
+		const step = {
+			kind: "step",
+			agentId: "maxi",
+			step: { action: "bash", detail: "pnpm -r test" },
+		} satisfies PlaneEvent;
+
+		painted.push(step);
+		log.push(step);
+
+		expect(written[0]).toContain("\u001b[36mmaxi");
+		expect(plain(written[0] ?? "")).toBe(lines[0]);
+	});
 });
+
+/** What the line says once the colour is taken off it, which is what has to be the same either way. */
+function plain(line: string): string {
+	return line
+		.split("\u001b")
+		.map((piece, index) => (index === 0 ? piece : piece.slice(piece.indexOf("m") + 1)))
+		.join("");
+}

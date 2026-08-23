@@ -1,7 +1,16 @@
 import { Box, renderToString, Text } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
-import { Agents, append, Chat, extend, saidBy, tail, transcript } from "../src/console.ts";
+import {
+	Agents,
+	append,
+	Chat,
+	extend,
+	saidBy,
+	type Thinking,
+	tail,
+	transcript,
+} from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 
 /**
@@ -22,16 +31,18 @@ describe("transcript", () => {
 	});
 
 	it("gives an answer the lines it was written with", () => {
-		expect(transcript([{ from: "agent", text: "one\ntwo" }])).toEqual(["one", "two", ""]);
+		expect(transcript([{ from: "agent", text: "one\ntwo" }])).toEqual(["one", "two"]);
 	});
 
-	it("leaves a blank line between one turn and the next", () => {
+	// Between turns and not after each: the pane shows the last rows that fit, so a trailing blank
+	// is a row of conversation given up to hold a gap against the prompt.
+	it("leaves a blank line between one turn and the next, and none after the last", () => {
 		expect(
 			transcript([
 				{ from: "agent", text: "a" },
 				{ from: "agent", text: "b" },
 			]),
-		).toEqual(["a", "", "b", ""]);
+		).toEqual(["a", "", "b"]);
 	});
 });
 
@@ -96,7 +107,7 @@ describe("Agents", () => {
 
 	it("marks a thinking agent apart from one that is only up", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Set(["scribe"]), rows: 10 }),
+			h(Agents, { agents: three, cursor: 0, busy: new Map([["scribe", Date.now()]]), rows: 10 }),
 		);
 
 		expect(drawn).toContain("● scout");
@@ -111,7 +122,7 @@ describe("Agents", () => {
 			h(
 				Box,
 				{ flexDirection: "row" },
-				h(Agents, { agents: three, cursor: 0, busy: new Set<string>(), rows: 10 }),
+				h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
 				h(Box, { flexGrow: 1 }, h(Text, null, "unbreakable".repeat(20))),
 			),
 			{ columns: 80 },
@@ -122,7 +133,7 @@ describe("Agents", () => {
 
 	it("shows only what the pane has room for", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Set<string>(), rows: 2 }),
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 2 }),
 		);
 
 		expect(drawn).toContain("scribe");
@@ -140,14 +151,14 @@ describe("Chat", () => {
 		draft?: string;
 		rows?: number;
 		columns?: number;
-		thinking?: boolean;
+		thinking?: Thinking | undefined;
 	}) =>
 		renderToString(
 			h(Chat, {
 				draft: "",
 				rows: 4,
 				columns: 40,
-				thinking: false,
+				thinking: undefined,
 				...props,
 			}),
 			{ columns: 40 },
@@ -165,10 +176,13 @@ describe("Chat", () => {
 		expect(chat({ history: [], draft: "que es" })).toContain("que es");
 	});
 
-	// Nothing typed now will be lost, but it will be answered after this turn, and the prompt is
-	// where that is said.
-	it("says the agent is thinking rather than inviting a line", () => {
-		expect(chat({ history: [], thinking: true })).toContain("…");
+	// A spinner says something is happening. The number beside it is what says whether it is still
+	// happening, which is the question being asked after the first few seconds.
+	it("says how long the agent has been thinking, not only that it is", () => {
+		const drawn = chat({ history: [], thinking: { frame: "⠙", seconds: 42 } });
+
+		expect(drawn).toContain("⠙ 42s");
+		expect(drawn).not.toContain("> ");
 	});
 
 	/**
@@ -187,10 +201,21 @@ describe("Chat", () => {
 	// A line being typed outruns the pane long before it is finished. Wrapping it would cost a row
 	// of conversation on every keystroke past the edge; what is worth seeing is the end of it.
 	it("holds the prompt to one row, showing the end of what is typed", () => {
-		const drawn = chat({ history: [], draft: `${"x".repeat(300)}final` });
+		const drawn = chat({ history: [], draft: `${"x".repeat(300)}final` }).split("\n");
 
-		expect(drawn.split("\n")).toHaveLength(1);
-		expect(drawn).toContain("final");
+		// Its two borders and the line between them, and the line is where the end of the draft is.
+		expect(drawn).toHaveLength(3);
+		expect(drawn[1]).toContain("final");
+	});
+
+	// The border is worth two rows of a tall pane and is unaffordable in a short one, where those two
+	// rows are the conversation. Drawing it anyway is the broken screen again.
+	it("gives up the prompt's border rather than the room it does not have", () => {
+		const drawn = chat({ history: [{ from: "agent", text: "hola" }], rows: 2 }).split("\n");
+
+		expect(drawn).toHaveLength(2);
+		expect(drawn[0]).toContain("hola");
+		expect(drawn[1]).toContain(">");
 	});
 
 	// Where it breaks matters as much as that it breaks: a path has no space in it, and text that

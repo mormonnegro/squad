@@ -11,6 +11,21 @@ const ACTION_WIDTH = 8;
 const FAILED = "✗";
 
 /**
+ * The sixteen-colour palette and nothing else, so the terminal's own theme decides what these look
+ * like. A feed that picked its own greens is one that is unreadable on somebody's background.
+ */
+const paint = (code: number, off: number, text: string): string =>
+	`\u001b[${code}m${text}\u001b[${off}m`;
+
+/** What the action column says is the fastest thing to scan down, so it is what carries the colour. */
+function hue(action: string): number {
+	if (action === "error" || action === "egress") return 31;
+	if (action === "answer") return 32;
+	if (action === "spent") return 33;
+	return 34;
+}
+
+/**
  * Turns what the plane does into a feed a person can read while it is happening.
  *
  * The two things worth knowing about a running agent are what it is doing inside its sandbox and
@@ -25,10 +40,12 @@ const FAILED = "✗";
  */
 export class LogFeed {
 	readonly #write: (line: string) => void;
+	readonly #colour: boolean;
 	readonly #reached = new Map<string, Map<string, number>>();
 
-	constructor(write: (line: string) => void) {
+	constructor(write: (line: string) => void, options: { readonly color?: boolean } = {}) {
 		this.#write = write;
+		this.#colour = options.color ?? false;
 	}
 
 	push(event: PlaneEvent): void {
@@ -122,8 +139,16 @@ export class LogFeed {
 	 * the left edge scannable, which is the whole reason for having columns in the first place.
 	 */
 	#line(at: string, who: string, action: string, mark: string, detail: string): void {
-		const head = `${at}  ${who.padEnd(AGENT_WIDTH)}  ${action.padEnd(ACTION_WIDTH)}  ${mark.padEnd(1)} `;
-		const indent = " ".repeat(head.length);
+		const when = at;
+		const agent = who.padEnd(AGENT_WIDTH);
+		const what = action.padEnd(ACTION_WIDTH);
+		const failed = mark.padEnd(1);
+		// Padded first and painted after: an escape sequence is characters that occupy no columns, so
+		// a column padded once it is coloured is padded to the wrong width and the feed stops lining up.
+		const head = this.#colour
+			? `${paint(2, 22, when)}  ${paint(36, 39, agent)}  ${paint(hue(action), 39, what)}  ${paint(31, 39, failed)} `
+			: `${when}  ${agent}  ${what}  ${failed} `;
+		const indent = " ".repeat(`${when}  ${agent}  ${what}  ${failed} `.length);
 		const [first = "", ...rest] = detail.split("\n");
 		this.#write(`${(head + first).trimEnd()}\n`);
 		for (const line of rest) this.#write(`${(indent + line).trimEnd()}\n`);

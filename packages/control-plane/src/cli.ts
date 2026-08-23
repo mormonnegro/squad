@@ -73,7 +73,11 @@ async function resolveStateDir(args: Args): Promise<Args> {
 }
 
 function feed(): (event: PlaneEvent) => void {
-	const log = new LogFeed((line) => process.stdout.write(line));
+	// Colour on a terminal and none into a pipe. A feed being read by a person is scanned down the
+	// action column; one being read by `grep` is text, and escape codes in it are damage.
+	const log = new LogFeed((line) => process.stdout.write(line), {
+		color: process.stdout.isTTY === true,
+	});
 	return (event) => log.push(event);
 }
 
