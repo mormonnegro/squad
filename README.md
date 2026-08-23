@@ -131,8 +131,8 @@ boundary is the sandbox around the agent, not the process managing it.
 A running plane listens on a unix socket in its state directory. That is the whole control surface:
 
 ```sh
-agent                                    where the state is, and what is running in it
-agent chat demo                          talk to it, turn after turn
+agent                                    the console: every agent, its turns and its logs
+agent chat demo                          talk to one in the scrollback, turn after turn
 agent chat maxi                          a name nothing answers to: it offers to make one
 agent ls                                 what each agent is and whether it is up
 agent wake "check the open issues"       take one turn, and wait for the answer
@@ -141,8 +141,38 @@ agent rm demo [--purge]                  take the sandbox away, and with --purge
 agent help                               the rest
 ```
 
-`agent` on its own answers with the current state, because that is what someone typing the command
-with nothing after it wants to know. The name is needed only when there is a choice to make: a
+`agent` on its own opens the console, because someone typing the command with nothing after it is
+asking to see the thing, not to be told a fact about it:
+
+```
+╭────────────────╮╭──────────────────────────────────────────────────────────────╮
+│ agents         ││ demo   chat · logs                                           │
+│ ● demo         ││ > que es un webhook                                          │
+│ ◐ maxi         ││                                                              │
+│ ○ scout        ││ Un webhook es una forma de comunicación automática entre     │
+│                ││ servicios: cuando ocurre un evento en un sistema, ese sistema│
+│                ││  envía una petición HTTP a una URL configurada de antemano.  │
+│                ││                                                              │
+│                ││ >                                                            │
+╰────────────────╯╰──────────────────────────────────────────────────────────────╯
+ ↑↓ agent   tab logs   ^C quit
+```
+
+The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
+gets a mark of its own because with several agents on screen it is the one thing you cannot find
+out by asking again in a second. `↑↓` moves between them and `tab` swaps the panel between that
+agent's conversation and the log feed, which is the same feed `agent logs` prints and runs the
+whole time either way.
+
+A turn is not waited on, so asking one agent something and then watching another think is a matter
+of pressing `↑`. Each agent keeps its own conversation, and the answer streams into it with its
+markdown rendered, exactly as `chat` does in the scrollback.
+
+The console needs a terminal it can take over and a plane to open on. Missing either — a pipe, a CI
+job, no plane running — it prints what `agent` used to print: where the state is and what is in it.
+So `agent | grep` keeps working and nothing has to know which case it is in.
+
+The name is needed only when there is a choice to make: a
 plane running one agent already knows which one is meant. So `agent wake "check the open issues"`
 works, and a first word that names an agent addresses it instead — which costs an agent called
 `hola` the ability to be greeted by that word alone, and saves everyone else from quoting.

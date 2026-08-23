@@ -12,9 +12,11 @@ const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
 
 const USAGE = `agent - run self-hosted cloud agents
 
-  agent                        where the state is, and what is running in it
-  agent chat [name]            talk to an agent, turn after turn. A name no agent
-                               answers to offers to make one
+  agent                        the console: every agent, its turns and its logs on
+                               one screen. With no terminal to take over, says where
+                               the state is and what is running in it
+  agent chat [name]            talk to one agent in the scrollback, turn after turn.
+                               A name no agent answers to offers to make one
   agent ls                     what each agent is and whether it is up
   agent wake [name] <text>     take one turn, as the operator
   agent logs                   follow what every agent runs, answers and spends
@@ -207,10 +209,44 @@ function describeAgent(agent: AgentSummary): string {
 }
 
 /**
- * What `agent` alone says: where the state is, whether a plane is up, and what is in it.
+ * What `agent` alone does: open the console on the plane it finds.
  *
- * The first thing an operator types is the command with nothing after it, and the useful answer to
- * that is the current state rather than a list of the other things they could have typed.
+ * The first thing an operator types is the command with nothing after it, and what they want then
+ * is to be in front of the thing rather than to be told about it. Everything the console does is
+ * still a command of its own, because a pane cannot be piped into anything.
+ *
+ * It needs a terminal it can take over and a plane to take it over for. Missing either, `status`
+ * answers instead — printed, scriptable, and the one that knows how to say there is no plane.
+ */
+async function console_(args: Args): Promise<number> {
+	if (process.stdout.isTTY !== true || process.stdin.isTTY !== true) return status(args);
+
+	let client: ControlClient;
+	try {
+		client = await open(args.stateDir);
+	} catch (error) {
+		if (!(error instanceof ControlError)) throw error;
+		return status(args);
+	}
+
+	try {
+		// Imported here rather than at the top so React and Ink are loaded by the one command that
+		// draws a screen. `agent run` is the plane itself, and it has no business paying for a
+		// renderer — in startup time or in what ends up resident in the process holding the Docker
+		// socket.
+		const { openConsole } = await import("./console.ts");
+		return await openConsole(client);
+	} finally {
+		client.close();
+	}
+}
+
+/**
+ * Where the state is, whether a plane is up, and what is in it — in text, on the way past.
+ *
+ * This is what `agent` alone used to do, and it is still what it does wherever the console cannot
+ * run: piped into another program, redirected into a file, or pointed at a directory no plane is
+ * listening in.
  */
 async function status(args: Args): Promise<number> {
 	const { stateDir } = args;
@@ -592,7 +628,7 @@ async function main(argv: readonly string[]): Promise<number> {
 		case "rm":
 			return rm(args);
 		case undefined:
-			return status(args);
+			return console_(args);
 		case "help":
 		case "--help":
 		case "-h":
