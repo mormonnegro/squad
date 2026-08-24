@@ -8,6 +8,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
+import { openInBrowser } from "./oauth-login.ts";
 import type { Utterance } from "./transcript.ts";
 
 /**
@@ -614,6 +615,11 @@ function App({
 				// Named by agent for a turn that failed, and by something else for everything else. A
 				// context that is not an agent clears nothing, which is what it should do.
 				finished(event.context);
+			} else if (event.kind === "open") {
+				// Opened here rather than at the plane, because this is the machine the person is at: a
+				// plane in a container has no desktop, and a consent screen is no use where nobody can
+				// see it. Only ever a URL the operator's own plane produced, and only http or https.
+				openInBrowser(event.url);
 			}
 		});
 	}, [client]);

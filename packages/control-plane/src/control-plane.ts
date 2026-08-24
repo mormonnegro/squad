@@ -146,7 +146,16 @@ export type PlaneEvent =
 	 */
 	| { readonly kind: "thinking"; readonly agentId: string }
 	/** Something an agent did inside its sandbox, reported while the turn is still running. */
-	| { readonly kind: "step"; readonly agentId: string; readonly step: AgentStep };
+	| { readonly kind: "step"; readonly agentId: string; readonly step: AgentStep }
+	/**
+	 * A page the operator has to look at, which is only ever a consent screen.
+	 *
+	 * Asked of whoever is watching rather than opened here, because the plane is usually not where
+	 * the person is: in the deployment it is a container with no desktop, and the console is on the
+	 * machine with the browser. The URL is in the conversation either way — this only saves copying
+	 * a hundred characters out of a pane that had to wrap them.
+	 */
+	| { readonly kind: "open"; readonly url: string };
 
 export interface AgentSummary {
 	readonly id: string;
@@ -260,7 +269,7 @@ export class ControlPlane {
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
-		this.#desk = new LoginDesk(this.#logins);
+		this.#desk = new LoginDesk(this.#logins, (url) => this.#emit({ kind: "open", url }));
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),

@@ -1,4 +1,7 @@
+import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecResult } from "@agent-dive/sandbox";
@@ -989,4 +992,66 @@ describe("what a login lets an agent reach", () => {
 		expect(answer).toContain("Logged out of mcp.notion.com");
 		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
 	});
+
+	/**
+	 * Asked of whoever is watching rather than opened here.
+	 *
+	 * In the deployment the plane is a container with no desktop, and the console is the thing on
+	 * the machine with the browser. A plane that shelled out to `open` itself would be opening a
+	 * consent screen where nobody can see it, and the operator would be copying a hundred-character
+	 * URL out of a pane that had to wrap it.
+	 */
+	it("asks whoever is watching to open the consent screen, rather than opening it itself", async () => {
+		const server = await authorizationServer();
+		await writeFile(
+			join(stateDir, "mcp.json"),
+			JSON.stringify({
+				servers: { notion: { transport: "http", url: `${server.url}/mcp` } },
+				attached: { scout: ["notion"] },
+			}),
+		);
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const opened: string[] = [];
+		plane.observe((event) => {
+			if (event.kind === "open") opened.push(event.url);
+		});
+
+		const answer = await plane.command("scout", "/mcp login notion");
+
+		expect(opened).toHaveLength(1);
+		expect(answer).toContain(opened[0] ?? "");
+		expect(new URL(opened[0] ?? "").searchParams.get("client_id")).toBe("registered-client");
+
+		// The login is still holding a port open for a browser that is never coming.
+		await plane.command("scout", "/mcp logout notion");
+	});
 });
+
+/** A server that publishes metadata and registers clients, which is all a login needs to start. */
+async function authorizationServer(): Promise<{ url: string }> {
+	let origin = "";
+	const server = createServer((request, response) => {
+		const asked = new URL(request.url ?? "/", origin);
+		const answer = (body: unknown): void => {
+			response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+		};
+		if (asked.pathname === "/.well-known/oauth-protected-resource/mcp") {
+			answer({ authorization_servers: [origin] });
+		} else if (asked.pathname === "/.well-known/oauth-authorization-server") {
+			answer({
+				authorization_endpoint: `${origin}/authorize`,
+				token_endpoint: `${origin}/token`,
+				registration_endpoint: `${origin}/register`,
+			});
+		} else if (asked.pathname === "/register") {
+			answer({ client_id: "registered-client" });
+		} else {
+			response.writeHead(401).end();
+		}
+	});
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+	server.unref();
+	return { url: origin };
+}

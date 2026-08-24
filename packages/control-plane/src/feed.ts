@@ -57,6 +57,8 @@ export class LogFeed {
 		if (event.kind === "said") return;
 		// A feed is read after the fact, where a turn that started is a turn that also ended.
 		if (event.kind === "thinking") return;
+		// A page to open is for whoever is at a console with a browser, and this is neither.
+		if (event.kind === "open") return;
 		if (event.kind === "step") this.#step(event.agentId, event.step);
 		else if (event.kind === "audit") this.#egress(event.entry);
 		else if (event.kind === "error") this.#error(event.context, event.message);

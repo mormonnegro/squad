@@ -59,7 +59,7 @@ async function listen(server: Server, port: number): Promise<number> {
  * so a failure here is not a failure of the login — the operator opens it themselves and the flow
  * carries on identically.
  */
-function openInBrowser(url: string): void {
+export function openInBrowser(url: string): void {
 	// The address came from a server's own metadata, and it is about to be an argument. A scheme this
 	// narrow is not a URL that can be read as a flag by whatever opens it.
 	if (!/^https?:\/\//i.test(url)) return;

@@ -317,11 +317,11 @@ async function logIn(
 		}
 		const page = await context.login(name, held === "" ? undefined : held);
 		return [
-			`Log in to ${host} here — I have opened it, if there is a browser on this machine:`,
+			`Log in to ${host} here — opened already, if this console is somewhere with a browser:`,
 			"",
 			`  ${page.url}`,
 			"",
-			`Waiting at ${page.redirectUri}. If that page cannot reach this plane, paste`,
+			`Waiting at ${page.redirectUri}. If that page cannot reach the plane, paste`,
 			`the address it lands on back as: /mcp login ${name} <address>`,
 		].join("\n");
 	} catch (error) {
