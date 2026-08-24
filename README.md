@@ -216,31 +216,38 @@ gets read: a ceiling that changed with nothing to show for it is one nobody can 
 reason for. A message that merely begins with a path — `/etc/hosts is wrong` — is still a message,
 since `/etc` is answered as a command that does not exist rather than quietly swallowed.
 
-A line starting with `!` is not addressed to the agent at all: it runs in the box the agent lives
-in, and what it printed lands in the conversation underneath it.
+`!` is not a line addressed to the agent, it is the door into the box the agent lives in. Pressing
+it at an empty prompt puts you inside, and the prompt says where you are standing:
 
 ```
-> !git status --short
+! ~/.self  git status --short
  M src/queue.ts
-> !curl -s api.github.com
+! ~/.self  cd packages/queue
+/home/agent/.self/packages/queue
+! ~/.self/packages/queue  curl -s api.github.com
 curl: (56) Received HTTP code 403 from proxy after CONNECT
 exit 56
 ```
 
-It runs where the agent runs, as the agent — the same working directory, the same environment, the
-same proxy — so what comes back is about the agent's world rather than about a shell that happens to
-be nearby, and `!curl` is refused exactly where the agent's would be. It grants nothing: whoever can
+You stay in until you backspace off the empty line, because nobody looks around a machine one
+command at a time, and `cd` moves you the way it does anywhere else — every command is its own `sh`,
+so the plane carries the directory from one to the next. A `cd` prints nothing, so what it shows is
+where it landed.
+
+It runs where the agent runs, as the agent — the same directory, the same environment, the same
+proxy — so what comes back is about the agent's world rather than about a shell that happens to be
+nearby, and `!curl` is refused exactly where the agent's would be. It grants nothing: whoever can
 reach the control socket already holds the Docker socket the plane runs on and could open the same
 shell the long way round. What it saves is leaving the console to do it, which is why the question
 it answers — what does it actually look like in there — usually went unasked. It is independent of
 the turn, so an agent that is thinking can be looked at while it thinks, which is when there is most
 to see, and the agent is not told it happened: looking around inside is not the same as saying
-something. The prompt says `!` in its own colour while such a line is being typed, because finding
-out that a line ran in the sandbox by watching it run is finding out too late. Colour and cursor
-movement are stripped from what comes back — a `!cat` of a file the agent wrote is the one place its
-bytes are drawn on your terminal — and output longer than two hundred lines keeps its head and tail,
-since the conversation is rewritten whole on every line and one `find /` left in it would be paid
-for by every line said after it.
+something. The prompt keeps its own mark and colour the whole time it is the shell's, including
+while the agent thinks — a mode you cannot see is one you type a line into by mistake. Colour and
+cursor movement are stripped from what comes back — a `!cat` of a file the agent wrote is the one
+place its bytes are drawn on your terminal — and output longer than two hundred lines keeps its head
+and tail, since the conversation is rewritten whole on every line and one `find /` left in it would
+be paid for by every line said after it.
 
 The conversation belongs to the plane rather than to the console, so closing one is not ending it:
 the next console opens on what was said, and the last couple of hundred lines survive the terminal

@@ -772,36 +772,77 @@ describe("a command run in the agent's box", () => {
 		await rm(stateDir, { recursive: true, force: true });
 	});
 
-	/** Stands in for the sandbox, and keeps how it was asked, which is half of what matters here. */
-	function box(plane: ControlPlane, result: Partial<ExecResult> = {}) {
-		const calls: { cmd: readonly string[]; input: string; workingDir: string | undefined }[] = [];
-		plane.sandboxes.run = async (_agentId, cmd, input, options = {}) => {
-			calls.push({ cmd, input, workingDir: options.workingDir });
-			return { stdout: "", stderr: "", exitCode: 0, ...result };
+	/**
+	 * Stands in for the sandbox, answering the way one would: whatever it was told to print, and
+	 * after it the directory the script asked for, which is what the plane reads the `cd` out of.
+	 */
+	function box(plane: ControlPlane, result: Partial<ExecResult> & { endsIn?: string } = {}) {
+		const scripts: string[] = [];
+		plane.sandboxes.run = async (_agentId, _cmd, input, _options = {}) => {
+			scripts.push(input);
+			const mark = /cwd-[0-9a-f]{16}/.exec(input)?.[0] ?? "";
+			const at = /^cd '(.*)' 2>/m.exec(input)?.[1] ?? "";
+			return {
+				stdout: `${result.stdout ?? ""}${mark}\n${result.endsIn ?? at}`,
+				stderr: result.stderr ?? "",
+				exitCode: result.exitCode ?? 0,
+			};
 		};
-		return calls;
+		return scripts;
 	}
 
 	it("answers with what the command printed", async () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
 		box(plane, { stdout: "README.md\nsrc\n" });
 
-		expect(await plane.shell("scout", "ls")).toBe("README.md\nsrc");
+		expect((await plane.shell("scout", "ls")).text).toBe("README.md\nsrc");
 	});
 
 	/**
-	 * On stdin and in the agent's working directory: arguments are visible to every process in the
-	 * container, and the other process in there is the agent.
+	 * On stdin, because arguments are visible to every process in the container and the other process
+	 * in there is the agent. The line goes in whole: a script, not a command with arguments.
 	 */
-	it("runs the line as a script, where the agent works", async () => {
+	it("runs the line as a script, standing where the agent works", async () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
-		const calls = box(plane);
+		const scripts = box(plane);
 
 		await plane.shell("scout", "echo hola");
 
-		expect(calls).toEqual([
-			{ cmd: ["sh", "-s"], input: "echo hola", workingDir: "/home/agent/.self" },
-		]);
+		expect(scripts[0]).toContain("cd '/home/agent/.self'");
+		expect(scripts[0]).toContain("echo hola");
+	});
+
+	/**
+	 * The whole of what makes it a place rather than a command: every `!` is a new `sh`, so a `cd`
+	 * that moved only its own shell would leave the operator back at the door a second later.
+	 */
+	it("stays where a cd left it", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const scripts = box(plane, { endsIn: "/home/agent/.self/packages" });
+
+		expect((await plane.shell("scout", "cd packages")).cwd).toBe("/home/agent/.self/packages");
+
+		await plane.shell("scout", "ls");
+		expect(scripts[1]).toContain("cd '/home/agent/.self/packages'");
+	});
+
+	// It printed nothing, so there is nothing to show for it but the one thing it did.
+	it("says where a cd landed, rather than that it printed nothing", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		box(plane, { endsIn: "/tmp" });
+
+		expect((await plane.shell("scout", "cd /tmp")).text).toBe("/tmp");
+	});
+
+	// The mark is the plane talking to itself, and a console that showed it would be showing a bug.
+	it("keeps the directory it asked for out of what it shows", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		box(plane, { stdout: "hola\n", endsIn: "/tmp" });
+
+		const ran = await plane.shell("scout", "echo hola");
+
+		expect(ran.text).toBe("hola");
+		expect(ran.text).not.toContain("cwd-");
 	});
 
 	/** Both halves, because output with nothing above it does not say what was asked. */
@@ -837,7 +878,7 @@ describe("a command run in the agent's box", () => {
 			throw new Error("No such container: agent-dive-scout");
 		};
 
-		expect(await plane.shell("scout", "ls")).toContain("No such container");
+		expect((await plane.shell("scout", "ls")).text).toContain("No such container");
 	});
 
 	it("refuses a box for an agent that is not here", async () => {

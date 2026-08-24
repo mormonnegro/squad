@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import {
 	Agents,
 	Chat,
+	here,
 	mouse,
 	resume,
 	saidBy,
 	scrolled,
 	type Thinking,
 	transcript,
-	typing,
 	until,
 	visible,
 } from "../src/console.ts";
@@ -283,6 +283,7 @@ describe("Chat", () => {
 		columns?: number;
 		thinking?: Thinking | undefined;
 		top?: number | undefined;
+		shell?: string | undefined;
 	}) =>
 		renderToString(
 			h(Chat, {
@@ -291,6 +292,7 @@ describe("Chat", () => {
 				columns: 40,
 				thinking: undefined,
 				top: undefined,
+				shell: undefined,
 				...props,
 			}),
 			{ columns: 40 },
@@ -360,14 +362,29 @@ describe("Chat", () => {
 		expect(drawn[1]).toContain(">");
 	});
 
-	// The mode has to be visible before the key is pressed: finding out that a line ran in the
-	// sandbox by watching it run is finding out too late.
-	it("marks a line that will run in the box rather than be said", () => {
-		const drawn = chat({ history: [], draft: "!ls -la" });
+	// The mode has to be visible while it is on: finding out that a line ran in the sandbox by
+	// watching it run is finding out too late.
+	it("says which directory the line being typed will run in", () => {
+		const drawn = chat({ history: [], draft: "ls -la", shell: "/home/agent/.self/src" });
 
+		expect(drawn).toContain("! ~/.self/src");
 		expect(drawn).toContain("ls -la");
-		expect(drawn).toContain("!");
 		expect(drawn).not.toContain("> ");
+	});
+
+	/**
+	 * Over the spinner, not under it. `!` reaches the box whether or not the agent is thinking, and a
+	 * line typed at what looked like the agent's prompt would have run in the sandbox instead.
+	 */
+	it("keeps saying it is the shell while the agent thinks", () => {
+		const drawn = chat({
+			history: [],
+			shell: "/home/agent/.self",
+			thinking: { frame: "⠙", seconds: 42 },
+		});
+
+		expect(drawn).toContain("! ~/.self");
+		expect(drawn).not.toContain("42s");
 	});
 
 	// Where it breaks matters as much as that it breaks: a path has no space in it, and text that
@@ -382,14 +399,26 @@ describe("Chat", () => {
 	});
 });
 
-describe("typing", () => {
-	it("takes the bang off what is drawn, and says the mode in its place", () => {
-		expect(typing("!ls -la")).toEqual({ mark: "! ", rest: "ls -la" });
+/** The prompt has one row and the line being typed needs most of it, so the directory gets little. */
+describe("here", () => {
+	it("says the agent's home the way a shell does", () => {
+		expect(here("/home/agent/.self")).toBe("~/.self");
+		expect(here("/home/agent")).toBe("~");
 	});
 
-	it("is nothing at all for a line on its way to the agent", () => {
-		expect(typing("hola")).toBeUndefined();
-		expect(typing("/limit 5")).toBeUndefined();
+	// Another user's directory is not this one's home, and a prompt that said `~` would be lying
+	// about which one it is standing in.
+	it("leaves a path that only looks like home alone", () => {
+		expect(here("/home/agentina/src")).toBe("/home/agentina/src");
+		expect(here("/tmp")).toBe("/tmp");
+	});
+
+	// The end is where you are; the front is the part you already know.
+	it("gives up the front of a path too long for the row", () => {
+		const shown = here("/home/agent/.self/packages/control-plane/src", 20);
+
+		expect(shown).toBe("…s/control-plane/src");
+		expect(shown.length).toBe(20);
 	});
 });
 

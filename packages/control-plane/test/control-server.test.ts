@@ -279,10 +279,13 @@ describe("the control socket", () => {
 	 * `!` arrives here and nowhere else, for the same reason and more so: a webhook that reached it
 	 * would be a stranger with a URL holding a shell inside the box.
 	 */
-	it("runs a command in the box and answers with what it printed", async () => {
-		plane.sandboxes.run = async () => ({ stdout: "hola\n", stderr: "", exitCode: 0 });
+	it("runs a command in the box, and says where it left the next one", async () => {
+		plane.sandboxes.run = async (_agentId, _cmd, input) => {
+			const mark = /cwd-[0-9a-f]{16}/.exec(input)?.[0] ?? "";
+			return { stdout: `hola\n${mark}\n/tmp`, stderr: "", exitCode: 0 };
+		};
 
-		expect(await client.shell("scout", "echo hola")).toBe("hola");
+		expect(await client.shell("scout", "echo hola")).toEqual({ text: "hola", cwd: "/tmp" });
 	});
 
 	it("refuses a box for an agent this plane does not run", async () => {

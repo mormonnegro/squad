@@ -43,6 +43,8 @@ export type ControlResponse =
 			readonly transcripts: Record<string, readonly Utterance[]>;
 	  }
 	| { readonly id: string; readonly ok: true; readonly text: string }
+	/** What a `!` printed, and the directory it left the next one standing in. */
+	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
 	| { readonly id: string; readonly event: PlaneEvent }
 	/** Part of an answer to a wake still being written. The request is unfinished until `ok`. */
@@ -198,11 +200,8 @@ export class ControlServer {
 					text: await this.#plane.command(request.agentId, request.line),
 				});
 			} else if (request.op === "shell") {
-				this.#write(socket, {
-					id: request.id,
-					ok: true,
-					text: await this.#plane.shell(request.agentId, request.line),
-				});
+				const ran = await this.#plane.shell(request.agentId, request.line);
+				this.#write(socket, { id: request.id, ok: true, text: ran.text, cwd: ran.cwd });
 			} else if (request.op === "create") {
 				this.#write(socket, {
 					id: request.id,

@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 /**
  * What a command may do, which is deliberately less than what the plane can.
  *
@@ -64,13 +66,17 @@ const KEPT_LINES = 200;
  * wrote gets drawn on the operator's terminal, so a `!cat` of something it authored must not be
  * able to move the cursor around the console reading it.
  */
-export function shellOutput(result: {
-	readonly stdout: string;
-	readonly stderr: string;
-	readonly exitCode: number;
-}): string {
+export function shellOutput(
+	result: {
+		readonly stdout: string;
+		readonly stderr: string;
+		readonly exitCode: number;
+	},
+	/** What to say instead of "(no output)" for a command whose only effect was somewhere else. */
+	whenSilent?: string,
+): string {
 	const printed = clip(plain(`${result.stdout}${result.stderr}`).replace(/\s+$/, ""));
-	if (result.exitCode === 0) return printed.length > 0 ? printed : "(no output)";
+	if (result.exitCode === 0) return printed.length > 0 ? printed : (whenSilent ?? "(no output)");
 	// Always said, even under output that explains itself: "exit 1" is the difference between a test
 	// run that reported failures and one that crashed before it could.
 	const status = `exit ${result.exitCode}`;
@@ -97,6 +103,45 @@ function clip(text: string): string {
 	const head = lines.slice(0, KEPT_LINES / 2);
 	const tail = lines.slice(-KEPT_LINES / 2);
 	return [...head, `… ${lines.length - KEPT_LINES} more lines`, ...tail].join("\n");
+}
+
+/**
+ * The line, wrapped so that the next one starts where this one left off.
+ *
+ * Every `!` is a new `sh`, which is the whole difficulty: a `cd` would move a shell that exits a
+ * moment later, and the operator would be back where they started with nothing to show for it. So
+ * the shell is told where the last one ended and asked where this one did, and the answer comes back
+ * printed after a mark drawn at random, which is what makes it a mark the command cannot print by
+ * accident. `$?` is caught first, because asking is a command too and would otherwise be the answer.
+ */
+export function shellScript(line: string, cwd: string): { script: string; mark: string } {
+	const mark = `cwd-${randomBytes(8).toString("hex")}`;
+	return {
+		mark,
+		// Not the exec's working directory, which is refused outright when it no longer exists — a
+		// directory the agent deleted under the operator should put them back at its door, not stop
+		// them from running anything at all.
+		script: [
+			`cd ${quoted(cwd)} 2>/dev/null`,
+			line,
+			"__status=$?",
+			`printf '%s\\n%s' ${quoted(mark)} "$PWD"`,
+			"exit $__status",
+		].join("\n"),
+	};
+}
+
+/** Splits the directory a shell ended in off what it printed, leaving the mark in neither. */
+export function endedIn(printed: string, mark: string): { text: string; cwd: string | undefined } {
+	const at = printed.lastIndexOf(mark);
+	if (at === -1) return { text: printed, cwd: undefined };
+	const cwd = printed.slice(at + mark.length).trim();
+	return { text: printed.slice(0, at), cwd: cwd.length > 0 ? cwd : undefined };
+}
+
+/** A string `sh` reads as one word, whatever is in it. */
+function quoted(text: string): string {
+	return `'${text.replaceAll("'", `'\\''`)}'`;
 }
 
 export function money(usd: number): string {

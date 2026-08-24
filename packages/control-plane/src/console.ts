@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
 import wrapAnsi from "wrap-ansi";
@@ -128,16 +130,18 @@ function spoken(said: Said): string {
 	return said.text;
 }
 
+/** The agent's home, which is the directory its repository sits in. */
+const HOME = dirname(SANDBOX_REPO_PATH);
+
 /**
- * Whether what is being typed will be run in the sandbox rather than said to the agent.
+ * A directory as a prompt says it: short enough to leave room for the line being typed.
  *
- * The prompt says so before the key is pressed, which is the whole point of a mode: finding out
- * that a line was a command by watching it run is finding out too late.
+ * The home becomes `~` and the front of a long path is what goes, because the end of it is where
+ * you are and the front is the part you already know.
  */
-export function typing(
-	draft: string,
-): { readonly mark: string; readonly rest: string } | undefined {
-	return isShell(draft) ? { mark: "! ", rest: draft.slice(1) } : undefined;
+export function here(cwd: string, room = 24): string {
+	const short = cwd === HOME || cwd.startsWith(`${HOME}/`) ? `~${cwd.slice(HOME.length)}` : cwd;
+	return short.length <= room ? short : `…${short.slice(short.length - room + 1)}`;
 }
 
 /**
@@ -319,6 +323,7 @@ export function Chat({
 	columns,
 	thinking,
 	top,
+	shell,
 }: {
 	readonly history: readonly Said[];
 	readonly draft: string;
@@ -327,23 +332,29 @@ export function Chat({
 	readonly thinking: Thinking | undefined;
 	/** The first row of conversation to show, or the end of it when nothing has been scrolled back to. */
 	readonly top: number | undefined;
+	/** The directory the next `!` runs in, or nothing at all while the prompt is the agent's. */
+	readonly shell: string | undefined;
 }): ReactElement {
 	// The box around the prompt costs two rows. A pane with no room for them keeps the prompt and
 	// gives up the border, because a border drawn where there is no room is the broken screen again.
 	const boxed = rows > PROMPT_ROWS;
 	const lines = visible(wrapped(transcript(history), columns), chatRows(rows), top);
 	// A spinner alone says something is happening; the number rising beside it is what separates slow
-	// from stuck, and twice now the thing that looked slow was a hang. A shell line gets its own mark
-	// and colour instead, because the difference between talking to the agent and running something
-	// in its box is worth seeing before pressing return.
-	const shell = thinking === undefined ? typing(draft) : undefined;
+	// from stuck, and twice now the thing that looked slow was a hang. The shell prompt is drawn over
+	// it rather than under it, because a mode has to be visible while it is on: `!` reaches the box
+	// whether or not the agent is thinking, and a line typed at what looked like the agent's prompt
+	// would run in the sandbox instead. What is lost is only the spinner — the column on the left
+	// says the same thing with `◐`.
 	const mark =
-		thinking !== undefined ? `${thinking.frame} ${thinking.seconds}s ` : (shell?.mark ?? "> ");
-	const shown = shell?.rest ?? draft;
+		shell !== undefined
+			? `! ${here(shell)} `
+			: thinking !== undefined
+				? `${thinking.frame} ${thinking.seconds}s `
+				: "> ";
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
 	// its end, where the cursor is. The box takes its border and padding out of the width first.
 	const room = Math.max(0, columns - (boxed ? 4 : 0) - mark.length - 1);
-	const hue = thinking !== undefined ? "yellow" : shell !== undefined ? "magenta" : "cyan";
+	const hue = shell !== undefined ? "magenta" : thinking !== undefined ? "yellow" : "cyan";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -367,7 +378,7 @@ export function Chat({
 				Text,
 				{ wrap: "truncate" },
 				h(Text, { color: hue }, mark),
-				shown.slice(Math.max(0, shown.length - room)),
+				draft.slice(Math.max(0, draft.length - room)),
 				h(Text, { inverse: true }, " "),
 			),
 		),
@@ -413,6 +424,12 @@ function App({
 	// apart from the conversation so that when it is finished it replaces itself rather than repeats.
 	const [live, setLive] = useState<ReadonlyMap<string, string>>(new Map());
 	const [draft, setDraft] = useState("");
+	// Whether the prompt is the sandbox's. A mode rather than a prefix, because looking around inside
+	// a box is a handful of commands in a row and not one: `!ls`, `!cd`, `!ls` again.
+	const [shell, setShell] = useState(false);
+	// Where each agent's shell is standing, as the plane last answered. Per agent, because they are
+	// different boxes, and the prompt has to say which directory the next command will run in.
+	const [cwd, setCwd] = useState<ReadonlyMap<string, string>>(new Map());
 	// When each turn started, rather than merely that one did: the elapsed seconds come from here.
 	const [busy, setBusy] = useState<ReadonlyMap<string, number>>(new Map());
 	const [frame, setFrame] = useState(0);
@@ -526,17 +543,22 @@ function App({
 	 * A turn that fails arrives the same way: as the plane saying why there was no answer.
 	 */
 	const ask = useCallback(
-		async (agentId: string, body: string): Promise<void> => {
+		async (agentId: string, body: string, mode: "say" | "shell"): Promise<void> => {
+			// Not addressed to the agent at all: it runs in the box the agent lives in, and the agent is
+			// not told it happened. Looking around inside is not the same as saying something. The mode
+			// is checked first, so a `/` typed at a shell prompt is a path and not a command.
+			if (mode === "shell" || isShell(body)) {
+				const ran = await client
+					.shell(agentId, mode === "shell" ? body : body.slice(1))
+					.catch(() => undefined);
+				// Where it left off, so the prompt says where the next one will run before it is typed.
+				if (ran !== undefined) setCwd((prev) => new Map(prev).set(agentId, ran.cwd));
+				return;
+			}
 			// A command is about the agent rather than to it, and is answered by the plane without
 			// waking anything. Both halves come back on the feed like everything else here.
 			if (isCommand(body)) {
 				await client.command(agentId, body).catch(() => {});
-				return;
-			}
-			// Not addressed to the agent at all: it runs in the box the agent lives in, and the agent
-			// is not told it happened. Looking around inside is not the same as saying something.
-			if (isShell(body)) {
-				await client.shell(agentId, body.slice(1)).catch(() => {});
 				return;
 			}
 			await client.wake(agentId, body).catch(() => {});
@@ -610,20 +632,32 @@ function App({
 			setTop(undefined);
 			// Deliberately not awaited: the turn runs while the console keeps taking keys, which is what
 			// lets an agent be asked something and another one be watched while it thinks.
-			if (text.length > 0) void ask(selected.id, text);
+			if (text.length > 0) void ask(selected.id, text, shell ? "shell" : "say");
 		};
 
 		if (key.return) {
+			// The mode outlives the command, because that is what a mode is for: nobody looks around a
+			// box one command at a time, and pressing `!` again before each of them is the prefix back.
 			send(draft);
 			return;
 		}
 		if (key.backspace || key.delete) {
-			setDraft((prev) => prev.slice(0, -1));
+			// Backspacing off the end of an empty line is the way out, which is where the bang went in.
+			if (draft === "") setShell(false);
+			else setDraft((prev) => prev.slice(0, -1));
 			return;
 		}
 		// Ctrl and meta chords are commands this does not have yet, not text. Without this an unhandled
 		// one types its letter into the line.
 		if (input.length === 0 || key.ctrl || key.meta) return;
+
+		// The bang is the mode rather than a character, and only where a mode can begin: with nothing
+		// typed yet. Anywhere else in a line it is what it looks like, since `!` is punctuation in the
+		// language this box is typed in.
+		if (!shell && draft === "" && input === "!") {
+			setShell(true);
+			return;
+		}
 
 		// A chunk can arrive carrying a whole line, from a paste or from a terminal that batched the
 		// keystrokes. The return inside it is what ends the line then, and is never reported as the
@@ -684,6 +718,12 @@ function App({
 							columns: width,
 							thinking,
 							top,
+							// Standing at the door until a command says otherwise, which is where the plane
+							// starts an agent's shell and what it goes back to when the sandbox is replaced.
+							shell:
+								shell && selected !== undefined
+									? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
+									: undefined,
 							key: "chat",
 						})
 					: h(Logs, { lines, rows: body - 1, top, key: "logs" }),
@@ -699,9 +739,14 @@ function App({
 				["^U^D", "scroll"],
 				["tab", panel === "chat" ? "logs" : "chat"],
 				// A key nobody guesses is pressable. The rest of this row is what to press to move
-				// around; this one is what to press to be told what else there is.
-				["/", "commands"],
-				["!", "shell"],
+				// around; this one is what to press to be told what else there is. In the shell the two
+				// of them say nothing true, and the way back out is the thing worth saying instead.
+				...(shell
+					? [["⌫", "chat"]]
+					: [
+							["/", "commands"],
+							["!", "shell"],
+						]),
 				["^C", "quit"],
 				// Last, so that the rest of the row does not move as it comes and goes, and shown only
 				// while there is something to stop: the key does nothing at any other time, and offering

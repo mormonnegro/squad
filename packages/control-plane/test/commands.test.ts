@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
 	type CommandContext,
+	endedIn,
 	isCommand,
 	isShell,
 	money,
 	runCommand,
 	shellOutput,
+	shellScript,
 } from "../src/commands.ts";
 
 /** A context that remembers what was asked of it, which is the half a string cannot show. */
@@ -207,5 +209,67 @@ describe("shellOutput", () => {
 
 		expect(printed.split("\n")).toHaveLength(200);
 		expect(printed).not.toContain("more lines");
+	});
+
+	// A `cd` prints nothing, and "(no output)" under it would hide the one thing it did.
+	it("can be given something to say instead of nothing at all", () => {
+		expect(shellOutput({ stdout: "", stderr: "", exitCode: 0 }, "/tmp")).toBe("/tmp");
+		// Not when the command printed: what it said is the answer, and the directory is the prompt's.
+		expect(shellOutput({ stdout: "hola", stderr: "", exitCode: 0 }, "/tmp")).toBe("hola");
+	});
+});
+
+/**
+ * Standing somewhere, which is what separates a shell from a way of running one command. Every `!`
+ * is a new `sh`, so where the last one ended has to be carried to the next one by hand.
+ */
+describe("shellScript", () => {
+	it("starts the shell where the last one ended", () => {
+		const { script } = shellScript("ls", "/home/agent/.self/src");
+
+		expect(script).toContain("cd '/home/agent/.self/src'");
+		expect(script).toContain("ls");
+	});
+
+	/**
+	 * Not the exec's working directory, which is refused outright when it no longer exists: a
+	 * directory the agent deleted under the operator should put them back at its door, not stop them
+	 * from running anything at all.
+	 */
+	it("does not let a directory that is gone take the shell with it", () => {
+		expect(shellScript("ls", "/gone").script).toContain("2>/dev/null");
+	});
+
+	// The mark is what the answer is found by, so two commands must never share one.
+	it("marks each run with something the last one did not use", () => {
+		expect(shellScript("ls", "/tmp").mark).not.toBe(shellScript("ls", "/tmp").mark);
+	});
+
+	// A name with a quote in it is a name, and the shell has to be handed it as one word.
+	it("hands the shell a directory it cannot misread", () => {
+		expect(shellScript("ls", "/home/agent/it's").script).toContain(`cd '/home/agent/it'\\''s'`);
+	});
+
+	/** Asking where it ended is a command too, and would otherwise be the exit code that is reported. */
+	it("reports what the line exited with, not what the asking did", () => {
+		const { script } = shellScript("false", "/tmp");
+
+		expect(script).toContain("__status=$?");
+		expect(script).toContain("exit $__status");
+	});
+});
+
+describe("endedIn", () => {
+	it("takes the directory and the mark off what was printed", () => {
+		expect(endedIn("README.md\nsrc\ncwd-abc/tmp/here", "cwd-abc")).toEqual({
+			text: "README.md\nsrc\n",
+			cwd: "/tmp/here",
+		});
+	});
+
+	// A shell that exited before it could say — `!exit`, or a command that killed it — left no answer,
+	// and the last directory anybody knew of is a better guess than the door.
+	it("says nothing about where it ended when the shell never got to", () => {
+		expect(endedIn("killed", "cwd-abc")).toEqual({ text: "killed", cwd: undefined });
 	});
 });

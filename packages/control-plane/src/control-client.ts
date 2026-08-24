@@ -120,10 +120,13 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to command");
 	}
 
-	/** Runs a command inside the agent's sandbox, and answers with what it printed. */
-	async shell(agentId: string, line: string): Promise<string> {
+	/**
+	 * Runs a command inside the agent's sandbox, and answers with what it printed and where it left
+	 * off — the directory is the prompt's, so it is drawn before the next command is typed.
+	 */
+	async shell(agentId: string, line: string): Promise<{ text: string; cwd: string }> {
 		const response = await this.#once({ op: "shell", agentId, line });
-		if ("text" in response) return response.text;
+		if ("text" in response && "cwd" in response) return { text: response.text, cwd: response.cwd };
 		throw new ControlError("unexpected answer to shell");
 	}
 

@@ -15,7 +15,14 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
-import { money, runCommand, SHELL_TIMEOUT_MS, shellOutput } from "./commands.ts";
+import {
+	endedIn,
+	money,
+	runCommand,
+	SHELL_TIMEOUT_MS,
+	shellOutput,
+	shellScript,
+} from "./commands.ts";
 import { CreatedAgentStore } from "./created-agents.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
@@ -195,6 +202,15 @@ export class ControlPlane {
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
+	/**
+	 * Where each agent's last `!` left the operator standing.
+	 *
+	 * Kept here rather than in the console, because it is a fact about the box: two consoles looking
+	 * into the same one are looking at the same directory, and it survives either of them closing.
+	 * Not written to disk — a plane that restarted put a new sandbox under it, and the door is the
+	 * honest place to be standing then.
+	 */
+	readonly #cwd = new Map<string, string>();
 	readonly #createdIds = new Set<string>();
 	readonly #stateDir: string;
 	readonly #image: string;
@@ -358,6 +374,8 @@ export class ControlPlane {
 		this.#runners.delete(agentId);
 		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
 		this.#tokens.delete(agentId);
+		// The directory was inside the container that just went. Whatever comes back is at its door.
+		this.#cwd.delete(agentId);
 
 		if (options.purge === true && this.#createdIds.delete(agentId)) {
 			await this.#created.forget(agentId);
@@ -471,26 +489,35 @@ export class ControlPlane {
 	 *
 	 * The script goes in on stdin rather than in the command line, because arguments are visible to
 	 * every process in the container, and the one other process in there is the agent.
+	 *
+	 * Where it ends up is remembered, so a `cd` is worth typing: the point of being let into the box
+	 * is walking around it, and a shell that forgets between commands is one where every path has to
+	 * be written out from the root every time.
 	 */
-	async shell(agentId: string, line: string): Promise<string> {
+	async shell(agentId: string, line: string): Promise<{ text: string; cwd: string }> {
 		if (!this.#agents.some((agent) => agent.id === agentId)) {
 			throw new Error(`No agent "${agentId}" in this plane`);
 		}
 		await this.#record(agentId, { from: "operator", text: `!${line}` });
 
-		const printed = await this.#runShell(agentId, line);
-		await this.#record(agentId, { from: "shell", text: printed });
-		return printed;
+		const text = await this.#runShell(agentId, line);
+		await this.#record(agentId, { from: "shell", text });
+		return { text, cwd: this.#cwd.get(agentId) ?? SANDBOX_REPO_PATH };
 	}
 
 	async #runShell(agentId: string, line: string): Promise<string> {
+		const cwd = this.#cwd.get(agentId) ?? SANDBOX_REPO_PATH;
+		const { script, mark } = shellScript(line, cwd);
 		try {
-			return shellOutput(
-				await this.sandboxes.run(agentId, ["sh", "-s"], line, {
-					timeoutMs: SHELL_TIMEOUT_MS,
-					workingDir: SANDBOX_REPO_PATH,
-				}),
-			);
+			const result = await this.sandboxes.run(agentId, ["sh", "-s"], script, {
+				timeoutMs: SHELL_TIMEOUT_MS,
+				workingDir: SANDBOX_REPO_PATH,
+			});
+			const ended = endedIn(result.stdout, mark);
+			if (ended.cwd !== undefined) this.#cwd.set(agentId, ended.cwd);
+			// A `cd` prints nothing, and "(no output)" under it would hide the one thing it did.
+			const moved = ended.cwd !== undefined && ended.cwd !== cwd ? ended.cwd : undefined;
+			return shellOutput({ ...result, stdout: ended.text }, moved);
 		} catch (error) {
 			// Said as output rather than thrown, because a command that could not run is an answer to
 			// what was typed: a stopped sandbox and a command that exits 1 are the same kind of news.
