@@ -217,15 +217,16 @@ export function transcript(history: readonly Said[]): readonly string[] {
  * twenty rows of screen — which it then draws past its own border, over the pane beside it and
  * off the bottom of the terminal.
  *
- * `hard` breaks a word with nowhere to break, which is a path or a URL. Untrimmed, because the
- * indentation of a bullet or a fenced block is what makes it read as one.
+ * `hard` breaks a word with nowhere to break, which is a path or a URL. A conversation is left
+ * untrimmed, because the indentation of a bullet or a fenced block is what makes it read as one —
+ * and prose is trimmed, because there the space a line was broken at starts the next one instead.
  */
-function wrapped(lines: readonly string[], columns: number): readonly string[] {
+function wrapped(lines: readonly string[], columns: number, trim = false): readonly string[] {
 	if (columns <= 0) return [];
 	const rows: string[] = [];
 	for (const line of lines) {
 		if (line === "") rows.push("");
-		else rows.push(...wrapAnsi(line, columns, { hard: true, trim: false }).split("\n"));
+		else rows.push(...wrapAnsi(line, columns, { hard: true, trim }).split("\n"));
 	}
 	return rows;
 }
@@ -373,6 +374,8 @@ export function Agents({
 	readonly busy: ReadonlyMap<string, number>;
 	readonly rows: number;
 }): ReactElement {
+	// The row under the last agent, which the cursor reaches with the same arrow as any other.
+	const making = cursor >= agents.length;
 	return h(
 		Box,
 		{
@@ -387,7 +390,7 @@ export function Agents({
 			paddingX: 1,
 		},
 		h(Text, { dimColor: true, key: "title" }, "agents"),
-		...agents.slice(0, rows).map((agent, index) => {
+		...agents.slice(0, Math.max(0, rows - 1)).map((agent, index) => {
 			// Thinking is worth a different mark from merely being up: with several agents on screen it
 			// is the one thing you cannot find out by asking again in a second.
 			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
@@ -417,6 +420,94 @@ export function Agents({
 				spent === "" ? undefined : h(Text, burning(agent), spent),
 			);
 		}),
+		// Last, and never given up to make room: making an agent is a row in the list of agents because
+		// that is where somebody with none of them is already looking, and where somebody who wants
+		// another one looks too. Behind a command it would be a thing only whoever wrote it can find.
+		rows <= 0
+			? undefined
+			: h(
+					Text,
+					{ key: "+", wrap: "truncate" },
+					h(Text, { color: "cyan", bold: true }, making ? "▸ " : "  "),
+					// In the column the marks are in, so it reads as one more state a row can be in rather
+					// than as a caption that wandered under the list.
+					h(Text, { color: "green" }, "+"),
+					h(Text, { bold: making, dimColor: !making }, " new agent"),
+				),
+	);
+}
+
+/**
+ * What a name is about to buy, said where the name is being typed.
+ *
+ * The first half is the part worth saying at all: a name is the whole of what a keyboard decides
+ * here. What the agent behind it may reach and may spend is the operator's file, and no amount of
+ * typing in this box moves it.
+ *
+ * The rule for the name itself is last because the pane keeps its final lines, the way the chat
+ * pane does — so in a short terminal what survives is the sentence the prompt underneath needs.
+ */
+const MAKING = [
+	"A container, a repository of its own and nothing in its memory. What it may reach is this plane's defaults and no more: a keyboard names an agent here, it never grants one.",
+	"",
+	"A name it will answer to: lowercase, digits and dashes.",
+];
+
+/** The pane behind the last row of the column: a name, and what the plane said about the last one. */
+export function New({
+	draft,
+	rows,
+	columns,
+	making,
+	refused,
+}: {
+	readonly draft: string;
+	readonly rows: number;
+	readonly columns: number;
+	/** The name the plane is building, for as long as it is building it. */
+	readonly making:
+		| { readonly name: string; readonly frame: string; readonly seconds: number }
+		| undefined;
+	/** Why the last name was not taken, in the plane's words. */
+	readonly refused: string | undefined;
+}): ReactElement {
+	const boxed = rows > PROMPT_ROWS;
+	const said = [
+		...MAKING.map((line) => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`)),
+		...(refused === undefined ? [] : ["", `${ESC}[31m${refused}${ESC}[39m`]),
+	];
+	const width = columns - (boxed ? 4 : 0);
+	const mark = making === undefined ? "+ " : `${making.frame} `;
+	// The name is on this row while it is typed and again while it is built. Between the two the
+	// prompt it was typed at is gone, and a wait with no name on it cannot be told from the last one.
+	const line = making === undefined ? draft : `creating ${making.name}  ${making.seconds}s`;
+	const room = Math.max(0, width - mark.length - 1);
+	const hue = making === undefined ? "green" : "yellow";
+	return h(
+		Box,
+		{ flexDirection: "column", flexGrow: 1 },
+		h(
+			Box,
+			{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end", key: "said" },
+			...visible(wrapped(said, columns, true), chatRows(rows), undefined).map((row, index) =>
+				h(Text, { key: `${index}`, wrap: "truncate" }, row === "" ? " " : row),
+			),
+		),
+		h(
+			Box,
+			boxed
+				? { key: "prompt", borderStyle: "round", borderColor: hue, paddingX: 1 }
+				: { key: "prompt" },
+			h(
+				Text,
+				{ wrap: "truncate" },
+				h(Text, { color: hue }, mark),
+				line.slice(Math.max(0, line.length - room)),
+				// No cursor while the plane is working: there is nothing to type into, and one blinking
+				// under a spinner says the box is still taking keys when it is not.
+				making === undefined ? h(Text, { inverse: true }, " ") : null,
+			),
+		),
 	);
 }
 
@@ -545,7 +636,13 @@ function Logs({
 	);
 }
 
-function App({
+/**
+ * The console itself: the column, the panel and every key either of them answers to.
+ *
+ * Exported for the tests that press keys at it. The panes can be drawn on their own and are, but
+ * which pane a key reaches and what it does when it gets there is only true here.
+ */
+export function App({
 	client,
 	initial,
 	conversations,
@@ -581,11 +678,19 @@ function App({
 	const [frame, setFrame] = useState(0);
 	// The row the panel has been scrolled back to, or nothing at all while it is following the end.
 	const [top, setTop] = useState<number | undefined>(undefined);
+	// The name the plane is making, and when it was asked for. Making one is a minute of pulling an
+	// image and scaffolding a repository, which is long enough that it has to be visible.
+	const [making, setMaking] = useState<{ name: string; at: number } | undefined>(undefined);
+	// Why the last name was not taken. Kept until the next attempt, because the name that earned it
+	// is still in the prompt being edited.
+	const [refused, setRefused] = useState<string | undefined>(undefined);
 
-	const selected = agents[Math.min(cursor, agents.length - 1)];
+	// Undefined on the row under the agents, which is not an agent but the way to make one.
+	const selected = agents[Math.min(cursor, agents.length)];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
-	// the start of a path, and not over the log feed, which has no prompt for a command to go into.
-	const menu = panel === "chat" && !shell ? completions(draft) : [];
+	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
+	// not over a name, which is not addressed to an agent that exists yet.
+	const menu = panel === "chat" && !shell && selected !== undefined ? completions(draft) : [];
 	const at = Math.min(pick, menu.length - 1);
 	const chosen = menu[at];
 	const writing = selected === undefined ? undefined : live.get(selected.id);
@@ -676,13 +781,13 @@ function App({
 		});
 	}, [client]);
 
-	// Only while something is thinking. A console redrawing ten times a second at rest is one that
-	// keeps a laptop awake for nothing.
+	// Only while something is thinking, or while an agent is being built. A console redrawing ten
+	// times a second at rest is one that keeps a laptop awake for nothing.
 	useEffect(() => {
-		if (busy.size === 0) return;
+		if (busy.size === 0 && making === undefined) return;
 		const timer = setInterval(() => setFrame((n) => n + 1), 100);
 		return () => clearInterval(timer);
-	}, [busy.size]);
+	}, [busy.size, making]);
 
 	// An agent can be created, stop or be replaced by something other than this console — the plane
 	// answers webhooks and schedules while nobody is watching — so the list is asked for, not derived.
@@ -724,6 +829,33 @@ function App({
 				return;
 			}
 			await client.wake(agentId, body).catch(() => {});
+		},
+		[client],
+	);
+
+	/**
+	 * Makes an agent, and leaves the cursor standing on it.
+	 *
+	 * Nothing has to be moved for that: the plane appends what it makes, so the row the `+` was on
+	 * becomes the row the new agent is on, and the cursor was already there. It is added here as well
+	 * as polled for, because two seconds of a list that does not yet have it reads as a create that
+	 * did not happen.
+	 */
+	const make = useCallback(
+		async (name: string): Promise<void> => {
+			setRefused(undefined);
+			setMaking({ name, at: Date.now() });
+			try {
+				const agent = await client.create(name);
+				setAgents((prev) => (prev.some((one) => one.id === agent.id) ? prev : [...prev, agent]));
+				setDraft("");
+			} catch (error) {
+				// Shown in the pane rather than dropped: every refusal here is about the name that was just
+				// typed — it is taken, or it is not a name — and that name is still in the prompt.
+				setRefused((error as Error).message);
+			} finally {
+				setMaking(undefined);
+			}
 		},
 		[client],
 	);
@@ -791,10 +923,39 @@ function App({
 		}
 		if (key.downArrow) {
 			if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
-			else setCursor((prev) => Math.min(agents.length - 1, prev + 1));
+			// One past the last agent, which is the row that makes one.
+			else setCursor((prev) => Math.min(agents.length, prev + 1));
 			return;
 		}
-		if (panel !== "chat" || selected === undefined) return;
+		if (panel !== "chat") return;
+
+		// The row under the agents, where what is typed is a name and not a message. Nothing else this
+		// prompt does elsewhere happens here: a slash is not a command and a bang is not a shell,
+		// because there is no agent yet for either of them to be about.
+		if (selected === undefined) {
+			// Keys pressed while the plane is building are dropped rather than queued: the one thing
+			// they could do is start a second create over the top of the first.
+			if (making !== undefined) return;
+			if (key.return) {
+				const name = draft.trim();
+				if (name.length > 0) void make(name);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setDraft((prev) => prev.slice(0, -1));
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			setDraft((prev) => prev + first);
+			// A name pasted with the newline still on it is a name that was entered, the way it is in
+			// every other box that takes one.
+			if (rest.length > 0) {
+				const name = (draft + first).trim();
+				if (name.length > 0) void make(name);
+			}
+			return;
+		}
 
 		const send = (line: string): void => {
 			const text = line.trim();
@@ -856,7 +1017,7 @@ function App({
 		setDraft(rest.join(" ").trim());
 	});
 
-	const title = selected === undefined ? "no agents" : selected.id;
+	const title = selected === undefined ? "new agent" : selected.id;
 	// What the left of the title row has already spent, so that what goes at the right end knows how
 	// much of the row is left for it. Three columns of gap, so the two halves never touch.
 	const tabs = `${title}   chat · logs${top === undefined ? "" : "   ↑ scrolled"}   `;
@@ -872,6 +1033,14 @@ function App({
 					frame: SPINNER[frame % SPINNER.length] ?? SPINNER[0],
 					seconds: Math.floor((Date.now() - started) / 1000),
 					...(latest !== undefined ? { step: latest } : {}),
+				};
+	const building =
+		making === undefined
+			? undefined
+			: {
+					name: making.name,
+					frame: SPINNER[frame % SPINNER.length] ?? SPINNER[0],
+					seconds: Math.floor((Date.now() - making.at) / 1000),
 				};
 
 	return h(
@@ -909,25 +1078,34 @@ function App({
 					state.model === "" ? null : h(Text, { dimColor: true }, `${state.model}   `),
 					state.spend === "" ? null : h(Text, heat, state.spend),
 				),
-				panel === "chat"
-					? h(Chat, {
-							history: said,
-							draft,
-							rows: body - 1,
-							columns: width,
-							thinking,
-							top,
-							// Standing at the door until a command says otherwise, which is where the plane
-							// starts an agent's shell and what it goes back to when the sandbox is replaced.
-							shell:
-								shell && selected !== undefined
-									? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
-									: undefined,
-							menu,
-							pick: at,
-							key: "chat",
-						})
-					: h(Logs, { lines, rows: body - 1, top, key: "logs" }),
+				panel !== "chat"
+					? h(Logs, { lines, rows: body - 1, top, key: "logs" })
+					: selected === undefined
+						? h(New, {
+								draft,
+								rows: body - 1,
+								columns: width,
+								making: building,
+								refused,
+								key: "new",
+							})
+						: h(Chat, {
+								history: said,
+								draft,
+								rows: body - 1,
+								columns: width,
+								thinking,
+								top,
+								// Standing at the door until a command says otherwise, which is where the plane
+								// starts an agent's shell and what it goes back to when the sandbox is replaced.
+								shell:
+									shell && selected !== undefined
+										? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
+										: undefined,
+								menu,
+								pick: at,
+								key: "chat",
+							}),
 			),
 		),
 		h(
@@ -944,25 +1122,33 @@ function App({
 						["⏎", "choose"],
 						["^C", "quit"],
 					]
-				: [
-						["↑↓", "agent"],
-						["^U^D", "scroll"],
-						["tab", panel === "chat" ? "logs" : "chat"],
-						// A key nobody guesses is pressable. The rest of this row is what to press to move
-						// around; this one is what to press to be told what else there is. In the shell the
-						// two of them say nothing true, and the way back out is worth saying instead.
-						...(shell
-							? [["⌫", "chat"]]
-							: [
-									["/", "commands"],
-									["!", "shell"],
-								]),
-						["^C", "quit"],
-						// Last, so that the rest of the row does not move as it comes and goes, and shown
-						// only while there is something to stop: the key does nothing at any other time,
-						// and offering it then is how a hint becomes a thing that lies.
-						...(busy.size > 0 ? [["esc", "stop"]] : []),
-					]
+				: selected === undefined
+					? // Nothing else the row usually offers is true here: there is no conversation to
+						// scroll, no shell to open and no commands, until the name has been given.
+						[
+							["↑↓", "agent"],
+							["⏎", "create"],
+							["^C", "quit"],
+						]
+					: [
+							["↑↓", "agent"],
+							["^U^D", "scroll"],
+							["tab", panel === "chat" ? "logs" : "chat"],
+							// A key nobody guesses is pressable. The rest of this row is what to press to move
+							// around; this one is what to press to be told what else there is. In the shell the
+							// two of them say nothing true, and the way back out is worth saying instead.
+							...(shell
+								? [["⌫", "chat"]]
+								: [
+										["/", "commands"],
+										["!", "shell"],
+									]),
+							["^C", "quit"],
+							// Last, so that the rest of the row does not move as it comes and goes, and shown
+							// only while there is something to stop: the key does nothing at any other time,
+							// and offering it then is how a hint becomes a thing that lies.
+							...(busy.size > 0 ? [["esc", "stop"]] : []),
+						]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

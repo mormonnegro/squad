@@ -150,7 +150,7 @@ asking to see the thing, not to be told a fact about it:
 │ ● demo       $0.42 ││ > que es un webhook                                      │
 │ ◐ maxi   15m $4.80 ││                                                          │
 │ ○ scout            ││ Un webhook es una forma de comunicación automática entre │
-│                    ││ servicios: cuando ocurre un evento en un sistema, ese    │
+│ + new agent        ││ servicios: cuando ocurre un evento en un sistema, ese    │
 │                    ││ sistema envía una petición HTTP a una URL configurada.   │
 │                    ││                                                          │
 │                    ││ ╭──────────────────────────────────────────────────────╮ │
@@ -167,6 +167,15 @@ agent's conversation and the log feed, which is the same feed `agent logs` print
 whole time either way. The prompt shows the spinner and the seconds while that agent is thinking,
 because a spinner alone says something is happening and the number rising beside it is what says
 whether it still is.
+
+Under the last agent is the row that makes one, reached with the same `↑↓` as any of them. It is a
+row rather than a command because that is where somebody who wants an agent is already looking —
+with none at all it is the only row there is, and the console opens on it. The panel behind it takes
+a name and `⏎` builds it: a container, a repository of its own, nothing in its memory, and exactly
+what `defaults` in the config allows it to reach. The name is the whole of what the keyboard decides
+here, which is why the pane says so — a keyboard may name an agent and may never grant one. A name
+that is taken, or that is not a name, is refused in the pane with the name still in the prompt to
+be fixed. What is built appears where the `+` was, which is where the cursor already is.
 
 What each agent has spent today is on its row, because "which of these is burning through its day"
 is a question about all of them at once and the header can only ever answer it about the one you
@@ -316,15 +325,16 @@ an agent thinking.
 
 `chat` treats that name as a request instead, and asks: naming an agent that does not exist is what
 someone types when they want one, and it is also what a typo looks like, so the question is how the
-terminal tells them apart. Saying yes builds a container, scaffolds a repository and starts a
+terminal tells them apart. In the console there is nothing to tell apart, because the name is typed
+at a row that says what it makes. Saying yes builds a container, scaffolds a repository and starts a
 session, and the new agent may reach exactly what `defaults` in the config allows — nothing more,
 because the one thing a keyboard may never do here is grant. A plane with no defaults makes an agent
 that cannot reach the model, and says so at the moment it is made rather than mid-turn.
 
 Created agents are written down in the state directory, since the config file is the operator's and
 no plane may write it. That is also the only thing `--purge` can truly delete: a declared agent
-comes back on the next start no matter what, and one made from the CLI has nowhere else to come back
-from.
+comes back on the next start no matter what, and one made at the keyboard has nowhere else to come
+back from.
 
 `logs` is everything at once: the commands each agent runs inside its sandbox as it runs them, what
 a failed one printed and how long it took to fail, the answer when the turn ends, and what the turn

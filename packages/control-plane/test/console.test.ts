@@ -8,6 +8,7 @@ import {
 	doing,
 	here,
 	mouse,
+	New,
 	resume,
 	saidBy,
 	scrolled,
@@ -304,9 +305,10 @@ describe("Agents", () => {
 		expect(drawn.split("\n")[0]).toMatch(/^╭─{20}╮/);
 	});
 
+	// One of the rows is the one that makes an agent, so three rows hold two agents and it.
 	it("shows only what the pane has room for", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 2 }),
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 3 }),
 		);
 
 		expect(drawn).toContain("scribe");
@@ -340,6 +342,52 @@ describe("Agents", () => {
 
 	// The wait is a warning that the agent will act unwatched; the money is ambient. A row too narrow
 	// for both that kept the ambient thing would be worse than one that said neither.
+	// Making an agent is a row in the list of agents because that is where somebody who wants one is
+	// already looking. Behind a command it is a thing only whoever wrote the command ever finds.
+	it("offers a row that makes one, under the agents", () => {
+		const drawn = renderToString(
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		);
+
+		expect(drawn).toContain("+ new agent");
+		expect(drawn.trimEnd().split("\n").at(-2)).toContain("+ new agent");
+	});
+
+	// The first thing a plane with nothing in it can do, on the row the cursor opens on: an empty
+	// column that only said "no agents" left nowhere to go but out of the console.
+	it("is the only row, and the one the cursor is on, when there are no agents", () => {
+		const drawn = renderToString(
+			h(Agents, { agents: [], cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		);
+
+		expect(drawn).toContain("▸ + new agent");
+	});
+
+	it("marks the row only while the cursor is on it", () => {
+		const on = renderToString(
+			h(Agents, { agents: three, cursor: three.length, busy: new Map<string, number>(), rows: 10 }),
+		);
+		const off = renderToString(
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		);
+
+		expect(on).toContain("▸ + new agent");
+		expect(off).not.toContain("▸ + new agent");
+	});
+
+	// The agents are the content and the row is the way to add to them, but a column that dropped it
+	// to fit one more agent would be a column you cannot make an agent from at exactly the moment
+	// you have too many to see.
+	it("keeps the row when there is not room for every agent", () => {
+		const drawn = renderToString(
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 2 }),
+		);
+
+		expect(drawn).toContain("+ new agent");
+		expect(drawn).toContain("scout");
+		expect(drawn).not.toContain("scribe");
+	});
+
 	it("keeps the warning over the money when only one of them fits", () => {
 		const drawn = renderToString(
 			h(Agents, {
@@ -634,6 +682,65 @@ describe("Chat", () => {
 		expect(drawn.split("\n")).toHaveLength(8);
 		expect(drawn).toContain("/limit");
 		expect(drawn).toContain("line 19");
+	});
+});
+
+/**
+ * The pane behind the last row of the column. A name is all a keyboard decides here, which is why
+ * the pane says so: what the agent behind it may reach is the operator's file and nothing typed
+ * into this box moves it.
+ */
+describe("New", () => {
+	const pane = (props: {
+		draft?: string;
+		rows?: number;
+		columns?: number;
+		making?: { name: string; frame: string; seconds: number } | undefined;
+		refused?: string | undefined;
+	}) =>
+		renderToString(
+			h(New, {
+				draft: "",
+				rows: 8,
+				columns: 60,
+				making: undefined,
+				refused: undefined,
+				...props,
+			}),
+			{ columns: props.columns ?? 60 },
+		);
+
+	it("shows the name being typed", () => {
+		expect(pane({ draft: "support-emma" })).toContain("support-emma");
+	});
+
+	it("says what a new agent is given, since the name is the only part being chosen", () => {
+		expect(pane({})).toContain("lowercase, digits and dashes");
+	});
+
+	// Every refusal here is about the name that was just typed — it is taken, or it is not a name —
+	// and the name is still in the prompt, which is the one place the answer is any use.
+	it("says why the last name was refused, where that name still is", () => {
+		const drawn = pane({ draft: "scout", refused: `"scout" is already here` });
+
+		expect(drawn).toContain("already here");
+		expect(drawn).toContain("scout");
+	});
+
+	// A minute of pulling an image and scaffolding a repository, with the prompt it was typed at
+	// gone: a wait with no name on it cannot be told from the one before it.
+	it("says which name is being built, and for how long", () => {
+		const drawn = pane({ making: { name: "scout", frame: "⠙", seconds: 12 } });
+
+		expect(drawn).toContain("⠙ creating scout");
+		expect(drawn).toContain("12s");
+	});
+
+	/** The one thing a pane may never do: a row drawn past its last one breaks the whole screen. */
+	it("never draws more rows than it was given", () => {
+		for (const rows of [2, 5, 12]) {
+			expect(pane({ rows, columns: 24 }).split("\n")).toHaveLength(rows);
+		}
 	});
 });
 
