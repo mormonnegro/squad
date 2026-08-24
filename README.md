@@ -282,6 +282,29 @@ Events queue per agent and are folded into a single turn, so an agent woken twen
 takes one turn about twenty things. A turn that fails leaves its events queued rather than
 acknowledging them, so a bad API key costs a retry instead of the message.
 
+## An agent waking itself
+
+Work that does not finish in one sitting used to end with the turn. An agent has a `wake_me` tool
+now — a pi extension shipped in the sandbox image, so it is the plane's to fix rather than the
+agent's to edit — that asks for another turn and leaves itself a note to be told then:
+
+```
+00:12:36  demo   wake_me   {"afterSeconds":180,"note":"Volver a chequear si example.com sigue
+                            arriba. Primera verificación: HTTP 200 a las 00:12."}
+00:15:38  demo   bash      curl -sS -o /dev/null -w "HTTP %{http_code}" -m 15 https://example.com
+```
+
+The wait shows beside the agent in the console — `● demo 3m` — because an agent about to act with
+nobody watching should not need a command to notice.
+
+There is no path from the sandbox to the plane, and this does not open one: the request is a file
+the agent writes, which the plane reads and removes once the turn is over. So the plane checks it
+rather than trusting it. One wakeup is pending at a time, so asking again moves the appointment
+instead of adding to it; the delay is held between a minute and a month; and the wakeup carries
+participant trust, never operator, however it asks. The note comes back fenced like anything else
+the agent did not hear from its operator, introduced as the reminder it is rather than as an
+instruction — the turn that wrote it may have been reading a stranger at the time.
+
 ## Development
 
 ```sh
