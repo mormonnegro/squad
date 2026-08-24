@@ -124,7 +124,7 @@ describe("the console, pressed at", () => {
 		try {
 			await console_.press();
 
-			expect(console_.screen()).toContain("▸ + new agent");
+			expect(console_.screen()).toContain("+ new agent");
 			expect(console_.screen()).toContain("new agent   chat");
 		} finally {
 			console_.close();
@@ -138,7 +138,7 @@ describe("the console, pressed at", () => {
 		const console_ = open(client, [listed("demo"), listed("maxi")]);
 		try {
 			await console_.press(DOWN, DOWN);
-			expect(console_.screen()).toContain("▸ + new agent");
+			expect(console_.screen()).toContain("new agent   chat");
 
 			await console_.press("scout", ENTER);
 
@@ -160,7 +160,8 @@ describe("the console, pressed at", () => {
 
 			expect(console_.screen()).not.toContain("creating scout");
 			// Appended where the plane appends it, which is the row the cursor was already on.
-			expect(console_.screen()).toContain("▸ ● scout");
+			expect(console_.screen()).toContain("● scout");
+			expect(console_.screen()).toContain("scout   chat");
 		} finally {
 			console_.close();
 		}
@@ -269,7 +270,7 @@ describe("the console, pressed at", () => {
 
 			expect(commanded).toEqual(["/delete", "/delete demo"]);
 			expect(console_.screen()).not.toContain("● demo");
-			expect(console_.screen()).toContain("▸ + new agent");
+			expect(console_.screen()).toContain("new agent   chat");
 		} finally {
 			console_.close();
 		}
@@ -282,11 +283,11 @@ describe("the console, pressed at", () => {
 		const console_ = open(client, [listed("demo")]);
 		try {
 			await console_.press(DOWN);
-			expect(console_.screen()).toContain("▸ + new agent");
+			expect(console_.screen()).toContain("new agent   chat");
 
 			await console_.press(UP);
 
-			expect(console_.screen()).toContain("▸ ● demo");
+			expect(console_.screen()).toContain("demo   chat");
 			expect(console_.screen()).toContain("! shell");
 		} finally {
 			console_.close();

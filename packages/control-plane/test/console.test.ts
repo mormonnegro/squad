@@ -10,6 +10,7 @@ import {
 	laid,
 	mouse,
 	New,
+	pointed,
 	resume,
 	saidBy,
 	scrolled,
@@ -252,6 +253,31 @@ describe("resume", () => {
 });
 
 /**
+ * Which row the keyboard is on, said in the name itself now that there is no gutter to say it in.
+ *
+ * The list is the one place on the screen where a row is chosen rather than read, so it has to be
+ * legible at a glance and legible without the pointer that used to push the whole column sideways.
+ */
+describe("pointed", () => {
+	// The same cyan the panel title gives the same name, so the row and the pane it opens read as
+	// one thing rather than as two places the name happens to appear.
+	it("marks the row the cursor is on in the colour the title gives the same name", () => {
+		expect(pointed(true, true)).toEqual({ bold: true, color: "cyan", dimColor: false });
+	});
+
+	it("leaves a running agent the colour of the terminal, and dims one that is stopped", () => {
+		expect(pointed(false, true).dimColor).toBe(false);
+		expect(pointed(false, false).dimColor).toBe(true);
+	});
+
+	// Dim is how a terminal says a line may be skipped, and the row the keyboard is standing on is
+	// the one row that may not be. A stopped agent is still where the next keystroke goes.
+	it("does not dim the row the cursor is on, stopped or not", () => {
+		expect(pointed(true, false).dimColor).toBe(false);
+	});
+});
+
+/**
  * The column exists to answer one question at a glance: which of these is doing something. Merely
  * being up is the answer you could have got by asking again in a second; thinking is not.
  */
@@ -307,7 +333,7 @@ describe("Agents", () => {
 			{ columns: 80 },
 		);
 
-		expect(drawn.split("\n")[0]).toMatch(/^╭─{24}╮/);
+		expect(drawn.split("\n")[0]).toMatch(/^╭─{22}╮/);
 	});
 
 	// One of the rows is the one that makes an agent, so three rows hold two agents and it.
@@ -358,24 +384,51 @@ describe("Agents", () => {
 
 	// The first thing a plane with nothing in it can do, on the row the cursor opens on: an empty
 	// column that only said "no agents" left nowhere to go but out of the console.
-	it("is the only row, and the one the cursor is on, when there are no agents", () => {
+	it("is the only row there is when there are no agents", () => {
 		const drawn = renderToString(
 			h(Agents, { agents: [], cursor: 0, busy: new Map<string, number>(), rows: 10 }),
 		);
 
-		expect(drawn).toContain("▸ + new agent");
+		expect(drawn).toContain("+ new agent");
+		expect(drawn).not.toContain("●");
 	});
 
-	it("marks the row only while the cursor is on it", () => {
-		const on = renderToString(
-			h(Agents, { agents: three, cursor: three.length, busy: new Map<string, number>(), rows: 10 }),
-		);
-		const off = renderToString(
+	// The whole of what the cursor broke: a pointer in a gutter of its own left the header against
+	// one column and every row under it against another, and the gutter was empty on all but one row.
+	it("keeps every row in the column its header starts in", () => {
+		const rows = renderToString(
 			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		).split("\n");
+		const at = (text: string): number =>
+			rows.find((row) => row.includes(text))?.indexOf(text) ?? -1;
+
+		expect(at("agents")).toBeGreaterThan(0);
+		expect(at("●")).toBe(at("agents"));
+		expect(at("+ new agent")).toBe(at("agents"));
+	});
+
+	// A header touching the first agent is a fourth agent, and the row that makes one touching the
+	// last is a fifth. The blanks are what say which of these rows are the list.
+	it("sets the list off from its header and from the row that makes one", () => {
+		const rows = renderToString(
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		).split("\n");
+		const blank = (row: string | undefined): boolean => /^│\s+│$/.test(row ?? "");
+
+		expect(blank(rows[rows.findIndex((row) => row.includes("agents")) + 1])).toBe(true);
+		expect(blank(rows[rows.findIndex((row) => row.includes("+ new agent")) - 1])).toBe(true);
+	});
+
+	// Air is what a column has when it has room for it. An agent it could have drawn is not what it
+	// should be spending a row on.
+	it("gives the blanks up rather than an agent, when it is short", () => {
+		const drawn = renderToString(
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 4 }),
 		);
 
-		expect(on).toContain("▸ + new agent");
-		expect(off).not.toContain("▸ + new agent");
+		expect(drawn).toContain("sleeper");
+		expect(drawn).toContain("+ new agent");
+		expect(drawn.split("\n").some((row) => /^│\s+│$/.test(row))).toBe(false);
 	});
 
 	// The agents are the content and the row is the way to add to them, but a column that dropped it
@@ -444,7 +497,9 @@ describe("Agents", () => {
 				rows: 10,
 			}),
 		);
-		const [first, second] = drawn.split("\n").slice(2, 4);
+		const rows = drawn.split("\n");
+		const first = rows.find((row) => row.includes("ana"));
+		const second = rows.find((row) => row.includes("bernardo"));
 
 		// Where each of them ends, which is what lining numbers up means when they are not the same
 		// length: it is the last digit that has to sit under the last digit.

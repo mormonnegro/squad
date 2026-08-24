@@ -158,24 +158,27 @@ agent help                               the rest
 asking to see the thing, not to be told a fact about it:
 
 ```
-╭────────────────────╮╭──────────────────────────────────────────────────────────╮
-│ agents             ││ demo  chat · logs        deepseek-v4-flash   $0.42 / $5.00│
-│ ● demo       $0.42 ││ > que es un webhook                                      │
-│ ◐ maxi   15m $4.80 ││                                                          │
-│ ○ scout            ││ Un webhook es una forma de comunicación automática entre │
-│ + new agent        ││ servicios: cuando ocurre un evento en un sistema, ese    │
-│                    ││ sistema envía una petición HTTP a una URL configurada.   │
-│                    ││                                                          │
-│                    ││ ╭──────────────────────────────────────────────────────╮ │
-│                    ││ │ >                                                    │ │
-│                    ││ ╰──────────────────────────────────────────────────────╯ │
-╰────────────────────╯╰──────────────────────────────────────────────────────────╯
+╭──────────────────────╮╭──────────────────────────────────────────────────────────╮
+│ agents               ││ demo   chat · logs     deepseek-v4-flash   $0.42 / $5.00 │
+│                      ││                                                          │
+│ ● demo         $0.42 ││ > que es un webhook                                      │
+│ ◐ maxi     15m $4.80 ││                                                          │
+│ ○ scout              ││ Un webhook es una forma de comunicación automática entre │
+│                      ││ servicios: cuando ocurre un evento en un sistema, ese    │
+│ + new agent          ││ sistema envía una petición HTTP a una URL configurada.   │
+│                      ││ ╭──────────────────────────────────────────────────────╮ │
+│                      ││ │ >                                                    │ │
+│                      ││ ╰──────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰──────────────────────────────────────────────────────────╯
  ↑↓ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
 gets a mark of its own because with several agents on screen it is the one thing you cannot find
-out by asking again in a second. `↑↓` moves between them and `tab` swaps the panel between that
+out by asking again in a second. The one the keyboard is on is its name in the colour the panel
+title gives the same name, and not an arrow in a gutter beside the marks: a column whose header
+stands against the border and whose rows all begin two further in reads as a list indented under a
+title it does not belong to. `↑↓` moves between them and `tab` swaps the panel between that
 agent's conversation and the log feed, which is the same feed `agent logs` prints and runs the
 whole time either way. The prompt shows the spinner and the seconds while that agent is thinking,
 because a spinner alone says something is happening and the number rising beside it is what says

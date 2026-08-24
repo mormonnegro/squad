@@ -26,15 +26,15 @@ const REMEMBERED_LINES = 2000;
 /**
  * Wide enough for a name, what it is spending and when it wakes, on the one row they share.
  *
- * Four columns of it are the border and the padding, four more the pointer and the mark. At 22 the
- * eighteen left over could not hold all three, and the money was what went — so the agent with a turn
- * booked, the one about to spend again while nobody is watching, was the one agent whose spending
- * went unsaid. The four extra columns come out of a chat pane that wraps its text anyway.
+ * Four columns of it are the border and the padding, two more the mark. At 20 the sixteen left over
+ * could not hold all three, and the money was what went — so the agent with a turn booked, the one
+ * about to spend again while nobody is watching, was the one agent whose spending went unsaid. The
+ * four extra columns come out of a chat pane that wraps its text anyway.
  */
-const AGENTS_WIDTH = 26;
+const AGENTS_WIDTH = 24;
 
 /** What a row has for the name and its numbers, once the border, the padding and the mark are paid. */
-const ROW_ROOM = AGENTS_WIDTH - 8;
+const ROW_ROOM = AGENTS_WIDTH - 6;
 
 /** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
 const PROMPT_ROWS = 3;
@@ -413,6 +413,26 @@ export function laid(
 	};
 }
 
+/**
+ * How a row's name is painted, which is the whole of what says the cursor is on it.
+ *
+ * There was a pointer here, in a column of its own to the left of the marks, and the column of its
+ * own was the problem: the header said `agents` against the border while every row that followed
+ * began two columns in, so the list read as indented under a title it did not line up with. Nothing
+ * was in that gutter but one arrow. The name carries it instead, in the cyan the panel title gives
+ * the same name — so the row and the pane it opens are the one colour, and the marks keep theirs.
+ *
+ * A reversed row would have been the other way to do it, and takes the colour away exactly where it
+ * is being read: the mark is what this column is scanned for.
+ */
+export function pointed(
+	here: boolean,
+	running: boolean,
+): { readonly bold: boolean; readonly color?: string; readonly dimColor: boolean } {
+	if (here) return { bold: true, color: "cyan", dimColor: false };
+	return { bold: false, dimColor: !running };
+}
+
 export function Agents({
 	agents,
 	cursor,
@@ -427,29 +447,32 @@ export function Agents({
 }): ReactElement {
 	// The row under the last agent, which the cursor reaches with the same arrow as any other.
 	const making = cursor >= agents.length;
-	const listed = agents.slice(0, Math.max(0, rows - 1)).map((agent, index) => {
-		// Thinking is worth a different mark from merely being up: with several agents on screen it
-		// is the one thing you cannot find out by asking again in a second.
-		const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
-		const here = index === cursor;
-		const row = laid(agent);
-		return h(
-			Text,
-			{ key: agent.id, wrap: "truncate" },
-			// A pointer rather than a reversed row: the marks are the colour in this column, and a
-			// highlight behind them takes it away exactly where it is being read.
-			h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
-			h(Text, { color: mark.color }, mark.glyph),
-			h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${row.name}`),
-			row.gap === "" ? undefined : row.gap,
-			// An agent that booked its own next turn is going to act while nobody is watching, which is
-			// the one thing on this row worth a colour of its own.
-			row.wake === "" ? undefined : h(Text, { color: "yellow", dimColor: true }, row.wake),
-			row.spent === ""
-				? undefined
-				: h(Text, burning(agent), `${row.wake === "" ? "" : " "}${row.spent}`),
-		);
-	});
+	// A blank over the list and another under it, which is what makes the header a header and the
+	// last row a thing of its own rather than a fourth agent. Given up the moment the column is short
+	// enough that a gap would cost it an agent: air is what a list has when it has room for it.
+	const spaced = agents.length + 3 <= rows;
+	const listed = agents
+		.slice(0, spaced ? agents.length : Math.max(0, rows - 1))
+		.map((agent, index) => {
+			// Thinking is worth a different mark from merely being up: with several agents on screen it
+			// is the one thing you cannot find out by asking again in a second.
+			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
+			const here = index === cursor;
+			const row = laid(agent);
+			return h(
+				Text,
+				{ key: agent.id, wrap: "truncate" },
+				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, pointed(here, agent.running), ` ${row.name}`),
+				row.gap === "" ? undefined : row.gap,
+				// An agent that booked its own next turn is going to act while nobody is watching, which is
+				// the one thing on this row worth a colour of its own.
+				row.wake === "" ? undefined : h(Text, { color: "yellow", dimColor: true }, row.wake),
+				row.spent === ""
+					? undefined
+					: h(Text, burning(agent), `${row.wake === "" ? "" : " "}${row.spent}`),
+			);
+		});
 	return h(
 		Box,
 		{
@@ -464,7 +487,9 @@ export function Agents({
 			paddingX: 1,
 		},
 		h(Text, { dimColor: true, key: "title" }, "agents"),
+		spaced ? h(Text, { key: "over" }, " ") : undefined,
 		...listed,
+		spaced ? h(Text, { key: "under" }, " ") : undefined,
 		// Last, and never given up to make room: making an agent is a row in the list of agents because
 		// that is where somebody with none of them is already looking, and where somebody who wants
 		// another one looks too. Behind a command it would be a thing only whoever wrote it can find.
@@ -473,11 +498,10 @@ export function Agents({
 			: h(
 					Text,
 					{ key: "+", wrap: "truncate" },
-					h(Text, { color: "cyan", bold: true }, making ? "▸ " : "  "),
 					// In the column the marks are in, so it reads as one more state a row can be in rather
 					// than as a caption that wandered under the list.
 					h(Text, { color: "green" }, "+"),
-					h(Text, { bold: making, dimColor: !making }, " new agent"),
+					h(Text, pointed(making, false), " new agent"),
 				),
 	);
 }
@@ -776,6 +800,11 @@ export function App({
 	// to know: nothing downstream can put a paragraph back once it has been drawn too wide.
 	const body = Math.max(1, rows - 4);
 	const width = Math.max(1, columns - AGENTS_WIDTH - 4);
+	// A blank row under the title, so the tabs read as the pane's own header rather than as the first
+	// line of the conversation under them. It is paid for out of the conversation, which is why a short
+	// pane does without: the last row a six-row terminal should spend on anything is one spent on air.
+	const airy = body >= 8;
+	const inner = body - (airy ? 2 : 1);
 
 	// Scrolled back is a place in one conversation or one feed, and it does not survive being pointed
 	// at another: arriving in the middle of something nobody asked for is disorienting. Dropped during
@@ -946,7 +975,7 @@ export function App({
 		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
 		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
 		const scroll = (by: number, pages: number): void => {
-			const height = panel === "logs" ? body - 1 : chatRows(body - 1);
+			const height = panel === "logs" ? inner : chatRows(inner);
 			const total = panel === "logs" ? lines.length : wrapped(transcript(said), width).length;
 			setTop((prev) => scrolled(prev, by + Math.round(pages * height), { total, height }));
 		};
@@ -1179,12 +1208,13 @@ export function App({
 					state.model === "" ? null : h(Text, { dimColor: true }, `${state.model}   `),
 					state.spend === "" ? null : h(Text, heat, state.spend),
 				),
+				airy ? h(Text, { key: "under" }, " ") : null,
 				panel !== "chat"
-					? h(Logs, { lines, rows: body - 1, top, key: "logs" })
+					? h(Logs, { lines, rows: inner, top, key: "logs" })
 					: selected === undefined
 						? h(New, {
 								draft,
-								rows: body - 1,
+								rows: inner,
 								columns: width,
 								making: building,
 								refused,
@@ -1193,7 +1223,7 @@ export function App({
 						: h(Chat, {
 								history: said,
 								draft,
-								rows: body - 1,
+								rows: inner,
 								columns: width,
 								thinking,
 								top,
