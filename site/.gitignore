@@ -1,0 +1,6 @@
+.next/
+out/
+tsconfig.tsbuildinfo
+# Generated, and since Next 16 it references files under .next/, so it cannot be committed without
+# committing the build. `pnpm typecheck` regenerates it with `next typegen`.
+next-env.d.ts

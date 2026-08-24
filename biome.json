@@ -12,6 +12,14 @@
 		}
 	},
 	"files": {
-		"includes": ["**", "!**/node_modules", "!**/.pki", "!.demo", "!.claude"]
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/.pki",
+			"!.demo",
+			"!.claude",
+			"!site/.next",
+			"!site/out"
+		]
 	}
 }

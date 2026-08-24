@@ -1,2 +1,5 @@
 packages:
   - "packages/*"
+  # Not under packages/ because it is not one of the runtime's pieces: it is the website, and it
+  # depends on nothing here.
+  - "site"
