@@ -122,6 +122,23 @@ describe("Transcript", () => {
 		expect((await transcript.read("scout")).map((said) => said.text)).toEqual(["b", "c", "d"]);
 	});
 
+	/**
+	 * The bug this exists to prevent. A name can be given out again, and an agent made under a name
+	 * that still had a conversation lying about would open its first console holding somebody else's.
+	 */
+	it("has nothing left of a conversation it was told to forget", async () => {
+		const transcript = new Transcript(dir);
+		await transcript.append("scout", { from: "operator", text: "hola" });
+
+		await transcript.forget("scout");
+
+		expect(await transcript.read("scout")).toEqual([]);
+	});
+
+	it("is not troubled by forgetting one that was never said", async () => {
+		await expect(new Transcript(dir).forget("nobody")).resolves.toBeUndefined();
+	});
+
 	// An agent id reaches this from a config file, and a name with a slash in it would otherwise be
 	// a path: the file has to land in the directory it was given.
 	it("writes a name with a slash in it as a name", async () => {

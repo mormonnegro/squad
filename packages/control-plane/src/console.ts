@@ -829,6 +829,14 @@ export function App({
 			// waking anything. Both halves come back on the feed like everything else here.
 			if (isCommand(body)) {
 				await client.command(agentId, body).catch(() => {});
+				// Asked again the moment the command is answered rather than waited two seconds for. A
+				// command is the one thing typed here that changes what the list says: `/rm` takes a row
+				// out of it, `/limit` changes the number in the title row above it. An agent that is
+				// still listed after being removed is a delete that looks like it did not happen.
+				await client
+					.agents()
+					.then(setAgents)
+					.catch(() => {});
 				return;
 			}
 			await client.wake(agentId, body).catch(() => {});

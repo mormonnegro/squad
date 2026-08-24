@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentEvent } from "@agent-dive/events";
 
@@ -92,6 +92,17 @@ export class Transcript {
 
 	async read(agentId: string): Promise<readonly Utterance[]> {
 		return this.#serialize(() => this.#read(agentId));
+	}
+
+	/**
+	 * Throws the conversation away, for a name the plane is done with.
+	 *
+	 * Only ever called where the name itself is being forgotten. A file left behind under a name
+	 * nothing answers to any more is not merely litter: the name can be given out again, and the
+	 * agent made under it would open its first console holding somebody else's memory.
+	 */
+	async forget(agentId: string): Promise<void> {
+		await this.#serialize(() => rm(this.#path(agentId), { force: true }));
 	}
 
 	/** Encoded rather than trusted: a name with a slash in it would otherwise name another directory. */

@@ -29,6 +29,10 @@ function context(
 		wantsAccount?: readonly string[];
 		/** Servers the plane already holds a login for. */
 		loggedIn?: readonly string[];
+		/** Which agent the line is being typed at, since `/rm` asks for that name back. */
+		agentId?: string;
+		/** Made at a keyboard rather than declared, which decides whether removing it is the last of it. */
+		created?: boolean;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -38,6 +42,8 @@ function context(
 	const logins = new Set<string>(start.loggedIn ?? []);
 	const started: { name: string; clientId: string | undefined }[] = [];
 	const pasted: { name: string; redirected: string }[] = [];
+	/** Every removal that got as far as the plane, which is the half no answer can show. */
+	const removed: boolean[] = [];
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
@@ -51,7 +57,12 @@ function context(
 		logins,
 		started,
 		pasted,
+		removed,
 		context: {
+			agent: { id: start.agentId ?? "scout", created: start.created ?? true },
+			remove: async (purge: boolean) => {
+				removed.push(purge);
+			},
 			account: async () => state,
 			setLimit: async (usd: number | null) => {
 				set.push(usd);
@@ -223,6 +234,74 @@ describe("runCommand", () => {
 
 		expect(bare).toBe(await runCommand("/help", context().context));
 		expect(bare).toContain("/limit");
+	});
+});
+
+/**
+ * The one command that destroys something, and therefore the one whose refusals matter more than
+ * what it does. Every test here that ends in `removed` being empty is a way somebody could have
+ * lost an agent by typing.
+ */
+describe("/rm", () => {
+	it("says what it would take and what it would leave, and takes nothing", async () => {
+		const { context: ctx, removed } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/rm", ctx);
+
+		expect(answer).toContain("/rm scout");
+		expect(answer).toContain("--purge");
+		expect(removed).toEqual([]);
+	});
+
+	// The confirmation is the agent's own name, borrowed from the CLI, which asks for the same word
+	// before the same thing. It is not a way to name a different agent: there is no different agent
+	// a command can reach, so anything else is a mistake and is answered as one.
+	it("refuses a name that is not this agent's", async () => {
+		const { context: ctx, removed } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/rm maxi", ctx);
+
+		expect(answer).toContain('"maxi" is not this agent');
+		expect(removed).toEqual([]);
+	});
+
+	it("keeps the repository unless the flag says otherwise", async () => {
+		const { context: ctx, removed } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/rm scout", ctx);
+
+		expect(removed).toEqual([false]);
+		expect(answer).toContain("repository is untouched");
+	});
+
+	it("deletes the repository when asked, and says that was the last of it", async () => {
+		const { context: ctx, removed } = context({ agentId: "scout", created: true });
+
+		const answer = await runCommand("/rm scout --purge", ctx);
+
+		expect(removed).toEqual([true]);
+		expect(answer).toContain("the last of it");
+	});
+
+	// A declared agent is back at the next start whatever happens here, because the config file is the
+	// operator's and no plane may write it. Discovering that after a restart looks like a bug.
+	it("says a declared agent comes back, and comes back empty", async () => {
+		const { context: ctx } = context({ agentId: "scout", created: false });
+
+		const answer = await runCommand("/rm scout --purge", ctx);
+
+		expect(answer).toContain("comes back empty");
+	});
+
+	// A flag that was meant to be `--purge` and is not must not read as the safe form and quietly keep
+	// what it was typed to delete — nor as the dangerous one.
+	it("removes nothing on a word it does not know", async () => {
+		const { context: ctx, removed } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/rm scout --purgue", ctx);
+
+		expect(answer).toContain("only --purge");
+		expect(removed).toEqual([]);
 	});
 });
 

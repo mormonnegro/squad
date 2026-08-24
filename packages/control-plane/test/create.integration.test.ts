@@ -80,16 +80,29 @@ suite("an agent created while the plane runs", () => {
 		}
 	}, 120_000);
 
-	it("is forgotten only when its repository goes with it", async () => {
+	/**
+	 * Removal from the console, which is `/rm` and not the method under it.
+	 *
+	 * Worth driving through the command because the ordering only exists there: the line typed is
+	 * written into the conversation, the agent goes, and then the answer is written — and an answer
+	 * written after the removal would put back the conversation the removal just took away.
+	 */
+	it("is forgotten only when its repository goes with it, and takes its conversation along", async () => {
 		const third = plane();
 		await third.start();
 		try {
-			await third.remove(AGENT_ID, { purge: false });
+			const kept = await third.command(AGENT_ID, `/rm ${AGENT_ID}`);
+			expect(kept).toContain("repository is untouched");
 			expect((await third.agents()).map((agent) => agent.id)).toContain(AGENT_ID);
 
-			await third.remove(AGENT_ID, { purge: true });
+			const gone = await third.command(AGENT_ID, `/rm ${AGENT_ID} --purge`);
+			expect(gone).toContain("the last of it");
 			expect((await third.agents()).map((agent) => agent.id)).toEqual([DECLARED_ID]);
 			expect(JSON.parse(await readFile(join(stateDir, "agents.json"), "utf8"))).toEqual([]);
+			expect(await third.transcripts()).not.toHaveProperty(AGENT_ID);
+			await expect(
+				readFile(join(stateDir, "transcript", `${AGENT_ID}.json`), "utf8"),
+			).rejects.toThrow();
 		} finally {
 			await third.stop();
 		}

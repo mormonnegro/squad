@@ -415,6 +415,9 @@ export class ControlPlane {
 		if (options.purge === true && this.#createdIds.delete(agentId)) {
 			await this.#created.forget(agentId);
 			await this.#spend.forget(agentId);
+			// The conversation goes with the name, and only with the name: a declared agent purged down
+			// to an empty repository is still the agent that was being talked to, and comes back.
+			await this.#transcript.forget(agentId);
 			// What it was given, not what was found: a server stays on the shelf for the agents that
 			// are left, and for the one somebody makes next.
 			await this.#mcp.forgetAgent(agentId);
@@ -609,6 +612,11 @@ export class ControlPlane {
 		}
 		await this.#record(agentId, { from: "operator", text: line });
 		const answer = await runCommand(line, {
+			agent: { id: agentId, created: this.#createdIds.has(agentId) },
+			// The only thing in here that destroys anything, and it is given the agent the line was
+			// typed at rather than a name off the line: whatever is typed after `/rm` is a word to be
+			// checked against this agent, never a way to reach a different one.
+			remove: (purge) => this.remove(agentId, { purge }),
 			account: () => this.#account(agentId),
 			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
 			mcp: async () => ({
@@ -775,6 +783,10 @@ export class ControlPlane {
 	 */
 	async #record(agentId: string, said: Utterance): Promise<void> {
 		this.#emit({ kind: "said", agentId, said });
+		// Said to whoever is watching, but not written down for an agent the plane no longer has: the
+		// last thing anyone says about an agent is that it is gone, and writing that line would put
+		// back the file the removal just took away.
+		if (!this.#agents.some((agent) => agent.id === agentId)) return;
 		await this.#transcript.append(agentId, said).catch((error: Error) => {
 			this.#onError?.(`${agentId} transcript`, error);
 		});

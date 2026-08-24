@@ -51,12 +51,15 @@ const listed = (id: string): AgentSummary => ({
  * `create` is deliberately not instant: the console has to keep drawing while an agent is built,
  * and a fake that resolved in the same tick would never show whether it does.
  */
-function plane(options: { refuses?: string } = {}) {
+function plane(options: { refuses?: string; has?: readonly AgentSummary[] } = {}) {
 	const asked: string[] = [];
+	const commanded: string[] = [];
+	// What the plane would say it has if it were asked right now, which a command can change.
+	let roster = options.has ?? [];
 	let finish: (agent: AgentSummary) => void = () => {};
 	let fail: (error: Error) => void = () => {};
 	const client = {
-		agents: async () => [],
+		agents: async () => roster,
 		transcripts: async () => ({}),
 		logs: (_onEvent: (event: PlaneEvent) => void) => {},
 		create: async (agentId: string) => {
@@ -68,13 +71,20 @@ function plane(options: { refuses?: string } = {}) {
 			});
 		},
 		wake: async () => "",
-		command: async () => "",
+		command: async (agentId: string, line: string) => {
+			commanded.push(line);
+			// The one command that changes what the plane has. Answered the way the plane answers it:
+			// by being gone from the list the next time anyone asks, and not before.
+			if (line.startsWith("/rm ")) roster = roster.filter((one) => one.id !== agentId);
+			return "";
+		},
 		shell: async () => ({ text: "", cwd: "/" }),
 		stop: async () => false,
 	} as unknown as ControlClient;
 	return {
 		client,
 		asked,
+		commanded,
 		built: (id: string) => finish(listed(id)),
 		broke: (why: string) => fail(new Error(why)),
 	};
@@ -186,6 +196,27 @@ describe("the console, pressed at", () => {
 
 			expect(console_.screen()).not.toContain("/limit");
 			expect(console_.screen()).toContain("⏎ create");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/**
+	 * The list is polled every couple of seconds, and this test does not wait that long on purpose.
+	 *
+	 * A command is the one thing typed here that changes what the plane has, and an agent still
+	 * sitting in the column after `/rm` took it away is a removal that looks like it did not happen.
+	 * So the list is asked for again the moment the command answers, rather than at the next poll.
+	 */
+	it("shows an agent gone as soon as the command that removed it has answered", async () => {
+		const { client, commanded } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("/rm demo --purge", ENTER);
+
+			expect(commanded).toEqual(["/rm demo --purge"]);
+			expect(console_.screen()).not.toContain("● demo");
+			expect(console_.screen()).toContain("▸ + new agent");
 		} finally {
 			console_.close();
 		}
