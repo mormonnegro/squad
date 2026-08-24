@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { Code } from "../components/Code";
 import { Console } from "../components/Console";
 import { Layout } from "../components/Layout";
 import { Terminal } from "../components/Terminal";
-import { PI, REPO, TAGLINE } from "../lib/site";
+import { INSTALL, PI, REPO, TAGLINE } from "../lib/site";
 
 const FEED = `
 18:12:53  maxi      bash        pnpm -r test
@@ -68,9 +69,17 @@ export default function Home() {
 						It is a runtime, not a harness. The thinking is done by <a href={PI}>pi</a> — agent-dive
 						gives it a machine to live on, a way to be woken, and a boundary to work inside.
 					</p>
+					<Code label="on your VPS" wrap>{`
+$ curl -fsSL ${INSTALL} | sh
+`}</Code>
+					<p className="small muted">
+						Installs Docker if the machine has none, asks for the keys the proxy will hold, and
+						leaves <code>agent</code> on the PATH. Then it is{" "}
+						<code>ssh -t root@your-vps agent</code> from wherever you are.
+					</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump">
-							install it →
+							the whole install →
 						</Link>
 						<a href={REPO} className="jump">
 							read the source

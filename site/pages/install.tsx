@@ -1,23 +1,29 @@
 import Link from "next/link";
 import { Code } from "../components/Code";
 import { Layout } from "../components/Layout";
-import { REPO } from "../lib/site";
+import { INSTALL, REPO } from "../lib/site";
+
+const ASKS: [string, string][] = [
+	["Docker", "installed from get.docker.com if the machine has none"],
+	["a DeepSeek key", "what the agents think with — skippable, and turns fail until you add one"],
+	["an OpenAI key", "how an agent searches the web — optional, the tool says so without it"],
+];
 
 export default function Install() {
 	return (
 		<Layout
 			title="install"
-			description="Put agent-dive on a VPS with Docker and Compose, and drive it from your own terminal over SSH."
+			description="One command on a fresh VPS. Then you drive it by typing agent, over the SSH connection you already have."
 		>
 			<section className="hero">
 				<div className="wrap">
 					<h1>Install</h1>
 					<p className="lede">
-						One machine with Docker on it. The agents live there; you stay where you are and reach
+						One machine with a shell on it. The agents live there; you stay where you are and reach
 						them the way you already reach the machine.
 					</p>
 					<div className="hero-meta">
-						<span>Docker and Compose</span>
+						<span>One command</span>
 						<span>~1 GB of RAM</span>
 						<span>No database, no account</span>
 					</div>
@@ -26,96 +32,41 @@ export default function Install() {
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">Before the VPS</span>
-					<h2>Try the whole thing on your laptop</h2>
-					<p>
-						The demo builds the images, starts a control plane on a throwaway network, shows what
-						the agent can and cannot reach, wakes it with a signed webhook and prints the turn. It
-						asks for a model key when it gets to the part that needs one.
-					</p>
-					<Code>{`
-$ git clone ${REPO}
-$ cd agent-dive
-$ ./deploy/demo.sh up
-`}</Code>
-					<p className="small muted">
-						<code>./deploy/demo.sh down</code> removes the containers, the networks, the volume and
-						the state. The only difference from a real deployment is where the state lives.
-					</p>
-				</div>
-			</section>
-
-			<section>
-				<div className="wrap">
 					<span className="eyebrow">On the machine</span>
-					<h2>Three commands and a config file</h2>
-
-					<div className="step">
-						<span className="step-n">1</span>
-						<h3>Build the sandbox image and start the plane</h3>
-						<p className="small muted">
-							The sandbox image is what an agent runs inside, and it carries the tools the plane
-							ships: <code>wake_me</code>, <code>web_search</code> and the MCP client.
-						</p>
-						<Code>{`
-$ git clone ${REPO} && cd agent-dive
-$ docker build -t agent-dive/sandbox:dev packages/sandbox/image
-$ cd deploy
-$ cp .env.example .env                # the keys the proxy injects
-$ cp config.example.yaml config.yaml  # what each agent may reach
-$ docker compose up -d --build
+					<h2>One command, and it asks for the rest</h2>
+					<Code label="on your VPS" wrap>{`
+$ curl -fsSL ${INSTALL} | sh
 `}</Code>
-					</div>
-
-					<div className="step">
-						<span className="step-n">2</span>
-						<h3>Say what an agent may reach</h3>
+					<p>
+						It installs Docker if there is none, puts the repository in <code>/opt/agent-dive</code>
+						, writes a config with one agent and a ceiling of five dollars a day, starts the plane,
+						and leaves <code>agent</code> on the PATH.
+					</p>
+					<table className="table">
+						<tbody>
+							{ASKS.map(([what, why]) => (
+								<tr key={what}>
+									<td>{what}</td>
+									<td>{why}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+					<p className="small muted">
+						The keys are read from the terminal, not from the pipe, and land in a <code>0600</code>{" "}
+						file the agents cannot reach. Nothing else is asked. Run the same command again any time
+						and it becomes the update: it pulls, rebuilds, swaps the plane in, and leaves{" "}
+						<code>config.yaml</code> and <code>.env</code> alone — the second run is the one that
+						would quietly undo a grant somebody added.
+					</p>
+					<div className="note">
 						<p>
-							<code>config.yaml</code> is the whole surface: agents, what each may reach, when each
-							wakes up, which webhooks exist, and — under <code>defaults</code> — what an agent made
-							later at the keyboard starts from.
+							<strong>If you would rather read it first.</strong> It is{" "}
+							<a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a>, about two
+							hundred lines, and piping a script from a stranger into a shell is a reasonable thing
+							to refuse. <a href="#by-hand">The same install by hand</a> is at the bottom of this
+							page.
 						</p>
-						<Code label="deploy/config.yaml">{`
-defaults:
-  provider: deepseek
-  model: deepseek-v4-flash
-  limitUsd: 5                  # dollars a day, reset at midnight UTC
-  grants:
-    - id: model
-      host: api.deepseek.com
-      injection:
-        kind: bearer
-        token: { ref: MODEL_KEY }
-    - id: search
-      host: api.openai.com
-      pathPrefix: /v1/responses  # the one endpoint that searches
-      methods: [POST]
-      injection:
-        kind: bearer
-        token: { ref: SEARCH_KEY }
-`}</Code>
-						<p className="small">
-							No secret is in it. It names environment variables and the process holds the values,
-							so the file describing what an agent can reach is committable and diffable — a grant
-							nobody noticed being added is the failure mode.
-						</p>
-						<div className="note warn">
-							<p>
-								<strong>Give it a ceiling.</strong> An agent can book its own next turn, so without{" "}
-								<code>limitUsd</code> the first anyone knows of a loop is the bill. Putting it under{" "}
-								<code>defaults</code> covers the agents made later at the keyboard, which are
-								exactly the ones nobody remembers to put a ceiling on.
-							</p>
-						</div>
-					</div>
-
-					<div className="step">
-						<span className="step-n">3</span>
-						<h3>Check that it came up</h3>
-						<Code>{`
-$ docker compose exec control-plane agent ls
-$ docker compose logs -f control-plane
-`}</Code>
 					</div>
 				</div>
 			</section>
@@ -123,22 +74,23 @@ $ docker compose logs -f control-plane
 			<section>
 				<div className="wrap">
 					<span className="eyebrow">From your computer</span>
-					<h2>You connect over SSH, and that is the whole of it</h2>
+					<h2>Then you type its name</h2>
 					<p>
-						The plane's control surface is a unix socket inside the state directory, and it never
-						leaves the machine. There is no port to open, no token to issue and nothing to log into:
-						SSH already decides who may touch that host, and touching that host is what holding the
+						The control surface is a unix socket inside the state directory and it never leaves the
+						machine. There is no port to open, no token to issue and nothing to log into: SSH
+						already decides who may touch that host, and touching that host is what holding the
 						socket means.
 					</p>
 					<Code label="from your laptop" wrap>{`
-$ ssh -t vps 'cd agent-dive/deploy && docker compose exec control-plane agent'
+$ ssh -t root@your-vps agent
 `}</Code>
 					<p className="small muted">
-						<code>-t</code> because the console takes the terminal over. Worth an alias, since this
-						is the command you will type every day:
+						<code>-t</code> because the console takes the terminal over. The installer prints this
+						line with your own address in it. Worth an alias, since it is the command you will type
+						every day:
 					</p>
 					<Code label="~/.zshrc" wrap>{`
-alias dive='ssh -t vps "cd agent-dive/deploy && docker compose exec control-plane agent"'
+alias dive='ssh -t root@your-vps agent'
 `}</Code>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,
@@ -159,11 +111,62 @@ alias dive='ssh -t vps "cd agent-dive/deploy && docker compose exec control-plan
 
 			<section>
 				<div className="wrap">
+					<span className="eyebrow">The one file to edit</span>
+					<h2>Say what an agent may reach</h2>
+					<p>
+						<code>/opt/agent-dive/deploy/config.yaml</code> is the whole surface: agents, what each
+						may reach, when each wakes up, which webhooks exist, and — under <code>defaults</code> —
+						what an agent made later at the keyboard starts from. The installer writes a working
+						one; this is the shape of it.
+					</p>
+					<Code label="deploy/config.yaml">{`
+defaults:
+  provider: deepseek
+  model: deepseek-v4-flash
+  limitUsd: 5                  # dollars a day, reset at midnight UTC
+  grants:
+    - id: model
+      host: api.deepseek.com
+      injection:
+        kind: bearer
+        token: { ref: DEEPSEEK_API_KEY }
+    - id: search
+      host: api.openai.com
+      pathPrefix: /v1/responses  # the one endpoint that searches
+      methods: [POST]
+      injection:
+        kind: bearer
+        token: { ref: OPENAI_API_KEY }
+`}</Code>
+					<p className="small">
+						No secret is in it. It names environment variables and the process holds the values, so
+						the file describing what an agent can reach is committable and diffable — a grant nobody
+						noticed being added is the failure mode.
+					</p>
+					<p className="small muted">
+						It is read when the plane starts, so an edit takes hold on{" "}
+						<code>docker compose restart control-plane</code> from{" "}
+						<code>/opt/agent-dive/deploy</code>.
+					</p>
+					<div className="note warn">
+						<p>
+							<strong>The ceiling is already there. Leave it.</strong> An agent can book its own
+							next turn, so without <code>limitUsd</code> the first anyone knows of a loop is the
+							bill. It sits under <code>defaults</code> so it also covers the agents made later at
+							the keyboard, which are exactly the ones nobody remembers to put a ceiling on.
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div className="wrap">
 					<span className="eyebrow">From anywhere else</span>
 					<h2>Waking an agent with a webhook</h2>
 					<p>
 						Port <code>8787</code> is the one thing published, and it takes signed requests only.
-						The signature covers{" "}
+						The installer generates the secret and puts it in <code>.env</code> as{" "}
+						<code>HOOK_SECRET</code>. The signature covers{" "}
 						{/* biome-ignore lint/suspicious/noTemplateCurlyInString: the shape of the signed string */}
 						<code>{"${timestamp}.${body}"}</code> and is compared in constant time within a
 						freshness window; an unknown hook id answers exactly like a bad signature, and only
@@ -172,9 +175,9 @@ alias dive='ssh -t vps "cd agent-dive/deploy && docker compose exec control-plan
 					<Code wrap>{`
 BODY='{"text":"the nightly build failed"}'
 TS=$(date +%s)
-SIG="sha256=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$DEPLOY_HOOK_SECRET" -r | cut -d' ' -f1)"
+SIG="sha256=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$HOOK_SECRET" -r | cut -d' ' -f1)"
 
-curl -X POST https://your-vps:8787/hooks/deploys \\
+curl -X POST https://your-vps:8787/hooks/ping \\
   -H "x-agent-dive-timestamp: $TS" \\
   -H "x-agent-dive-signature: $SIG" \\
   -d "$BODY"
@@ -185,6 +188,54 @@ curl -X POST https://your-vps:8787/hooks/deploys \\
 						arrives fenced, as data. Events queue per agent and are folded into one turn, and a turn
 						that fails leaves its events queued rather than acknowledging them, so a bad API key
 						costs a retry instead of the message.
+					</p>
+				</div>
+			</section>
+
+			<section>
+				<div className="wrap">
+					<span className="eyebrow">Before the VPS</span>
+					<h2>Or try the whole thing on your laptop</h2>
+					<p>
+						The demo builds the images, starts a control plane on a throwaway network, shows what
+						the agent can and cannot reach, wakes it with a signed webhook and prints the turn. It
+						asks for a model key when it gets to the part that needs one.
+					</p>
+					<Code>{`
+$ git clone ${REPO}
+$ cd agent-dive
+$ ./deploy/demo.sh up
+`}</Code>
+					<p className="small muted">
+						<code>./deploy/demo.sh down</code> removes the containers, the networks, the volume and
+						the state. The only difference from a real deployment is where the state lives: under
+						the working tree, because <code>/var/lib</code> needs root and is not shared with Docker
+						Desktop on macOS.
+					</p>
+				</div>
+			</section>
+
+			<section id="by-hand">
+				<div className="wrap">
+					<span className="eyebrow">If you would rather not pipe a script into a shell</span>
+					<h2>The same install, by hand</h2>
+					<p>
+						Four commands and the two files the installer would have written for you. Everything
+						above still applies — this is only the part that fetches and starts.
+					</p>
+					<Code>{`
+$ git clone ${REPO} /opt/agent-dive && cd /opt/agent-dive
+$ docker build -t agent-dive/sandbox:dev packages/sandbox/image
+$ cd deploy
+$ cp .env.example .env                # the keys the proxy injects
+$ cp config.example.yaml config.yaml  # what each agent may reach
+$ docker compose up -d --build
+`}</Code>
+					<p className="small muted">
+						<code>config.example.yaml</code> is the reference, with every option commented, and its
+						example agent reaches hosts that are not yours — read it through before starting rather
+						than after. Without the installer there is no <code>agent</code> on the PATH either, so
+						the console is <code>docker compose exec control-plane agent</code>.
 					</p>
 				</div>
 			</section>

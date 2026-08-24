@@ -96,9 +96,22 @@ want after changing the code, and it works because the new plane adopts the sand
 
 ## Running it
 
-Build the sandbox image and start the control plane:
+On the machine it is going to live on:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
+```
+
+That installs Docker if there is none, puts the repository in `/opt/agent-dive`, asks on the
+terminal for the keys the proxy will hold, writes a config with one agent and a ceiling of five
+dollars a day, starts the plane, and leaves `agent` on the PATH — so from your own computer the
+whole of it is `ssh -t root@your-vps agent`. Running it again is the update: it pulls, rebuilds and
+swaps the plane in, and never touches `config.yaml` or `.env`.
+
+By hand, which is the same thing without the questions:
+
+```sh
+git clone https://github.com/agent-dive/agent-dive /opt/agent-dive && cd /opt/agent-dive
 docker build -t agent-dive/sandbox:dev packages/sandbox/image
 
 cd deploy
