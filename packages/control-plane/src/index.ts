@@ -1,4 +1,6 @@
 export {
+	type AgentAsking,
+	agentMayNot,
 	COMMANDS,
 	type Command,
 	type CommandContext,
@@ -69,8 +71,10 @@ export {
 } from "./transport.ts";
 export {
 	createTurnHandler,
+	MOST_ASKED,
 	PiTurnRunner,
 	type PiTurnRunnerOptions,
+	parseAsked,
 	type ReplyRouter,
 	TurnError,
 	type TurnHandlerOptions,

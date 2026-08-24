@@ -23,6 +23,16 @@ export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/agent-dive/extensions/se
 export const SANDBOX_MCP_EXTENSION = "/usr/local/lib/agent-dive/extensions/mcp.ts";
 
 /**
+ * The extension that lets an agent ask for the console commands that concern itself. Shipped in the
+ * image.
+ *
+ * The alternative it replaces is the agent writing a paragraph asking the operator to go and type
+ * something — which is how an agent that needed one server ends up blocked for a day on a line
+ * nobody was there to read.
+ */
+export const SANDBOX_CONSOLE_EXTENSION = "/usr/local/lib/agent-dive/extensions/console.ts";
+
+/**
  * Every extension the plane hands the agent, which is a list because there is more than one and
  * naming only the first is a silent way to lose the rest. An extension in the image that nothing
  * names is one the agent never finds, and what that looks like from outside is not an error: it is
@@ -33,6 +43,7 @@ export const SANDBOX_EXTENSIONS: readonly string[] = [
 	SANDBOX_WAKE_EXTENSION,
 	SANDBOX_SEARCH_EXTENSION,
 	SANDBOX_MCP_EXTENSION,
+	SANDBOX_CONSOLE_EXTENSION,
 ];
 
 /**
@@ -53,6 +64,15 @@ export const SANDBOX_WAKE_FILE = `${SANDBOX_HOME}/.run/wake.json`;
  * to be connected to a server nobody granted.
  */
 export const SANDBOX_MCP_FILE = `${SANDBOX_HOME}/.run/mcp.json`;
+
+/**
+ * Where the agent leaves the console commands it is asking for, read once the turn is over.
+ *
+ * A list rather than one line, unlike the wakeup, because these are steps: adding a server and then
+ * logging into it is one intention, and an agent that could only ask for the first half would spend
+ * a turn waiting to be allowed to ask for the second.
+ */
+export const SANDBOX_CONSOLE_FILE = `${SANDBOX_HOME}/.run/console.json`;
 
 export interface SandboxSpec {
 	readonly agentId: string;
@@ -91,6 +111,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		AGENT_DIVE_REPO: SANDBOX_REPO_PATH,
 		AGENT_DIVE_WAKE_FILE: SANDBOX_WAKE_FILE,
 		AGENT_DIVE_MCP_FILE: SANDBOX_MCP_FILE,
+		AGENT_DIVE_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,
 		http_proxy: spec.proxyUrl,

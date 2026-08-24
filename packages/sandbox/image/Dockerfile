@@ -27,6 +27,7 @@ COPY relay.mjs /usr/local/lib/agent-dive/relay.mjs
 COPY wake.ts /usr/local/lib/agent-dive/extensions/wake.ts
 COPY search.ts /usr/local/lib/agent-dive/extensions/search.ts
 COPY mcp.ts /usr/local/lib/agent-dive/extensions/mcp.ts
+COPY console.ts /usr/local/lib/agent-dive/extensions/console.ts
 
 USER agent
 WORKDIR /home/agent

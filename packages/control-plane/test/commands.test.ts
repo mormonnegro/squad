@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	agentMayNot,
 	COMMANDS,
 	type CommandContext,
 	completions,
@@ -889,5 +890,96 @@ describe("endedIn", () => {
 	// and the last directory anybody knew of is a better guess than the door.
 	it("says nothing about where it ended when the shell never got to", () => {
 		expect(endedIn("killed", "cwd-abc")).toEqual({ text: "killed", cwd: undefined });
+	});
+});
+
+/**
+ * The line between what an agent may ask for itself and what stays with the operator.
+ *
+ * Not "destructive versus not": the question is whether an agent that has been argued into this by
+ * something in its own context could get anywhere by it. So nothing here may widen what it reaches
+ * or what it spends, and everything that cannot is allowed to just happen.
+ */
+describe("agentMayNot", () => {
+	const scout = { agentId: "scout", limitUsd: 5 };
+
+	it("lets it connect itself to a server, which grants it nothing", () => {
+		expect(agentMayNot("/mcp add ahrefs https://mcp.ahrefs.com/mcp", scout)).toBeUndefined();
+		expect(agentMayNot("/mcp ahrefs", scout)).toBeUndefined();
+		expect(agentMayNot("/mcp", scout)).toBeUndefined();
+	});
+
+	/**
+	 * The one it was built for. A login ends at a consent screen with the host name in front of a
+	 * person, which this codebase already treats as a stronger approval than a line of YAML — and it
+	 * is the one thing the agent could not do for itself, since it has no browser and no operator.
+	 */
+	it("lets it send its operator to a consent screen", () => {
+		expect(agentMayNot("/mcp login ahrefs", scout)).toBeUndefined();
+	});
+
+	// The half that carries an address is the operator walking back from that screen. An agent
+	// holding one has not been to a screen: it has an address it got somewhere.
+	it("does not let it walk back from the consent screen itself", () => {
+		const refusal = agentMayNot("/mcp login ahrefs https://localhost/callback?code=x", scout);
+
+		expect(refusal).toContain("yours to make");
+		expect(refusal).toContain("/mcp login ahrefs <address>");
+	});
+
+	it("lets it change what it thinks with, and give a server up", () => {
+		expect(agentMayNot("/model", scout)).toBeUndefined();
+		expect(agentMayNot("/model sonnet", scout)).toBeUndefined();
+		expect(agentMayNot("/mcp drop ahrefs", scout)).toBeUndefined();
+		expect(agentMayNot("/help", scout)).toBeUndefined();
+	});
+
+	it("lets it ask to be held to less than it is", () => {
+		expect(agentMayNot("/limit 2", scout)).toBeUndefined();
+		expect(agentMayNot("/limit", scout)).toBeUndefined();
+	});
+
+	// Not a raise: it is the first ceiling there has been, and an agent asking to be held to
+	// something tighter than nothing is asking for less than it had.
+	it("lets it set the first ceiling where there was none", () => {
+		expect(agentMayNot("/limit 3", { agentId: "scout", limitUsd: undefined })).toBeUndefined();
+	});
+
+	it("refuses a ceiling above the one it has, and says what to type", () => {
+		const refusal = agentMayNot("/limit 50", scout);
+
+		expect(refusal).toContain("$50.00");
+		expect(refusal).toContain("$5.00");
+		expect(refusal).toContain("/limit $50.00");
+	});
+
+	it("refuses taking the ceiling off at all", () => {
+		expect(agentMayNot("/limit off", scout)).toContain("/limit off");
+		expect(agentMayNot("/limit none", scout)).toContain("/limit off");
+	});
+
+	// The word for it is the operator's, and this is where they find out it exists.
+	it("refuses deleting, and names the line that would", () => {
+		expect(agentMayNot("/delete", scout)).toContain("/delete scout");
+		expect(agentMayNot("/delete scout", scout)).toContain("/delete scout");
+	});
+
+	// The shelf is shared. A drop is this agent giving one up; a forget takes it off every agent
+	// that has it, including the ones nobody was looking at.
+	it("refuses taking a server off every other agent", () => {
+		const refusal = agentMayNot("/mcp forget ahrefs", scout);
+
+		expect(refusal).toContain("every agent");
+		expect(refusal).toContain("/mcp forget ahrefs");
+	});
+
+	it("refuses closing an account the operator opened", () => {
+		expect(agentMayNot("/mcp logout ahrefs", scout)).toContain("/mcp logout ahrefs");
+	});
+
+	// Answered by the command itself, which says what there is instead. A refusal here would be this
+	// list having to know every command there is in order to say that one is not among them.
+	it("lets a command that does not exist be answered as one", () => {
+		expect(agentMayNot("/parametros", scout)).toBeUndefined();
 	});
 });

@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import type { NamedServer } from "../src/mcp.ts";
 import {
 	createTurnHandler,
+	MOST_ASKED,
 	PiTurnRunner,
+	parseAsked,
 	parseWake,
 	TurnError,
 	type TurnResult,
@@ -40,6 +42,8 @@ class StubSandbox implements TurnSandbox {
 	result: ExecResult = { exitCode: 0, stdout: said("done"), stderr: "" };
 	/** What the turn left in the wake file, if anything. Absent is the file not being there. */
 	left: string | undefined;
+	/** What it left in the console file: the commands it is asking for. Absent is having asked for none. */
+	asked: string | undefined;
 	/** A command that says its piece and then runs until something stops it, like a turn does. */
 	holds = false;
 	/** A sandbox that will not take the servers, to see what the turn does about it. */
@@ -64,18 +68,20 @@ class StubSandbox implements TurnSandbox {
 			workingDir: options.workingDir,
 		});
 		if (cmd[0] === "sh") {
-			// Two things arrive as a shell: the servers going in, and the wakeup coming out. Telling
-			// them apart by what the script does, since taking one for the other reads as an agent
-			// having asked for a turn it never asked for.
+			// Three things arrive as a shell: the servers going in, and the wakeup and the commands
+			// coming out. Told apart by what the script does and which file it names, since taking one
+			// for the other reads as an agent having asked for something it never asked for.
 			if (String(cmd[2]).includes("cat >")) {
 				if (this.refusesWrites) return { exitCode: 1, stdout: "", stderr: "read-only" };
 				return { exitCode: 0, stdout: "", stderr: "" };
 			}
-			if (this.left === undefined) return { exitCode: 1, stdout: "", stderr: "" };
-			const stdout = this.left;
+			const asking = String(cmd[4]).includes("console.json");
+			const held = asking ? this.asked : this.left;
+			if (held === undefined) return { exitCode: 1, stdout: "", stderr: "" };
 			// Taken away by the reading, which is the whole point of reading it that way.
-			this.left = undefined;
-			return { exitCode: 0, stdout, stderr: "" };
+			if (asking) this.asked = undefined;
+			else this.left = undefined;
+			return { exitCode: 0, stdout: held, stderr: "" };
 		}
 		if (this.result.stdout.length > 0) options.onStdout?.(this.result.stdout);
 		if (this.holds && options.signal !== undefined) {
@@ -120,6 +126,8 @@ describe("PiTurnRunner", () => {
 			"/usr/local/lib/agent-dive/extensions/search.ts",
 			"--extension",
 			"/usr/local/lib/agent-dive/extensions/mcp.ts",
+			"--extension",
+			"/usr/local/lib/agent-dive/extensions/console.ts",
 		]);
 	});
 
@@ -152,7 +160,11 @@ describe("PiTurnRunner", () => {
 		held = [{ name: "linear", server: { transport: "http", url: "https://mcp.linear.app/mcp" } }];
 		await runner.run("a1", "otra vez");
 
-		expect(JSON.parse(sandbox.calls[3]?.input ?? "null")).toEqual(held);
+		// Found rather than counted to: what this is about is that the second turn wrote it again, and
+		// an index would make that assertion break every time a turn grows another step.
+		const wrote = sandbox.calls.filter((call) => call.cmd.includes("/home/agent/.run/mcp.json"));
+		expect(wrote).toHaveLength(2);
+		expect(JSON.parse(wrote.at(-1)?.input ?? "null")).toEqual(held);
 	});
 
 	// Fewer tools is a worse turn. No turn is worse than that.
@@ -353,6 +365,66 @@ describe("PiTurnRunner", () => {
 			result: { wake: { afterSeconds: 300, note: "reintentar" } },
 		});
 	});
+
+	it("brings back the commands the turn asked for, in the order it asked", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.asked = JSON.stringify([
+			"/mcp add ahrefs https://mcp.ahrefs.com/mcp",
+			"/mcp login ahrefs",
+		]);
+
+		const result = await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		expect(result.asked).toEqual([
+			"/mcp add ahrefs https://mcp.ahrefs.com/mcp",
+			"/mcp login ahrefs",
+		]);
+	});
+
+	it("says nothing about a turn that asked for none", async () => {
+		expect((await new PiTurnRunner({ sandbox: new StubSandbox() }).run("a1", "hi")).asked).toBe(
+			undefined,
+		);
+	});
+
+	// Read and removed together, for the wakeup's reason: a list left in place is one the next turn
+	// finds, and an agent that connected a server once would be connecting it every turn from then on.
+	it("does not run them again on the turn after", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.asked = JSON.stringify(["/model"]);
+		const runner = new PiTurnRunner({ sandbox });
+
+		await runner.run("a1", "hi");
+
+		expect((await runner.run("a1", "otra vez")).asked).toBeUndefined();
+	});
+
+	// The one the screenshot was about: the turn died for want of the server it was asking for, and
+	// dropping the request with the turn is how an agent stays broken across every retry.
+	it("still brings them back from a turn that failed", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.result = { exitCode: 1, stdout: "", stderr: "boom" };
+		sandbox.asked = JSON.stringify(["/mcp login ahrefs"]);
+
+		await expect(new PiTurnRunner({ sandbox }).run("a1", "hi")).rejects.toMatchObject({
+			result: { asked: ["/mcp login ahrefs"] },
+		});
+	});
+
+	// A login opening in the operator's browser after they stopped the turn is the turn carrying on
+	// without them. Still taken off the disk, so the next turn does not find it and ask again.
+	it("runs none of them from a turn that was stopped", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.holds = true;
+		sandbox.asked = JSON.stringify(["/mcp login ahrefs"]);
+		const runner = new PiTurnRunner({ sandbox });
+
+		const turn = runner.run("a1", "hi");
+		runner.stop("a1");
+
+		expect((await turn).asked).toBeUndefined();
+		expect(sandbox.asked).toBeUndefined();
+	});
 });
 
 /**
@@ -394,6 +466,41 @@ describe("parseWake", () => {
 	it("refuses a wakeup that would say nothing", () => {
 		expect(parseWake('{"afterSeconds":1200,"note":"   "}')).toBeUndefined();
 		expect(parseWake('{"afterSeconds":1200}')).toBeUndefined();
+	});
+});
+
+/** The same question about the same kind of file, which the agent could also have written by hand. */
+describe("parseAsked", () => {
+	it("reads the list as the tool writes it", () => {
+		expect(
+			parseAsked('["/mcp add linear https://mcp.linear.app/mcp","/mcp login linear"]\n'),
+		).toEqual(["/mcp add linear https://mcp.linear.app/mcp", "/mcp login linear"]);
+	});
+
+	it("believes nothing it cannot read", () => {
+		expect(parseAsked("conectame a linear")).toBeUndefined();
+		expect(parseAsked("")).toBeUndefined();
+		expect(parseAsked('{"line":"/mcp"}')).toBeUndefined();
+	});
+
+	// A line that is not a command is not a command however it got here. What it would be instead is
+	// a message put into the conversation by something with no business putting one there.
+	it("keeps only what is a command at all", () => {
+		expect(parseAsked('["/model","dame acceso","",12]')).toEqual(["/model"]);
+		expect(parseAsked('["dame acceso"]')).toBeUndefined();
+	});
+
+	// Two commands under one answer is a second one nobody reading has any reason to look for.
+	it("drops a line with another one hidden inside it", () => {
+		expect(parseAsked('["/model\\n/limit 50"]')).toBeUndefined();
+	});
+
+	// The tool caps this too. It is capped here because the tool is a convenience in a sandbox where
+	// the agent has a shell, and a turn that asked for four hundred is a console nothing else fits in.
+	it("takes no more than a turn is allowed to ask for", () => {
+		const many = Array.from({ length: MOST_ASKED + 5 }, (_, index) => `/model m${index}`);
+
+		expect(parseAsked(JSON.stringify(many))).toHaveLength(MOST_ASKED);
 	});
 });
 
@@ -512,6 +619,41 @@ describe("createTurnHandler", () => {
 		await handler({ agentId: "a1", events: [wakeup("webhook:deploys", "x")], prompt: "p" });
 
 		expect(sent).toEqual([]);
+	});
+
+	// The commands are state and the reply is a courtesy, so the server the agent connected itself to
+	// is there before the answer goes out to whoever is about to be told about it.
+	it("runs what the turn asked for before it answers anyone", async () => {
+		const order: string[] = [];
+		const handler = createTurnHandler({
+			runner: { run: async () => ({ ...answered("listo"), asked: ["/mcp login ahrefs"] }) },
+			router: {
+				send: async () => {
+					order.push("replied");
+				},
+			},
+			onAsked: async (_id, asked) => {
+				order.push(asked.join(", "));
+			},
+		});
+
+		await handler({ agentId: "a1", events: [wakeup("webhook:deploys", "x")], prompt: "p" });
+
+		expect(order).toEqual(["/mcp login ahrefs", "replied"]);
+	});
+
+	it("asks for nothing when the turn asked for nothing", async () => {
+		let called = 0;
+		const handler = createTurnHandler({
+			runner: { run: async () => answered("listo") },
+			onAsked: async () => {
+				called += 1;
+			},
+		});
+
+		await handler({ agentId: "a1", events: [wakeup("webhook:deploys", "x")], prompt: "p" });
+
+		expect(called).toBe(0);
 	});
 
 	// Stopping and failing look alike from here and must not be treated alike: a failed turn is queued

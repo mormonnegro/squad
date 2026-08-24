@@ -23,6 +23,8 @@ import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
 import { AgentNameStore } from "./agent-names.ts";
 import {
+	agentMayNot,
+	type CommandContext,
 	endedIn,
 	type LoginPage,
 	money,
@@ -503,6 +505,7 @@ export class ControlPlane {
 			},
 			onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
 			onWake: (id, wake) => this.#applyWake(id, wake),
+			onAsked: (id, asked) => this.#applyAsked(id, asked),
 			// Named by destination, not by agent, so an operator waiting on their own reply is not
 			// told that somebody else's channel is the reason.
 			onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
@@ -713,7 +716,21 @@ export class ControlPlane {
 			throw new Error(`No agent "${agentId}" in this plane`);
 		}
 		await this.#record(agentId, { from: "operator", text: line });
-		const answer = await runCommand(line, {
+		const answer = await runCommand(line, this.#commandContext(agentId));
+		await this.#record(agentId, { from: "plane", text: answer });
+		return answer;
+	}
+
+	/**
+	 * Everything a command may do to one agent, in one place because two things run commands at it.
+	 *
+	 * The operator types them and the agent asks for them, and they get the same context on purpose:
+	 * what an agent may ask for is decided before this, by the list of lines it may send, and never by
+	 * a quieter version of the plane. Two contexts would be two answers to "what does /mcp add do",
+	 * and the day they drifted apart nothing would say so.
+	 */
+	#commandContext(agentId: string): CommandContext {
+		return {
 			agent: { id: agentId, created: this.#createdIds.has(agentId) },
 			// The only thing in here that destroys anything, and it is given the agent the line was
 			// typed at rather than a name off the line: whatever is typed after `/delete` is a word to be
@@ -769,9 +786,47 @@ export class ControlPlane {
 				if (held) await this.#reregisterAll();
 				return held;
 			},
-		});
-		await this.#record(agentId, { from: "plane", text: answer });
-		return answer;
+		};
+	}
+
+	/**
+	 * Runs the commands an agent asked for at the end of its own turn.
+	 *
+	 * Both halves go into the conversation, exactly as the operator's do, and the agent's line is
+	 * written down as the agent's: it is not the operator typing, and a transcript that showed it as
+	 * one would be a transcript you cannot read back to find out who asked for a server.
+	 *
+	 * The answer goes to the operator rather than to the agent, and that is the point rather than a
+	 * limitation. The one command worth asking for is the one that ends at a consent screen, and a
+	 * consent screen is no use to the agent: the console opens it in the operator's browser, which is
+	 * the whole of what the agent could not do for itself.
+	 */
+	async #applyAsked(agentId: string, asked: readonly string[]): Promise<void> {
+		for (const line of asked) {
+			// Checked each time round rather than once, because the line before this one may have been
+			// the ceiling moving, and a pair of them is otherwise both measured against the old one.
+			const { limitUsd } = await this.#account(agentId);
+			await this.#record(agentId, { from: "agent", text: line });
+
+			const refusal = agentMayNot(line, { agentId, limitUsd });
+			if (refusal !== undefined) {
+				await this.#record(agentId, { from: "plane", tone: "bad", text: refusal });
+				continue;
+			}
+			try {
+				const answer = await runCommand(line, this.#commandContext(agentId));
+				await this.#record(agentId, { from: "plane", text: answer });
+			} catch (error) {
+				// Caught so it stays caught, on the wakeup's terms: a throw here would leave the events
+				// queued and the turn taken again, and an agent whose request could not be run would go on
+				// paying for the turn that asked for it.
+				await this.#record(agentId, {
+					from: "plane",
+					tone: "bad",
+					text: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
 	}
 
 	/**

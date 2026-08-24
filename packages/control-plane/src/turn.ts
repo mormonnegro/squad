@@ -3,6 +3,7 @@ import type { Reply } from "@agent-dive/channels";
 import type { WakeupHandler } from "@agent-dive/events";
 import {
 	type ExecResult,
+	SANDBOX_CONSOLE_FILE,
 	SANDBOX_EXTENSIONS,
 	SANDBOX_MCP_FILE,
 	SANDBOX_WAKE_FILE,
@@ -56,6 +57,8 @@ export interface TurnResult {
 	readonly costUsd: number;
 	/** Present when the agent asked about its next turn. What it may ask for is decided upstream. */
 	readonly wake?: WakeChange;
+	/** The console commands the turn asked for, in the order it asked. Which of them may run is decided upstream. */
+	readonly asked?: readonly string[];
 	/** Set when the turn was stopped rather than finished. The text is as far as it had got. */
 	readonly stopped?: true;
 }
@@ -86,6 +89,42 @@ export function parseWake(text: string): WakeChange | undefined {
 	return { afterSeconds, note };
 }
 
+/**
+ * How many commands one turn may ask for.
+ *
+ * Applied here as well as in the tool, because the tool is a convenience inside a sandbox where the
+ * agent has a shell and could write the file itself. What it bounds is not cost but the console: a
+ * turn that asked for four hundred is one whose operator cannot find anything else that was said.
+ */
+export const MOST_ASKED = 10;
+
+/**
+ * Reads the commands a turn asked for, dropping anything that does not read as one.
+ *
+ * Line by line rather than all or nothing: the list is steps, and an agent that got its second line
+ * wrong should still have its first one run. What is dropped silently is only what could not have
+ * been meant — a number where a command goes — and a command the agent may not ask for is a
+ * different thing entirely, refused out loud further up where the reason can be said.
+ */
+export function parseAsked(text: string): readonly string[] | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	if (!Array.isArray(parsed)) return undefined;
+
+	const lines = parsed
+		.filter((one): one is string => typeof one === "string")
+		.map((one) => one.trim())
+		// A newline would put a second command into the conversation underneath the first one's
+		// answer, where whoever is reading has no reason to look for it.
+		.filter((one) => one.startsWith("/") && !/[\n\r]/.test(one))
+		.slice(0, MOST_ASKED);
+	return lines.length > 0 ? lines : undefined;
+}
+
 export class TurnError extends Error {
 	readonly result: TurnResult;
 
@@ -114,6 +153,7 @@ export interface PiTurnRunnerOptions {
 	/** Called with each thing the agent does inside the sandbox, while it is still doing it. */
 	readonly onStep?: (agentId: string, step: AgentStep) => void;
 	readonly wakeFile?: string;
+	readonly consoleFile?: string;
 	readonly extensions?: readonly string[];
 	/** The MCP servers this agent has been given, asked for again at the start of every turn. */
 	readonly servers?: (agentId: string) => Promise<readonly NamedServer[]>;
@@ -139,6 +179,7 @@ export class PiTurnRunner {
 	readonly #command: readonly string[];
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 	readonly #wakeFile: string;
+	readonly #consoleFile: string;
 	readonly #extensions: readonly string[];
 	readonly #servers: ((agentId: string) => Promise<readonly NamedServer[]>) | undefined;
 	readonly #mcpFile: string;
@@ -154,6 +195,7 @@ export class PiTurnRunner {
 		this.#command = options.command ?? ["pi"];
 		this.#onStep = options.onStep;
 		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
+		this.#consoleFile = options.consoleFile ?? SANDBOX_CONSOLE_FILE;
 		this.#extensions = options.extensions ?? SANDBOX_EXTENSIONS;
 		this.#servers = options.servers;
 		this.#mcpFile = options.mcpFile ?? SANDBOX_MCP_FILE;
@@ -239,6 +281,10 @@ export class PiTurnRunner {
 		// comes back. A failed turn is the one most worth retrying, and it is also the one that cannot
 		// ask again.
 		const wake = await this.#takeWake(agentId);
+		// Taken for the same reason and on the same terms: a turn that died having asked for the server
+		// it needed died for want of that server, and losing the request with the turn is how an agent
+		// stays broken across every retry.
+		const asked = await this.#takeAsked(agentId);
 
 		const result: TurnResult = {
 			text: output.text,
@@ -251,6 +297,10 @@ export class PiTurnRunner {
 			// that was stopped does not get to book the one after it: being woken in a second by the very
 			// turn somebody just stopped is not stopping.
 			...(wake !== undefined && !stopped ? { wake } : {}),
+			// Off the disk either way and dropped when the turn was stopped, on the wake's terms: whoever
+			// stopped a turn stopped what it was doing, and a login opening in their browser afterwards is
+			// the turn carrying on without it.
+			...(asked !== undefined && !stopped ? { asked } : {}),
 			...(stopped ? { stopped: true } : {}),
 		};
 		// A turn that was stopped did not fail. Its exit code says killed and its answer ends mid
@@ -315,6 +365,16 @@ export class PiTurnRunner {
 		if (read === undefined || read.exitCode !== 0) return undefined;
 		return parseWake(read.stdout);
 	}
+
+	/** The same read-and-remove, for the same reason: a list left in place is one run again next turn. */
+	async #takeAsked(agentId: string): Promise<readonly string[] | undefined> {
+		const read = await this.#sandbox
+			.run(agentId, ["sh", "-c", 'cat "$1" && rm -f "$1"', "sh", this.#consoleFile], "")
+			.catch(() => undefined);
+
+		if (read === undefined || read.exitCode !== 0) return undefined;
+		return parseAsked(read.stdout);
+	}
 }
 
 export interface TurnRunner {
@@ -342,6 +402,11 @@ export interface TurnHandlerOptions {
 	readonly onSay?: (agentId: string, text: string) => void;
 	/** The next turn the agent asked for, or dropped. Awaited, so it is settled before this one is over. */
 	readonly onWake?: (agentId: string, wake: WakeChange) => Promise<void>;
+	/**
+	 * The console commands the turn asked for. Awaited, so a server the agent connected itself to is
+	 * there before the reply goes out saying that it is.
+	 */
+	readonly onAsked?: (agentId: string, asked: readonly string[]) => Promise<void>;
 	/** A reply that had nowhere to go. The turn still counts as taken. */
 	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
@@ -366,6 +431,10 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		// Before the reply and after the turn: the appointment is state and the reply is a courtesy, and
 		// a process that stops between the two should have kept the one the agent cannot ask for twice.
 		if (result.wake) await options.onWake?.(agentId, result.wake);
+		// After the wake and before the reply, for both of their reasons: it is state rather than a
+		// courtesy, and what it changes is what the agent has — which whoever reads the reply is about
+		// to be told about.
+		if (result.asked) await options.onAsked?.(agentId, result.asked);
 		if (!options.router || result.text.length === 0) return;
 
 		// Every destination is tried, and none of them can undo the turn. The model has been paid and

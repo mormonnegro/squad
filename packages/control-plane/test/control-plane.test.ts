@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { ExecResult } from "@agent-dive/sandbox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	type AgentConfig,
 	ControlPlane,
 	carriesEnv,
 	endpointPath,
@@ -396,6 +397,149 @@ describe("a turn that asked for another turn", () => {
 		const [summary] = await plane.agents();
 		expect(summary?.wakeAt).toBeDefined();
 		expect(summary?.schedules).toBe(1);
+	});
+});
+
+/**
+ * An agent asking for the commands its operator would otherwise have to type.
+ *
+ * The thing it replaces is an agent writing a paragraph explaining which line of YAML somebody has
+ * to go and add, and then sitting there until somebody reads the paragraph. So the ones that widen
+ * nothing run, and the ones that widen anything come back as the exact line to type — in the
+ * console, where the person who can type it is already looking.
+ */
+describe("a turn that asked for a console command", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-asked-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	/** Granted the host on purpose, so that connecting to it asks the server nothing over the wire. */
+	const scout: AgentConfig = {
+		id: "scout",
+		limitUsd: 5,
+		grants: [{ id: "ahrefs", host: "mcp.ahrefs.test", injection: { kind: "none" } }],
+	};
+
+	const asking = (...asked: readonly string[]): TurnRunner => ({
+		async run() {
+			return { text: "listo", exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0, asked };
+		},
+	});
+
+	const takeTurn = async (plane: ControlPlane, ...asked: readonly string[]): Promise<void> => {
+		await plane.attach("scout", asking(...asked));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "conectate a ahrefs",
+		});
+		await plane.bus.drain();
+	};
+
+	it("connects the agent to the server it asked for", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(plane, "/mcp add ahrefs https://mcp.ahrefs.test/mcp");
+
+		expect(await plane.command("scout", "/mcp")).toContain("ahrefs");
+	});
+
+	// Written down as the agent's, because it was the agent's. A transcript that showed it as the
+	// operator's is one you cannot read back to find out who asked for the server.
+	it("puts both halves in the conversation, under the name of whoever said them", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(plane, "/mcp add ahrefs https://mcp.ahrefs.test/mcp");
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "conectate a ahrefs" },
+			{ from: "agent", text: "listo" },
+			{ from: "agent", text: "/mcp add ahrefs https://mcp.ahrefs.test/mcp" },
+			{ from: "plane" },
+		]);
+	});
+
+	// Adding a server and then doing something with it is one intention and two lines, and the second
+	// one is only true if the first has already happened.
+	it("runs them in the order the turn asked", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(
+			plane,
+			"/mcp add ahrefs https://mcp.ahrefs.test/mcp",
+			"/mcp drop ahrefs",
+			"/mcp ahrefs",
+		);
+
+		const said = (await plane.transcripts()).scout ?? [];
+		expect(said.at(-1)?.text).toContain('This agent has "ahrefs"');
+	});
+
+	it("moves the agent onto a model it was configured with", async () => {
+		const plane = new ControlPlane({
+			agents: [{ id: "scout", model: "flash" }],
+			stateDir,
+			models: [
+				{
+					id: "flash",
+					provider: "deepseek",
+					model: "deepseek-v4-flash",
+					host: "api.deepseek.com",
+					keyEnv: "DEEPSEEK_API_KEY",
+				},
+				{
+					id: "sonnet",
+					provider: "anthropic",
+					model: "claude-sonnet-4-6",
+					host: "api.anthropic.com",
+					keyEnv: "ANTHROPIC_API_KEY",
+					header: "x-api-key",
+				},
+			],
+		});
+		await takeTurn(plane, "/model sonnet");
+
+		expect((await plane.agents())[0]?.model).toBe("sonnet");
+	});
+
+	it("lets it be held to less than it was", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(plane, "/limit 2");
+
+		expect(await plane.command("scout", "/limit")).toContain("$2.00 a day");
+	});
+
+	// The refusal is the whole feature working, not the feature failing: the operator learns the
+	// command exists by being handed it, which is the part they were never going to look up.
+	it("refuses a ceiling above the one it has, and leaves the ceiling where it was", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(plane, "/limit 50");
+
+		const said = (await plane.transcripts()).scout ?? [];
+		expect(said.at(-1)).toMatchObject({ from: "plane", tone: "bad" });
+		expect(said.at(-1)?.text).toContain("/limit $50.00");
+		expect(await plane.command("scout", "/limit")).toContain("of $5.00 a day");
+	});
+
+	it("refuses to delete the agent that asked, and the agent is still there", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(plane, "/delete scout");
+
+		expect((await plane.agents()).map((agent) => agent.id)).toEqual(["scout"]);
+		const said = (await plane.transcripts()).scout ?? [];
+		expect(said.at(-1)?.text).toContain("/delete scout");
+	});
+
+	it("says nothing extra for a turn that asked for nothing", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await takeTurn(plane);
+
+		expect((await plane.transcripts()).scout).toHaveLength(2);
 	});
 });
 

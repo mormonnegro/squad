@@ -639,3 +639,67 @@ export async function runCommand(line: string, context: CommandContext): Promise
 
 	return `No command "/${name}". There is:\n${HELP}`;
 }
+
+/** What an agent is asking about itself, so the answer can be about the ceiling it actually has. */
+export interface AgentAsking {
+	readonly agentId: string;
+	readonly limitUsd: number | undefined;
+}
+
+/**
+ * Why an agent may not ask for a command itself, when it may not.
+ *
+ * An agent can ask for these because the alternative is worse than it looks: an agent that needs one
+ * MCP server writes a paragraph asking for it, and then sits there until somebody reads the
+ * paragraph and types the line — which is a day, or a week, or never. So the ones that change
+ * nothing about its reach it may ask for, and they run.
+ *
+ * The line between the two is not "destructive": it is whether an agent that has been talked into
+ * this by something in its own context could get anywhere by it. A webhook body arrives fenced as
+ * data and is never operator trust, but an agent reading it is still an agent that can be argued
+ * with — so nothing here may widen what it can reach or what it can spend. Connecting a server
+ * widens nothing, which is the whole point of a shelf that grants nothing; a login widens exactly as
+ * much as a person at a consent screen decides it does, with the host name in front of them.
+ *
+ * A refusal is not a dead end, which is the other half of why this is a list and not a ban. It
+ * prints the line the operator would type, in their console, under the reason the agent wanted it —
+ * so the operator does the one thing only they can do, without having to know the command existed.
+ */
+export function agentMayNot(line: string, asking: AgentAsking): string | undefined {
+	const [name = "", ...rest] = line.trim().slice(1).split(/\s+/);
+
+	if (name === "delete") {
+		return `This agent asked to delete itself, and that one stays with you: /delete ${asking.agentId} takes it and its repository, and nothing else does.`;
+	}
+
+	if (name === "limit") {
+		const argument = rest.join(" ");
+		if (argument === "off" || argument === "none") {
+			return "This agent asked to have its spending ceiling taken off. Nothing it can ask for leaves it able to spend without one: /limit off, if you meant it.";
+		}
+		const amount = Number(argument.replace(/^\$/, ""));
+		if (argument === "" || !Number.isFinite(amount) || amount <= 0) return undefined;
+		// Setting one where there is none is not a raise, it is the first ceiling there has been, and
+		// an agent that wants to be held to something tighter than nothing is asking for less.
+		if (asking.limitUsd === undefined || amount <= asking.limitUsd) return undefined;
+		return `This agent asked for a ceiling of ${money(amount)} a day, which is above the ${money(asking.limitUsd)} it has. It can ask to be held to less, never to more: /limit ${money(amount)}, if you meant it.`;
+	}
+
+	if (name === "mcp") {
+		const [verb = "", named = "", ...target] = rest;
+		if (verb === "forget") {
+			return `This agent asked to take "${named}" off the shelf, which takes it off every agent that has it and not only this one: /mcp forget ${named}, if you meant it.`;
+		}
+		if (verb === "logout") {
+			return `This agent asked to log out of "${named}". The account is one you opened in a browser and it is yours to close: /mcp logout ${named}.`;
+		}
+		// The half of a login that carries an address is the operator walking back from a consent
+		// screen. An agent holding one has not been to a consent screen; it has an address it got
+		// somewhere, and finishing a login with it is the one way this could end in a token.
+		if (verb === "login" && /^https?:\/\//i.test(target[0] ?? "")) {
+			return `This agent asked to finish a login with an address of its own. The trip back from a consent screen is yours to make: /mcp login ${named} <address>.`;
+		}
+	}
+
+	return undefined;
+}
