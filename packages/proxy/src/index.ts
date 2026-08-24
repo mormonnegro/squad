@@ -25,6 +25,25 @@ export {
 } from "./grants.ts";
 export { applyInjection, type OutboundRequest } from "./inject.ts";
 export {
+	type Authorization,
+	beginAuthorization,
+	discover,
+	exchangeCode,
+	type LoginStatus,
+	type OAuthClient,
+	type OAuthEndpoints,
+	OAuthError,
+	type OAuthLogin,
+	OAuthLogins,
+	OAuthSecretStore,
+	oauthRef,
+	type Reachability,
+	reachability,
+	refreshLogin,
+	registerClient,
+	resourceMetadataFrom,
+} from "./oauth.ts";
+export {
 	EnvSecretStore,
 	MemorySecretStore,
 	MissingSecretError,
