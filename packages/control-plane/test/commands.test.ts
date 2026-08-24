@@ -250,8 +250,8 @@ describe("/delete", () => {
 
 		const answer = await runCommand("/delete", ctx);
 
-		expect(answer).toContain("Type scout to confirm");
-		expect(answer).toContain("cannot be undone");
+		expect(answer).toContain("Nothing has been deleted yet");
+		expect(answer).toContain("nothing here can put it back");
 		expect(removed).toEqual([]);
 	});
 
@@ -278,14 +278,17 @@ describe("/delete", () => {
 		expect(answer).toContain("the last of it");
 	});
 
-	// A declared agent is back at the next start whatever happens here, because the config file is the
-	// operator's and no plane may write it. Discovering that after a restart looks like a bug.
-	it("says a declared agent comes back, and comes back empty", async () => {
-		const { context: ctx } = context({ agentId: "scout", created: false });
+	// A declared agent goes the same way as any other — an earlier version of this said it would be
+	// back at the next start, which is a delete that did not delete however true the sentence was.
+	// What is left to say is the one thing the operator can act on: the name is still in their file.
+	it("deletes a declared agent too, and says the config still has the name", async () => {
+		const { context: ctx, removed } = context({ agentId: "scout", created: false });
 
 		const answer = await runCommand("/delete scout", ctx);
 
-		expect(answer).toContain("comes back empty");
+		expect(removed).toEqual(["scout"]);
+		expect(answer).toContain("stays gone across restarts");
+		expect(answer).toContain("Take it out of the config");
 	});
 
 	// The name is the whole of what this takes. A word after it was meant to be something, and

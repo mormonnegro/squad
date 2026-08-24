@@ -1,63 +1,67 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-interface CreatedAgent {
+interface StampedName {
 	readonly id: string;
-	readonly createdAt: string;
+	readonly [stamp: string]: string;
 }
 
 /**
- * The agents that were made while the plane was running, so they are still there when it restarts.
+ * A list of agent names the plane wrote down, because the config file could not be.
  *
- * The config file is the operator's and no plane may write it, which leaves nowhere for an agent
- * created from the CLI to be written down. Here is that place. It records only the name: everything
- * else about the agent comes from the config's defaults, so what these agents may reach stays a
- * question only the operator's file answers.
+ * The config is the operator's and no plane may write it, which leaves the two things that happen
+ * at runtime with nowhere to go: an agent made from the console, and an agent deleted from it. Both
+ * are a name and a date, so both live in a file of this shape — `agents.json` for the ones made
+ * here, `deleted.json` for the ones taken away. It records only the name: everything else about an
+ * agent comes from the config or its defaults, so what these agents may reach stays a question only
+ * the operator's file answers.
  */
-export class CreatedAgentStore {
+export class AgentNameStore {
 	readonly #path: string;
+	readonly #stamp: string;
 
-	constructor(path: string) {
+	constructor(path: string, stamp: string) {
 		this.#path = path;
+		this.#stamp = stamp;
 	}
 
 	async list(): Promise<readonly string[]> {
-		return (await this.#read()).map((agent) => agent.id);
+		return (await this.#read()).map((entry) => entry.id);
 	}
 
 	async add(agentId: string): Promise<void> {
-		const agents = await this.#read();
-		if (agents.some((agent) => agent.id === agentId)) return;
-		await this.#write([...agents, { id: agentId, createdAt: new Date().toISOString() }]);
+		const names = await this.#read();
+		if (names.some((entry) => entry.id === agentId)) return;
+		await this.#write([...names, { id: agentId, [this.#stamp]: new Date().toISOString() }]);
 	}
 
 	async forget(agentId: string): Promise<void> {
-		const agents = await this.#read();
-		const kept = agents.filter((agent) => agent.id !== agentId);
-		if (kept.length !== agents.length) await this.#write(kept);
+		const names = await this.#read();
+		const kept = names.filter((entry) => entry.id !== agentId);
+		if (kept.length !== names.length) await this.#write(kept);
 	}
 
-	async #read(): Promise<readonly CreatedAgent[]> {
+	async #read(): Promise<readonly StampedName[]> {
 		try {
 			const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
 			if (!Array.isArray(parsed)) return [];
 			return parsed.filter(
-				(entry: unknown): entry is CreatedAgent =>
+				(entry: unknown): entry is StampedName =>
 					typeof entry === "object" &&
 					entry !== null &&
-					typeof (entry as CreatedAgent).id === "string",
+					typeof (entry as StampedName).id === "string",
 			);
 		} catch {
 			return [];
 		}
 	}
 
-	async #write(agents: readonly CreatedAgent[]): Promise<void> {
+	async #write(names: readonly StampedName[]): Promise<void> {
 		await mkdir(dirname(this.#path), { recursive: true });
 		// Written elsewhere and renamed, so a plane killed mid-write leaves the old file rather than
 		// half of a new one: a truncated file here reads as "no agents" and loses them all.
 		const temporary = `${this.#path}.${process.pid}.tmp`;
-		await writeFile(temporary, `${JSON.stringify(agents, null, "\t")}\n`, "utf8");
+		await writeFile(temporary, `${JSON.stringify(names, null, "\t")}\n`, "utf8");
 		await rename(temporary, this.#path);
 	}
 }

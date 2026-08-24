@@ -266,29 +266,38 @@ column is one you were told worked and have to do again. So it asks first, in th
 ```
 > /delete
 Deleting scout stops its container and throws it away, along with the repository inside
-it: everything it wrote, remembered and made for itself. There is no copy of that anywhere.
+it: everything it wrote, remembered and made for itself. There is no copy of that anywhere
+and nothing here can put it back.
 
-Type scout to confirm, because this cannot be undone.
+Nothing has been deleted yet.
 ╭──────────────────────────────────────────────────────────────────────╮
-│ delete scout?                                                        │
+│ delete scout?  y / n                                                 │
 ╰──────────────────────────────────────────────────────────────────────╯
- ⌫ cancel   ⏎ delete   ^C quit
+ y delete   n cancel   ^C quit
 ```
 
-The box turns red under a hand that was about to type, which is what stops the answer from being
-reflex, and the mark names the agent rather than saying `delete?`: an arrow pressed since the
-question was asked has moved the cursor, and the delete follows the agent that was asked about and
-not the one now under it. `⌫` on an empty line walks away from it, the way it leaves the shell.
+The box turns red under a hand that was about to type, and the question has the whole keyboard
+until it is answered: `y` deletes and every other key walks away, including the return that was
+pressed a moment ago to ask it, which is the key a hand is already on. The keys are in the prompt
+because a red box with a cursor blinking in it says a word is wanted but not which one. The mark
+names the agent rather than saying `delete?`, since an arrow pressed since the question went up has
+moved the cursor, and the delete follows the agent that was asked about and not the one now under
+it.
 
 The asking lives in the console rather than in the plane, and that is the point of it: a plane that
 took `/delete scout` from anywhere would let one line be the whole of an agent, so whatever is typed
 after the command is dropped and the bare form goes down first. The name that comes back is the
 confirmation and never a way to name a different agent — a command reaches no further than the
 conversation it was typed in, which is what keeps this from being a way to delete something you
-were not even looking at. A declared agent is back at the next start whatever is typed here, since
-the config file is yours and no plane may write it, and it says so rather than leaving it to be
-discovered after a restart. The conversation goes with the name, so a name given out again is a new
+were not even looking at. The conversation goes with the name, so a name given out again is a new
 agent and not one holding somebody else's memory.
+
+An agent you declared in the config goes the same way, which takes one more step than it sounds:
+the config file is yours and no plane may write it, so there is nowhere to take the name out of.
+The deletion is written down instead, in `deleted.json` beside the state, and every start from then
+on reads it and skips the name. The answer says so, because the line is still in your file and
+taking it out is the only thing left to do about that agent — and if you make the name again, what
+comes back is the agent you declared rather than a bare one wearing its id.
 
 `!` is not a line addressed to the agent, it is the door into the box the agent lives in. Pressing
 it at an empty prompt puts you inside, and the prompt says where you are standing:
@@ -365,9 +374,10 @@ because the one thing a keyboard may never do here is grant. A plane with no def
 that cannot reach the model, and says so at the moment it is made rather than mid-turn.
 
 Created agents are written down in the state directory, since the config file is the operator's and
-no plane may write it. That is also the only thing `--purge` can truly delete: a declared agent
-comes back on the next start no matter what, and one made at the keyboard has nowhere else to come
-back from.
+no plane may write it. Deleted ones are written down there too, for the same reason from the other
+end: a name made at the keyboard is simply taken out of that file, and a declared name cannot be, so
+what gets recorded is that it was deleted. Either way `--purge` is the last of the agent, at this
+start and every one after it.
 
 `logs` is everything at once: the commands each agent runs inside its sandbox as it runs them, what
 a failed one printed and how long it took to fail, the answer when the turn ends, and what the turn

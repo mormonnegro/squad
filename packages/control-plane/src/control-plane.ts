@@ -21,6 +21,7 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
+import { AgentNameStore } from "./agent-names.ts";
 import {
 	endedIn,
 	type LoginPage,
@@ -30,7 +31,6 @@ import {
 	shellOutput,
 	shellScript,
 } from "./commands.ts";
-import { CreatedAgentStore } from "./created-agents.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
@@ -223,8 +223,25 @@ export class ControlPlane {
 	readonly webhooks: WebhookChannel;
 
 	readonly #agents: AgentConfig[];
+	/**
+	 * Every agent the config declared, whether or not it is still in the list above.
+	 *
+	 * Kept because a declared agent can be deleted here and made again later, and what should come
+	 * back then is the agent the operator wrote — its grants, its model, its description — rather
+	 * than a bare one with the defaults' reach and the same name.
+	 */
+	readonly #declared: readonly AgentConfig[];
 	readonly #defaults: AgentDefaults | undefined;
-	readonly #created: CreatedAgentStore;
+	readonly #created: AgentNameStore;
+	/**
+	 * The declared agents somebody deleted, which is the only way a delete can outlive the process.
+	 *
+	 * The config file is the operator's and no plane may write it, so there is nowhere to take a
+	 * declared name out of. The deletion is written down instead: a name in here is skipped at every
+	 * start, so an agent that was thrown away stays thrown away rather than being back in the column
+	 * after a restart, which is a delete that did not delete.
+	 */
+	readonly #deleted: AgentNameStore;
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
@@ -256,6 +273,7 @@ export class ControlPlane {
 	constructor(options: ControlPlaneOptions) {
 		this.#defaults = options.defaults;
 		this.#agents = options.agents.map((agent) => withDefaults(agent, options.defaults));
+		this.#declared = [...this.#agents];
 		this.#stateDir = options.stateDir;
 		this.#image = options.image ?? DEFAULT_IMAGE;
 		this.#proxyPort = options.proxyPort ?? DEFAULT_PROXY_PORT;
@@ -264,7 +282,8 @@ export class ControlPlane {
 		this.#turnTimeoutMs = options.turnTimeoutMs;
 		this.#onError = options.onError;
 		this.#onTurn = options.onTurn;
-		this.#created = new CreatedAgentStore(join(this.#stateDir, "agents.json"));
+		this.#created = new AgentNameStore(join(this.#stateDir, "agents.json"), "createdAt");
+		this.#deleted = new AgentNameStore(join(this.#stateDir, "deleted.json"), "deletedAt");
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
@@ -382,9 +401,17 @@ export class ControlPlane {
 			throw new Error(`"${agentId}" is already here`);
 		}
 
-		const agent = withDefaults({ id: agentId }, this.#defaults);
-		await this.#created.add(agentId);
-		this.#createdIds.add(agentId);
+		// A name the config still declares is not made from nothing, it is brought back: the deletion
+		// that took it out of the list is forgotten and the operator's own agent returns. Writing it
+		// into this plane's file instead would leave the same name in two places, and the next delete
+		// would take it out of one of them and watch the config put it back.
+		const declared = this.#declared.find((agent) => agent.id === agentId);
+		await this.#deleted.forget(agentId);
+		const agent = declared ?? withDefaults({ id: agentId }, this.#defaults);
+		if (declared === undefined) {
+			await this.#created.add(agentId);
+			this.#createdIds.add(agentId);
+		}
 		this.#agents.push(agent);
 		await this.#startAgent(agent);
 		return this.#summarise(agent);
@@ -395,11 +422,13 @@ export class ControlPlane {
 	 *
 	 * The volume is kept by default because it is the agent: its soul, what it chose to remember and
 	 * the tools it wrote for itself. A container is replaceable and none of that is, so discarding it
-	 * has to be asked for. A declared agent comes back on the next start either way, because it is in
-	 * the config file, which this cannot write.
+	 * has to be asked for, and without the purge the agent is only stopped: it comes back on the next
+	 * start with everything it knew.
 	 *
-	 * An agent created at runtime is the exception, and only under --purge: nothing but this plane
-	 * ever knew its name, so if the plane keeps it there is no file anywhere to take it out of.
+	 * A purge is the other thing entirely, and it takes the name too. Where the name was written down
+	 * decides how: an agent made here is taken out of this plane's file, and a declared one cannot be,
+	 * because the config is the operator's. So the deletion itself is written down for that one. Both
+	 * leave the same way — gone from the list now, and still gone after a restart.
 	 */
 	async remove(agentId: string, options: { purge?: boolean } = {}): Promise<void> {
 		const index = this.#agents.findIndex((agent) => agent.id === agentId);
@@ -412,11 +441,12 @@ export class ControlPlane {
 		// The directory was inside the container that just went. Whatever comes back is at its door.
 		this.#cwd.delete(agentId);
 
-		if (options.purge === true && this.#createdIds.delete(agentId)) {
-			await this.#created.forget(agentId);
+		if (options.purge === true) {
+			if (this.#createdIds.delete(agentId)) await this.#created.forget(agentId);
+			else await this.#deleted.add(agentId);
 			await this.#spend.forget(agentId);
-			// The conversation goes with the name, and only with the name: a declared agent purged down
-			// to an empty repository is still the agent that was being talked to, and comes back.
+			// The conversation goes with the name. What was said to this agent is about the repository
+			// that just went, and keeping it would hand a conversation to whoever gets the name next.
 			await this.#transcript.forget(agentId);
 			// What it was given, not what was found: a server stays on the shelf for the agents that
 			// are left, and for the one somebody makes next.
@@ -815,6 +845,14 @@ export class ControlPlane {
 		await this.broker.listen(this.#proxyPort, "0.0.0.0");
 		await this.webhooks.listen(this.#webhookPort, "0.0.0.0");
 		await this.sandboxes.ensureNetwork();
+
+		// The ones deleted in an earlier life, taken out before anything is started. The config still
+		// declares them and always will, so this is the only thing standing between an agent somebody
+		// threw away and a container coming back up under its name.
+		for (const agentId of await this.#deleted.list()) {
+			const index = this.#agents.findIndex((agent) => agent.id === agentId);
+			if (index !== -1) this.#agents.splice(index, 1);
+		}
 
 		// The ones made from the CLI in an earlier life. A name the config has since claimed is the
 		// config's: it says more about the agent than a name on its own ever could.

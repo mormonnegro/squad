@@ -92,7 +92,7 @@ suite("an agent created while the plane runs", () => {
 		await third.start();
 		try {
 			const asked = await third.command(AGENT_ID, "/delete");
-			expect(asked).toContain(`Type ${AGENT_ID} to confirm`);
+			expect(asked).toContain("Nothing has been deleted yet");
 			expect((await third.agents()).map((agent) => agent.id)).toContain(AGENT_ID);
 
 			const gone = await third.command(AGENT_ID, `/delete ${AGENT_ID}`);
@@ -105,6 +105,59 @@ suite("an agent created while the plane runs", () => {
 			).rejects.toThrow();
 		} finally {
 			await third.stop();
+		}
+	}, 120_000);
+
+	/**
+	 * The agent that is written into the operator's own config, deleted anyway.
+	 *
+	 * This is the one that kept coming back. The plane may not edit the config file, so for a long
+	 * while a declared agent was only stopped: the row stayed in the column and the answer explained,
+	 * truthfully and uselessly, that it would return. Two people in a row read that as a bug, and
+	 * they were right — a delete that leaves the thing there is not a delete.
+	 *
+	 * So the deletion is what gets written down. The config still declares the name and always will;
+	 * every start from here on reads this file and skips it, which is what makes the second half of
+	 * this test the real one.
+	 */
+	it("deletes a declared agent for good, by writing down the deletion the config cannot hold", async () => {
+		const fourth = plane();
+		await fourth.start();
+		try {
+			const gone = await fourth.command(DECLARED_ID, `/delete ${DECLARED_ID}`);
+
+			expect(gone).toContain("stays gone across restarts");
+			expect(await fourth.agents()).toEqual([]);
+			expect(JSON.parse(await readFile(join(stateDir, "deleted.json"), "utf8"))).toEqual([
+				{ id: DECLARED_ID, deletedAt: expect.any(String) },
+			]);
+		} finally {
+			await fourth.stop();
+		}
+
+		// The same config as before, declaring the same agent, and it stays gone.
+		const fifth = plane();
+		await fifth.start();
+		try {
+			expect(await fifth.agents()).toEqual([]);
+		} finally {
+			await fifth.stop();
+		}
+	}, 120_000);
+
+	// Deleting is not banishing the name: the config still says what this agent is, so making it
+	// again brings back the operator's agent rather than a stranger wearing its id.
+	it("brings a deleted declaration back when the name is created again", async () => {
+		const sixth = plane();
+		await sixth.start();
+		try {
+			const back = await sixth.create(DECLARED_ID);
+
+			expect(back).toMatchObject({ id: DECLARED_ID, running: true, created: false, grants: 1 });
+			expect(JSON.parse(await readFile(join(stateDir, "deleted.json"), "utf8"))).toEqual([]);
+			expect(JSON.parse(await readFile(join(stateDir, "agents.json"), "utf8"))).toEqual([]);
+		} finally {
+			await sixth.stop();
 		}
 	}, 120_000);
 });

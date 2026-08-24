@@ -450,16 +450,18 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 }
 
 /**
- * Deletes the agent, once whoever typed it has written its name out.
+ * Deletes the agent, once its own name has come back with the command.
  *
  * There is one kind of delete here and it is the whole one: the container and the repository
  * inside it, everything the agent wrote, remembered and made for itself. A delete that leaves the
  * agent in the list is not what the word means at a console, and an operator who typed it and saw
  * the name still sitting there has been told the thing failed.
  *
- * The name is the confirmation and nothing else — it can only ever be this agent's, because a
- * command reaches no further than the conversation it was typed in. So `/delete` alone destroys
- * nothing: it is the question, and the name typed back is the answer to it.
+ * `/delete` alone is the question and destroys nothing. What answers it is the agent's own name,
+ * which can only ever be this agent's, because a command reaches no further than the conversation
+ * it was typed in. That is the plane's half. Whoever is driving decides how the question gets put
+ * to a person — at the console it is a key — and this says only what the delete would cost, so
+ * that the two halves cannot contradict each other about which key to press.
  */
 async function remove(words: readonly string[], context: CommandContext): Promise<string> {
 	const { id, created } = context.agent;
@@ -469,11 +471,10 @@ async function remove(words: readonly string[], context: CommandContext): Promis
 	if (typed === "") {
 		return [
 			`Deleting ${id} stops its container and throws it away, along with the repository inside`,
-			"it: everything it wrote, remembered and made for itself. There is no copy of that anywhere.",
+			"it: everything it wrote, remembered and made for itself. There is no copy of that anywhere",
+			"and nothing here can put it back.",
 			"",
-			// The one thing that makes the rest of this readable rather than an obstacle: it says why
-			// there is a word to type at all, so it reads as a moment to think and not as a formality.
-			`Type ${id} to confirm, because this cannot be undone.`,
+			"Nothing has been deleted yet.",
 		].join("\n");
 	}
 	if (typed !== id) {
@@ -484,12 +485,12 @@ async function remove(words: readonly string[], context: CommandContext): Promis
 		return `"${unknown}" is not something /delete takes. Only the name is.`;
 
 	await context.remove();
-	// A declared agent returns whatever happens here, because the config file is the operator's and
-	// no plane may write it. Said now rather than left to be discovered after a restart, when an
-	// agent somebody deleted is up again and the obvious conclusion is that the delete never worked.
+	// Both are gone and stay gone. The difference is only where the name was written down, and it is
+	// worth a line because it is the one thing left to do about this agent: a declared name is still
+	// in the operator's file, so the delete is remembered against it until that line comes out.
 	return created
 		? `Deleted ${id}, and its repository with it. Nothing anywhere knew that name but this plane, so that was the last of it.`
-		: `Deleted ${id}, and its repository with it. It is declared in the config, which this cannot write, so it comes back empty at the next start.`;
+		: `Deleted ${id}, and its repository with it. The config still declares it and this cannot write that file, so the deletion is what got written down: ${id} stays gone across restarts. Take it out of the config when you get the chance.`;
 }
 
 /**

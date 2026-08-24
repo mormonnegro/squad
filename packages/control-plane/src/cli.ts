@@ -192,12 +192,16 @@ async function rm(args: Args): Promise<number> {
 				? `removed ${agent.id} and its repository\n`
 				: `removed ${agent.id}'s sandbox, kept its repository\n`,
 		);
-		// A declared agent comes back, because the config file is the operator's and no plane may write
-		// it. Saying so beats letting them discover it when the agent is up again after a restart.
+		// What happens at the next restart, said now rather than left to be discovered then: without
+		// the purge the agent comes back with everything it knew, and with it the name is gone for
+		// good — even a declared one, whose deletion the plane writes down because the config is the
+		// operator's file and no plane may write that.
 		process.stdout.write(
-			args.purge && agent.created
-				? "made here rather than declared, so that was the last of it\n"
-				: "still declared, so it returns when the plane restarts\n",
+			!args.purge
+				? "kept, so it returns when the plane restarts\n"
+				: agent.created
+					? "made here rather than declared, so that was the last of it\n"
+					: "still in the config, so the deletion is written down instead: it stays gone\n",
 		);
 		return 0;
 	} finally {
