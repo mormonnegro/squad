@@ -50,8 +50,12 @@ describe("transcript", () => {
 		expect(line).toContain("ship it");
 	});
 
+	// In the colour the agents column gives a booked wakeup, and not dim: this is the only line on the
+	// pane that nobody asked for, so it is the one somebody scrolls back looking for.
 	it("names the agent's own wakeup as one, rather than as an answer", () => {
-		expect(transcript([{ from: "agent", via: "wake", text: "seguir" }])[0]).toContain("‹wake›");
+		expect(transcript([{ from: "agent", via: "wake", text: "seguir" }])[0]).toBe(
+			"\u001b[33m‹wake›\u001b[39m seguir",
+		);
 	});
 
 	// A turn that failed said nothing, and the person who asked is owed the reason where they asked.

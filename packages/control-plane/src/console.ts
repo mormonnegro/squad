@@ -171,7 +171,10 @@ function spoken(said: Said): string {
 		if (said.tone === undefined) return said.text;
 		return `${ESC}[${said.tone === "good" ? 32 : 31}m${said.text}${ESC}[39m`;
 	}
-	if (said.via !== undefined) return `\u001b[2m‹${said.via}›\u001b[22m ${said.text}`;
+	// Yellow, where dim was wrong: a line nobody typed is the one worth finding again on a pane full
+	// of answers, and dim is how a terminal says this may be skipped. Yellow is what the agents column
+	// already paints a booked wakeup in, so the mark here and the clock in the list are one thing.
+	if (said.via !== undefined) return `\u001b[33m‹${said.via}›\u001b[39m ${said.text}`;
 	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;
 	return said.text;
 }
