@@ -13,6 +13,9 @@ import {
 } from "../src/commands.ts";
 import type { McpServer } from "../src/mcp.ts";
 
+/** Where a started login says it is listening, which is the address a paste has to come back to. */
+const WAITING_AT = "http://localhost:54321/callback";
+
 /** A context that remembers what was asked of it, which is the half a string cannot show. */
 function context(
 	start: {
@@ -22,20 +25,32 @@ function context(
 		grants?: readonly string[];
 		/** Servers already on the shelf, as another agent's `/mcp add` would have left them. */
 		shelf?: Record<string, McpServer>;
+		/** What a server says when asked whether it wants an account. Open unless said otherwise. */
+		wantsAccount?: readonly string[];
+		/** Servers the plane already holds a login for. */
+		loggedIn?: readonly string[];
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
 	const set: (number | null)[] = [];
 	const shelf = new Map<string, McpServer>(Object.entries(start.shelf ?? {}));
 	const held = new Set<string>();
+	const logins = new Set<string>(start.loggedIn ?? []);
+	const started: { name: string; clientId: string | undefined }[] = [];
+	const pasted: { name: string; redirected: string }[] = [];
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
 	};
+	const nameOf = (server: McpServer) =>
+		[...shelf.entries()].find(([, one]) => one === server)?.[0] ?? "";
 	return {
 		set,
 		shelf,
 		held,
+		logins,
+		started,
+		pasted,
 		context: {
 			account: async () => state,
 			setLimit: async (usd: number | null) => {
@@ -60,6 +75,23 @@ function context(
 				shelf.delete(name);
 				held.delete(name);
 			},
+			reach: async (server: McpServer) =>
+				(start.wantsAccount ?? []).includes(nameOf(server))
+					? ({ kind: "authorize" } as const)
+					: ({ kind: "open" } as const),
+			loginStatus: async (name: string) =>
+				logins.has(name)
+					? { host: "example.test", at: "now", expiresAt: undefined, renewable: true }
+					: undefined,
+			login: async (name: string, clientId?: string) => {
+				started.push({ name, clientId });
+				return { url: `https://auth.test/authorize?for=${name}`, redirectUri: WAITING_AT };
+			},
+			returned: async (name: string, redirected: string) => {
+				pasted.push({ name, redirected });
+				logins.add(name);
+			},
+			logout: async (name: string) => logins.delete(name),
 		} satisfies CommandContext,
 	};
 }
@@ -253,7 +285,33 @@ describe("/mcp", () => {
 		expect(held.has("linear")).toBe(true);
 		expect(answer).toContain("cannot be reached yet");
 		expect(answer).toContain("host: mcp.linear.app");
-		expect(answer).toContain("LINEAR_TOKEN");
+		expect(answer).toContain("injection: { kind: none }");
+	});
+
+	/**
+	 * The whole point of asking the server rather than the operator: telling somebody to invent a
+	 * bearer token for something that was about to offer them a consent screen is how they lose an
+	 * afternoon in a developer portal for a credential they never needed.
+	 */
+	it("offers a login instead of YAML when the server says it wants an account", async () => {
+		const { context: ctx } = context({ wantsAccount: ["linear"] });
+
+		const answer = await runCommand(`/mcp add linear ${linear}`, ctx);
+
+		expect(answer).toContain("/mcp login linear");
+		expect(answer).not.toContain("host: mcp.linear.app");
+	});
+
+	it("says the plane cannot reach it either, rather than blaming the grant", async () => {
+		const { context: ctx } = context();
+		const unreachable = {
+			...ctx,
+			reach: async () => ({ kind: "unreachable", why: "getaddrinfo ENOTFOUND" }) as const,
+		};
+
+		expect(await runCommand(`/mcp add linear ${linear}`, unreachable)).toContain(
+			"cannot reach mcp.linear.app either",
+		);
 	});
 
 	it("says nothing about grants for a server the operator did grant", async () => {
@@ -274,7 +332,20 @@ describe("/mcp", () => {
 	it("marks the ones nothing can reach in the list too", async () => {
 		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
 
-		expect(await runCommand("/mcp", ctx)).toContain("(no grant for mcp.linear.app)");
+		expect(await runCommand("/mcp", ctx)).toContain("(no grant)");
+	});
+
+	// The stronger of the two facts, and the only one the operator can do anything about from here.
+	it("marks a logged-in one as logged in rather than as ungranted", async () => {
+		const { context: ctx } = context({
+			shelf: { linear: { transport: "http", url: linear } },
+			loggedIn: ["linear"],
+		});
+
+		const answer = await runCommand("/mcp", ctx);
+
+		expect(answer).toContain("(logged in)");
+		expect(answer).not.toContain("(no grant)");
 	});
 
 	it("takes one off this agent while leaving it for the others", async () => {
@@ -346,6 +417,100 @@ describe("/mcp", () => {
 		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
 
 		expect(await runCommand("/mcp drop linear", ctx)).toContain("does not have");
+	});
+});
+
+describe("/mcp login", () => {
+	const linear = "https://mcp.linear.app/mcp";
+	const shelf = { linear: { transport: "http", url: linear } as const };
+
+	it("sends the operator to a page, and says where the answer is expected back", async () => {
+		const { context: ctx, started } = context({ shelf });
+
+		const answer = await runCommand("/mcp login linear", ctx);
+
+		expect(started).toEqual([{ name: "linear", clientId: undefined }]);
+		expect(answer).toContain("https://auth.test/authorize?for=linear");
+		// Both halves matter: the address it is waiting at, and what to do if that page cannot reach it.
+		expect(answer).toContain(WAITING_AT);
+		expect(answer).toContain("/mcp login linear <address>");
+	});
+
+	/** For a server that will not register a client, where the operator made one themselves. */
+	it("passes on a client id the operator has in hand", async () => {
+		const { context: ctx, started } = context({ shelf });
+
+		await runCommand("/mcp login linear abc123", ctx);
+
+		expect(started).toEqual([{ name: "linear", clientId: "abc123" }]);
+	});
+
+	/**
+	 * One word for both halves, because it is one thing to the person doing it: the second argument is
+	 * whatever they have in hand, and an address bar is legible as an address bar.
+	 */
+	it("finishes the login from a URL pasted back, for a plane the browser cannot see", async () => {
+		const { context: ctx, started, pasted, logins } = context({ shelf });
+		const landed = `${WAITING_AT}?code=abc&state=xyz`;
+
+		const answer = await runCommand(`/mcp login linear ${landed}`, ctx);
+
+		expect(pasted).toEqual([{ name: "linear", redirected: landed }]);
+		expect(started).toEqual([]);
+		expect(logins.has("linear")).toBe(true);
+		expect(answer).toContain("Logged in to mcp.linear.app");
+	});
+
+	// A login that could not start is news about the server, and it belongs next to the command.
+	it("answers with why a login would not start rather than throwing", async () => {
+		const { context: ctx } = context({ shelf });
+		const refuses = {
+			...ctx,
+			login: async () => {
+				throw new Error("This server does not register clients.");
+			},
+		};
+
+		expect(await runCommand("/mcp login linear", refuses)).toContain("does not register clients");
+	});
+
+	it("has no account to offer for a server that is a process", async () => {
+		const { context: ctx, started } = context({
+			shelf: { files: { transport: "stdio", command: "mcp-files", args: [] } },
+		});
+
+		expect(await runCommand("/mcp login files", ctx)).toContain("not a place with an account");
+		expect(started).toEqual([]);
+	});
+
+	it("asks which one when there is more than nothing to log in to", async () => {
+		const { context: ctx } = context({ shelf });
+
+		expect(await runCommand("/mcp login", ctx)).toContain("/mcp login linear");
+	});
+
+	it("takes the token away again, and says the reach went with it", async () => {
+		const { context: ctx, logins } = context({ shelf, loggedIn: ["linear"] });
+
+		const answer = await runCommand("/mcp logout linear", ctx);
+
+		expect(logins.has("linear")).toBe(false);
+		expect(answer).toContain("Logged out of mcp.linear.app");
+	});
+
+	it("does not claim to have logged out of something nothing was logged in to", async () => {
+		const { context: ctx } = context({ shelf });
+
+		expect(await runCommand("/mcp logout linear", ctx)).toContain("was not logged in");
+	});
+
+	// Otherwise `/mcp login` would be ambiguous forever, discovered by whoever tried to use it.
+	it("refuses to name a server after either of its own words", async () => {
+		const { context: ctx, shelf: added } = context();
+
+		expect(await runCommand(`/mcp add login ${linear}`, ctx)).toContain("is a word /mcp uses");
+		expect(await runCommand(`/mcp add logout ${linear}`, ctx)).toContain("is a word /mcp uses");
+		expect(added.size).toBe(0);
 	});
 });
 

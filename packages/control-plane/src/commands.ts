@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
+import type { LoginStatus, Reachability } from "@agent-dive/proxy";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
+
+/** Where to send the operator, and where the answer is expected back. */
+export interface LoginPage {
+	readonly url: string;
+	readonly redirectUri: string;
+}
 
 /**
  * What a command may do, which is deliberately less than what the plane can.
@@ -18,15 +25,24 @@ export interface CommandContext {
 	/**
 	 * Whether this agent may reach a host at all. Asked, never set.
 	 *
-	 * A grant comes from the operator's file and from nowhere else, so the most a command can do
-	 * about a server nothing can reach is to notice and say so. Adding the grant here would put the
-	 * whole of an agent's reach one typo away from the box its messages are typed into.
+	 * A grant comes from the operator's file, or from a login the operator completed in a browser,
+	 * and from nowhere else. What a command may not do is write one: that would put the whole of an
+	 * agent's reach one typo away from the box its messages are typed into.
 	 */
 	granted(host: string): Promise<boolean>;
 	addServer(name: string, server: McpServer): Promise<void>;
 	attachServer(name: string): Promise<void>;
 	detachServer(name: string): Promise<void>;
 	forgetServer(name: string): Promise<void>;
+	/** What the server itself says about being reached, which is the only authority on it. */
+	reach(server: McpServer): Promise<Reachability>;
+	/** The login the plane holds for a server, if it holds one. Never the token. */
+	loginStatus(name: string): Promise<LoginStatus | undefined>;
+	/** Starts a login and answers with the page to open. */
+	login(name: string, clientId?: string): Promise<LoginPage>;
+	/** Finishes one from the address the browser was sent to, pasted back by hand. */
+	returned(name: string, redirected: string): Promise<void>;
+	logout(name: string): Promise<boolean>;
 }
 
 /**
@@ -44,7 +60,7 @@ export const COMMANDS = [
 	},
 	{
 		name: "/mcp",
-		takes: "[<name>|add …]",
+		takes: "[<name>|add …|login …]",
 		does: "the MCP servers it has, and the shelf to add from",
 	},
 	{ name: "/help", takes: "", does: "every command there is" },
@@ -212,7 +228,7 @@ function spentAgainst(account: { spentUsd: number; limitUsd: number | undefined 
 }
 
 /** The words `/mcp` reads as instructions, and therefore not names a server may be given. */
-const VERBS = ["add", "drop", "forget"];
+const VERBS = ["add", "drop", "forget", "login", "logout"];
 
 /** How to add one, which is the answer to "and what do I type", asked in three different ways. */
 const ADDING = [
@@ -222,30 +238,35 @@ const ADDING = [
 ].join("\n");
 
 /**
- * Says a server cannot be reached, and what the operator would have to do about it.
+ * Says what stands between a server and the agent, in the words of whatever is standing there.
  *
- * Not something this can fix. A grant comes from the config file and from nowhere else, and the
- * value of saying it here is that the alternative is finding out from the agent, mid-turn, in the
- * shape of a tool that answers with the proxy's refusal instead of with an answer.
+ * Three different problems used to be one message. A server that wants an account is not a server
+ * missing a line of YAML, and telling an operator to invent a bearer token for something that was
+ * about to offer them a consent screen is how they end up in a developer portal for an hour. So the
+ * server is asked, and its own refusal decides which sentence this is.
  */
-async function unreachable(
-	name: string,
-	server: McpServer,
-	context: CommandContext,
-): Promise<string> {
+async function whatNext(name: string, server: McpServer, context: CommandContext): Promise<string> {
 	const host = hostOf(server);
-	if (host === undefined || (await context.granted(host))) return "";
+	if (host === undefined) return "";
+	if ((await context.loginStatus(name)) !== undefined) return "";
+	if (await context.granted(host)) return "";
+
+	const said = await context.reach(server);
+	if (said.kind === "authorize") {
+		return `\n\nIt wants an account first: /mcp login ${name}`;
+	}
+	if (said.kind === "unreachable") {
+		return `\n\nThe plane cannot reach ${host} either: ${said.why}`;
+	}
 	return [
 		"",
 		"",
-		`It cannot be reached yet: nothing grants this agent ${host}. Grants are`,
-		"yours to make, not mine — put this under the agent and reload:",
+		`It cannot be reached yet: nothing grants this agent ${host}, and it asks`,
+		"for no account. A grant is yours to make — put this under the agent and reload:",
 		"",
 		`  - id: ${name}`,
 		`    host: ${host}`,
-		`    injection: { kind: bearer, token: { ref: ${name.toUpperCase().replaceAll("-", "_")}_TOKEN } }`,
-		"",
-		"or `injection: { kind: none }` if it wants no key of its own.",
+		"    injection: { kind: none }",
 	].join("\n");
 }
 
@@ -256,14 +277,63 @@ async function rows(
 ): Promise<readonly (readonly [string, string])[]> {
 	return Promise.all(
 		servers.map(async ({ name, server }) => {
-			const host = hostOf(server);
-			const reach = host === undefined || (await context.granted(host));
-			return [
-				`  ${name}`,
-				`${written(server)}${reach ? "" : `   (no grant for ${host})`}`,
-			] as const;
+			return [`  ${name}`, `${written(server)}${await note(name, server, context)}`] as const;
 		}),
 	);
+}
+
+/**
+ * The one thing worth saying about a server in a list of them.
+ *
+ * A login is said before a grant because it is the stronger fact: it implies the grant, it is the
+ * thing that expires, and it is the only one of the two that the operator can do something about
+ * from here.
+ */
+async function note(name: string, server: McpServer, context: CommandContext): Promise<string> {
+	const host = hostOf(server);
+	if (host === undefined) return "";
+	if ((await context.loginStatus(name)) !== undefined) return "   (logged in)";
+	return (await context.granted(host)) ? "" : "   (no grant)";
+}
+
+/**
+ * Sends the operator to a consent screen, or finishes the trip back from one.
+ *
+ * One word for both halves because it is one thing to the person doing it. The second argument is
+ * whatever they have in hand: nothing, an address bar they had to carry across machines, or the id
+ * of a client they registered themselves at a server that would not do it for them — and which of
+ * those it is is legible from the thing itself.
+ */
+async function logIn(
+	name: string,
+	host: string,
+	held: string,
+	context: CommandContext,
+): Promise<string> {
+	try {
+		if (/^https?:\/\//i.test(held)) {
+			await context.returned(name, held);
+			return `Logged in to ${host}. This agent can reach "${name}" now.`;
+		}
+		const page = await context.login(name, held === "" ? undefined : held);
+		return [
+			`Log in to ${host} here — I have opened it, if there is a browser on this machine:`,
+			"",
+			`  ${page.url}`,
+			"",
+			`Waiting at ${page.redirectUri}. If that page cannot reach this plane, paste`,
+			`the address it lands on back as: /mcp login ${name} <address>`,
+		].join("\n");
+	} catch (error) {
+		// Answered rather than thrown: a login that could not start is news about the server, and it
+		// belongs in the conversation next to the command that asked for it.
+		return (error as Error).message;
+	}
+}
+
+async function logOut(name: string, host: string, context: CommandContext): Promise<string> {
+	if (!(await context.logout(name))) return `"${name}" was not logged in to ${host}.`;
+	return `Logged out of ${host}. The token is gone, and so is the reach it carried.`;
 }
 
 async function listing(context: CommandContext): Promise<string> {
@@ -309,12 +379,30 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 		await context.attachServer(named);
 		return [
 			`"${named}" is on the shelf, and this agent has it.`,
-			await unreachable(named, read.server, context),
+			await whatNext(named, read.server, context),
 			`\n\nAny other agent can have it too, with /mcp ${named}.`,
 		].join("");
 	}
 
 	const { shelf, held } = await context.mcp();
+
+	if (verb === "login" || verb === "logout") {
+		if (named === "") {
+			const names = shelf.map((one) => one.name);
+			return names.length === 0
+				? `There is nothing to log ${verb === "login" ? "in" : "out"} of yet.\n\n${ADDING}`
+				: `Which one? ${names.map((one) => `/mcp ${verb} ${one}`).join(", ")}`;
+		}
+		const found = shelf.find((one) => one.name === named);
+		if (found === undefined) return `There is no server called "${named}".`;
+		const host = hostOf(found.server);
+		if (host === undefined) {
+			return `"${named}" is a command this agent runs, not a place with an account.`;
+		}
+		return verb === "login"
+			? logIn(named, host, target[0] ?? "", context)
+			: logOut(named, host, context);
+	}
 
 	if (verb === "drop" || verb === "forget") {
 		if (named === "")
@@ -341,7 +429,7 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 		return `This agent already has "${verb}": ${written(found.server)}`;
 	}
 	await context.attachServer(verb);
-	return `This agent has "${verb}": ${written(found.server)}${await unreachable(verb, found.server, context)}`;
+	return `This agent has "${verb}": ${written(found.server)}${await whatNext(verb, found.server, context)}`;
 }
 
 /**

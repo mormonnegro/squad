@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecResult } from "@agent-dive/sandbox";
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	ControlPlane,
 	carriesEnv,
+	endpointPath,
 	MAX_WAKE_SECONDS,
 	MIN_WAKE_SECONDS,
 	proxyTokenOf,
@@ -885,5 +886,107 @@ describe("a command run in the agent's box", () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
 
 		await expect(plane.shell("ghost", "ls")).rejects.toThrow(/No agent/);
+	});
+});
+
+/**
+ * The one capability in this system that does not come out of the operator's config file.
+ *
+ * It is allowed because a login is a person on a consent screen with the host name in front of them,
+ * which is a stronger act of approval than a line of YAML rather than a weaker one. What makes that
+ * safe is how narrow it is, and that is what these are about: one host, the server's own path, and
+ * only for as long as the agent is holding the server it was made for.
+ */
+describe("what a login lets an agent reach", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-login-grant-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const model = { id: "model", host: "api.anthropic.com", injection: { kind: "none" } } as const;
+
+	/** State as a login and an attachment would have left it, written before the plane reads it. */
+	async function held(over: { url?: string; transport?: "http" | "sse"; login?: boolean } = {}) {
+		await writeFile(
+			join(stateDir, "mcp.json"),
+			JSON.stringify({
+				servers: {
+					notion: {
+						transport: over.transport ?? "http",
+						url: over.url ?? "https://mcp.notion.com/mcp",
+					},
+				},
+				attached: { scout: ["notion"] },
+			}),
+		);
+		if (over.login !== false) {
+			await writeFile(
+				join(stateDir, "oauth.json"),
+				JSON.stringify({
+					notion: {
+						host: "mcp.notion.com",
+						endpoints: {
+							authorizationUrl: "https://notion.so/authorize",
+							tokenUrl: "https://notion.so/token",
+							resource: "https://mcp.notion.com/mcp",
+						},
+						client: { clientId: "c1", redirectUri: "http://localhost:8788/callback" },
+						accessToken: "at-live",
+						at: new Date().toISOString(),
+					},
+				}),
+			);
+		}
+		return new ControlPlane({ agents: [{ id: "scout", grants: [model] }], stateDir });
+	}
+
+	it("adds a grant for the server it was logged in to, on top of the declared ones", async () => {
+		const plane = await held();
+
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(2);
+		expect(await plane.command("scout", "/mcp")).toContain("(logged in)");
+	});
+
+	/**
+	 * Narrow where it can be and honest where it cannot.
+	 *
+	 * A streamable server is one URL and every message goes to it, so the grant is that path and
+	 * nothing else on the host. An SSE server names its own posting address in the first event it
+	 * sends, at a path this plane has not seen — scoping to the stream would grant the one request
+	 * that carries nothing and deny the rest.
+	 */
+	it("scopes to the server's own path, and admits when it cannot", () => {
+		expect(endpointPath({ transport: "http", url: "https://mcp.notion.com/mcp" })).toBe("/mcp");
+		expect(endpointPath({ transport: "sse", url: "https://mcp.notion.com/sse" })).toBeUndefined();
+		expect(endpointPath({ transport: "stdio", command: "mcp-files", args: [] })).toBeUndefined();
+	});
+
+	it("gives nothing to an agent that never logged in", async () => {
+		const plane = await held({ login: false });
+
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
+	});
+
+	// The reach was for the server, so taking the server away takes the reach with it.
+	it("takes the reach back when the agent no longer holds the server", async () => {
+		const plane = await held();
+
+		await plane.command("scout", "/mcp drop notion");
+
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
+	});
+
+	it("takes it back when the operator logs out, and says the reach went too", async () => {
+		const plane = await held();
+
+		const answer = await plane.command("scout", "/mcp logout notion");
+
+		expect(answer).toContain("Logged out of mcp.notion.com");
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
 	});
 });

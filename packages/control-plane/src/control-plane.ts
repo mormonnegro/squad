@@ -11,6 +11,11 @@ import {
 	type Grant,
 	GrantSet,
 	loadOrCreateCertificateAuthority,
+	OAuthLogins,
+	OAuthSecretStore,
+	oauthRef,
+	type Reachability,
+	reachability,
 	type SecretStore,
 	StaticAgentDirectory,
 } from "@agent-dive/proxy";
@@ -18,6 +23,7 @@ import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
 import {
 	endedIn,
+	type LoginPage,
 	money,
 	runCommand,
 	SHELL_TIMEOUT_MS,
@@ -25,7 +31,8 @@ import {
 	shellScript,
 } from "./commands.ts";
 import { CreatedAgentStore } from "./created-agents.ts";
-import { McpShelf } from "./mcp.ts";
+import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
+import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
@@ -213,6 +220,8 @@ export class ControlPlane {
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
 	readonly #mcp: McpShelf;
+	readonly #logins: OAuthLogins;
+	readonly #desk: LoginDesk;
 	/**
 	 * Where each agent's last `!` left the operator standing.
 	 *
@@ -250,6 +259,8 @@ export class ControlPlane {
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
+		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
+		this.#desk = new LoginDesk(this.#logins);
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -274,7 +285,9 @@ export class ControlPlane {
 		});
 		this.broker = new EgressBroker({
 			ca: loadOrCreateCertificateAuthority(join(this.#stateDir, "pki")),
-			secrets: options.secrets ?? new EnvSecretStore(),
+			// Layered over whatever was given, so a grant may name an environment variable or a login
+			// and the broker cannot tell the difference at the moment it writes the header.
+			secrets: new OAuthSecretStore(this.#logins, options.secrets ?? new EnvSecretStore()),
 			directory: this.directory,
 			onAudit: (entry) => {
 				options.onAudit?.(entry);
@@ -331,7 +344,7 @@ export class ControlPlane {
 			id: agent.id,
 			running: status?.running ?? false,
 			startedAt: status?.startedAt,
-			grants: agent.grants?.length ?? 0,
+			grants: (await this.#grantsFor(agent.id)).length,
 			schedules: schedules.length,
 			wakeAt: schedules.find((schedule) => schedule.createdBy === "agent")?.nextRunAt,
 			created: this.#createdIds.has(agent.id),
@@ -469,6 +482,106 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Everything an agent may reach: what the operator wrote down, and what they logged into.
+	 *
+	 * The second half is the only capability in this system that does not come out of the config
+	 * file, and it is allowed for one reason — a login is a person on a consent screen with the host
+	 * name in front of them, which is a stronger act of approval than a line of YAML, not a weaker
+	 * one. It is also the narrowest grant here: one host, one path, and only for the agents actually
+	 * holding that server. Take the server off an agent and the reach goes with it.
+	 */
+	async #grantsFor(agentId: string): Promise<readonly Grant[]> {
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.grants ?? [];
+		const earned: Grant[] = [];
+		for (const { name, server } of await this.#mcp.attached(agentId)) {
+			const host = hostOf(server);
+			if (host === undefined) continue;
+			if ((await this.#logins.get(name)) === undefined) continue;
+			const at = endpointPath(server);
+			earned.push({
+				id: `mcp:${name}`,
+				host,
+				...(at !== undefined ? { pathPrefix: at } : {}),
+				injection: { kind: "bearer", token: oauthRef(name) },
+			});
+		}
+		return [...declared, ...earned];
+	}
+
+	/**
+	 * Tells the proxy what an agent may reach now, which is a different set from a minute ago
+	 * whenever a server was attached, dropped, logged into or logged out of.
+	 */
+	async #reregister(agentId: string): Promise<void> {
+		const proxyToken = this.#tokens.get(agentId);
+		if (proxyToken === undefined) return;
+		this.directory.register({ agentId, proxyToken, grants: await this.#grantsFor(agentId) });
+	}
+
+	/** For the changes that are not about one agent: a server forgotten, an account logged out of. */
+	async #reregisterAll(): Promise<void> {
+		for (const agent of this.#agents) await this.#reregister(agent.id);
+	}
+
+	/**
+	 * Asks the server itself whether it wants an account, from the plane rather than the sandbox.
+	 *
+	 * Deliberately not through the proxy: the whole point of the question is that the agent is not
+	 * granted this host yet, so a probe that went the agent's way would be denied by design and every
+	 * server would look unreachable. Nothing of the agent's goes into it — an unauthenticated
+	 * handshake, sent to a URL the operator typed a moment ago.
+	 */
+	async #reach(server: McpServer): Promise<Reachability> {
+		if (server.transport === "stdio") return { kind: "open" };
+		return reachability(server.url);
+	}
+
+	/**
+	 * Opens a login for a server on the shelf, and arranges for its landing to be said out loud.
+	 *
+	 * The command answers long before the operator does, so what happens at the far end of the browser
+	 * has to arrive in the conversation on its own: a login that succeeded silently would leave them
+	 * looking at a tab saying it worked and a console saying nothing, with no way to tell whether the
+	 * plane heard about it.
+	 */
+	async #login(agentId: string, name: string, clientId?: string): Promise<LoginPage> {
+		const found = (await this.#mcp.servers()).find((one) => one.name === name);
+		if (found === undefined) throw new Error(`There is no server called "${name}".`);
+		const host = hostOf(found.server);
+		if (found.server.transport === "stdio" || host === undefined) {
+			throw new Error(`"${name}" is a command this agent runs, not a place with an account.`);
+		}
+
+		// Asked first only for what the refusal names: a server that says where its metadata lives
+		// saves a round of guessing, and one that says nothing costs a request nobody waits on twice.
+		const said = await this.#reach(found.server);
+		const where = said.kind === "authorize" ? said.resourceMetadataUrl : undefined;
+
+		const started = await this.#desk.begin({
+			name,
+			url: found.server.url,
+			host,
+			...(clientId !== undefined ? { clientId } : {}),
+			...(where !== undefined ? { resourceMetadataUrl: where } : {}),
+		});
+		void started.done
+			.then(
+				async () => {
+					await this.#reregisterAll();
+					await this.#record(agentId, {
+						from: "plane",
+						text: `Logged in to ${host}. This agent can reach "${name}" now.`,
+					});
+				},
+				async (error: Error) => {
+					await this.#record(agentId, { from: "plane", text: `${name}: ${error.message}` });
+				},
+			)
+			.catch(() => {});
+		return { url: started.url, redirectUri: started.redirectUri };
+	}
+
+	/**
 	 * Runs a line the operator typed as a command rather than as a message.
 	 *
 	 * Both halves go into the conversation, because that is where they were typed and where the
@@ -491,14 +604,35 @@ export class ControlPlane {
 			// Asked of the same set the proxy will ask, so what the operator is told here is what the
 			// agent will actually meet — rather than a second opinion that can be right while the wire
 			// says otherwise.
-			granted: async (host) =>
-				new GrantSet(this.#agents.find((agent) => agent.id === agentId)?.grants ?? []).allowsHost(
-					host,
-				),
+			granted: async (host) => new GrantSet(await this.#grantsFor(agentId)).allowsHost(host),
 			addServer: (name, server) => this.#mcp.add(name, server),
-			attachServer: (name) => this.#mcp.attach(agentId, name),
-			detachServer: (name) => this.#mcp.detach(agentId, name),
-			forgetServer: (name) => this.#mcp.forget(name),
+			// Attaching and dropping change what the agent may reach, because a login's grant lasts only
+			// as long as the agent is holding the server it was made for.
+			attachServer: async (name) => {
+				await this.#mcp.attach(agentId, name);
+				await this.#reregister(agentId);
+			},
+			detachServer: async (name) => {
+				await this.#mcp.detach(agentId, name);
+				await this.#reregister(agentId);
+			},
+			forgetServer: async (name) => {
+				await this.#mcp.forget(name);
+				await this.#reregisterAll();
+			},
+			reach: (server) => this.#reach(server),
+			loginStatus: (name) => this.#logins.status(name),
+			login: (name, clientId) => this.#login(agentId, name, clientId),
+			returned: async (name, redirected) => {
+				await this.#desk.returned(name, redirected);
+				await this.#reregisterAll();
+			},
+			logout: async (name) => {
+				this.#desk.cancel(name);
+				const held = await this.#logins.forget(name);
+				if (held) await this.#reregisterAll();
+				return held;
+			},
 		});
 		await this.#record(agentId, { from: "plane", text: answer });
 		return answer;
@@ -685,11 +819,7 @@ export class ControlPlane {
 	async #startAgent(agent: AgentConfig): Promise<void> {
 		const proxyToken = await this.#adoptOrCreateSandbox(agent);
 		this.#tokens.set(agent.id, proxyToken);
-		this.directory.register({
-			agentId: agent.id,
-			proxyToken,
-			grants: agent.grants ?? [],
-		});
+		await this.#reregister(agent.id);
 
 		await this.sandboxes.start(agent.id);
 		await ensureSelfRepo({
@@ -781,6 +911,24 @@ export function carriesEnv(
  * agent's name would be denied whatever the token said, so recovering it would only postpone the
  * failure to the first request.
  */
+/**
+ * How narrowly a login's grant can be drawn, which depends on which transport it is.
+ *
+ * A streamable server is one URL and every message goes to it, so the grant can be that exact path
+ * and nothing else on the host. An SSE server names its own posting address in the first event it
+ * sends — a path this plane has not seen and cannot guess — so scoping to the stream's path would
+ * grant the one request that never carries anything and deny the rest. Host-wide is the honest
+ * answer there, and the host is still only the one the operator logged in to.
+ */
+export function endpointPath(server: McpServer): string | undefined {
+	if (server.transport !== "http") return undefined;
+	try {
+		return new URL(server.url).pathname;
+	} catch {
+		return undefined;
+	}
+}
+
 export function proxyTokenOf(proxyUrl: string | undefined, agentId: string): string | undefined {
 	if (proxyUrl === undefined) return undefined;
 	try {
