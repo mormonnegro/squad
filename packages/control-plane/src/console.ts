@@ -3,7 +3,7 @@ import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
 import wrapAnsi from "wrap-ansi";
-import { isCommand, isShell, money } from "./commands.ts";
+import { type Command, completions, isCommand, isShell, money } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
@@ -395,6 +395,8 @@ export function Chat({
 	thinking,
 	top,
 	shell,
+	menu,
+	pick,
 }: {
 	readonly history: readonly Said[];
 	readonly draft: string;
@@ -405,11 +407,19 @@ export function Chat({
 	readonly top: number | undefined;
 	/** The directory the next `!` runs in, or nothing at all while the prompt is the agent's. */
 	readonly shell: string | undefined;
+	/** What the line being typed could still turn out to be, which is empty unless it began with a slash. */
+	readonly menu: readonly Command[];
+	readonly pick: number;
 }): ReactElement {
 	// The box around the prompt costs two rows. A pane with no room for them keeps the prompt and
 	// gives up the border, because a border drawn where there is no room is the broken screen again.
 	const boxed = rows > PROMPT_ROWS;
-	const lines = visible(wrapped(transcript(history), columns), chatRows(rows), top);
+	// The menu is taken out of the conversation rather than laid over it, and never takes the last
+	// row: a pane being dragged to nothing must still be a pane, not a list with nowhere to type.
+	const listed = menu.slice(0, Math.max(0, chatRows(rows) - 1));
+	const named = listed.map((command) => `${command.name} ${command.takes}`.trimEnd());
+	const widest = Math.max(0, ...named.map((name) => name.length));
+	const lines = visible(wrapped(transcript(history), columns), chatRows(rows) - listed.length, top);
 	// A spinner alone says something is happening; the number rising beside it is what separates slow
 	// from stuck, and twice now the thing that looked slow was a hang. The shell prompt is drawn over
 	// it rather than under it, because a mode has to be visible while it is on: `!` reaches the box
@@ -438,6 +448,21 @@ export function Chat({
 			// decided to wrap is a row this one did not budget for.
 			...lines.map((line, index) =>
 				h(Text, { key: `${index}`, wrap: "truncate" }, line === "" ? " " : line),
+			),
+		),
+		// Outside the prompt's box and resting on it, the way the list of what a word could become
+		// sits above the word in every other box that completes. Inside it, the box would grow and
+		// shrink under the hand as the list filtered, which is the one thing a prompt must not do.
+		...listed.map((command, index) =>
+			h(
+				Text,
+				{ key: command.name, wrap: "truncate" },
+				h(Text, { color: "cyan", bold: true }, index === pick ? " ▸ " : "   "),
+				// Padded to the widest of the ones being shown rather than to a number written down
+				// here, which the day a longer command is added becomes a name touching its own
+				// description. Two columns of gap at the least, so they are never one word.
+				h(Text, { bold: index === pick }, named[index]?.padEnd(widest + 2) ?? ""),
+				h(Text, { dimColor: true }, command.does),
 			),
 		),
 		h(
@@ -501,6 +526,9 @@ function App({
 	// Where each agent's shell is standing, as the plane last answered. Per agent, because they are
 	// different boxes, and the prompt has to say which directory the next command will run in.
 	const [cwd, setCwd] = useState<ReadonlyMap<string, string>>(new Map());
+	// Which of the offered commands the arrows are on. Clamped rather than corrected when the line
+	// being typed narrows the list under it, so nothing has to be reset from inside a keystroke.
+	const [pick, setPick] = useState(0);
 	// When each turn started, rather than merely that one did: the elapsed seconds come from here.
 	const [busy, setBusy] = useState<ReadonlyMap<string, number>>(new Map());
 	const [frame, setFrame] = useState(0);
@@ -508,6 +536,11 @@ function App({
 	const [top, setTop] = useState<number | undefined>(undefined);
 
 	const selected = agents[Math.min(cursor, agents.length - 1)];
+	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
+	// the start of a path, and not over the log feed, which has no prompt for a command to go into.
+	const menu = panel === "chat" && !shell ? completions(draft) : [];
+	const at = Math.min(pick, menu.length - 1);
+	const chosen = menu[at];
 	const writing = selected === undefined ? undefined : live.get(selected.id);
 	const said =
 		selected === undefined
@@ -681,16 +714,26 @@ function App({
 			scroll(0, 1);
 			return;
 		}
+		// While the menu is up these three keys belong to it, which is what they do in every other box
+		// that completes. Swapping the panel or the agent out from under a half-typed command loses the
+		// command, and the arrows are the only way to reach the entry that is not the first.
 		if (key.tab) {
+			if (chosen !== undefined) {
+				setDraft(`${chosen.name} `);
+				setPick(0);
+				return;
+			}
 			setPanel((prev) => (prev === "chat" ? "logs" : "chat"));
 			return;
 		}
 		if (key.upArrow) {
-			setCursor((prev) => Math.max(0, prev - 1));
+			if (menu.length > 0) setPick(Math.max(0, at - 1));
+			else setCursor((prev) => Math.max(0, prev - 1));
 			return;
 		}
 		if (key.downArrow) {
-			setCursor((prev) => Math.min(agents.length - 1, prev + 1));
+			if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
+			else setCursor((prev) => Math.min(agents.length - 1, prev + 1));
 			return;
 		}
 		if (panel !== "chat" || selected === undefined) return;
@@ -707,6 +750,15 @@ function App({
 		};
 
 		if (key.return) {
+			// The first return takes the command off the menu, the second sends it. Every command here
+			// can be given an argument, so a return that sent the moment a name was highlighted would
+			// make `/limit 5` the one thing the menu could not be used to type. A name already typed in
+			// full is not completed onto itself — at that point the menu is agreeing, not offering.
+			if (chosen !== undefined && chosen.name !== draft) {
+				setDraft(`${chosen.name} `);
+				setPick(0);
+				return;
+			}
 			// The mode outlives the command, because that is what a mode is for: nobody looks around a
 			// box one command at a time, and pressing `!` again before each of them is the prefix back.
 			send(draft);
@@ -716,6 +768,7 @@ function App({
 			// Backspacing off the end of an empty line is the way out, which is where the bang went in.
 			if (draft === "") setShell(false);
 			else setDraft((prev) => prev.slice(0, -1));
+			setPick(0);
 			return;
 		}
 		// Ctrl and meta chords are commands this does not have yet, not text. Without this an unhandled
@@ -736,6 +789,9 @@ function App({
 		const [first = "", ...rest] = input.split(/\r|\n/);
 		if (rest.length === 0) {
 			setDraft((prev) => prev + first);
+			// Back to the top of whatever the line now offers: a letter typed under a highlight moves
+			// the list out from under it, and the entry it lands on is not the one that was chosen.
+			setPick(0);
 			return;
 		}
 		send(draft + first);
@@ -807,6 +863,8 @@ function App({
 								shell && selected !== undefined
 									? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
 									: undefined,
+							menu,
+							pick: at,
 							key: "chat",
 						})
 					: h(Logs, { lines, rows: body - 1, top, key: "logs" }),
@@ -817,25 +875,35 @@ function App({
 			{ flexDirection: "row", key: "hint" },
 			h(Text, null, " "),
 			// The key stands out from what it does, because the key is the part being looked for.
-			...[
-				["↑↓", "agent"],
-				["^U^D", "scroll"],
-				["tab", panel === "chat" ? "logs" : "chat"],
-				// A key nobody guesses is pressable. The rest of this row is what to press to move
-				// around; this one is what to press to be told what else there is. In the shell the two
-				// of them say nothing true, and the way back out is the thing worth saying instead.
-				...(shell
-					? [["⌫", "chat"]]
-					: [
-							["/", "commands"],
-							["!", "shell"],
-						]),
-				["^C", "quit"],
-				// Last, so that the rest of the row does not move as it comes and goes, and shown only
-				// while there is something to stop: the key does nothing at any other time, and offering
-				// it then is how a hint becomes a thing that lies.
-				...(busy.size > 0 ? [["esc", "stop"]] : []),
-			].flatMap(([stroke, does], index) => [
+			...(menu.length > 0
+				? // The keys have been taken by the menu, so the row says what they do now instead of
+					// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+					// the same lie as a hint for a key that does nothing.
+					[
+						["↑↓", "command"],
+						["⏎", "choose"],
+						["^C", "quit"],
+					]
+				: [
+						["↑↓", "agent"],
+						["^U^D", "scroll"],
+						["tab", panel === "chat" ? "logs" : "chat"],
+						// A key nobody guesses is pressable. The rest of this row is what to press to move
+						// around; this one is what to press to be told what else there is. In the shell the
+						// two of them say nothing true, and the way back out is worth saying instead.
+						...(shell
+							? [["⌫", "chat"]]
+							: [
+									["/", "commands"],
+									["!", "shell"],
+								]),
+						["^C", "quit"],
+						// Last, so that the rest of the row does not move as it comes and goes, and shown
+						// only while there is something to stop: the key does nothing at any other time,
+						// and offering it then is how a hint becomes a thing that lies.
+						...(busy.size > 0 ? [["esc", "stop"]] : []),
+					]
+			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),
 			]),

@@ -1,5 +1,8 @@
 export {
+	COMMANDS,
+	type Command,
 	type CommandContext,
+	completions,
 	endedIn,
 	isCommand,
 	isShell,

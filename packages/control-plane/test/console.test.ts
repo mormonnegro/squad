@@ -1,6 +1,7 @@
 import { Box, renderToString, Text } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
+import { COMMANDS, type Command } from "../src/commands.ts";
 import {
 	Agents,
 	Chat,
@@ -407,6 +408,8 @@ describe("Chat", () => {
 		thinking?: Thinking | undefined;
 		top?: number | undefined;
 		shell?: string | undefined;
+		menu?: readonly Command[];
+		pick?: number;
 	}) =>
 		renderToString(
 			h(Chat, {
@@ -416,9 +419,11 @@ describe("Chat", () => {
 				thinking: undefined,
 				top: undefined,
 				shell: undefined,
+				menu: [],
+				pick: 0,
 				...props,
 			}),
-			{ columns: 40 },
+			{ columns: props.columns ?? 40 },
 		);
 
 	it("keeps the room the prompt needs, at the cost of the oldest line", () => {
@@ -519,6 +524,55 @@ describe("Chat", () => {
 			.slice(0, -1);
 
 		for (const row of said) expect(row.length).toBeLessThanOrEqual(40);
+	});
+
+	it("offers what the line being typed could still become", () => {
+		const drawn = chat({
+			history: [],
+			draft: "/li",
+			menu: [...COMMANDS],
+			pick: 0,
+			rows: 8,
+			columns: 90,
+		});
+
+		expect(drawn).toContain("/limit");
+		expect(drawn).toContain("what it has spent today, and the ceiling for it");
+	});
+
+	// A name written against its own description reads as one word. The gap is measured off the
+	// widest entry being shown, so adding a longer command does not silently close it.
+	it("keeps the descriptions off the names, whatever the names are", () => {
+		const drawn = chat({
+			history: [],
+			draft: "/",
+			menu: [...COMMANDS],
+			pick: 0,
+			rows: 8,
+			columns: 90,
+		});
+
+		expect(drawn).toContain("/limit [<amount>|off]  what");
+		expect(drawn).toContain("/help                  every");
+	});
+
+	// The arrows are the only way to reach an entry that is not the first, so which one they are on
+	// has to be visible. A list that highlights nothing is a list you cannot choose from.
+	it("marks the entry the arrows are on", () => {
+		const drawn = chat({ history: [], draft: "/", menu: [...COMMANDS], pick: 1, rows: 8 });
+		const marked = drawn.split("\n").find((row) => row.includes("▸"));
+
+		expect(marked).toContain("/help");
+	});
+
+	// The menu is drawn out of the conversation's rows, not over them: a row drawn where a row
+	// already is scrolls the terminal by one and tears the frame in half.
+	it("takes its rows from the conversation rather than from the prompt", () => {
+		const drawn = chat({ history: long, draft: "/", menu: [...COMMANDS], pick: 0, rows: 8 });
+
+		expect(drawn.split("\n")).toHaveLength(8);
+		expect(drawn).toContain("/limit");
+		expect(drawn).toContain("line 19");
 	});
 });
 

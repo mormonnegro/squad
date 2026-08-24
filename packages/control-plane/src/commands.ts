@@ -14,12 +14,34 @@ export interface CommandContext {
 	setLimit(usd: number | null): Promise<void>;
 }
 
-const HELP = [
-	"/limit             what this agent has spent today, and against what",
-	"/limit <amount>    a ceiling, in US dollars a day",
-	"/limit off         no ceiling",
-	"!<command>         run it in this agent's sandbox, and show what it printed",
-].join("\n");
+/**
+ * Every command there is, in one list rather than in a paragraph.
+ *
+ * Written down as data because two things read it: the help, which is prose, and the menu the
+ * console opens under a `/`, which needs the name apart from the sentence about it. A command
+ * documented in only one of those two places is a command half of its users never find.
+ */
+export const COMMANDS = [
+	{
+		name: "/limit",
+		takes: "[<amount>|off]",
+		does: "what it has spent today, and the ceiling for it",
+	},
+	{ name: "/help", takes: "", does: "every command there is" },
+] as const;
+
+/** Names and the sentences about them, laid out so the sentences line up whatever the names are. */
+function laidOut(rows: readonly (readonly [string, string])[]): string {
+	const widest = Math.max(...rows.map(([name]) => name.length));
+	return rows.map(([name, does]) => `${name.padEnd(widest + 2)}${does}`).join("\n");
+}
+
+const HELP = laidOut([
+	...COMMANDS.map(
+		(command) => [`${command.name} ${command.takes}`.trimEnd(), command.does] as const,
+	),
+	["!<command>", "run it in this agent's sandbox, and show what it printed"],
+]);
 
 /**
  * Whether a line is a command rather than something to say to the agent.
@@ -30,6 +52,20 @@ const HELP = [
  */
 export function isCommand(line: string): boolean {
 	return line.startsWith("/");
+}
+
+export type Command = (typeof COMMANDS)[number];
+
+/**
+ * The commands a half-typed line could still turn out to be.
+ *
+ * Empty the moment the line has a space in it, which is what says the command has been chosen and
+ * what is being typed now is its argument. Without that, a menu offering `/limit` would still be
+ * sitting over `/limit 5` and stealing the return that was meant to send it.
+ */
+export function completions(draft: string): readonly Command[] {
+	if (!isCommand(draft) || /\s/.test(draft)) return [];
+	return COMMANDS.filter((command) => command.name.startsWith(draft));
 }
 
 /**

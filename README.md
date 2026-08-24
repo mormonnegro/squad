@@ -213,9 +213,27 @@ one turn, so an agent told four things while busy takes one turn about four thin
 turns that each saw a quarter of it.
 
 A line starting with `/` is a command about the agent rather than something said to it, answered by
-the plane without waking anything — a turn spent reading a settings change is a turn wasted. `/` on
-its own lists what there is, which is why the key is in the hint row: a command nobody can guess is
-one nobody uses.
+the plane without waking anything — a turn spent reading a settings change is a turn wasted. The
+slash opens the list of what there is, over the prompt, filtered by whatever is typed after it:
+
+```
+ ▸ /limit [<amount>|off]  what it has spent today, and the ceiling for it
+   /help                  every command there is
+╭──────────────────────────────────────────────────────────────────────╮
+│ > /li                                                                │
+╰──────────────────────────────────────────────────────────────────────╯
+ ↑↓ command   ⏎ choose   ^C quit
+```
+
+`↑↓` move between the entries and `⏎` or `tab` takes one — the three keys the menu borrows for as
+long as it is up, which is why the hint row says so while it has them. A first return chooses and a
+second sends, because every command here can be given an argument and a return that fired the
+moment a name was highlighted would make `/limit 5` the one thing the menu could not be used to
+type. The menu closes itself at the first space, which is what says the command has been chosen and
+the argument is what is being typed now.
+
+Every command is written down once, as the list this menu and `/help` are both drawn from. A
+command documented in only one of those two places is a command half its users never find.
 
 ```
 > /limit

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	COMMANDS,
 	type CommandContext,
+	completions,
 	endedIn,
 	isCommand,
 	isShell,
@@ -33,6 +35,35 @@ describe("isCommand", () => {
 		expect(isCommand("limit 5")).toBe(false);
 		// A message can be about a path, and the agent is the one who should read it.
 		expect(isCommand("look at src/limit.ts")).toBe(false);
+	});
+});
+
+/**
+ * A command nobody can name is a command nobody has, and the names were only ever written down in
+ * the answer to a command you had to already know the name of to ask for.
+ */
+describe("completions", () => {
+	it("offers everything there is under a bare slash", () => {
+		expect(completions("/")).toEqual(COMMANDS);
+	});
+
+	it("narrows to what the line could still become", () => {
+		expect(completions("/li").map((command) => command.name)).toEqual(["/limit"]);
+		expect(completions("/limit").map((command) => command.name)).toEqual(["/limit"]);
+	});
+
+	it("offers nothing for a line that is not a command", () => {
+		expect(completions("hola")).toEqual([]);
+		expect(completions("")).toEqual([]);
+		// A message about a path is a message, and the agent is the one who should read it.
+		expect(completions("/etc/hosts is wrong")).toEqual([]);
+	});
+
+	// The space is what says the command has been chosen and the argument is what is being typed
+	// now. Without this a menu offering `/limit` would sit over `/limit 5` stealing its return.
+	it("closes the moment an argument is being typed", () => {
+		expect(completions("/limit ")).toEqual([]);
+		expect(completions("/limit 5")).toEqual([]);
 	});
 });
 
