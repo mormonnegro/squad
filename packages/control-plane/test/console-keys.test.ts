@@ -31,7 +31,6 @@ class Keyboard extends PassThrough {
 const DOWN = "[B";
 const UP = "[A";
 const ENTER = "\r";
-const BACKSPACE = "\x7f";
 
 const listed = (id: string): AgentSummary => ({
 	id,
@@ -207,10 +206,13 @@ describe("the console, pressed at", () => {
 	 *
 	 * It has to be here because this is the only place it can be skipped: a plane that took
 	 * `/delete demo` from anywhere would let one line be the whole of an agent. So whatever is typed
-	 * after the command is dropped, the bare form goes down — which destroys nothing and says what
-	 * this would cost — and the prompt asks by name for the word that finishes it.
+	 * after the command is dropped and only the bare form goes down, which destroys nothing.
+	 *
+	 * What the prompt asks for is a key. The first version wanted the name typed back and was found
+	 * unanswerable at the keyboard — an empty red box with a cursor in it says a word is wanted but
+	 * not which, and the two keys are in the prompt now so there is nothing to work out.
 	 */
-	it("asks before it deletes, and says which agent it is asking about", async () => {
+	it("asks before it deletes, and says which agent and which keys", async () => {
 		const { client, commanded } = plane({ has: [listed("demo")] });
 		const console_ = open(client, [listed("demo")]);
 		try {
@@ -218,23 +220,30 @@ describe("the console, pressed at", () => {
 
 			expect(commanded).toEqual(["/delete"]);
 			expect(console_.screen()).toContain("delete demo?");
-			expect(console_.screen()).toContain("⌫ cancel");
+			expect(console_.screen()).toContain("y / n");
+			expect(console_.screen()).toContain("y delete");
 			expect(console_.screen()).toContain("● demo");
 		} finally {
 			console_.close();
 		}
 	});
 
-	// Backspacing off an empty line is how the shell prompt is left, and a question is a mode like any
-	// other: there has to be a way out of it that is not answering it.
-	it("leaves the question on a backspace, with the agent still there", async () => {
+	/**
+	 * The whole of the safety, and the reason `y` is the key rather than the return.
+	 *
+	 * Every key that is not `y` is a no, including the return that was pressed a moment ago to ask
+	 * the question — which is the key a hand is already on, and the one an accident lands on. So the
+	 * arrows, the tab and the letters cannot answer it either: the question has the keyboard until
+	 * it is answered, and one that could be arrowed away from is not a question.
+	 */
+	it("takes anything that is not y for a no, and deletes nothing", async () => {
 		const { client, commanded } = plane({ has: [listed("demo")] });
 		const console_ = open(client, [listed("demo")]);
 		try {
 			await console_.press("/delete", ENTER);
 			expect(console_.screen()).toContain("delete demo?");
 
-			await console_.press(BACKSPACE);
+			await console_.press(ENTER);
 
 			expect(console_.screen()).not.toContain("delete demo?");
 			expect(commanded).toEqual(["/delete"]);
@@ -251,12 +260,12 @@ describe("the console, pressed at", () => {
 	 * sitting in the column after `/delete` took it away is a deletion that looks like it did not
 	 * happen. So the list is asked for again the moment the command answers, not at the next poll.
 	 */
-	it("shows an agent gone as soon as the confirmed delete has answered", async () => {
+	it("deletes on a y, and shows the agent gone as soon as that has answered", async () => {
 		const { client, commanded } = plane({ has: [listed("demo")] });
 		const console_ = open(client, [listed("demo")]);
 		try {
 			await console_.press("/delete", ENTER);
-			await console_.press("demo", ENTER);
+			await console_.press("y");
 
 			expect(commanded).toEqual(["/delete", "/delete demo"]);
 			expect(console_.screen()).not.toContain("● demo");

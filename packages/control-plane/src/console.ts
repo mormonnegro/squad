@@ -598,13 +598,13 @@ export function Chat({
 	// whether or not the agent is thinking, and a line typed at what looked like the agent's prompt
 	// would run in the sandbox instead. What is lost is only the spinner — the column on the left
 	// says the same thing with `◐`.
-	// A question waiting for an answer is drawn over both of those. It is the only prompt here that
-	// destroys something when it is answered, so it says which agent out loud: the cursor may have
-	// been moved since the question was asked, and `delete?` alone would be answered by whoever is
-	// looking at it now rather than by whoever it was about.
+	// A question waiting for an answer is drawn over both of those, and it carries its own answer: the
+	// keys are in the prompt because that is where the eye already is, and a prompt that only asked
+	// left an empty red box with nothing to say what would close it. It names the agent out loud too,
+	// since `delete?` on a pane you may have scrolled or arrowed to is a question about nothing.
 	const mark =
 		confirm !== undefined
-			? `delete ${confirm}? `
+			? `delete ${confirm}?  y / n `
 			: shell !== undefined
 				? `! ${here(shell)} `
 				: thinking !== undefined
@@ -674,7 +674,9 @@ export function Chat({
 				h(Text, { color: hue }, mark),
 				doing === "" ? null : h(Text, { dimColor: true }, `${doing} `),
 				draft.slice(Math.max(0, draft.length - room)),
-				h(Text, { inverse: true }, " "),
+				// No cursor while a question is up. There is nothing to type into it, and a block blinking
+				// at the end is what made the first version of this look like it was waiting for a word.
+				confirm === undefined ? h(Text, { inverse: true }, " ") : null,
 			),
 		),
 	);
@@ -756,13 +758,9 @@ export function App({
 	// Undefined on the row under the agents, which is not an agent but the way to make one.
 	const selected = agents[Math.min(cursor, agents.length)];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
-	// the start of a path, not over the log feed, which has no prompt for a command to go into, not
-	// over a name, which is not addressed to an agent that exists yet, and not over a question waiting
-	// to be answered, where the only thing that means anything is one particular word.
-	const menu =
-		panel === "chat" && !shell && deleting === undefined && selected !== undefined
-			? completions(draft)
-			: [];
+	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
+	// not over a name, which is not addressed to an agent that exists yet.
+	const menu = panel === "chat" && !shell && selected !== undefined ? completions(draft) : [];
 	const at = Math.min(pick, menu.length - 1);
 	const chosen = menu[at];
 	const writing = selected === undefined ? undefined : live.get(selected.id);
@@ -960,6 +958,20 @@ export function App({
 			if (rolled !== 0) scroll(rolled, 0);
 			return;
 		}
+		/**
+		 * A question is up, and until it is answered there is nothing else this keyboard does.
+		 *
+		 * Above every other branch on purpose. A confirmation you can arrow away from, tab away from or
+		 * type over is not one: it either has the keyboard or it is decoration. And because it has the
+		 * keyboard, `y` is the only key that means yes and every other key means no — including the
+		 * return that was pressed a moment ago to ask the question, which is the one key a hand is
+		 * already on and the one an accident would land on.
+		 */
+		if (deleting !== undefined) {
+			setDeleting(undefined);
+			if (input === "y" || input === "Y") void ask(deleting, `/delete ${deleting}`, "say");
+			return;
+		}
 		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
 		// reaches the agent being watched from whichever one is open. Only while it is thinking: escape
 		// on an agent with nothing to stop is a key pressed at the wrong moment, not a command.
@@ -998,21 +1010,13 @@ export function App({
 		}
 		if (key.upArrow) {
 			if (menu.length > 0) setPick(Math.max(0, at - 1));
-			else {
-				// Moving to another agent is leaving the question about this one behind. Without this the
-				// red prompt follows the cursor and asks about an agent nobody is looking at any more.
-				setDeleting(undefined);
-				setCursor((prev) => Math.max(0, prev - 1));
-			}
+			else setCursor((prev) => Math.max(0, prev - 1));
 			return;
 		}
 		if (key.downArrow) {
 			if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
-			else {
-				setDeleting(undefined);
-				// One past the last agent, which is the row that makes one.
-				setCursor((prev) => Math.min(agents.length, prev + 1));
-			}
+			// One past the last agent, which is the row that makes one.
+			else setCursor((prev) => Math.min(agents.length, prev + 1));
 			return;
 		}
 		if (panel !== "chat") return;
@@ -1051,19 +1055,10 @@ export function App({
 			// Asking something is asking to see the answer, so a conversation being read back through
 			// returns to its end rather than leaving the answer to arrive out of sight.
 			setTop(undefined);
-			// The answer to a question already asked, and it goes to the agent that was asked about
-			// rather than to whichever one the cursor is on: the two are the same until an arrow is
-			// pressed, and a delete that followed the cursor would take the wrong agent away.
-			if (deleting !== undefined) {
-				setDeleting(undefined);
-				// Answering with nothing is walking away from it, the way an empty line is everywhere else.
-				if (text.length > 0) void ask(deleting, `/delete ${text}`, "say");
-				return;
-			}
 			// Intercepted here rather than left to the plane, so that the asking cannot be skipped by
 			// typing the whole thing at once: whatever was written after `/delete` is dropped and the
 			// bare command goes down, which destroys nothing and says what deleting this would cost.
-			// Then the name comes back at a prompt that says which agent it is about.
+			// The question it prints is then asked again by the prompt, where a hand can answer it.
 			if (!shell && text.split(/\s+/)[0] === "/delete") {
 				setDeleting(selected.id);
 				void ask(selected.id, "/delete", "say");
@@ -1090,12 +1085,9 @@ export function App({
 			return;
 		}
 		if (key.backspace || key.delete) {
-			// Backspacing off the end of an empty line is the way out, which is where the bang went in,
-			// and the way to leave a question unanswered without having to find another key for it.
-			if (draft === "") {
-				setShell(false);
-				setDeleting(undefined);
-			} else setDraft((prev) => prev.slice(0, -1));
+			// Backspacing off the end of an empty line is the way out, which is where the bang went in.
+			if (draft === "") setShell(false);
+			else setDraft((prev) => prev.slice(0, -1));
 			setPick(0);
 			return;
 		}
@@ -1106,7 +1098,7 @@ export function App({
 		// The bang is the mode rather than a character, and only where a mode can begin: with nothing
 		// typed yet. Anywhere else in a line it is what it looks like, since `!` is punctuation in the
 		// language this box is typed in.
-		if (!shell && deleting === undefined && draft === "" && input === "!") {
+		if (!shell && draft === "" && input === "!") {
 			setShell(true);
 			return;
 		}
@@ -1233,12 +1225,13 @@ export function App({
 						["^C", "quit"],
 					]
 				: deleting !== undefined
-					? // A question is open and there are exactly two things to do about it. Everything else
-						// the row usually says would be a way out of answering that does not exist: the keys
-						// are the answer, walking away from it, and leaving.
+					? // A question is open and it has the keyboard, so the row says the two keys that mean
+						// anything. Everything it usually offers would be a way out of answering that does
+						// not exist — and `n` is spelled out rather than left as "any other key", because a
+						// key to press is a thing a hand does and "any other key" is a thing to work out.
 						[
-							["⌫", "cancel"],
-							["⏎", "delete"],
+							["y", "delete"],
+							["n", "cancel"],
 							["^C", "quit"],
 						]
 					: selected === undefined
