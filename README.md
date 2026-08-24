@@ -228,7 +228,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
 ```
  ▸ /limit [<amount>|off]        what it has spent today, and the ceiling for it
    /mcp [<name>|add …|login …]  the MCP servers it has, and the shelf to add from
-   /rm <name> [--purge]         take this agent away, once its own name is typed back
+   /delete                      delete this agent, after asking whether you meant it
    /help                        every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
@@ -258,33 +258,37 @@ gets read: a ceiling that changed with nothing to show for it is one nobody can 
 reason for. A message that merely begins with a path — `/etc/hosts is wrong` — is still a message,
 since `/etc` is answered as a command that does not exist rather than quietly swallowed.
 
-`/rm` is the way back out of the row that makes an agent, and the only command here that destroys
-anything. It says what it would take before it takes it, and does nothing until the agent's own name
-has been typed back — the same word `agent rm --purge` asks for at a terminal, so an operator who
-has done this once already knows what the prompt wants:
+`/delete` is the way back out of the row that makes an agent, and the only command here that
+destroys anything. There is one kind of delete and it is the whole one — the container, the
+repository inside it, and the conversation — because a delete that left the name sitting in the
+column is one you were told worked and have to do again. So it asks first, in the prompt itself:
 
 ```
-> /rm
-Removing scout stops its container and throws it away. The repository inside it —
-everything it wrote, remembered and made for itself — is kept unless you say otherwise.
+> /delete
+Deleting scout stops its container and throws it away, along with the repository inside
+it: everything it wrote, remembered and made for itself. There is no copy of that anywhere.
 
-  /rm scout          keeps the repository
-  /rm scout --purge  deletes it, and there is no copy of it anywhere
-
-The name goes back in because neither of those can be undone.
-> /rm scout --purge
-Removed scout and deleted its repository. Nothing anywhere knew that name but this plane,
-so that was the last of it.
+Type scout to confirm, because this cannot be undone.
+╭──────────────────────────────────────────────────────────────────────╮
+│ delete scout?                                                        │
+╰──────────────────────────────────────────────────────────────────────╯
+ ⌫ cancel   ⏎ delete   ^C quit
 ```
 
-The name is the confirmation and never a way to name a different agent — a command reaches no
-further than the conversation it was typed in, which is what keeps `/rm` from being a way to delete
-something you were not even looking at. What is kept by default is the repository, because that is
-the agent: the container around it can be built again in a minute and none of what is inside it
-exists anywhere else. A declared agent is back at the next start whatever is typed here, since the
-config file is yours and no plane may write it, and it says so rather than leaving it to be
-discovered after a restart. A purge takes the conversation with the name, so a name given out again
-is a new agent and not one holding somebody else's memory.
+The box turns red under a hand that was about to type, which is what stops the answer from being
+reflex, and the mark names the agent rather than saying `delete?`: an arrow pressed since the
+question was asked has moved the cursor, and the delete follows the agent that was asked about and
+not the one now under it. `⌫` on an empty line walks away from it, the way it leaves the shell.
+
+The asking lives in the console rather than in the plane, and that is the point of it: a plane that
+took `/delete scout` from anywhere would let one line be the whole of an agent, so whatever is typed
+after the command is dropped and the bare form goes down first. The name that comes back is the
+confirmation and never a way to name a different agent — a command reaches no further than the
+conversation it was typed in, which is what keeps this from being a way to delete something you
+were not even looking at. A declared agent is back at the next start whatever is typed here, since
+the config file is yours and no plane may write it, and it says so rather than leaving it to be
+discovered after a restart. The conversation goes with the name, so a name given out again is a new
+agent and not one holding somebody else's memory.
 
 `!` is not a line addressed to the agent, it is the door into the box the agent lives in. Pressing
 it at an empty prompt puts you inside, and the prompt says where you are standing:

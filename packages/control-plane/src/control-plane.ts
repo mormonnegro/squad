@@ -614,9 +614,9 @@ export class ControlPlane {
 		const answer = await runCommand(line, {
 			agent: { id: agentId, created: this.#createdIds.has(agentId) },
 			// The only thing in here that destroys anything, and it is given the agent the line was
-			// typed at rather than a name off the line: whatever is typed after `/rm` is a word to be
+			// typed at rather than a name off the line: whatever is typed after `/delete` is a word to be
 			// checked against this agent, never a way to reach a different one.
-			remove: (purge) => this.remove(agentId, { purge }),
+			remove: () => this.remove(agentId, { purge: true }),
 			account: () => this.#account(agentId),
 			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
 			mcp: async () => ({

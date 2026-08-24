@@ -24,12 +24,19 @@ import type { Utterance } from "./transcript.ts";
 const REMEMBERED_LINES = 2000;
 
 /**
- * Wide enough for a name and what the name is costing.
+ * Wide enough for a name, with what the name is costing on the row underneath it.
  *
- * Four columns of it are the border and the padding, four more the pointer and the mark, so at 18
- * a name of any length at all left no room for the money and `support-emma` was itself cut short.
+ * Four columns of it are the border and the padding, four more the pointer and the mark. On one row
+ * that left the money and the wakeup bidding against each other for the last eight columns, and the
+ * money always lost: an agent with a turn booked was the one agent whose spending went unsaid.
  */
 const AGENTS_WIDTH = 22;
+
+/** What the row under a name has for the money, once the border, the padding and the indent are paid. */
+const DETAIL_ROOM = AGENTS_WIDTH - 8;
+
+/** How many cells a ceiling is drawn in. Five is a fifth apiece, which is as fine as a glance reads. */
+const BAR = 5;
 
 /** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
 const PROMPT_ROWS = 3;
@@ -365,6 +372,50 @@ function burning(agent: AgentSummary): { color?: string; dimColor: boolean } {
 	return share >= 0.8 ? { color: "yellow", dimColor: false } : { dimColor: true };
 }
 
+/**
+ * How much of a ceiling has gone, as a bar rather than as a second number.
+ *
+ * `$0.42 / $5.00` needs thirteen of the fourteen columns this row has, and says its answer in
+ * arithmetic the eye has to do six times to compare six agents. Five cells say it in one look, and
+ * the exact pair is already in the title row for whichever agent is being read.
+ *
+ * Anything spent at all fills a cell. A ceiling walked into a hundredth at a time is still being
+ * walked into, and a bar that stayed empty until the first fifth would say nothing was happening.
+ */
+export function ceiling(share: number): string {
+	const full = Math.min(BAR, Math.max(1, Math.round(share * BAR)));
+	return `${"▰".repeat(full)}${"▱".repeat(BAR - full)}`;
+}
+
+/**
+ * What the row under a name says, in the room that row has.
+ *
+ * The money is why the row exists and never gives way. The wait is next, because an agent about to
+ * act while nobody is watching is the one thing in this column that cannot be found out by looking
+ * again in a second. The bar goes first when something has to: it is a second fact about the money,
+ * and a fact about a fact is what a narrow terminal can afford to lose.
+ */
+export function detail(
+	agent: AgentSummary,
+	room: number = DETAIL_ROOM,
+): { readonly spent: string; readonly bar: string; readonly wake: string } {
+	// Nothing spent is drawn as nothing, not as `$0.00`: a fleet of ceros is a column of noise to
+	// read past, and what is being looked for here is the row that is not like the others.
+	const spent = agent.spentUsd > 0 ? money(agent.spentUsd) : "";
+	const waking = agent.wakeAt === undefined ? "" : until(agent.wakeAt);
+	// A piece costs the space in front of it, unless it is the first thing on the row.
+	const fits = (taken: number, piece: string): boolean =>
+		(taken === 0 ? piece.length : taken + 1 + piece.length) <= room;
+	const wake = waking !== "" && fits(spent.length, waking) ? waking : "";
+	const taken = spent.length + (wake === "" ? 0 : (spent === "" ? 0 : 1) + wake.length);
+	const share = against(agent);
+	// Never on its own: a ceiling with nothing spent against it is a bar of five empty cells saying
+	// that nothing has happened, which is what the missing row said already and in no columns at all.
+	const bar =
+		spent !== "" && share !== undefined && fits(taken, "x".repeat(BAR)) ? ceiling(share) : "";
+	return { spent, bar, wake };
+}
+
 export function Agents({
 	agents,
 	cursor,
@@ -379,6 +430,55 @@ export function Agents({
 }): ReactElement {
 	// The row under the last agent, which the cursor reaches with the same arrow as any other.
 	const making = cursor >= agents.length;
+	// Counted rather than sliced, because an agent is no longer one row: it is a name, and a second
+	// row under it whenever there is something to put there. The row that makes an agent is taken out
+	// of the budget before any of them are, rather than left whatever they did not use.
+	const budget = Math.max(0, rows - 1);
+	const listed: ReactElement[] = [];
+	let used = 0;
+	for (const [index, agent] of agents.entries()) {
+		if (used >= budget) break;
+		// Thinking is worth a different mark from merely being up: with several agents on screen it
+		// is the one thing you cannot find out by asking again in a second.
+		const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
+		const here = index === cursor;
+		listed.push(
+			h(
+				Text,
+				{ key: agent.id, wrap: "truncate" },
+				// A pointer rather than a reversed row: the marks are the colour in this column, and a
+				// highlight behind them takes it away exactly where it is being read.
+				h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
+				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${agent.id}`),
+			),
+		);
+		used += 1;
+		const said = detail(agent);
+		// A row of its own only when there is something to put on it. An agent that has spent nothing
+		// and booked nothing would otherwise pay a blank line for saying so, and a fleet of them would
+		// halve the number of agents the column can hold in order to say nothing several times.
+		if (used >= budget || (said.spent === "" && said.bar === "" && said.wake === "")) continue;
+		listed.push(
+			h(
+				Text,
+				{ key: `${agent.id}:spend`, wrap: "truncate" },
+				// Indented under the name rather than under the mark, so the money reads as being about
+				// the agent above it and the marks keep a column of their own to be scanned down.
+				"    ",
+				said.spent === "" ? undefined : h(Text, burning(agent), said.spent),
+				said.bar === "" ? undefined : h(Text, burning(agent), ` ${said.bar}`),
+				said.wake === ""
+					? undefined
+					: h(
+							Text,
+							{ color: "yellow", dimColor: true },
+							`${said.spent === "" ? "" : " "}${said.wake}`,
+						),
+			),
+		);
+		used += 1;
+	}
 	return h(
 		Box,
 		{
@@ -393,36 +493,7 @@ export function Agents({
 			paddingX: 1,
 		},
 		h(Text, { dimColor: true, key: "title" }, "agents"),
-		...agents.slice(0, Math.max(0, rows - 1)).map((agent, index) => {
-			// Thinking is worth a different mark from merely being up: with several agents on screen it
-			// is the one thing you cannot find out by asking again in a second.
-			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
-			const here = index === cursor;
-			// What the column has left once its borders, its padding, the pointer, the mark and the name
-			// have been paid for. A long enough name leaves none of it, and is itself truncated.
-			const room = AGENTS_WIDTH - 4 - (4 + agent.id.length);
-			// An agent that booked its own next turn is going to act while nobody is watching. The wait
-			// is the only warning of that there is, so it is on the row rather than behind a command,
-			// and it is first: the money beside it is ambient, and a column that dropped the warning to
-			// keep the ambient thing would be worse than one that said neither.
-			const waking = agent.wakeAt !== undefined ? ` ${until(agent.wakeAt)}` : "";
-			const wake = waking.length <= room ? waking : "";
-			// Nothing spent is drawn as nothing, not as `$0.00`: a fleet of ceros is a column of noise
-			// to read past, and what is being looked for here is the row that is not like the others.
-			const spending = agent.spentUsd > 0 ? ` ${money(agent.spentUsd)}` : "";
-			const spent = spending.length <= room - wake.length ? spending : "";
-			return h(
-				Text,
-				{ key: agent.id, wrap: "truncate" },
-				// A pointer rather than a reversed row: the marks are the colour in this column, and a
-				// highlight behind them takes it away exactly where it is being read.
-				h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
-				h(Text, { color: mark.color }, mark.glyph),
-				h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${agent.id}`),
-				wake === "" ? undefined : h(Text, { color: "yellow", dimColor: true }, wake),
-				spent === "" ? undefined : h(Text, burning(agent), spent),
-			);
-		}),
+		...listed,
 		// Last, and never given up to make room: making an agent is a row in the list of agents because
 		// that is where somebody with none of them is already looking, and where somebody who wants
 		// another one looks too. Behind a command it would be a thing only whoever wrote it can find.
@@ -522,6 +593,7 @@ export function Chat({
 	thinking,
 	top,
 	shell,
+	confirm,
 	menu,
 	pick,
 }: {
@@ -534,6 +606,8 @@ export function Chat({
 	readonly top: number | undefined;
 	/** The directory the next `!` runs in, or nothing at all while the prompt is the agent's. */
 	readonly shell: string | undefined;
+	/** The name being asked for before a delete goes through, or nothing while none was asked for. */
+	readonly confirm: string | undefined;
 	/** What the line being typed could still turn out to be, which is empty unless it began with a slash. */
 	readonly menu: readonly Command[];
 	readonly pick: number;
@@ -553,12 +627,18 @@ export function Chat({
 	// whether or not the agent is thinking, and a line typed at what looked like the agent's prompt
 	// would run in the sandbox instead. What is lost is only the spinner — the column on the left
 	// says the same thing with `◐`.
+	// A question waiting for an answer is drawn over both of those. It is the only prompt here that
+	// destroys something when it is answered, so it says which agent out loud: the cursor may have
+	// been moved since the question was asked, and `delete?` alone would be answered by whoever is
+	// looking at it now rather than by whoever it was about.
 	const mark =
-		shell !== undefined
-			? `! ${here(shell)} `
-			: thinking !== undefined
-				? `${thinking.frame} ${thinking.seconds}s `
-				: "> ";
+		confirm !== undefined
+			? `delete ${confirm}? `
+			: shell !== undefined
+				? `! ${here(shell)} `
+				: thinking !== undefined
+					? `${thinking.frame} ${thinking.seconds}s `
+					: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
 	// Beside the clock rather than in the conversation: what a turn is doing right now is worth a
@@ -567,13 +647,22 @@ export function Chat({
 	// stuck on the model and stuck on a test suite. It gives way to the line being typed rather than
 	// the other way round, because the prompt is what a hand is on.
 	const doing =
-		shell === undefined && thinking?.step !== undefined
+		shell === undefined && confirm === undefined && thinking?.step !== undefined
 			? clipped(thinking.step, width - mark.length - DRAFT_ROOM)
 			: "";
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
 	// its end, where the cursor is.
 	const room = Math.max(0, width - mark.length - (doing === "" ? 0 : doing.length + 1) - 1);
-	const hue = shell !== undefined ? "magenta" : thinking !== undefined ? "yellow" : "cyan";
+	// Red is the whole warning, and the border carries it too: the box the hand is in changes colour
+	// under a line already half typed, which is what stops the answer from being reflex.
+	const hue =
+		confirm !== undefined
+			? "red"
+			: shell !== undefined
+				? "magenta"
+				: thinking !== undefined
+					? "yellow"
+					: "cyan";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -687,13 +776,22 @@ export function App({
 	// Why the last name was not taken. Kept until the next attempt, because the name that earned it
 	// is still in the prompt being edited.
 	const [refused, setRefused] = useState<string | undefined>(undefined);
+	// The agent a `/delete` was typed at, while the console is waiting to hear that it was meant. The
+	// asking lives here rather than in the plane because it is the one part of a delete that has to
+	// happen at a keyboard: a plane that answered `/delete <name>` without ever having been asked the
+	// question would let a single line through, and that line is the whole of an agent.
+	const [deleting, setDeleting] = useState<string | undefined>(undefined);
 
 	// Undefined on the row under the agents, which is not an agent but the way to make one.
 	const selected = agents[Math.min(cursor, agents.length)];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
-	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
-	// not over a name, which is not addressed to an agent that exists yet.
-	const menu = panel === "chat" && !shell && selected !== undefined ? completions(draft) : [];
+	// the start of a path, not over the log feed, which has no prompt for a command to go into, not
+	// over a name, which is not addressed to an agent that exists yet, and not over a question waiting
+	// to be answered, where the only thing that means anything is one particular word.
+	const menu =
+		panel === "chat" && !shell && deleting === undefined && selected !== undefined
+			? completions(draft)
+			: [];
 	const at = Math.min(pick, menu.length - 1);
 	const chosen = menu[at];
 	const writing = selected === undefined ? undefined : live.get(selected.id);
@@ -830,9 +928,9 @@ export function App({
 			if (isCommand(body)) {
 				await client.command(agentId, body).catch(() => {});
 				// Asked again the moment the command is answered rather than waited two seconds for. A
-				// command is the one thing typed here that changes what the list says: `/rm` takes a row
-				// out of it, `/limit` changes the number in the title row above it. An agent that is
-				// still listed after being removed is a delete that looks like it did not happen.
+				// command is the one thing typed here that changes what the list says: `/delete` takes a
+				// row out of it, `/limit` changes the number in the title row above it. An agent that is
+				// still listed after being deleted is a delete that looks like it did not happen.
 				await client
 					.agents()
 					.then(setAgents)
@@ -929,13 +1027,21 @@ export function App({
 		}
 		if (key.upArrow) {
 			if (menu.length > 0) setPick(Math.max(0, at - 1));
-			else setCursor((prev) => Math.max(0, prev - 1));
+			else {
+				// Moving to another agent is leaving the question about this one behind. Without this the
+				// red prompt follows the cursor and asks about an agent nobody is looking at any more.
+				setDeleting(undefined);
+				setCursor((prev) => Math.max(0, prev - 1));
+			}
 			return;
 		}
 		if (key.downArrow) {
 			if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
-			// One past the last agent, which is the row that makes one.
-			else setCursor((prev) => Math.min(agents.length, prev + 1));
+			else {
+				setDeleting(undefined);
+				// One past the last agent, which is the row that makes one.
+				setCursor((prev) => Math.min(agents.length, prev + 1));
+			}
 			return;
 		}
 		if (panel !== "chat") return;
@@ -974,6 +1080,24 @@ export function App({
 			// Asking something is asking to see the answer, so a conversation being read back through
 			// returns to its end rather than leaving the answer to arrive out of sight.
 			setTop(undefined);
+			// The answer to a question already asked, and it goes to the agent that was asked about
+			// rather than to whichever one the cursor is on: the two are the same until an arrow is
+			// pressed, and a delete that followed the cursor would take the wrong agent away.
+			if (deleting !== undefined) {
+				setDeleting(undefined);
+				// Answering with nothing is walking away from it, the way an empty line is everywhere else.
+				if (text.length > 0) void ask(deleting, `/delete ${text}`, "say");
+				return;
+			}
+			// Intercepted here rather than left to the plane, so that the asking cannot be skipped by
+			// typing the whole thing at once: whatever was written after `/delete` is dropped and the
+			// bare command goes down, which destroys nothing and says what deleting this would cost.
+			// Then the name comes back at a prompt that says which agent it is about.
+			if (!shell && text.split(/\s+/)[0] === "/delete") {
+				setDeleting(selected.id);
+				void ask(selected.id, "/delete", "say");
+				return;
+			}
 			// Deliberately not awaited: the turn runs while the console keeps taking keys, which is what
 			// lets an agent be asked something and another one be watched while it thinks.
 			if (text.length > 0) void ask(selected.id, text, shell ? "shell" : "say");
@@ -995,9 +1119,12 @@ export function App({
 			return;
 		}
 		if (key.backspace || key.delete) {
-			// Backspacing off the end of an empty line is the way out, which is where the bang went in.
-			if (draft === "") setShell(false);
-			else setDraft((prev) => prev.slice(0, -1));
+			// Backspacing off the end of an empty line is the way out, which is where the bang went in,
+			// and the way to leave a question unanswered without having to find another key for it.
+			if (draft === "") {
+				setShell(false);
+				setDeleting(undefined);
+			} else setDraft((prev) => prev.slice(0, -1));
 			setPick(0);
 			return;
 		}
@@ -1008,7 +1135,7 @@ export function App({
 		// The bang is the mode rather than a character, and only where a mode can begin: with nothing
 		// typed yet. Anywhere else in a line it is what it looks like, since `!` is punctuation in the
 		// language this box is typed in.
-		if (!shell && draft === "" && input === "!") {
+		if (!shell && deleting === undefined && draft === "" && input === "!") {
 			setShell(true);
 			return;
 		}
@@ -1113,6 +1240,7 @@ export function App({
 									shell && selected !== undefined
 										? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
 										: undefined,
+								confirm: deleting,
 								menu,
 								pick: at,
 								key: "chat",
@@ -1133,33 +1261,42 @@ export function App({
 						["⏎", "choose"],
 						["^C", "quit"],
 					]
-				: selected === undefined
-					? // Nothing else the row usually offers is true here: there is no conversation to
-						// scroll, no shell to open and no commands, until the name has been given.
+				: deleting !== undefined
+					? // A question is open and there are exactly two things to do about it. Everything else
+						// the row usually says would be a way out of answering that does not exist: the keys
+						// are the answer, walking away from it, and leaving.
 						[
-							["↑↓", "agent"],
-							["⏎", "create"],
+							["⌫", "cancel"],
+							["⏎", "delete"],
 							["^C", "quit"],
 						]
-					: [
-							["↑↓", "agent"],
-							["^U^D", "scroll"],
-							["tab", panel === "chat" ? "logs" : "chat"],
-							// A key nobody guesses is pressable. The rest of this row is what to press to move
-							// around; this one is what to press to be told what else there is. In the shell the
-							// two of them say nothing true, and the way back out is worth saying instead.
-							...(shell
-								? [["⌫", "chat"]]
-								: [
-										["/", "commands"],
-										["!", "shell"],
-									]),
-							["^C", "quit"],
-							// Last, so that the rest of the row does not move as it comes and goes, and shown
-							// only while there is something to stop: the key does nothing at any other time,
-							// and offering it then is how a hint becomes a thing that lies.
-							...(busy.size > 0 ? [["esc", "stop"]] : []),
-						]
+					: selected === undefined
+						? // Nothing else the row usually offers is true here: there is no conversation to
+							// scroll, no shell to open and no commands, until the name has been given.
+							[
+								["↑↓", "agent"],
+								["⏎", "create"],
+								["^C", "quit"],
+							]
+						: [
+								["↑↓", "agent"],
+								["^U^D", "scroll"],
+								["tab", panel === "chat" ? "logs" : "chat"],
+								// A key nobody guesses is pressable. The rest of this row is what to press to move
+								// around; this one is what to press to be told what else there is. In the shell the
+								// two of them say nothing true, and the way back out is worth saying instead.
+								...(shell
+									? [["⌫", "chat"]]
+									: [
+											["/", "commands"],
+											["!", "shell"],
+										]),
+								["^C", "quit"],
+								// Last, so that the rest of the row does not move as it comes and goes, and shown
+								// only while there is something to stop: the key does nothing at any other time,
+								// and offering it then is how a hint becomes a thing that lies.
+								...(busy.size > 0 ? [["esc", "stop"]] : []),
+							]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

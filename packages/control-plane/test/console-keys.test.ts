@@ -31,6 +31,7 @@ class Keyboard extends PassThrough {
 const DOWN = "[B";
 const UP = "[A";
 const ENTER = "\r";
+const BACKSPACE = "\x7f";
 
 const listed = (id: string): AgentSummary => ({
 	id,
@@ -73,9 +74,9 @@ function plane(options: { refuses?: string; has?: readonly AgentSummary[] } = {}
 		wake: async () => "",
 		command: async (agentId: string, line: string) => {
 			commanded.push(line);
-			// The one command that changes what the plane has. Answered the way the plane answers it:
-			// by being gone from the list the next time anyone asks, and not before.
-			if (line.startsWith("/rm ")) roster = roster.filter((one) => one.id !== agentId);
+			// The one command that changes what the plane has, and only in its confirmed form. Answered
+			// the way the plane answers it: by being gone from the list the next time anyone asks.
+			if (line.startsWith("/delete ")) roster = roster.filter((one) => one.id !== agentId);
 			return "";
 		},
 		shell: async () => ({ text: "", cwd: "/" }),
@@ -202,19 +203,62 @@ describe("the console, pressed at", () => {
 	});
 
 	/**
-	 * The list is polled every couple of seconds, and this test does not wait that long on purpose.
+	 * The confirmation, which is the console's and not the plane's.
 	 *
-	 * A command is the one thing typed here that changes what the plane has, and an agent still
-	 * sitting in the column after `/rm` took it away is a removal that looks like it did not happen.
-	 * So the list is asked for again the moment the command answers, rather than at the next poll.
+	 * It has to be here because this is the only place it can be skipped: a plane that took
+	 * `/delete demo` from anywhere would let one line be the whole of an agent. So whatever is typed
+	 * after the command is dropped, the bare form goes down — which destroys nothing and says what
+	 * this would cost — and the prompt asks by name for the word that finishes it.
 	 */
-	it("shows an agent gone as soon as the command that removed it has answered", async () => {
+	it("asks before it deletes, and says which agent it is asking about", async () => {
 		const { client, commanded } = plane({ has: [listed("demo")] });
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press("/rm demo --purge", ENTER);
+			await console_.press("/delete demo", ENTER);
 
-			expect(commanded).toEqual(["/rm demo --purge"]);
+			expect(commanded).toEqual(["/delete"]);
+			expect(console_.screen()).toContain("delete demo?");
+			expect(console_.screen()).toContain("⌫ cancel");
+			expect(console_.screen()).toContain("● demo");
+		} finally {
+			console_.close();
+		}
+	});
+
+	// Backspacing off an empty line is how the shell prompt is left, and a question is a mode like any
+	// other: there has to be a way out of it that is not answering it.
+	it("leaves the question on a backspace, with the agent still there", async () => {
+		const { client, commanded } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("/delete", ENTER);
+			expect(console_.screen()).toContain("delete demo?");
+
+			await console_.press(BACKSPACE);
+
+			expect(console_.screen()).not.toContain("delete demo?");
+			expect(commanded).toEqual(["/delete"]);
+			expect(console_.screen()).toContain("● demo");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/**
+	 * The list is polled every couple of seconds, and this test does not wait that long on purpose.
+	 *
+	 * A command is the one thing typed here that changes what the plane has, and an agent still
+	 * sitting in the column after `/delete` took it away is a deletion that looks like it did not
+	 * happen. So the list is asked for again the moment the command answers, not at the next poll.
+	 */
+	it("shows an agent gone as soon as the confirmed delete has answered", async () => {
+		const { client, commanded } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("/delete", ENTER);
+			await console_.press("demo", ENTER);
+
+			expect(commanded).toEqual(["/delete", "/delete demo"]);
 			expect(console_.screen()).not.toContain("● demo");
 			expect(console_.screen()).toContain("▸ + new agent");
 		} finally {

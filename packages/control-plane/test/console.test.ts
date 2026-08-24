@@ -280,7 +280,7 @@ describe("Agents", () => {
 			h(Agents, { agents: [waiting], cursor: 0, busy: new Map<string, number>(), rows: 10 }),
 		);
 
-		expect(drawn).toContain("scout 15m");
+		expect(drawn).toContain("15m");
 	});
 
 	it("marks a thinking agent apart from one that is only up", () => {
@@ -331,7 +331,7 @@ describe("Agents", () => {
 			}),
 		);
 
-		expect(drawn).toContain("scout $0.42");
+		expect(drawn).toContain("$0.42");
 	});
 
 	// A fleet of zeroes is a column of noise to read past, and what is looked for here is the row
@@ -344,8 +344,6 @@ describe("Agents", () => {
 		expect(drawn).not.toContain("$0.00");
 	});
 
-	// The wait is a warning that the agent will act unwatched; the money is ambient. A row too narrow
-	// for both that kept the ambient thing would be worse than one that said neither.
 	// Making an agent is a row in the list of agents because that is where somebody who wants one is
 	// already looking. Behind a command it is a thing only whoever wrote the command ever finds.
 	it("offers a row that makes one, under the agents", () => {
@@ -392,7 +390,9 @@ describe("Agents", () => {
 		expect(drawn).not.toContain("scribe");
 	});
 
-	it("keeps the warning over the money when only one of them fits", () => {
+	// The two of them used to bid for the same eight columns and the money always lost, so the one
+	// agent whose spending went unsaid was the one about to spend again while nobody was watching.
+	it("says what an agent has spent even when it has a turn booked", () => {
 		const drawn = renderToString(
 			h(Agents, {
 				agents: [
@@ -409,7 +409,62 @@ describe("Agents", () => {
 		);
 
 		expect(drawn).toContain("15m");
-		expect(drawn).not.toContain("$1.50");
+		expect(drawn).toContain("$1.50");
+	});
+
+	// Which agent is walking into its ceiling is the question the money alone cannot answer: $4 is
+	// nothing against fifty and almost everything against five.
+	it("draws what an agent has spent against what it may", () => {
+		const near = renderToString(
+			h(Agents, {
+				agents: [{ ...listed("scout", true), spentUsd: 4, limitUsd: 5 }],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		);
+		const far = renderToString(
+			h(Agents, {
+				agents: [{ ...listed("scout", true), spentUsd: 4, limitUsd: 50 }],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		);
+
+		expect(near).toContain("▰▰▰▰▱");
+		expect(far).toContain("▰▱▱▱▱");
+	});
+
+	// A ceiling with nothing spent against it is five empty cells saying nothing has happened, which
+	// is what having no row at all says, in no columns.
+	it("draws no bar for an agent that has spent nothing", () => {
+		const drawn = renderToString(
+			h(Agents, {
+				agents: [{ ...listed("scout", true), limitUsd: 5 }],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		);
+
+		expect(drawn).not.toContain("▱");
+	});
+
+	// An agent is a name and, when there is something to say under it, a second row. The budget is
+	// rows and not agents, or the column draws itself past its own border and over the pane beside it.
+	it("counts the row under a name against the room it has", () => {
+		const spending = [
+			{ ...listed("scout", true), spentUsd: 0.42 },
+			{ ...listed("scribe", true), spentUsd: 0.42 },
+		];
+		const drawn = renderToString(
+			h(Agents, { agents: spending, cursor: 0, busy: new Map<string, number>(), rows: 3 }),
+		);
+
+		expect(drawn).toContain("scout");
+		expect(drawn).not.toContain("scribe");
+		expect(drawn).toContain("+ new agent");
 	});
 });
 
@@ -476,6 +531,7 @@ describe("Chat", () => {
 		thinking?: Thinking | undefined;
 		top?: number | undefined;
 		shell?: string | undefined;
+		confirm?: string | undefined;
 		menu?: readonly Command[];
 		pick?: number;
 	}) =>
@@ -487,6 +543,7 @@ describe("Chat", () => {
 				thinking: undefined,
 				top: undefined,
 				shell: undefined,
+				confirm: undefined,
 				menu: [],
 				pick: 0,
 				...props,

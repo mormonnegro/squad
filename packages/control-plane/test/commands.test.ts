@@ -29,9 +29,9 @@ function context(
 		wantsAccount?: readonly string[];
 		/** Servers the plane already holds a login for. */
 		loggedIn?: readonly string[];
-		/** Which agent the line is being typed at, since `/rm` asks for that name back. */
+		/** Which agent the line is being typed at, since `/delete` asks for that name back. */
 		agentId?: string;
-		/** Made at a keyboard rather than declared, which decides whether removing it is the last of it. */
+		/** Made at a keyboard rather than declared, which decides whether deleting it is the last of it. */
 		created?: boolean;
 	} = {},
 ) {
@@ -42,8 +42,8 @@ function context(
 	const logins = new Set<string>(start.loggedIn ?? []);
 	const started: { name: string; clientId: string | undefined }[] = [];
 	const pasted: { name: string; redirected: string }[] = [];
-	/** Every removal that got as far as the plane, which is the half no answer can show. */
-	const removed: boolean[] = [];
+	/** Every deletion that got as far as the plane, which is the half no answer can show. */
+	const removed: string[] = [];
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
@@ -60,8 +60,8 @@ function context(
 		removed,
 		context: {
 			agent: { id: start.agentId ?? "scout", created: start.created ?? true },
-			remove: async (purge: boolean) => {
-				removed.push(purge);
+			remove: async () => {
+				removed.push(start.agentId ?? "scout");
 			},
 			account: async () => state,
 			setLimit: async (usd: number | null) => {
@@ -242,14 +242,16 @@ describe("runCommand", () => {
  * what it does. Every test here that ends in `removed` being empty is a way somebody could have
  * lost an agent by typing.
  */
-describe("/rm", () => {
-	it("says what it would take and what it would leave, and takes nothing", async () => {
+describe("/delete", () => {
+	// The bare command is the question, not a shorter way to do the thing. Everything below depends
+	// on that: if this ever deleted, the console's confirmation would be asking after the fact.
+	it("asks, and deletes nothing while it is asking", async () => {
 		const { context: ctx, removed } = context({ agentId: "scout" });
 
-		const answer = await runCommand("/rm", ctx);
+		const answer = await runCommand("/delete", ctx);
 
-		expect(answer).toContain("/rm scout");
-		expect(answer).toContain("--purge");
+		expect(answer).toContain("Type scout to confirm");
+		expect(answer).toContain("cannot be undone");
 		expect(removed).toEqual([]);
 	});
 
@@ -259,27 +261,20 @@ describe("/rm", () => {
 	it("refuses a name that is not this agent's", async () => {
 		const { context: ctx, removed } = context({ agentId: "scout" });
 
-		const answer = await runCommand("/rm maxi", ctx);
+		const answer = await runCommand("/delete maxi", ctx);
 
 		expect(answer).toContain('"maxi" is not this agent');
 		expect(removed).toEqual([]);
 	});
 
-	it("keeps the repository unless the flag says otherwise", async () => {
-		const { context: ctx, removed } = context({ agentId: "scout" });
-
-		const answer = await runCommand("/rm scout", ctx);
-
-		expect(removed).toEqual([false]);
-		expect(answer).toContain("repository is untouched");
-	});
-
-	it("deletes the repository when asked, and says that was the last of it", async () => {
+	// The repository goes too, always. A delete that left it behind is what sent the operator back
+	// here to type the same thing again, having been told the first one worked.
+	it("takes the whole agent when the name comes back, and says that was the last of it", async () => {
 		const { context: ctx, removed } = context({ agentId: "scout", created: true });
 
-		const answer = await runCommand("/rm scout --purge", ctx);
+		const answer = await runCommand("/delete scout", ctx);
 
-		expect(removed).toEqual([true]);
+		expect(removed).toEqual(["scout"]);
 		expect(answer).toContain("the last of it");
 	});
 
@@ -288,19 +283,19 @@ describe("/rm", () => {
 	it("says a declared agent comes back, and comes back empty", async () => {
 		const { context: ctx } = context({ agentId: "scout", created: false });
 
-		const answer = await runCommand("/rm scout --purge", ctx);
+		const answer = await runCommand("/delete scout", ctx);
 
 		expect(answer).toContain("comes back empty");
 	});
 
-	// A flag that was meant to be `--purge` and is not must not read as the safe form and quietly keep
-	// what it was typed to delete — nor as the dangerous one.
-	it("removes nothing on a word it does not know", async () => {
+	// The name is the whole of what this takes. A word after it was meant to be something, and
+	// guessing which of the two things it meant is how the wrong one happens.
+	it("deletes nothing on a word it does not know", async () => {
 		const { context: ctx, removed } = context({ agentId: "scout" });
 
-		const answer = await runCommand("/rm scout --purgue", ctx);
+		const answer = await runCommand("/delete scout --purge", ctx);
 
-		expect(answer).toContain("only --purge");
+		expect(answer).toContain("Only the name is");
 		expect(removed).toEqual([]);
 	});
 });

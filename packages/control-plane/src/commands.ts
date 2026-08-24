@@ -37,7 +37,7 @@ export interface CommandContext {
 	 */
 	granted(host: string): Promise<boolean>;
 	/**
-	 * Takes this agent's sandbox away, and its repository too if asked.
+	 * Takes this agent away: the container, the repository inside it, and the conversation.
 	 *
 	 * The one destructive thing in here, and the exception that says what the rest of this interface
 	 * is for. A grant is refused because a slip of the keyboard would widen an agent's reach without
@@ -45,7 +45,7 @@ export interface CommandContext {
 	 * own name has been typed after it. It also reaches no further than the agent it was typed at,
 	 * which is what keeps a command from being a way to delete something you were not even looking at.
 	 */
-	remove(purge: boolean): Promise<void>;
+	remove(): Promise<void>;
 	addServer(name: string, server: McpServer): Promise<void>;
 	attachServer(name: string): Promise<void>;
 	detachServer(name: string): Promise<void>;
@@ -79,11 +79,7 @@ export const COMMANDS = [
 		takes: "[<name>|add …|login …]",
 		does: "the MCP servers it has, and the shelf to add from",
 	},
-	{
-		name: "/rm",
-		takes: "<name> [--purge]",
-		does: "take this agent away, once its own name is typed back",
-	},
+	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{ name: "/help", takes: "", does: "every command there is" },
 ] as const;
 
@@ -454,56 +450,46 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 }
 
 /**
- * Takes the agent away, once whoever typed it has written its name out.
+ * Deletes the agent, once whoever typed it has written its name out.
+ *
+ * There is one kind of delete here and it is the whole one: the container and the repository
+ * inside it, everything the agent wrote, remembered and made for itself. A delete that leaves the
+ * agent in the list is not what the word means at a console, and an operator who typed it and saw
+ * the name still sitting there has been told the thing failed.
  *
  * The name is the confirmation and nothing else — it can only ever be this agent's, because a
- * command reaches no further than the conversation it was typed in. Borrowed whole from the CLI,
- * which asks for the same word before the same thing: an operator who has done this once at a
- * terminal already knows what this prompt wants, and there is nothing new to be surprised by at the
- * moment they are about to destroy something.
- *
- * What is kept by default is the repository, because that is the agent. The container around it is
- * a thing the plane can build again in a minute; what the agent wrote, remembered and made for
- * itself exists nowhere else at all.
+ * command reaches no further than the conversation it was typed in. So `/delete` alone destroys
+ * nothing: it is the question, and the name typed back is the answer to it.
  */
 async function remove(words: readonly string[], context: CommandContext): Promise<string> {
 	const { id, created } = context.agent;
 	const [typed = "", ...rest] = words;
-	// Said before the name is checked, because the whole of the answer to an empty `/rm` is what the
-	// two forms of it do — and that is also the answer to a `/rm` typed to find out.
+	// Said before the name is checked, because the whole of the answer to a bare `/delete` is what
+	// the delete would do — and that is also the answer to a `/delete` typed to find out.
 	if (typed === "") {
 		return [
-			`Removing ${id} stops its container and throws it away. The repository inside it —`,
-			"everything it wrote, remembered and made for itself — is kept unless you say otherwise.",
-			"",
-			laidOut([
-				[`  /rm ${id}`, "keeps the repository"],
-				[`  /rm ${id} --purge`, "deletes it, and there is no copy of it anywhere"],
-			]),
+			`Deleting ${id} stops its container and throws it away, along with the repository inside`,
+			"it: everything it wrote, remembered and made for itself. There is no copy of that anywhere.",
 			"",
 			// The one thing that makes the rest of this readable rather than an obstacle: it says why
 			// there is a word to type at all, so it reads as a moment to think and not as a formality.
-			"The name goes back in because neither of those can be undone.",
+			`Type ${id} to confirm, because this cannot be undone.`,
 		].join("\n");
 	}
 	if (typed !== id) {
-		return `"${typed}" is not this agent. /rm takes ${id}'s own name back as the confirmation: /rm ${id}`;
+		return `"${typed}" is not this agent. /delete takes ${id}'s own name back as the confirmation: /delete ${id}`;
 	}
-	const purge = rest.includes("--purge");
-	const unknown = rest.find((word) => word !== "--purge");
+	const unknown = rest[0];
 	if (unknown !== undefined)
-		return `"${unknown}" is not something /rm takes. There is only --purge.`;
+		return `"${unknown}" is not something /delete takes. Only the name is.`;
 
-	await context.remove(purge);
-	if (!purge) {
-		return `Removed ${id}'s sandbox. Its repository is untouched, and the plane puts a container back around it at the next start.`;
-	}
+	await context.remove();
 	// A declared agent returns whatever happens here, because the config file is the operator's and
 	// no plane may write it. Said now rather than left to be discovered after a restart, when an
 	// agent somebody deleted is up again and the obvious conclusion is that the delete never worked.
 	return created
-		? `Removed ${id} and deleted its repository. Nothing anywhere knew that name but this plane, so that was the last of it.`
-		: `Removed ${id} and deleted its repository. It is declared in the config, which this cannot write, so it comes back empty at the next start.`;
+		? `Deleted ${id}, and its repository with it. Nothing anywhere knew that name but this plane, so that was the last of it.`
+		: `Deleted ${id}, and its repository with it. It is declared in the config, which this cannot write, so it comes back empty at the next start.`;
 }
 
 /**
@@ -521,7 +507,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	// The words rather than the argument: a server is a name and then a whole command line, and
 	// joining those back into one string only to split them again would lose where each of them ended.
 	if (name === "mcp") return mcp(rest, context);
-	if (name === "rm") return remove(rest, context);
+	if (name === "delete") return remove(rest, context);
 
 	if (name === "limit") {
 		if (argument === "") return spentAgainst(await context.account());
