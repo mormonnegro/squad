@@ -552,8 +552,14 @@ describe("Chat", () => {
 			columns: 90,
 		});
 
-		expect(drawn).toContain("/limit [<amount>|off]  what");
-		expect(drawn).toContain("/help                  every");
+		const named = COMMANDS.map((command) => `${command.name} ${command.takes}`.trimEnd());
+		const widest = Math.max(...named.map((name) => name.length));
+
+		for (const [index, command] of COMMANDS.entries()) {
+			expect(drawn).toContain(
+				`${named[index]?.padEnd(widest + 2)}${command.does.split(" ")[0] ?? ""}`,
+			);
+		}
 	});
 
 	// The arrows are the only way to reach an entry that is not the first, so which one they are on
@@ -562,7 +568,7 @@ describe("Chat", () => {
 		const drawn = chat({ history: [], draft: "/", menu: [...COMMANDS], pick: 1, rows: 8 });
 		const marked = drawn.split("\n").find((row) => row.includes("▸"));
 
-		expect(marked).toContain("/help");
+		expect(marked).toContain(COMMANDS[1]?.name);
 	});
 
 	// The menu is drawn out of the conversation's rows, not over them: a row drawn where a row

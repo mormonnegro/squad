@@ -9,6 +9,7 @@ import {
 	EgressBroker,
 	EnvSecretStore,
 	type Grant,
+	GrantSet,
 	loadOrCreateCertificateAuthority,
 	type SecretStore,
 	StaticAgentDirectory,
@@ -24,6 +25,7 @@ import {
 	shellScript,
 } from "./commands.ts";
 import { CreatedAgentStore } from "./created-agents.ts";
+import { McpShelf } from "./mcp.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
@@ -210,6 +212,7 @@ export class ControlPlane {
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
+	readonly #mcp: McpShelf;
 	/**
 	 * Where each agent's last `!` left the operator standing.
 	 *
@@ -246,6 +249,7 @@ export class ControlPlane {
 		this.#created = new CreatedAgentStore(join(this.#stateDir, "agents.json"));
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
+		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -389,6 +393,9 @@ export class ControlPlane {
 		if (options.purge === true && this.#createdIds.delete(agentId)) {
 			await this.#created.forget(agentId);
 			await this.#spend.forget(agentId);
+			// What it was given, not what was found: a server stays on the shelf for the agents that
+			// are left, and for the one somebody makes next.
+			await this.#mcp.forgetAgent(agentId);
 			this.#agents.splice(index, 1);
 		}
 	}
@@ -477,6 +484,21 @@ export class ControlPlane {
 		const answer = await runCommand(line, {
 			account: () => this.#account(agentId),
 			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
+			mcp: async () => ({
+				shelf: await this.#mcp.servers(),
+				held: await this.#mcp.attached(agentId),
+			}),
+			// Asked of the same set the proxy will ask, so what the operator is told here is what the
+			// agent will actually meet — rather than a second opinion that can be right while the wire
+			// says otherwise.
+			granted: async (host) =>
+				new GrantSet(this.#agents.find((agent) => agent.id === agentId)?.grants ?? []).allowsHost(
+					host,
+				),
+			addServer: (name, server) => this.#mcp.add(name, server),
+			attachServer: (name) => this.#mcp.attach(agentId, name),
+			detachServer: (name) => this.#mcp.detach(agentId, name),
+			forgetServer: (name) => this.#mcp.forget(name),
 		});
 		await this.#record(agentId, { from: "plane", text: answer });
 		return answer;

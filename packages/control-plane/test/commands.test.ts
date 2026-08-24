@@ -11,18 +11,54 @@ import {
 	shellOutput,
 	shellScript,
 } from "../src/commands.ts";
+import type { McpServer } from "../src/mcp.ts";
 
 /** A context that remembers what was asked of it, which is the half a string cannot show. */
-function context(start: { spentUsd?: number; limitUsd?: number } = {}) {
+function context(
+	start: {
+		spentUsd?: number;
+		limitUsd?: number;
+		/** Hosts the operator granted. Nothing a command does can add to this, which is the point. */
+		grants?: readonly string[];
+		/** Servers already on the shelf, as another agent's `/mcp add` would have left them. */
+		shelf?: Record<string, McpServer>;
+	} = {},
+) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
 	const set: (number | null)[] = [];
+	const shelf = new Map<string, McpServer>(Object.entries(start.shelf ?? {}));
+	const held = new Set<string>();
+	const named = (name: string) => {
+		const server = shelf.get(name);
+		return server === undefined ? [] : [{ name, server }];
+	};
 	return {
 		set,
+		shelf,
+		held,
 		context: {
 			account: async () => state,
 			setLimit: async (usd: number | null) => {
 				set.push(usd);
 				state.limitUsd = usd ?? undefined;
+			},
+			mcp: async () => ({
+				shelf: [...shelf.keys()].flatMap(named),
+				held: [...held].flatMap(named),
+			}),
+			granted: async (host: string) => (start.grants ?? []).includes(host),
+			addServer: async (name: string, server: McpServer) => {
+				shelf.set(name, server);
+			},
+			attachServer: async (name: string) => {
+				held.add(name);
+			},
+			detachServer: async (name: string) => {
+				held.delete(name);
+			},
+			forgetServer: async (name: string) => {
+				shelf.delete(name);
+				held.delete(name);
 			},
 		} satisfies CommandContext,
 	};
@@ -155,6 +191,161 @@ describe("runCommand", () => {
 
 		expect(bare).toBe(await runCommand("/help", context().context));
 		expect(bare).toContain("/limit");
+	});
+});
+
+describe("/mcp", () => {
+	const linear = "https://mcp.linear.app/mcp";
+
+	it("says there are none, and the three ways to add one", async () => {
+		const answer = await runCommand("/mcp", context().context);
+
+		expect(answer).toContain("No MCP servers yet");
+		expect(answer).toContain("/mcp add <name> <url>");
+		expect(answer).toContain("sse");
+		expect(answer).toContain("<command>");
+	});
+
+	it("puts a server on the shelf and gives it to this agent in one line", async () => {
+		const { context: ctx, shelf, held } = context({ grants: ["mcp.linear.app"] });
+
+		const answer = await runCommand(`/mcp add linear ${linear}`, ctx);
+
+		expect(shelf.get("linear")).toEqual({ transport: "http", url: linear });
+		expect(held.has("linear")).toBe(true);
+		expect(answer).toContain('"linear" is on the shelf');
+	});
+
+	/** The whole reason the shelf is a shelf: from the second agent on it is a name off a list. */
+	it("gives an agent one somebody else already found, by name alone", async () => {
+		const { context: ctx, held } = context({
+			grants: ["mcp.linear.app"],
+			shelf: { linear: { transport: "http", url: linear } },
+		});
+
+		const answer = await runCommand("/mcp linear", ctx);
+
+		expect(held.has("linear")).toBe(true);
+		expect(answer).toContain(linear);
+	});
+
+	it("says which ones are there to be asked for", async () => {
+		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
+
+		const answer = await runCommand("/mcp", ctx);
+
+		expect(answer).toContain("This agent has none of them");
+		expect(answer).toContain("On the shelf");
+		expect(answer).toContain("/mcp linear gives this agent that one");
+	});
+
+	/**
+	 * The failure this is here to prevent: a server that is attached, listed, and answers every tool
+	 * call with the proxy's refusal — discovered mid-turn, by the agent, in the middle of doing
+	 * something else.
+	 */
+	it("says a remote server cannot be reached, and what would grant it", async () => {
+		const { context: ctx, held } = context();
+
+		const answer = await runCommand(`/mcp add linear ${linear}`, ctx);
+
+		// Still attached: the operator asked for it, and it works the moment the grant exists.
+		expect(held.has("linear")).toBe(true);
+		expect(answer).toContain("cannot be reached yet");
+		expect(answer).toContain("host: mcp.linear.app");
+		expect(answer).toContain("LINEAR_TOKEN");
+	});
+
+	it("says nothing about grants for a server the operator did grant", async () => {
+		const { context: ctx } = context({ grants: ["mcp.linear.app"] });
+
+		expect(await runCommand(`/mcp add linear ${linear}`, ctx)).not.toContain("cannot be reached");
+	});
+
+	// It has nowhere to go on its own account: what it reaches for is the sandbox's own road out.
+	it("says nothing about grants for a server that is a process", async () => {
+		const { context: ctx } = context();
+
+		const answer = await runCommand("/mcp add files mcp-files /tmp", ctx);
+
+		expect(answer).not.toContain("cannot be reached");
+	});
+
+	it("marks the ones nothing can reach in the list too", async () => {
+		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
+
+		expect(await runCommand("/mcp", ctx)).toContain("(no grant for mcp.linear.app)");
+	});
+
+	it("takes one off this agent while leaving it for the others", async () => {
+		const { context: ctx, shelf, held } = context({ grants: ["mcp.linear.app"] });
+		await runCommand(`/mcp add linear ${linear}`, ctx);
+
+		const answer = await runCommand("/mcp drop linear", ctx);
+
+		expect(held.has("linear")).toBe(false);
+		expect(shelf.has("linear")).toBe(true);
+		// Which of the two words does what is not obvious from either, and nobody should have to learn
+		// it by typing the wrong one at the server they spent an afternoon setting up.
+		expect(answer).toContain("still on the shelf");
+	});
+
+	it("takes a forgotten one off the shelf and off this agent at once", async () => {
+		const { context: ctx, shelf, held } = context();
+		await runCommand("/mcp add files mcp-files", ctx);
+
+		await runCommand("/mcp forget files", ctx);
+
+		expect(shelf.has("files")).toBe(false);
+		expect(held.has("files")).toBe(false);
+	});
+
+	it("answers a name nothing is called with the names there are", async () => {
+		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
+
+		const answer = await runCommand("/mcp githob", ctx);
+
+		expect(answer).toContain('no server called "githob"');
+		expect(answer).toContain("linear");
+	});
+
+	it("says an agent already has what it already has, rather than saying it twice", async () => {
+		const { context: ctx } = context({ grants: ["mcp.linear.app"] });
+		await runCommand(`/mcp add linear ${linear}`, ctx);
+
+		expect(await runCommand("/mcp linear", ctx)).toContain("already has");
+	});
+
+	// `/mcp drop` would then be ambiguous forever, and the ambiguity would be discovered by whoever
+	// tried to drop it.
+	it("refuses a name it uses for something else", async () => {
+		const { context: ctx, shelf } = context();
+
+		const answer = await runCommand("/mcp add drop mcp-files", ctx);
+
+		expect(answer).toContain("is a word /mcp uses");
+		expect(shelf.size).toBe(0);
+	});
+
+	it("refuses a name no model could spell back", async () => {
+		const { context: ctx, shelf } = context();
+
+		expect(await runCommand("/mcp add My_Server mcp-files", ctx)).toContain("not a name");
+		expect(shelf.size).toBe(0);
+	});
+
+	it("says what it is missing rather than storing half a server", async () => {
+		const { context: ctx, shelf } = context();
+
+		expect(await runCommand("/mcp add", ctx)).toContain("needs a name");
+		expect(await runCommand("/mcp add linear", ctx)).toContain("needs a URL");
+		expect(shelf.size).toBe(0);
+	});
+
+	it("does not pretend to drop something this agent never had", async () => {
+		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
+
+		expect(await runCommand("/mcp drop linear", ctx)).toContain("does not have");
 	});
 });
 
