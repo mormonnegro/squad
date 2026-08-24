@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
+import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { type Channel, ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
 import { EventBus, FileEventStore } from "@agent-dive/events";
 import {
@@ -15,7 +15,7 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
-import { money, runCommand } from "./commands.ts";
+import { money, runCommand, SHELL_TIMEOUT_MS, shellOutput } from "./commands.ts";
 import { CreatedAgentStore } from "./created-agents.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
@@ -453,6 +453,49 @@ export class ControlPlane {
 		});
 		await this.#record(agentId, { from: "plane", text: answer });
 		return answer;
+	}
+
+	/**
+	 * Runs a command inside an agent's sandbox and answers with what it printed.
+	 *
+	 * The operator is outside the box, so this grants nothing: whoever can reach the control socket
+	 * already holds the Docker socket the plane runs on, and could open the same shell the long way
+	 * round. What it saves is leaving the console to do it, which is why the question — what does it
+	 * actually look like in there — usually went unasked.
+	 *
+	 * It runs where the agent runs, as the agent, so the answer is about the agent's world rather
+	 * than about a shell that happens to be nearby: the same working directory, the same
+	 * environment, and the same proxy, so `!curl` is refused exactly where the agent's would be.
+	 * Independent of the turn, so an agent that is thinking can be looked at while it thinks — which
+	 * is when there is most to see.
+	 *
+	 * The script goes in on stdin rather than in the command line, because arguments are visible to
+	 * every process in the container, and the one other process in there is the agent.
+	 */
+	async shell(agentId: string, line: string): Promise<string> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		await this.#record(agentId, { from: "operator", text: `!${line}` });
+
+		const printed = await this.#runShell(agentId, line);
+		await this.#record(agentId, { from: "shell", text: printed });
+		return printed;
+	}
+
+	async #runShell(agentId: string, line: string): Promise<string> {
+		try {
+			return shellOutput(
+				await this.sandboxes.run(agentId, ["sh", "-s"], line, {
+					timeoutMs: SHELL_TIMEOUT_MS,
+					workingDir: SANDBOX_REPO_PATH,
+				}),
+			);
+		} catch (error) {
+			// Said as output rather than thrown, because a command that could not run is an answer to
+			// what was typed: a stopped sandbox and a command that exits 1 are the same kind of news.
+			return (error as Error).message;
+		}
 	}
 
 	/**

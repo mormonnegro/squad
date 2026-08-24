@@ -1,7 +1,7 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
 import wrapAnsi from "wrap-ansi";
-import { isCommand } from "./commands.ts";
+import { isCommand, isShell } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
@@ -126,6 +126,18 @@ function spoken(said: Said): string {
 	if (said.via !== undefined) return `\u001b[2m‹${said.via}›\u001b[22m ${said.text}`;
 	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;
 	return said.text;
+}
+
+/**
+ * Whether what is being typed will be run in the sandbox rather than said to the agent.
+ *
+ * The prompt says so before the key is pressed, which is the whole point of a mode: finding out
+ * that a line was a command by watching it run is finding out too late.
+ */
+export function typing(
+	draft: string,
+): { readonly mark: string; readonly rest: string } | undefined {
+	return isShell(draft) ? { mark: "! ", rest: draft.slice(1) } : undefined;
 }
 
 /**
@@ -320,13 +332,18 @@ export function Chat({
 	// gives up the border, because a border drawn where there is no room is the broken screen again.
 	const boxed = rows > PROMPT_ROWS;
 	const lines = visible(wrapped(transcript(history), columns), chatRows(rows), top);
-	// A spinner alone says something is happening; the number rising beside it is what separates
-	// slow from stuck, and twice now the thing that looked slow was a hang.
-	const mark = thinking === undefined ? "> " : `${thinking.frame} ${thinking.seconds}s `;
+	// A spinner alone says something is happening; the number rising beside it is what separates slow
+	// from stuck, and twice now the thing that looked slow was a hang. A shell line gets its own mark
+	// and colour instead, because the difference between talking to the agent and running something
+	// in its box is worth seeing before pressing return.
+	const shell = thinking === undefined ? typing(draft) : undefined;
+	const mark =
+		thinking !== undefined ? `${thinking.frame} ${thinking.seconds}s ` : (shell?.mark ?? "> ");
+	const shown = shell?.rest ?? draft;
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
 	// its end, where the cursor is. The box takes its border and padding out of the width first.
 	const room = Math.max(0, columns - (boxed ? 4 : 0) - mark.length - 1);
-	const hue = thinking === undefined ? "cyan" : "yellow";
+	const hue = thinking !== undefined ? "yellow" : shell !== undefined ? "magenta" : "cyan";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -350,7 +367,7 @@ export function Chat({
 				Text,
 				{ wrap: "truncate" },
 				h(Text, { color: hue }, mark),
-				draft.slice(Math.max(0, draft.length - room)),
+				shown.slice(Math.max(0, shown.length - room)),
 				h(Text, { inverse: true }, " "),
 			),
 		),
@@ -516,6 +533,12 @@ function App({
 				await client.command(agentId, body).catch(() => {});
 				return;
 			}
+			// Not addressed to the agent at all: it runs in the box the agent lives in, and the agent
+			// is not told it happened. Looking around inside is not the same as saying something.
+			if (isShell(body)) {
+				await client.shell(agentId, body.slice(1)).catch(() => {});
+				return;
+			}
 			await client.wake(agentId, body).catch(() => {});
 		},
 		[client],
@@ -678,6 +701,7 @@ function App({
 				// A key nobody guesses is pressable. The rest of this row is what to press to move
 				// around; this one is what to press to be told what else there is.
 				["/", "commands"],
+				["!", "shell"],
 				["^C", "quit"],
 				// Last, so that the rest of the row does not move as it comes and goes, and shown only
 				// while there is something to stop: the key does nothing at any other time, and offering

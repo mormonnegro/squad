@@ -157,7 +157,7 @@ asking to see the thing, not to be told a fact about it:
 │                ││ │ >                                                        │ │
 │                ││ ╰──────────────────────────────────────────────────────────╯ │
 ╰────────────────╯╰──────────────────────────────────────────────────────────────╯
- ↑↓ agent   ^U^D scroll   tab logs   / commands   ^C quit
+ ↑↓ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
@@ -215,6 +215,32 @@ Both halves go into the conversation, because that is where they were typed and 
 gets read: a ceiling that changed with nothing to show for it is one nobody can later work out the
 reason for. A message that merely begins with a path — `/etc/hosts is wrong` — is still a message,
 since `/etc` is answered as a command that does not exist rather than quietly swallowed.
+
+A line starting with `!` is not addressed to the agent at all: it runs in the box the agent lives
+in, and what it printed lands in the conversation underneath it.
+
+```
+> !git status --short
+ M src/queue.ts
+> !curl -s api.github.com
+curl: (56) Received HTTP code 403 from proxy after CONNECT
+exit 56
+```
+
+It runs where the agent runs, as the agent — the same working directory, the same environment, the
+same proxy — so what comes back is about the agent's world rather than about a shell that happens to
+be nearby, and `!curl` is refused exactly where the agent's would be. It grants nothing: whoever can
+reach the control socket already holds the Docker socket the plane runs on and could open the same
+shell the long way round. What it saves is leaving the console to do it, which is why the question
+it answers — what does it actually look like in there — usually went unasked. It is independent of
+the turn, so an agent that is thinking can be looked at while it thinks, which is when there is most
+to see, and the agent is not told it happened: looking around inside is not the same as saying
+something. The prompt says `!` in its own colour while such a line is being typed, because finding
+out that a line ran in the sandbox by watching it run is finding out too late. Colour and cursor
+movement are stripped from what comes back — a `!cat` of a file the agent wrote is the one place its
+bytes are drawn on your terminal — and output longer than two hundred lines keeps its head and tail,
+since the conversation is rewritten whole on every line and one `find /` left in it would be paid
+for by every line said after it.
 
 The conversation belongs to the plane rather than to the console, so closing one is not ending it:
 the next console opens on what was said, and the last couple of hundred lines survive the terminal

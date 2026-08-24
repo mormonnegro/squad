@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ExecResult } from "@agent-dive/sandbox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	ControlPlane,
@@ -752,5 +753,96 @@ describe("what an agent may spend", () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
 
 		await expect(plane.command("ghost", "/limit 5")).rejects.toThrow(/No agent/);
+	});
+});
+
+/**
+ * `!`, which runs where the agent runs. It grants nothing — whoever reaches the control socket
+ * already holds the Docker socket the plane runs on — and saves leaving the console to ask the one
+ * question that comes up constantly while an agent works: what does it actually look like in there.
+ */
+describe("a command run in the agent's box", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-shell-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	/** Stands in for the sandbox, and keeps how it was asked, which is half of what matters here. */
+	function box(plane: ControlPlane, result: Partial<ExecResult> = {}) {
+		const calls: { cmd: readonly string[]; input: string; workingDir: string | undefined }[] = [];
+		plane.sandboxes.run = async (_agentId, cmd, input, options = {}) => {
+			calls.push({ cmd, input, workingDir: options.workingDir });
+			return { stdout: "", stderr: "", exitCode: 0, ...result };
+		};
+		return calls;
+	}
+
+	it("answers with what the command printed", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		box(plane, { stdout: "README.md\nsrc\n" });
+
+		expect(await plane.shell("scout", "ls")).toBe("README.md\nsrc");
+	});
+
+	/**
+	 * On stdin and in the agent's working directory: arguments are visible to every process in the
+	 * container, and the other process in there is the agent.
+	 */
+	it("runs the line as a script, where the agent works", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const calls = box(plane);
+
+		await plane.shell("scout", "echo hola");
+
+		expect(calls).toEqual([
+			{ cmd: ["sh", "-s"], input: "echo hola", workingDir: "/home/agent/.self" },
+		]);
+	});
+
+	/** Both halves, because output with nothing above it does not say what was asked. */
+	it("keeps the command and what it printed in the conversation", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		box(plane, { stdout: "hola\n" });
+
+		await plane.shell("scout", "echo hola");
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "!echo hola" },
+			{ from: "shell", text: "hola" },
+		]);
+	});
+
+	/**
+	 * Its own kind, not `plane`. That one means the plane explaining a failure and is drawn as one,
+	 * and thirty lines of build log in the colour reserved for errors reads as thirty things wrong.
+	 */
+	it("is the sandbox talking, not the plane", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		box(plane, { stderr: "sh: nope: not found", exitCode: 127 });
+
+		await plane.shell("scout", "nope");
+
+		expect((await plane.transcripts()).scout?.at(-1)).toMatchObject({ from: "shell" });
+	});
+
+	// A stopped sandbox and a command that exits 1 are the same kind of news to whoever typed it.
+	it("says a command that could not run at all, rather than throwing", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		plane.sandboxes.run = async () => {
+			throw new Error("No such container: agent-dive-scout");
+		};
+
+		expect(await plane.shell("scout", "ls")).toContain("No such container");
+	});
+
+	it("refuses a box for an agent that is not here", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+
+		await expect(plane.shell("ghost", "ls")).rejects.toThrow(/No agent/);
 	});
 });

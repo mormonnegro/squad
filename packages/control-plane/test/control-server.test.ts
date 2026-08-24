@@ -275,6 +275,20 @@ describe("the control socket", () => {
 		await expect(client.command("scou", "/limit 5")).rejects.toThrow(/No agent "scou"/);
 	});
 
+	/**
+	 * `!` arrives here and nowhere else, for the same reason and more so: a webhook that reached it
+	 * would be a stranger with a URL holding a shell inside the box.
+	 */
+	it("runs a command in the box and answers with what it printed", async () => {
+		plane.sandboxes.run = async () => ({ stdout: "hola\n", stderr: "", exitCode: 0 });
+
+		expect(await client.shell("scout", "echo hola")).toBe("hola");
+	});
+
+	it("refuses a box for an agent this plane does not run", async () => {
+		await expect(client.shell("scou", "ls")).rejects.toThrow(/No agent "scou"/);
+	});
+
 	it("lets only its owner near it, because holding it is the whole authorization", async () => {
 		const mode = (await stat(server.socketPath)).mode & 0o777;
 		expect(mode).toBe(0o600);

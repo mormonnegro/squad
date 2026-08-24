@@ -10,6 +10,7 @@ import {
 	scrolled,
 	type Thinking,
 	transcript,
+	typing,
 	until,
 	visible,
 } from "../src/console.ts";
@@ -359,6 +360,16 @@ describe("Chat", () => {
 		expect(drawn[1]).toContain(">");
 	});
 
+	// The mode has to be visible before the key is pressed: finding out that a line ran in the
+	// sandbox by watching it run is finding out too late.
+	it("marks a line that will run in the box rather than be said", () => {
+		const drawn = chat({ history: [], draft: "!ls -la" });
+
+		expect(drawn).toContain("ls -la");
+		expect(drawn).toContain("!");
+		expect(drawn).not.toContain("> ");
+	});
+
 	// Where it breaks matters as much as that it breaks: a path has no space in it, and text that
 	// only broke on spaces would draw it off the edge. The prompt is left out — it is the one row
 	// carrying colour, and colour is not width.
@@ -368,6 +379,17 @@ describe("Chat", () => {
 			.slice(0, -1);
 
 		for (const row of said) expect(row.length).toBeLessThanOrEqual(40);
+	});
+});
+
+describe("typing", () => {
+	it("takes the bang off what is drawn, and says the mode in its place", () => {
+		expect(typing("!ls -la")).toEqual({ mark: "! ", rest: "ls -la" });
+	});
+
+	it("is nothing at all for a line on its way to the agent", () => {
+		expect(typing("hola")).toBeUndefined();
+		expect(typing("/limit 5")).toBeUndefined();
 	});
 });
 

@@ -25,6 +25,12 @@ export type ControlRequest =
 	| { readonly id: string; readonly op: "stop"; readonly agentId: string }
 	/** A line the operator typed at an agent that is about it rather than to it. */
 	| { readonly id: string; readonly op: "command"; readonly agentId: string; readonly line: string }
+	/**
+	 * A command to run inside an agent's sandbox. It arrives here and nowhere else: this socket is
+	 * the only surface carrying operator trust, and a webhook that reached it would be a stranger
+	 * with a URL holding a shell inside the box.
+	 */
+	| { readonly id: string; readonly op: "shell"; readonly agentId: string; readonly line: string }
 	| { readonly id: string; readonly op: "logs" }
 	| { readonly id: string; readonly op: "transcripts" };
 
@@ -190,6 +196,12 @@ export class ControlServer {
 					id: request.id,
 					ok: true,
 					text: await this.#plane.command(request.agentId, request.line),
+				});
+			} else if (request.op === "shell") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: await this.#plane.shell(request.agentId, request.line),
 				});
 			} else if (request.op === "create") {
 				this.#write(socket, {

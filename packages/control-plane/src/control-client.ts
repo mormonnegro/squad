@@ -120,6 +120,13 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to command");
 	}
 
+	/** Runs a command inside the agent's sandbox, and answers with what it printed. */
+	async shell(agentId: string, line: string): Promise<string> {
+		const response = await this.#once({ op: "shell", agentId, line });
+		if ("text" in response) return response.text;
+		throw new ControlError("unexpected answer to shell");
+	}
+
 	/** Stops the turn an agent is taking. Answers whether there was one to stop. */
 	async stop(agentId: string): Promise<boolean> {
 		const response = await this.#once({ op: "stop", agentId });

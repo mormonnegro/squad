@@ -11,7 +11,12 @@ import type { AgentEvent } from "@agent-dive/events";
  * console's business, and the plane also answers to callers that have no terminal.
  */
 export interface Utterance {
-	readonly from: "operator" | "agent" | "other" | "plane";
+	/**
+	 * `shell` is the sandbox itself, printing what `!` asked it to run. Kept apart from `plane`
+	 * because that one means the plane explaining a failure and is drawn as one — thirty lines of
+	 * build log in the colour reserved for errors reads as thirty things having gone wrong.
+	 */
+	readonly from: "operator" | "agent" | "other" | "plane" | "shell";
 	readonly text: string;
 	/** How it reached the agent, when that is not the operator typing: a channel, or its own wakeup. */
 	readonly via?: string;
