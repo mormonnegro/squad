@@ -145,18 +145,18 @@ agent help                               the rest
 asking to see the thing, not to be told a fact about it:
 
 ```
-╭────────────────╮╭──────────────────────────────────────────────────────────────╮
-│ agents         ││ demo   chat · logs                                           │
-│ ● demo         ││ > que es un webhook                                          │
-│ ◐ maxi         ││                                                              │
-│ ○ scout        ││ Un webhook es una forma de comunicación automática entre     │
-│                ││ servicios: cuando ocurre un evento en un sistema, ese sistema│
-│                ││  envía una petición HTTP a una URL configurada de antemano.  │
-│                ││                                                              │
-│                ││ ╭──────────────────────────────────────────────────────────╮ │
-│                ││ │ >                                                        │ │
-│                ││ ╰──────────────────────────────────────────────────────────╯ │
-╰────────────────╯╰──────────────────────────────────────────────────────────────╯
+╭────────────────────╮╭──────────────────────────────────────────────────────────╮
+│ agents             ││ demo  chat · logs        deepseek-v4-flash   $0.42 / $5.00│
+│ ● demo       $0.42 ││ > que es un webhook                                      │
+│ ◐ maxi   15m $4.80 ││                                                          │
+│ ○ scout            ││ Un webhook es una forma de comunicación automática entre │
+│                    ││ servicios: cuando ocurre un evento en un sistema, ese    │
+│                    ││ sistema envía una petición HTTP a una URL configurada.   │
+│                    ││                                                          │
+│                    ││ ╭──────────────────────────────────────────────────────╮ │
+│                    ││ │ >                                                    │ │
+│                    ││ ╰──────────────────────────────────────────────────────╯ │
+╰────────────────────╯╰──────────────────────────────────────────────────────────╯
  ↑↓ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
 ```
 
@@ -167,6 +167,19 @@ agent's conversation and the log feed, which is the same feed `agent logs` print
 whole time either way. The prompt shows the spinner and the seconds while that agent is thinking,
 because a spinner alone says something is happening and the number rising beside it is what says
 whether it still is.
+
+What each agent has spent today is on its row, because "which of these is burning through its day"
+is a question about all of them at once and the header can only ever answer it about the one you
+are standing on. It turns yellow at four fifths of its ceiling and red at it, and an agent that has
+spent nothing says nothing — a column of `$0.00` is noise to read past, and what is being looked
+for here is the row that is not like the others. Where a name leaves room for only one of them, the
+wait wins: it is a warning that the agent will act while nobody is watching, and the money is not.
+
+The title row says what the selected agent is thinking with and what that has cost against what it
+is allowed. Both were already crossing the socket and being thrown away, and the price of that was
+that the way to find out which model an agent was answering badly with was to go and read the
+operator's config file. As the terminal narrows the model goes first, then the ceiling, then the
+money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fact half said.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
 to stop, since a hint for a key that does nothing is a hint that lies. What stops is the process

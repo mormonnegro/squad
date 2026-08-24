@@ -9,6 +9,7 @@ import {
 	resume,
 	saidBy,
 	scrolled,
+	standing,
 	type Thinking,
 	transcript,
 	until,
@@ -242,6 +243,7 @@ describe("Agents", () => {
 		created: false,
 		spentUsd: 0,
 		limitUsd: undefined,
+		model: undefined,
 	});
 	const three = [listed("scout", true), listed("scribe", true), listed("sleeper", false)];
 
@@ -282,7 +284,7 @@ describe("Agents", () => {
 			{ columns: 80 },
 		);
 
-		expect(drawn.split("\n")[0]).toMatch(/^╭─{16}╮/);
+		expect(drawn.split("\n")[0]).toMatch(/^╭─{20}╮/);
 	});
 
 	it("shows only what the pane has room for", () => {
@@ -292,6 +294,103 @@ describe("Agents", () => {
 
 		expect(drawn).toContain("scribe");
 		expect(drawn).not.toContain("sleeper");
+	});
+
+	// "Which of these is burning through its day" is a question about all of them at once, and the
+	// header can only ever answer it about the one being looked at.
+	it("says what each agent has spent", () => {
+		const drawn = renderToString(
+			h(Agents, {
+				agents: [{ ...listed("scout", true), spentUsd: 0.42 }],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		);
+
+		expect(drawn).toContain("scout $0.42");
+	});
+
+	// A fleet of zeroes is a column of noise to read past, and what is looked for here is the row
+	// that is not like the others.
+	it("says nothing about an agent that has spent nothing", () => {
+		const drawn = renderToString(
+			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		);
+
+		expect(drawn).not.toContain("$0.00");
+	});
+
+	// The wait is a warning that the agent will act unwatched; the money is ambient. A row too narrow
+	// for both that kept the ambient thing would be worse than one that said neither.
+	it("keeps the warning over the money when only one of them fits", () => {
+		const drawn = renderToString(
+			h(Agents, {
+				agents: [
+					{
+						...listed("scribe", true),
+						spentUsd: 1.5,
+						wakeAt: new Date(Date.now() + 900_000).toISOString(),
+					},
+				],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		);
+
+		expect(drawn).toContain("15m");
+		expect(drawn).not.toContain("$1.50");
+	});
+});
+
+/**
+ * The title row is the only place an agent says what it is. Everything here was already crossing
+ * the socket and being thrown away, and the cost of that was going to read the operator's file to
+ * find out which model an agent was answering badly with.
+ */
+describe("standing", () => {
+	const agent: AgentSummary = {
+		id: "demo",
+		running: true,
+		startedAt: undefined,
+		grants: 1,
+		schedules: 0,
+		wakeAt: undefined,
+		created: false,
+		spentUsd: 0.42,
+		limitUsd: 5,
+		model: "deepseek-v4-flash",
+	};
+
+	it("says what it thinks with and what it has spent against its ceiling", () => {
+		expect(standing(agent, 60)).toEqual({
+			model: "deepseek-v4-flash",
+			spend: "$0.42 / $5.00",
+		});
+	});
+
+	// The money is what an operator comes back to the screen for; the model is what explains it.
+	it("gives up the model before the money as the terminal narrows", () => {
+		expect(standing(agent, 20)).toEqual({ model: "", spend: "$0.42 / $5.00" });
+	});
+
+	// What was spent is a fact; what it was allowed to be is a second fact about the first.
+	it("gives up the ceiling next, and then everything", () => {
+		expect(standing(agent, 8)).toEqual({ model: "", spend: "$0.42" });
+		expect(standing(agent, 2)).toEqual({ model: "", spend: "" });
+	});
+
+	// A `deepseek-v4-fl…` is a fact half said. A row that says less reads better than one that says
+	// everything badly, so nothing here is ever cut to a stump.
+	it("never shows half of a name", () => {
+		const { model } = standing(agent, 25);
+
+		expect(model === "" || model === "deepseek-v4-flash").toBe(true);
+	});
+
+	it("says the spend of an agent with no ceiling without inventing one", () => {
+		expect(standing({ ...agent, limitUsd: undefined }, 60).spend).toBe("$0.42");
 	});
 });
 

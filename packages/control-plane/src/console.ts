@@ -3,7 +3,7 @@ import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
 import wrapAnsi from "wrap-ansi";
-import { isCommand, isShell } from "./commands.ts";
+import { isCommand, isShell, money } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
@@ -21,7 +21,13 @@ import type { Utterance } from "./transcript.ts";
 /** How much of the feed is worth keeping. Older than this and it has scrolled out of anyone's day. */
 const REMEMBERED_LINES = 2000;
 
-const AGENTS_WIDTH = 18;
+/**
+ * Wide enough for a name and what the name is costing.
+ *
+ * Four columns of it are the border and the padding, four more the pointer and the mark, so at 18
+ * a name of any length at all left no room for the money and `support-emma` was itself cut short.
+ */
+const AGENTS_WIDTH = 22;
 
 /** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
 const PROMPT_ROWS = 3;
@@ -277,6 +283,51 @@ export function until(iso: string, now: number = Date.now()): string {
 	return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
+/**
+ * What the title row says about the selected agent besides its name, in the room the tabs left it.
+ *
+ * Widest first, and dropped from the left as the terminal narrows: the money is what an operator
+ * comes back to the screen for, and the model is what explains it, so the model is what goes when
+ * only one of them fits. Nothing is truncated to a stump — a `deepseek-v4-fl…` is a fact half said,
+ * and a row that says less is easier to read than a row that says everything badly.
+ */
+export function standing(
+	agent: AgentSummary,
+	room: number,
+): { readonly model: string; readonly spend: string } {
+	const spent = money(agent.spentUsd);
+	const spend = agent.limitUsd === undefined ? spent : `${spent} / ${money(agent.limitUsd)}`;
+	const model = agent.model ?? "";
+	if (model !== "" && model.length + 3 + spend.length <= room) return { model, spend };
+	if (spend.length <= room) return { model: "", spend };
+	// The ceiling is the first thing to go: what was spent is a fact, and what it was allowed to be
+	// is a second fact about the first one, worth less than half of the room it takes to say both.
+	return { model: "", spend: spent.length <= room ? spent : "" };
+}
+
+/**
+ * How much of what an agent has spent it is allowed to, as a number to colour by.
+ *
+ * `undefined` where there is no ceiling, which is not the same as nothing spent: an agent spending
+ * against no limit is the one this cannot warn about, and painting it green would be a lie.
+ */
+function against(agent: AgentSummary): number | undefined {
+	if (agent.limitUsd === undefined || agent.limitUsd <= 0) return undefined;
+	return agent.spentUsd / agent.limitUsd;
+}
+
+/**
+ * How a spend is painted, which is only ever a warning about the ceiling it is walking into.
+ *
+ * Dim until it is worth reading, because a number that is always coloured is a number nobody looks
+ * at. An agent with no ceiling is never painted: there is nothing for it to be near.
+ */
+function burning(agent: AgentSummary): { color?: string; dimColor: boolean } {
+	const share = against(agent) ?? 0;
+	if (share >= 1) return { color: "red", dimColor: false };
+	return share >= 0.8 ? { color: "yellow", dimColor: false } : { dimColor: true };
+}
+
 export function Agents({
 	agents,
 	cursor,
@@ -308,6 +359,19 @@ export function Agents({
 			// is the one thing you cannot find out by asking again in a second.
 			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
 			const here = index === cursor;
+			// What the column has left once its borders, its padding, the pointer, the mark and the name
+			// have been paid for. A long enough name leaves none of it, and is itself truncated.
+			const room = AGENTS_WIDTH - 4 - (4 + agent.id.length);
+			// An agent that booked its own next turn is going to act while nobody is watching. The wait
+			// is the only warning of that there is, so it is on the row rather than behind a command,
+			// and it is first: the money beside it is ambient, and a column that dropped the warning to
+			// keep the ambient thing would be worse than one that said neither.
+			const waking = agent.wakeAt !== undefined ? ` ${until(agent.wakeAt)}` : "";
+			const wake = waking.length <= room ? waking : "";
+			// Nothing spent is drawn as nothing, not as `$0.00`: a fleet of ceros is a column of noise
+			// to read past, and what is being looked for here is the row that is not like the others.
+			const spending = agent.spentUsd > 0 ? ` ${money(agent.spentUsd)}` : "";
+			const spent = spending.length <= room - wake.length ? spending : "";
 			return h(
 				Text,
 				{ key: agent.id, wrap: "truncate" },
@@ -316,11 +380,8 @@ export function Agents({
 				h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
 				h(Text, { color: mark.color }, mark.glyph),
 				h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${agent.id}`),
-				// An agent that booked its own next turn is going to act while nobody is watching. The
-				// wait is the only warning of that there is, so it is on the row rather than in a command.
-				agent.wakeAt !== undefined
-					? h(Text, { color: "yellow", dimColor: true }, ` ${until(agent.wakeAt)}`)
-					: undefined,
+				wake === "" ? undefined : h(Text, { color: "yellow", dimColor: true }, wake),
+				spent === "" ? undefined : h(Text, burning(agent), spent),
 			);
 		}),
 	);
@@ -682,6 +743,12 @@ function App({
 	});
 
 	const title = selected === undefined ? "no agents" : selected.id;
+	// What the left of the title row has already spent, so that what goes at the right end knows how
+	// much of the row is left for it. Three columns of gap, so the two halves never touch.
+	const tabs = `${title}   chat · logs${top === undefined ? "" : "   ↑ scrolled"}   `;
+	const state =
+		selected === undefined ? { model: "", spend: "" } : standing(selected, width - tabs.length);
+	const heat = selected === undefined ? { dimColor: true } : burning(selected);
 	const started = selected === undefined ? undefined : busy.get(selected.id);
 	const thinking: Thinking | undefined =
 		started === undefined
@@ -719,6 +786,12 @@ function App({
 					// What a pane showing the end of things cannot say for itself: that this one is not.
 					// Without it, an answer arriving out of sight looks like an agent that said nothing.
 					top === undefined ? null : h(Text, { color: "yellow" }, "   ↑ scrolled"),
+					// Pushed to the far end rather than set after the tabs, so that the tabs do not move
+					// sideways as a number under them grows: they are pressed at, and a target that
+					// wanders while you reach for it is worse than one that says less.
+					h(Box, { flexGrow: 1, key: "gap" }),
+					state.model === "" ? null : h(Text, { dimColor: true }, `${state.model}   `),
+					state.spend === "" ? null : h(Text, heat, state.spend),
 				),
 				panel === "chat"
 					? h(Chat, {

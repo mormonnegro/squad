@@ -152,6 +152,14 @@ export interface AgentSummary {
 	/** What it has spent today, and the ceiling it is spending against, in US dollars. */
 	readonly spentUsd: number;
 	readonly limitUsd: number | undefined;
+	/**
+	 * What it thinks with, after the defaults have been folded in.
+	 *
+	 * The one fact about an agent that changes what every answer costs and how good it is, and the
+	 * one nothing on screen used to say: the way to find it out was to go and read the operator's
+	 * file, which is the wrong place to learn it from while an agent is answering badly.
+	 */
+	readonly model: string | undefined;
 }
 
 /**
@@ -323,6 +331,7 @@ export class ControlPlane {
 			schedules: schedules.length,
 			wakeAt: schedules.find((schedule) => schedule.createdBy === "agent")?.nextRunAt,
 			created: this.#createdIds.has(agent.id),
+			model: agent.model,
 		};
 	}
 
