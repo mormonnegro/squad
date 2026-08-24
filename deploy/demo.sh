@@ -77,6 +77,7 @@ start_plane() {
     --network "$UPLINK" \
     --label "agent-dive.state=$STATE" \
     -e MODEL_KEY="$1" \
+    -e SEARCH_KEY="$2" \
     -e HOOK_SECRET="$HOOK_SECRET" \
     -v "$STATE:$STATE" \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -110,6 +111,17 @@ defaults:
       injection:
         kind: bearer
         token: { ref: MODEL_KEY }
+    # The one host the agent reaches the web through, and the searching and page-reading both happen
+    # on the far side of it — which is why this is a grant anyone can write and "let it browse" is
+    # not. Scoped to the one endpoint that searches: the same key on the rest of that API would be a
+    # second model to think with, bought by whoever takes the agent over.
+    - id: search
+      host: api.openai.com
+      pathPrefix: /v1/responses
+      methods: [POST]
+      injection:
+        kind: bearer
+        token: { ref: SEARCH_KEY }
 agents:
   - id: $AGENT
     grants:
@@ -145,12 +157,14 @@ reload() {
   # Read back off the running container, so a reload never asks for the key again. A key in the
   # environment wins, which is how the provider gets changed without going through `up` and losing
   # the agent: the old key would be offered to the new provider and refused as a bad credential.
-  local key
-  key=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}' |
-    sed -n 's/^MODEL_KEY=//p')
+  local env key search
+  env=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}')
+  key=$(printf '%s\n' "$env" | sed -n 's/^MODEL_KEY=//p')
+  search=$(printf '%s\n' "$env" | sed -n 's/^SEARCH_KEY=//p')
 
   docker rm -f "$PLANE" >/dev/null
-  start_plane "${DEEPSEEK_API_KEY:-${key:-no-key-configured}}"
+  start_plane "${DEEPSEEK_API_KEY:-${key:-no-key-configured}}" \
+    "${OPENAI_API_KEY:-${search:-no-key-configured}}"
 
   # Before listing them, so the list is what settled rather than what was mid-flight: an agent whose
   # environment the new config changed is replaced here, and its old container is still up until it is.
@@ -160,6 +174,16 @@ reload() {
   docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
     https://api.deepseek.com/models || true
+  probe_search
+}
+
+# Deliberately without the search tool: what this asks is whether the tunnel and the injected key
+# work, and the answer to that costs a few tokens rather than the ten dollars a thousand searches do.
+# 401 is a key the operator has to fix and 403 is the proxy, which are the two worth telling apart.
+probe_search() {
+  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.openai.com (injected)     -> %{http_code}\n' \
+    https://api.openai.com/v1/responses -H 'Content-Type: application/json' \
+    -d '{"model":"gpt-5-mini","input":"hi"}' || true
 }
 
 up() {
@@ -180,6 +204,17 @@ up() {
     echo "queued for a retry."
   fi
 
+  # The one the agent searches the web with, and the only reason it can: without it the tool is still
+  # there and says at the moment of use that there is no key, which is a better answer than an agent
+  # that quietly makes the answer up.
+  if [ -z "${OPENAI_API_KEY:-}" ] && [ -t 0 ]; then
+    say "an OpenAI API key, for searching the web"
+    echo "Optional. Without it the agent runs and thinks, it just cannot look anything up."
+    printf '  paste a key, or press enter to go on without it: '
+    read -rs OPENAI_API_KEY || true
+    echo
+  fi
+
   # Always, not "if missing". The image copies the sources in, so an existing tag is not a current
   # one, and a demo that silently runs last week's code is worse than one that takes a minute. The
   # layer cache makes this nearly free when nothing has changed.
@@ -198,7 +233,7 @@ up() {
   docker network create "$UPLINK" >/dev/null
 
   say "starting the control plane"
-  start_plane "${DEEPSEEK_API_KEY:-no-key-configured}"
+  start_plane "${DEEPSEEK_API_KEY:-no-key-configured}" "${OPENAI_API_KEY:-no-key-configured}"
 
   for _ in $(seq 60); do
     [ "$(docker inspect -f '{{.State.Running}}' "$SANDBOX" 2>/dev/null)" = "true" ] && break
@@ -223,6 +258,7 @@ up() {
   # one in. The agent cannot spend that key anywhere else, because nowhere else matches a grant.
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
     https://api.deepseek.com/models || true
+  probe_search
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.github.com (not granted)  -> %{http_code}\n' https://api.github.com/ 2>/dev/null ||
     echo '  api.github.com (not granted)  -> refused at CONNECT'
 

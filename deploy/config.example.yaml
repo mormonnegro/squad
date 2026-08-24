@@ -25,6 +25,21 @@ defaults:
         kind: bearer
         token: { ref: DEEPSEEK_API_KEY }
 
+    # How an agent reaches the web at all. Both the searching and the reading of what it finds happen
+    # on the far side of this one host, which is the only reason "let it search" is a grant somebody
+    # can write: an agent that fetched pages itself would need every domain a result might live on
+    # named in advance. Drop this and the tool says so when used, rather than guessing an answer.
+    #
+    # Scoped to the endpoint that searches, because the same key against the rest of that API is a
+    # second model to think with — bought by whoever takes the agent over.
+    - id: search
+      host: api.openai.com
+      pathPrefix: /v1/responses
+      methods: [POST]
+      injection:
+        kind: bearer
+        token: { ref: OPENAI_API_KEY }
+
 agents:
   # Everything above is already true of this agent. What is here is what makes it that one.
   - id: scout

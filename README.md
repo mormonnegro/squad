@@ -325,6 +325,41 @@ participant trust, never operator, however it asks. The note comes back fenced l
 the agent did not hear from its operator, introduced as the reminder it is rather than as an
 instruction — the turn that wrote it may have been reading a stranger at the time.
 
+## An agent searching the web
+
+Searching is something the agent asks for rather than something it does, and that is the sandbox
+showing through rather than a preference. Every host an agent reaches is a grant somebody wrote, and
+"the pages a search will turn up" is not a list anybody can write in advance — so an agent that
+fetched what it found would need the whole internet granted, which is the same as granting nothing
+at all and meaning it.
+
+So the searching and the reading happen on the far side of one granted host. The `web_search` tool
+is a pi extension shipped in the sandbox image, like `wake_me`, and it posts the question to a
+hosted search that reads the pages itself and answers in prose with its sources linked in:
+
+```yaml
+- id: search
+  host: api.openai.com
+  pathPrefix: /v1/responses
+  methods: [POST]
+  injection:
+    kind: bearer
+    token: { ref: OPENAI_API_KEY }
+```
+
+The path scope is the part worth keeping. The same key against the rest of that API is a second
+model to think with, bought by whoever takes the agent over, and a grant that only opens the
+endpoint which searches is one that cannot be spent on anything else.
+
+The tool reaches the proxy with `curl` rather than `fetch`, because a sandbox has no DNS and no
+route out except that proxy: Node's `fetch` reads neither `HTTPS_PROXY` nor `NODE_EXTRA_CA_CERTS`
+and dies resolving the name. Nothing sends an `Authorization` — the proxy writes one, and strips
+whatever was sent, so an agent holding a key could not spend it and this one has none to hold.
+
+Without the grant the tool is still there and says at the moment of use that it could not search,
+which is a better failure than an agent quietly answering from memory. Each search is billed per
+call, which is why the tool asks for one question rather than keywords to try.
+
 ## Development
 
 ```sh
