@@ -113,6 +113,13 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to wake");
 	}
 
+	/** Stops the turn an agent is taking. Answers whether there was one to stop. */
+	async stop(agentId: string): Promise<boolean> {
+		const response = await this.#once({ op: "stop", agentId });
+		if ("text" in response) return response.text.length > 0;
+		throw new ControlError("unexpected answer to stop");
+	}
+
 	async remove(agentId: string, purge: boolean): Promise<void> {
 		await this.#once({ op: "remove", agentId, purge });
 	}

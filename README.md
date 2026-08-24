@@ -168,6 +168,14 @@ whole time either way. The prompt shows the spinner and the seconds while that a
 because a spinner alone says something is happening and the number rising beside it is what says
 whether it still is.
 
+`esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
+to stop, since a hint for a key that does nothing is a hint that lies. What stops is the process
+inside the container, killed rather than disconnected from: letting go of the pipe takes the output
+away from us and leaves a model thinking on the other side of it, going on being paid for after
+somebody has been told it stopped. What it had already written stays in the conversation with
+`stopped` under it, it is not taken again — an interrupted turn comes back, which is what whoever
+pressed the key was preventing — and it does not get to book the turn after it either.
+
 The wheel scrolls the panel, and `^U` and `^D` move it half a pane the way they do in `less`. The
 console asks the terminal for the wheel because it has to: the scrollback belongs to the terminal
 and holds the frames this printed rather than the conversation, so a wheel the terminal keeps for
@@ -321,7 +329,10 @@ There is no path from the sandbox to the plane, and this does not open one: the 
 the agent writes, which the plane reads and removes once the turn is over. So the plane checks it
 rather than trusting it. One wakeup is pending at a time, so asking again moves the appointment
 instead of adding to it; the delay is held between a second and a month; and the wakeup carries
-participant trust, never operator, however it asks. The note comes back fenced like anything else
+participant trust, never operator, however it asks. Calling it off is a second tool, `cancel_wake`,
+rather than a time that means never — the clamp is exactly why there is no such time, so an agent
+pushing its wakeup a year away to be rid of it has only moved it a month, and left believing
+otherwise. The note comes back fenced like anything else
 the agent did not hear from its operator, introduced as the reminder it is rather than as an
 instruction — the turn that wrote it may have been reading a stranger at the time.
 

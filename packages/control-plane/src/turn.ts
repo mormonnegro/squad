@@ -14,6 +14,7 @@ export interface TurnSandbox {
 			timeoutMs?: number;
 			workingDir?: string;
 			onStdout?: (chunk: string) => void;
+			signal?: AbortSignal;
 		},
 	): Promise<ExecResult>;
 }
@@ -24,6 +25,20 @@ export interface WakeRequest {
 	readonly note: string;
 }
 
+/**
+ * An agent dropping the turn it had asked for, rather than moving it.
+ *
+ * A separate thing to ask for because there is no time that means "not at all": the plane clamps
+ * what it is given into a range it can honour, so an agent trying to cancel by asking for a very
+ * distant wakeup only postpones one — which is what an agent that wanted to cancel actually did.
+ */
+export interface WakeCancel {
+	readonly cancel: true;
+}
+
+/** Either half of the one appointment an agent has: when to keep it, or that there is none. */
+export type WakeChange = WakeRequest | WakeCancel;
+
 export interface TurnResult {
 	readonly text: string;
 	readonly exitCode: number;
@@ -32,8 +47,10 @@ export interface TurnResult {
 	readonly ms: number;
 	readonly tokens: number;
 	readonly costUsd: number;
-	/** Present when the agent asked to be woken again. What it may ask for is decided upstream. */
-	readonly wake?: WakeRequest;
+	/** Present when the agent asked about its next turn. What it may ask for is decided upstream. */
+	readonly wake?: WakeChange;
+	/** Set when the turn was stopped rather than finished. The text is as far as it had got. */
+	readonly stopped?: true;
 }
 
 /**
@@ -43,7 +60,7 @@ export interface TurnResult {
  * arriving here is an agent that wrote the file by hand — which it can, having a shell — and the
  * safe answer to a request nobody can read is not to act on it.
  */
-export function parseWake(text: string): WakeRequest | undefined {
+export function parseWake(text: string): WakeChange | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(text);
@@ -52,7 +69,10 @@ export function parseWake(text: string): WakeRequest | undefined {
 	}
 	if (typeof parsed !== "object" || parsed === null) return undefined;
 
-	const { afterSeconds, note } = parsed as Record<string, unknown>;
+	const { afterSeconds, note, cancel } = parsed as Record<string, unknown>;
+	// Read before the rest, and carrying nothing else: dropping an appointment has no time to keep
+	// and nothing to be told at it.
+	if (cancel === true) return { cancel: true };
 	if (typeof afterSeconds !== "number" || !Number.isFinite(afterSeconds)) return undefined;
 	if (typeof note !== "string" || note.trim().length === 0) return undefined;
 
@@ -106,6 +126,8 @@ export class PiTurnRunner {
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 	readonly #wakeFile: string;
 	readonly #extensions: readonly string[];
+	/** The turn each agent is taking, while it is taking it, so that it can be stopped. */
+	readonly #running = new Map<string, AbortController>();
 
 	constructor(options: PiTurnRunnerOptions) {
 		this.#sandbox = options.sandbox;
@@ -152,6 +174,18 @@ export class PiTurnRunner {
 		];
 	}
 
+	/**
+	 * Stops the turn an agent is taking, and says whether there was one.
+	 *
+	 * Nothing is undone: the tokens are spent, and whatever the agent did to its own files it did.
+	 * What stops is the thinking, which is the part still costing something.
+	 */
+	stop(agentId: string): boolean {
+		const running = this.#running.get(agentId);
+		running?.abort();
+		return running !== undefined;
+	}
+
 	async run(
 		agentId: string,
 		prompt: string,
@@ -162,12 +196,23 @@ export class PiTurnRunner {
 			onText: (delta) => onText?.(delta),
 			onStep: (step) => this.#onStep?.(agentId, step),
 		});
-		// In its own repository, so what it remembers and what it can do are where it works.
-		const executed = await this.#sandbox.run(agentId, this.commandFor(agentId), prompt, {
-			timeoutMs: this.#timeoutMs,
-			workingDir: this.#repoPath,
-			onStdout: (chunk) => output.push(chunk),
-		});
+		const stopping = new AbortController();
+		this.#running.set(agentId, stopping);
+		let executed: ExecResult;
+		try {
+			// In its own repository, so what it remembers and what it can do are where it works.
+			executed = await this.#sandbox.run(agentId, this.commandFor(agentId), prompt, {
+				timeoutMs: this.#timeoutMs,
+				workingDir: this.#repoPath,
+				onStdout: (chunk) => output.push(chunk),
+				signal: stopping.signal,
+			});
+		} finally {
+			// Cleared before anything else can go wrong, so a stop arriving late finds nothing to stop
+			// rather than reaching into the turn after it.
+			this.#running.delete(agentId);
+		}
+		const stopped = stopping.signal.aborted;
 
 		// Before the exit code is looked at, so that a turn which died having asked to come back still
 		// comes back. A failed turn is the one most worth retrying, and it is also the one that cannot
@@ -181,8 +226,16 @@ export class PiTurnRunner {
 			ms: Date.now() - started,
 			tokens: output.tokens,
 			costUsd: output.costUsd,
-			...(wake !== undefined ? { wake } : {}),
+			// Taken off the disk either way, so the next turn does not find it and act on it. But a turn
+			// that was stopped does not get to book the one after it: being woken in a second by the very
+			// turn somebody just stopped is not stopping.
+			...(wake !== undefined && !stopped ? { wake } : {}),
+			...(stopped ? { stopped: true } : {}),
 		};
+		// A turn that was stopped did not fail. Its exit code says killed and its answer ends mid
+		// sentence, and calling either of those a failure would leave the events queued for another
+		// attempt — which takes the turn again, the one thing whoever stopped it asked for.
+		if (stopped) return result;
 		// Throwing leaves the events queued, so a turn lost to a bad key is retried rather than
 		// acknowledged as if the agent had answered.
 		if (result.exitCode !== 0) {
@@ -209,7 +262,7 @@ export class PiTurnRunner {
 	 * on again: an agent that asked once would be asking every turn from then on, and the wakeups it
 	 * never asked for are the ones nobody thinks to look for.
 	 */
-	async #takeWake(agentId: string): Promise<WakeRequest | undefined> {
+	async #takeWake(agentId: string): Promise<WakeChange | undefined> {
 		const read = await this.#sandbox
 			.run(agentId, ["sh", "-c", 'cat "$1" && rm -f "$1"', "sh", this.#wakeFile], "")
 			.catch(() => undefined);
@@ -221,6 +274,8 @@ export class PiTurnRunner {
 
 export interface TurnRunner {
 	run(agentId: string, prompt: string, onText?: (delta: string) => void): Promise<TurnResult>;
+	/** Stops the turn in flight, and says whether there was one. A runner may have none to stop. */
+	stop?(agentId: string): boolean;
 }
 
 export interface ReplyRouter {
@@ -238,8 +293,8 @@ export interface TurnHandlerOptions {
 	readonly onHeard?: (agentId: string, events: readonly AgentEvent[]) => Promise<void>;
 	/** The answer as it is written, for whoever is waiting rather than whoever is reading a log. */
 	readonly onSay?: (agentId: string, text: string) => void;
-	/** The next turn the agent asked for. Awaited, so it is booked before this one is over. */
-	readonly onWake?: (agentId: string, wake: WakeRequest) => Promise<void>;
+	/** The next turn the agent asked for, or dropped. Awaited, so it is settled before this one is over. */
+	readonly onWake?: (agentId: string, wake: WakeChange) => Promise<void>;
 	/** A reply that had nowhere to go. The turn still counts as taken. */
 	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
@@ -258,6 +313,9 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 			options.onSay?.(agentId, text),
 		);
 		options.onTurn?.(agentId, result);
+		// A stopped turn's answer is half of one, and half an answer is worse than none somewhere it
+		// will be read as the whole. Whoever stopped it was watching it being written anyway.
+		if (result.stopped) return;
 		// Before the reply and after the turn: the appointment is state and the reply is a courtesy, and
 		// a process that stops between the two should have kept the one the agent cannot ask for twice.
 		if (result.wake) await options.onWake?.(agentId, result.wake);

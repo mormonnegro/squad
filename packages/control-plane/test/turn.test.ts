@@ -39,12 +39,19 @@ class StubSandbox implements TurnSandbox {
 	result: ExecResult = { exitCode: 0, stdout: said("done"), stderr: "" };
 	/** What the turn left in the wake file, if anything. Absent is the file not being there. */
 	left: string | undefined;
+	/** A command that says its piece and then runs until something stops it, like a turn does. */
+	holds = false;
 
 	async run(
 		agentId: string,
 		cmd: readonly string[],
 		input: string,
-		options: { timeoutMs?: number; workingDir?: string; onStdout?: (chunk: string) => void } = {},
+		options: {
+			timeoutMs?: number;
+			workingDir?: string;
+			onStdout?: (chunk: string) => void;
+			signal?: AbortSignal;
+		} = {},
 	): Promise<ExecResult> {
 		this.calls.push({
 			agentId,
@@ -61,6 +68,13 @@ class StubSandbox implements TurnSandbox {
 			return { exitCode: 0, stdout, stderr: "" };
 		}
 		if (this.result.stdout.length > 0) options.onStdout?.(this.result.stdout);
+		if (this.holds && options.signal !== undefined) {
+			await new Promise<void>((resolve) => {
+				options.signal?.addEventListener("abort", () => resolve(), { once: true });
+			});
+			// Killed, which is what a signal leaves behind rather than a clean exit.
+			return { exitCode: 137, stdout: this.result.stdout, stderr: "" };
+		}
 		return this.result;
 	}
 }
@@ -220,6 +234,42 @@ describe("PiTurnRunner", () => {
 		expect((await runner.run("a1", "otra vez")).wake).toBe(undefined);
 	});
 
+	// The whole point of stopping something. A stopped turn that came back as an error would be left
+	// queued and taken again, which is the one thing whoever stopped it was asking not to happen.
+	it("ends a stopped turn without calling it a failure", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.holds = true;
+		sandbox.result = { exitCode: 137, stdout: said("iba por la mit"), stderr: "" };
+		const runner = new PiTurnRunner({ sandbox });
+
+		const turn = runner.run("a1", "hi");
+		expect(runner.stop("a1")).toBe(true);
+
+		const result = await turn;
+		expect(result.stopped).toBe(true);
+		// As far as it got, which is what the person watching it be written already saw.
+		expect(result.text).toBe("iba por la mit");
+	});
+
+	it("says there was nothing to stop when the agent was not taking a turn", () => {
+		expect(new PiTurnRunner({ sandbox: new StubSandbox() }).stop("a1")).toBe(false);
+	});
+
+	// Being woken a second later by the very turn somebody just stopped is not stopping. The request
+	// is still taken off the disk, so the next turn does not find it and act on it.
+	it("does not book the next turn from one that was stopped", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.holds = true;
+		sandbox.left = JSON.stringify({ afterSeconds: 1, note: "seguir" });
+		const runner = new PiTurnRunner({ sandbox });
+
+		const turn = runner.run("a1", "hi");
+		runner.stop("a1");
+
+		expect((await turn).wake).toBeUndefined();
+		expect(sandbox.left).toBeUndefined();
+	});
+
 	// A turn that died is the one most worth coming back to, and the one that can no longer ask.
 	it("still brings it back from a turn that failed", async () => {
 		const sandbox = new StubSandbox();
@@ -242,6 +292,17 @@ describe("parseWake", () => {
 			afterSeconds: 1200,
 			note: "seguir",
 		});
+	});
+
+	// Its own shape rather than a very distant time, because every time is clamped into a range the
+	// plane can honour: there is no number that means "not at all".
+	it("reads a cancellation as the tool writes it", () => {
+		expect(parseWake('{"cancel":true}\n')).toEqual({ cancel: true });
+	});
+
+	it("takes nothing else for a cancellation", () => {
+		expect(parseWake('{"cancel":false}')).toBeUndefined();
+		expect(parseWake('{"cancel":"yes"}')).toBeUndefined();
 	});
 
 	it("believes nothing it cannot read", () => {
@@ -360,6 +421,55 @@ describe("createTurnHandler", () => {
 		await handler({ agentId: "a1", events: [wakeup("webhook:deploys", "x")], prompt: "p" });
 
 		expect(sent).toEqual([]);
+	});
+
+	// Half an answer read as a whole one is worse than none, and the only person it was owed to is the
+	// one who stopped it — who was watching it be written and has already seen this much.
+	it("says nothing on the channel for a turn that was stopped", async () => {
+		const sent: string[] = [];
+		const handler = createTurnHandler({
+			runner: { run: async () => ({ ...answered("iba por la mit"), stopped: true as const }) },
+			router: {
+				send: async (reply) => {
+					sent.push(reply.body);
+				},
+			},
+		});
+
+		await handler({ agentId: "a1", events: [wakeup("webhook:deploys", "x")], prompt: "p" });
+
+		expect(sent).toEqual([]);
+	});
+
+	// Stopping and failing look alike from here and must not be treated alike: a failed turn is queued
+	// for another attempt, and a stopped one that came back would spend the money again on the work
+	// somebody just interrupted.
+	it("does not take a stopped turn again", async () => {
+		const bus = new EventBus();
+		await bus.register(
+			"a1",
+			createTurnHandler({
+				runner: { run: async () => ({ ...answered("iba por la mit"), stopped: true as const }) },
+			}),
+		);
+
+		await bus.publish({
+			agentId: "a1",
+			source: "webhook",
+			trust: "public",
+			channel: "webhook:deploys",
+			body: "x",
+		});
+		await bus.drain();
+
+		let retried = 0;
+		bus.unregister("a1");
+		await bus.register("a1", async () => {
+			retried += 1;
+		});
+		await bus.drain();
+
+		expect(retried).toBe(0);
 	});
 
 	it("leaves the events queued when the turn fails", async () => {

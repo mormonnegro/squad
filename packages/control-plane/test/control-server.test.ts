@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ControlClient, ControlError } from "../src/control-client.ts";
 import { ControlPlane, type PlaneEvent } from "../src/control-plane.ts";
 import { ControlServer } from "../src/control-server.ts";
+import type { TurnResult } from "../src/turn.ts";
 
 describe("the control socket", () => {
 	let stateDir: string;
@@ -44,6 +45,49 @@ describe("the control socket", () => {
 		// A wake is answered before the turn is acknowledged, so the store may still be writing.
 		await plane.bus.drain();
 		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	// The key pressed while an agent is thinking. It has to reach a turn being taken in another
+	// process, and it has to let go of whoever was waiting on the answer: a `wake` still holding out
+	// for the rest of it would sit there until its own timeout, long after the turn was over.
+	it("stops the turn an agent is taking, and releases whoever was waiting", async () => {
+		let running: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			running = resolve;
+		});
+		let end: (result: TurnResult) => void = () => {};
+		await plane.attach("scout", {
+			async run() {
+				running();
+				return new Promise<TurnResult>((resolve) => {
+					end = resolve;
+				});
+			},
+			stop() {
+				end({
+					text: "iba por la mit",
+					exitCode: 137,
+					stderr: "",
+					ms: 0,
+					tokens: 0,
+					costUsd: 0,
+					stopped: true,
+				});
+				return true;
+			},
+		});
+
+		const answer = client.wake("scout", "escribime algo largo");
+		await started;
+
+		expect(await client.stop("scout")).toBe(true);
+		await expect(answer).rejects.toThrow(/stopped/);
+	});
+
+	it("says there was nothing to stop when the agent is not thinking", async () => {
+		await answerWith("scout", () => "listo");
+
+		expect(await client.stop("scout")).toBe(false);
 	});
 
 	it("lists the agents an operator declared", async () => {

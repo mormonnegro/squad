@@ -533,6 +533,15 @@ function App({
 			if (rolled !== 0) scroll(rolled, 0);
 			return;
 		}
+		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
+		// reaches the agent being watched from whichever one is open. Only while it is thinking: escape
+		// on an agent with nothing to stop is a key pressed at the wrong moment, not a command.
+		if (key.escape) {
+			if (selected !== undefined && busy.has(selected.id)) {
+				void client.stop(selected.id).catch(() => {});
+			}
+			return;
+		}
 		// Half a pane at a time, from less and from vim. Chords, because every unmodified key that
 		// would have meant this — shift with an arrow, the page keys — is one the terminal keeps for
 		// scrolling its own scrollback and never delivers.
@@ -659,6 +668,10 @@ function App({
 				["^U^D", "scroll"],
 				["tab", panel === "chat" ? "logs" : "chat"],
 				["^C", "quit"],
+				// Last, so that the rest of the row does not move as it comes and goes, and shown only
+				// while there is something to stop: the key does nothing at any other time, and offering
+				// it then is how a hint becomes a thing that lies.
+				...(busy.size > 0 ? [["esc", "stop"]] : []),
 			].flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

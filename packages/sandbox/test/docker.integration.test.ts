@@ -91,6 +91,26 @@ suite("Docker sandbox against a live daemon", () => {
 		expect(result.exitCode).toBe(3);
 	}, 30_000);
 
+	// Letting go of the socket would end the wait and leave the command running: a turn stopped that
+	// way goes on thinking, and goes on being paid for, after somebody has been told it stopped. The
+	// process is matched by its command line because the pid Docker reports for an exec is the host's
+	// and means nothing inside this namespace.
+	it("kills what it is told to stop, rather than only stopping listening", async () => {
+		const stopping = new AbortController();
+		const running = manager.run(AGENT_ID, ["sleep", "97"], "", { signal: stopping.signal });
+		// Long enough that the command is really running, rather than testing the case where the stop
+		// arrives before the exec does.
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		stopping.abort();
+		await running;
+
+		// Exactly this command line, so neither the container's own `sleep infinity` nor the shell
+		// asking the question is mistaken for it.
+		const alive = await manager.exec(AGENT_ID, ["sh", "-c", "pgrep -x -f 'sleep 97' || echo NONE"]);
+		expect(alive.stdout).toContain("NONE");
+	}, 60_000);
+
 	it("cannot reach the internet directly, because the network is internal", async () => {
 		expect(await reachesInternet(manager, AGENT_ID)).toBe(false);
 	}, 60_000);

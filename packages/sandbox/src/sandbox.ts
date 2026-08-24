@@ -217,6 +217,8 @@ export class DockerSandboxManager {
 			workingDir?: string;
 			/** Called with stdout as it arrives, for a caller that cannot wait for the exit. */
 			onStdout?: (chunk: string) => void;
+			/** Stops the command where it stands. Whatever it wrote before that is still returned. */
+			signal?: AbortSignal;
 		} = {},
 	): Promise<ExecResult> {
 		const created = await this.engine.request<{ Id: string }>(
@@ -258,6 +260,20 @@ export class DockerSandboxManager {
 
 		collect(stream.head);
 		let timer: NodeJS.Timeout | undefined;
+		// Killed inside the container, and not merely disconnected from. Dropping our end of the pipe
+		// takes the output away from us and leaves the process running on the other side of it — which,
+		// when the process is a model taking a turn, means it goes on thinking and goes on being paid
+		// for, invisibly, after somebody has been told it stopped. The command line is what identifies
+		// it, because the pid Docker reports for an exec is the host's and means nothing in here;
+		// `pkill` never matches itself.
+		// The socket goes after the kill, not instead of it: returning the moment we stop listening
+		// would report a stop while the process was still running, and whoever acted on that would go
+		// looking and find it alive. Usually the socket is closed by then anyway, by the process ending.
+		const abort = (): void => {
+			void this.exec(agentId, ["pkill", "-TERM", "-f", cmd.join(" ")])
+				.catch(() => {})
+				.finally(() => stream.socket.destroy());
+		};
 		try {
 			await new Promise<void>((resolve, reject) => {
 				if (options.timeoutMs !== undefined) {
@@ -272,9 +288,15 @@ export class DockerSandboxManager {
 				stream.socket.once("close", resolve);
 				// Half-closing is the EOF the command waits for; without it a reader never returns.
 				stream.socket.end(input);
+
+				// Checked as well as listened for: the signal may already have been raised while the exec
+				// was being created, and a listener alone would wait out a turn nobody is waiting for.
+				if (options.signal?.aborted === true) abort();
+				else options.signal?.addEventListener("abort", abort, { once: true });
 			});
 		} finally {
 			if (timer) clearTimeout(timer);
+			options.signal?.removeEventListener("abort", abort);
 			stream.socket.removeListener("data", collect);
 		}
 

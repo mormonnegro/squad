@@ -138,6 +138,9 @@ describe("mouse", () => {
 	it("leaves what is not the mouse to whoever it was meant for", () => {
 		expect(mouse("hola")).toBeUndefined();
 		expect(mouse("")).toBeUndefined();
+		// Escape is read here first and is the start of every mouse report, so a plain one getting
+		// answered for as a wheel that moved nothing is a key that silently stops working.
+		expect(mouse("\u001b")).toBeUndefined();
 	});
 });
 

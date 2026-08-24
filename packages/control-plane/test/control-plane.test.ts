@@ -10,7 +10,7 @@ import {
 	proxyTokenOf,
 	withDefaults,
 } from "../src/control-plane.ts";
-import type { TurnRunner, WakeRequest } from "../src/turn.ts";
+import type { TurnResult, TurnRunner, WakeChange } from "../src/turn.ts";
 
 describe("ControlPlane", () => {
 	let stateDir: string;
@@ -206,7 +206,7 @@ describe("a turn that asked for another turn", () => {
 		await rm(stateDir, { recursive: true, force: true });
 	});
 
-	const asking = (wake?: WakeRequest): TurnRunner => ({
+	const asking = (wake?: WakeChange): TurnRunner => ({
 		async run() {
 			return {
 				text: "",
@@ -220,7 +220,7 @@ describe("a turn that asked for another turn", () => {
 		},
 	});
 
-	const takeTurn = async (plane: ControlPlane, wake?: WakeRequest): Promise<void> => {
+	const takeTurn = async (plane: ControlPlane, wake?: WakeChange): Promise<void> => {
 		await plane.attach("scout", asking(wake));
 		await plane.bus.publish({
 			agentId: "scout",
@@ -283,6 +283,37 @@ describe("a turn that asked for another turn", () => {
 		const [schedule] = await plane.scheduler.list("scout");
 		const wait = Date.parse(schedule?.nextRunAt ?? "") - asked;
 		expect(wait).toBeLessThanOrEqual(MAX_WAKE_SECONDS * 1000 + 1000);
+	});
+
+	// Pushing the wakeup a month out is not calling it off, and no number of seconds means never: every
+	// one of them is clamped into the range the plane can honour. Without this an agent that decides
+	// its errand is over has no way to say so, and comes back to find nothing left to do.
+	it("drops the appointment when the agent calls it off", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane, { afterSeconds: 900, note: "seguir con la cola" });
+		await takeTurn(plane, { cancel: true });
+
+		expect(await plane.scheduler.list("scout")).toEqual([]);
+	});
+
+	// Cancelling is an agent dropping its own appointment, not clearing the calendar: the schedules an
+	// operator wrote in the config are not the agent's to take out of it.
+	it("calls off only what the agent booked itself", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.scheduler.add({
+			agentId: "scout",
+			kind: "cron",
+			expression: "0 9 * * *",
+			channel: "wake",
+			body: "el reporte de la mañana",
+			trust: "operator",
+			createdBy: "operator",
+		});
+		await takeTurn(plane, { cancel: true });
+
+		expect((await plane.scheduler.list("scout")).map((schedule) => schedule.body)).toEqual([
+			"el reporte de la mañana",
+		]);
 	});
 
 	// The wait is the only sign an operator gets that an agent is going to act unwatched, so it comes
@@ -403,5 +434,82 @@ describe("what an agent was told, and what it said", () => {
 		await plane.bus.drain();
 
 		expect(seen).toEqual(["operator:true", "agent:false"]);
+	});
+});
+
+/**
+ * Stopping a turn, which is what an operator wants the moment an agent goes off doing the wrong
+ * thing expensively. It has to reach a turn already in flight, and it has to end it rather than
+ * interrupt it: an interrupted turn is queued and taken again, which is what was being prevented.
+ */
+describe("a turn that was stopped", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-stop-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	/** A turn that goes on thinking until something stops it, which is the only kind worth stopping. */
+	const thinking = (): { runner: TurnRunner; started: Promise<void> } => {
+		let running: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			running = resolve;
+		});
+		let end: (result: TurnResult) => void = () => {};
+		return {
+			started,
+			runner: {
+				async run() {
+					running();
+					return new Promise<TurnResult>((resolve) => {
+						end = resolve;
+					});
+				},
+				stop() {
+					end({
+						text: "iba por la mit",
+						exitCode: 137,
+						stderr: "",
+						ms: 1,
+						tokens: 0,
+						costUsd: 0,
+						stopped: true,
+					});
+					return true;
+				},
+			},
+		};
+	};
+
+	it("keeps the half it got, and says where it ends", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner, started } = thinking();
+		await plane.attach("scout", runner);
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "escribime algo largo",
+		});
+		await started;
+
+		expect(plane.stopTurn("scout")).toBe(true);
+		await plane.bus.drain();
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "escribime algo largo" },
+			{ from: "agent", text: "iba por la mit" },
+			{ from: "plane", text: "stopped" },
+		]);
+	});
+
+	it("says there was nothing to stop when the agent is not taking a turn", () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		expect(plane.stopTurn("scout")).toBe(false);
 	});
 });

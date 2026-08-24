@@ -18,6 +18,12 @@ const WAKE_FILE = process.env.AGENT_DIVE_WAKE_FILE ?? "/home/agent/.run/wake.jso
 const MIN_SECONDS = 1;
 const MAX_SECONDS = 30 * 24 * 60 * 60;
 
+/** Both tools write the same file, because the plane reads one file and acts on what it says. */
+function request(asked: Record<string, unknown>): void {
+	mkdirSync(dirname(WAKE_FILE), { recursive: true });
+	writeFileSync(WAKE_FILE, `${JSON.stringify(asked)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
 export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "wake_me",
@@ -31,12 +37,13 @@ export default function (pi: ExtensionAPI): void {
 			"not about yourself: what you were doing, and what to do next. Anything that will not fit",
 			"belongs in a file in your memory, with the note saying which one.",
 			"",
-			"You have one wakeup, not a queue of them. Asking again moves it.",
+			"You have one wakeup, not a queue of them. Asking again moves it, and cancel_wake drops it.",
 		].join("\n"),
 		promptSnippet: "Ask for another turn later, with a note to yourself about what to continue",
 		promptGuidelines: [
 			"Use wake_me rather than ending a turn with a task abandoned, when the task is one that cannot be finished now.",
 			"wake_me holds a single wakeup: calling it again moves that one rather than adding another.",
+			"To stop being woken at all, use cancel_wake. Moving the wakeup far away only postpones it.",
 		],
 		parameters: Type.Object({
 			afterSeconds: Type.Integer({
@@ -59,17 +66,41 @@ export default function (pi: ExtensionAPI): void {
 				throw new Error("A wakeup with no note wakes you knowing nothing. Say what to continue.");
 			}
 
-			mkdirSync(dirname(WAKE_FILE), { recursive: true });
-			writeFileSync(WAKE_FILE, `${JSON.stringify({ afterSeconds, note })}\n`, {
-				encoding: "utf8",
-				mode: 0o600,
-			});
+			request({ afterSeconds, note });
 
 			// Said as a time rather than a count of seconds, because what the agent has to judge is
 			// whether that is soon enough, and it is about to go and not be able to reconsider.
 			const at = new Date(Date.now() + afterSeconds * 1000);
 			return {
 				content: [{ type: "text", text: `You will be woken at ${at.toISOString()} with: ${note}` }],
+				details: {},
+			};
+		},
+	});
+
+	/**
+	 * Its own tool rather than a time that means never, because there is no such time: the plane
+	 * clamps what it is given into a range it can honour, so an agent trying to call the wakeup off by
+	 * pushing it a year away has only moved it a month — and gone, believing otherwise.
+	 */
+	pi.registerTool({
+		name: "cancel_wake",
+		label: "Cancel my wakeup",
+		description: [
+			"Drop the wakeup you asked for, when what it was for is done, or was dealt with some other",
+			"way, or is no longer wanted.",
+			"",
+			"Nothing will wake you afterwards until somebody says something to you, or you ask again.",
+		].join("\n"),
+		promptSnippet: "Call off the turn you had asked for later",
+		promptGuidelines: [
+			"Use cancel_wake when the reason you asked to be woken has gone away, rather than leaving a turn booked that will find nothing to do.",
+		],
+		parameters: Type.Object({}),
+		async execute() {
+			request({ cancel: true });
+			return {
+				content: [{ type: "text", text: "Your wakeup is cancelled. Nothing will wake you." }],
 				details: {},
 			};
 		},

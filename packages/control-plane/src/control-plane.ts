@@ -24,7 +24,7 @@ import {
 	PiTurnRunner,
 	type TurnResult,
 	type TurnRunner,
-	type WakeRequest,
+	type WakeChange,
 } from "./turn.ts";
 
 export interface AgentConfig {
@@ -183,6 +183,7 @@ export class ControlPlane {
 	readonly #defaults: AgentDefaults | undefined;
 	readonly #created: CreatedAgentStore;
 	readonly #transcript: Transcript;
+	readonly #runners = new Map<string, TurnRunner>();
 	readonly #createdIds = new Set<string>();
 	readonly #stateDir: string;
 	readonly #image: string;
@@ -332,6 +333,7 @@ export class ControlPlane {
 		if (index === -1) throw new Error(`No agent "${agentId}" in this plane`);
 
 		this.bus.unregister(agentId);
+		this.#runners.delete(agentId);
 		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
 		this.#tokens.delete(agentId);
 
@@ -348,6 +350,7 @@ export class ControlPlane {
 	 * answers with is another, and so a caller with its own runner still gets the plane's wiring.
 	 */
 	async attach(agentId: string, runner: TurnRunner): Promise<void> {
+		this.#runners.set(agentId, runner);
 		await this.bus.register(
 			agentId,
 			createTurnHandler({
@@ -362,9 +365,13 @@ export class ControlPlane {
 					if (result.text.length > 0) {
 						void this.#record(id, { from: "agent", text: result.text }, false);
 					}
+					// Said as a failure because that is what it is to anyone who was waiting: an answer
+					// that is not coming. It is also what releases them — a `wake` still holding on for
+					// the rest of it would otherwise wait out its whole timeout for nothing.
+					if (result.stopped) this.#reportError(id, new Error("stopped"));
 				},
 				onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
-				onWake: (id, wake) => this.#scheduleWake(id, wake),
+				onWake: (id, wake) => this.#applyWake(id, wake),
 				// Named by destination, not by agent, so an operator waiting on their own reply is not
 				// told that somebody else's channel is the reason.
 				onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
@@ -373,27 +380,42 @@ export class ControlPlane {
 	}
 
 	/**
-	 * Books the next turn an agent asked itself for: one, bounded, and never on the operator's word.
+	 * Stops the turn an agent is taking, and says whether there was one to stop.
+	 *
+	 * The turn ends where it is rather than failing: its events are answered for, so nothing takes it
+	 * again. That is the difference between stopping something and interrupting it — an interrupted
+	 * turn comes back, which is what whoever asked for this was trying to prevent.
+	 */
+	stopTurn(agentId: string): boolean {
+		return this.#runners.get(agentId)?.stop?.(agentId) ?? false;
+	}
+
+	/**
+	 * Settles the one appointment an agent keeps with itself: books it, moves it, or drops it.
 	 *
 	 * The bounds are applied here and not only in the tool that writes the request, because the tool
 	 * is a convenience inside a sandbox where the agent has a shell and could write the file itself.
 	 * They clamp rather than refuse, because both ends of the range are ways of saying something an
 	 * agent can mean: no wait at all becomes the next second, and a year becomes a month.
 	 *
+	 * Clamping is also why cancelling has to be its own request rather than a very distant time: with
+	 * every number landing inside the range, there is none an agent could send that means "not at all".
+	 *
 	 * At most one wakeup is pending, so asking again moves the appointment instead of adding to it —
-	 * without that, an agent that asks every turn fans out into as many turns as it has asked.
+	 * without that, an agent that asks every turn fans out into as many turns as it has asked. The
+	 * existing one goes either way, and only what replaces it differs.
 	 */
-	async #scheduleWake(agentId: string, wake: WakeRequest): Promise<void> {
+	async #applyWake(agentId: string, wake: WakeChange): Promise<void> {
 		try {
+			for (const schedule of await this.scheduler.list(agentId)) {
+				if (schedule.createdBy === "agent") await this.scheduler.remove(schedule.id);
+			}
+			if ("cancel" in wake) return;
+
 			const afterSeconds = Math.min(
 				Math.max(Math.round(wake.afterSeconds), MIN_WAKE_SECONDS),
 				MAX_WAKE_SECONDS,
 			);
-
-			for (const schedule of await this.scheduler.list(agentId)) {
-				if (schedule.createdBy === "agent") await this.scheduler.remove(schedule.id);
-			}
-
 			await this.scheduler.add({
 				agentId,
 				kind: "once",

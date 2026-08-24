@@ -22,6 +22,7 @@ export type ControlRequest =
 			readonly purge: boolean;
 	  }
 	| { readonly id: string; readonly op: "create"; readonly agentId: string }
+	| { readonly id: string; readonly op: "stop"; readonly agentId: string }
 	| { readonly id: string; readonly op: "logs" }
 	| { readonly id: string; readonly op: "transcripts" };
 
@@ -171,6 +172,14 @@ export class ControlServer {
 					text: await this.#wake(request.agentId, request.body, (chunk) =>
 						this.#write(socket, { id: request.id, chunk }),
 					),
+				});
+			} else if (request.op === "stop") {
+				// Answered with what there was to stop rather than with nothing, so that a key pressed at
+				// an agent that had already finished can be told apart from one that did something.
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: this.#plane.stopTurn(request.agentId) ? "stopped" : "",
 				});
 			} else if (request.op === "create") {
 				this.#write(socket, {
