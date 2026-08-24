@@ -127,7 +127,10 @@ function spoken(said: Said): string {
 	// The operator's line, but not one addressed to the agent: it keeps the mark it was typed under,
 	// the bang it starts with, in the colour the prompt had while it was typed. Read back later, a
 	// `> !ls` looks like the agent was asked to run something, and the agent was never told at all.
-	if (said.from === "operator" && isShell(said.text)) return `${ESC}[35m${said.text}${ESC}[39m`;
+	// The bang sits off the command the way `> ` sits off a message, so both marks are a mark.
+	if (said.from === "operator" && isShell(said.text)) {
+		return `${ESC}[35m! ${said.text.slice(1).trimStart()}${ESC}[39m`;
+	}
 	if (said.from === "plane") return `\u001b[31m${said.text}\u001b[39m`;
 	if (said.via !== undefined) return `\u001b[2m‹${said.via}›\u001b[22m ${said.text}`;
 	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;

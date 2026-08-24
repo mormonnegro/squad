@@ -73,8 +73,13 @@ describe("transcript", () => {
 	it("marks a shell line with the bang it was typed under, not with the agent's mark", () => {
 		const line = transcript([{ from: "operator", text: "!ls" }])[0];
 
-		expect(line).toContain("!ls");
+		expect(line).toContain("! ls");
 		expect(line).not.toContain("> ");
+	});
+
+	// The bang is a mark, not the first letter of the command, so it stands off it like `> ` does.
+	it("holds the bang off the command however the line was typed", () => {
+		expect(transcript([{ from: "operator", text: "!   ls -la" }])[0]).toContain("! ls -la");
 	});
 
 	// What a command printed belongs to the command, the way it does in a terminal.
@@ -84,7 +89,7 @@ describe("transcript", () => {
 				{ from: "operator", text: "!ls" },
 				{ from: "shell", text: "agent.yaml" },
 			]),
-		).toEqual([expect.stringContaining("!ls"), "agent.yaml"]);
+		).toEqual([expect.stringContaining("! ls"), "agent.yaml"]);
 	});
 });
 
