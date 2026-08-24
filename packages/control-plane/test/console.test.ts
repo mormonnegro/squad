@@ -5,6 +5,7 @@ import { COMMANDS, type Command } from "../src/commands.ts";
 import {
 	Agents,
 	Chat,
+	detail,
 	doing,
 	here,
 	mouse,
@@ -449,6 +450,22 @@ describe("Agents", () => {
 		);
 
 		expect(drawn).not.toContain("▱");
+	});
+
+	// Three things want one row, and which of them goes when it will not hold all three is the whole
+	// rule: the money is why the row is drawn at all, the wait is the warning, and the bar is a second
+	// fact about the money — a fact about a fact is what a narrow terminal can afford to lose.
+	it("gives up the bar before the wait, and the wait before the money", () => {
+		const agent = {
+			...listed("scribe", true),
+			spentUsd: 1.5,
+			limitUsd: 5,
+			wakeAt: new Date(Date.now() + 900_000).toISOString(),
+		};
+
+		expect(detail(agent, 15)).toEqual({ spent: "$1.50", bar: "▰▰▱▱▱", wake: "15m" });
+		expect(detail(agent, 14)).toEqual({ spent: "$1.50", bar: "", wake: "15m" });
+		expect(detail(agent, 6)).toEqual({ spent: "$1.50", bar: "", wake: "" });
 	});
 
 	// An agent is a name and, when there is something to say under it, a second row. The budget is
