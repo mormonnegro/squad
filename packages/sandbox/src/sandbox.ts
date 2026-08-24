@@ -30,6 +30,13 @@ export interface SandboxStatus {
 	 * edited to say.
 	 */
 	readonly env: Readonly<Record<string, string>>;
+	/**
+	 * The image the container is actually running, by id rather than by tag.
+	 *
+	 * A tag is rebuilt in place and keeps its name, so the name says nothing about whether the
+	 * container is running what the tag means today.
+	 */
+	readonly imageId: string;
 }
 
 export interface ExecResult {
@@ -47,6 +54,7 @@ export class SandboxTimeoutError extends Error {
 
 interface ContainerInspect {
 	Id: string;
+	Image: string;
 	State: { Running: boolean; StartedAt: string };
 	Config?: { Env?: readonly string[] };
 }
@@ -121,6 +129,20 @@ export class DockerSandboxManager {
 		return response.body.Id;
 	}
 
+	/** What a tag points at right now, so a container can be asked whether it is still running it. */
+	async imageId(image: string): Promise<string | undefined> {
+		try {
+			const response = await this.engine.request<{ Id: string }>(
+				"GET",
+				`/images/${encodeURIComponent(image)}/json`,
+			);
+			return response.body.Id;
+		} catch (error) {
+			if (error instanceof DockerError && error.status === 404) return undefined;
+			throw error;
+		}
+	}
+
 	async start(agentId: string): Promise<void> {
 		await this.engine.request("POST", `/containers/${containerName(agentId)}/start`);
 	}
@@ -151,6 +173,7 @@ export class DockerSandboxManager {
 				startedAt: response.body.State.Running ? response.body.State.StartedAt : undefined,
 				proxyUrl: readEnv(response.body.Config?.Env, "HTTPS_PROXY"),
 				env: parseEnv(response.body.Config?.Env),
+				imageId: response.body.Image,
 			};
 		} catch (error) {
 			if (error instanceof DockerError && error.status === 404) return undefined;

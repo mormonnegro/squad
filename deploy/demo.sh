@@ -134,7 +134,11 @@ reload() {
   docker inspect "$PLANE" >/dev/null 2>&1 ||
     { echo "Nothing to reload. Start it with ./deploy/demo.sh up" >&2; exit 1; }
 
-  say "rebuilding the control plane"
+  # Both images, because what the agent runs with lives in the sandbox one: the plane's own tools are
+  # shipped in there, and a reload that rebuilt only the plane would leave every agent without them.
+  # The new plane replaces a sandbox that is not running what the tag points at now.
+  say "rebuilding the images"
+  docker build -q -t agent-dive/sandbox:dev packages/sandbox/image >/dev/null
   docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev . >/dev/null
   write_config
 

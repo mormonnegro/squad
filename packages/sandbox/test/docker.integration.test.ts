@@ -59,6 +59,9 @@ suite("Docker sandbox against a live daemon", () => {
 		// Read back rather than remembered: the container outlives whatever created it, so this is
 		// where a control plane that restarted finds the credential it has to go on honouring.
 		expect(status?.proxyUrl).toBe("http://itest:token@egress:8080");
+		// By id and not by tag: a tag is rebuilt in place, so it is the only way to ask whether a
+		// running sandbox holds the tools the image ships today.
+		expect(status?.imageId).toBe(await manager.imageId(IMAGE));
 	}, 60_000);
 
 	it("mounts the agent repository volume and the CA", async () => {

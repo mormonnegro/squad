@@ -472,10 +472,15 @@ export class ControlPlane {
 	 * which is cheap: the volume is the agent, and it is not what goes away.
 	 */
 	async #adoptOrCreateSandbox(agent: AgentConfig): Promise<string> {
+		// By id, because the tag is rebuilt in place: a sandbox running last week's image answers to
+		// the same name as one running today's, and the tools shipped in it are the difference.
+		// Unknown means the daemon would not say, and churning every sandbox on that is worse.
+		const wanted = await this.sandboxes.imageId(this.#image).catch(() => undefined);
 		const existing = await this.sandboxes.status(agent.id);
 		if (existing !== undefined) {
 			const adopted = proxyTokenOf(existing.proxyUrl, agent.id);
-			if (adopted !== undefined && carriesEnv(existing.env, agent.env)) return adopted;
+			const current = wanted === undefined || wanted === existing.imageId;
+			if (adopted !== undefined && current && carriesEnv(existing.env, agent.env)) return adopted;
 			await this.sandboxes.destroy(agent.id, { discardState: false });
 		}
 
