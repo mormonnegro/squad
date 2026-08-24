@@ -133,6 +133,14 @@ agents:
         host: example.com
         methods: [GET]
         injection: { kind: none }
+      # Somewhere for \`/mcp\` to reach, so the demo can show it working rather than describe it.
+      # A public read-only MCP server that answers questions about GitHub repositories, and one of
+      # the few that wants no key at all — which is what \`kind: none\` says, and why this grant
+      # spends nothing of yours. Try it with:
+      #   /mcp add deepwiki https://mcp.deepwiki.com/mcp
+      - id: deepwiki
+        host: mcp.deepwiki.com
+        injection: { kind: none }
 hooks:
   - id: ping
     agentId: $AGENT
