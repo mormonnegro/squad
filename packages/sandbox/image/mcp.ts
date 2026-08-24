@@ -70,22 +70,42 @@ interface Answered {
 	readonly isError?: boolean;
 }
 
-/**
- * Every process this extension started, killed when pi's is on its way out.
- *
- * They are unreferenced as well, which is the part that matters: a server held open is a handle on
- * the event loop, and a turn that has answered but cannot exit is indistinguishable from a hung one.
- */
+/** Every process this extension started, killed when pi's is on its way out. */
 const started = new Set<ChildProcess>();
 process.once("exit", () => {
 	for (const child of started) child.kill();
 });
 
-function loose(child: ChildProcess): void {
-	started.add(child);
-	child.unref();
+/**
+ * How many answers we are waiting for, which decides whether a server we are holding open is a
+ * reason for Node not to exit.
+ *
+ * Both halves of this have to be right or the turn dies. Left referenced, a local server outlives
+ * the answer and pi can never exit — a turn that finished looks exactly like a hung one, and the
+ * plane kills it ten minutes later. Left unreferenced, there is a moment during the handshake when
+ * nothing at all is referenced and Node exits mid-turn, taking pi with it. So: held while we are
+ * waiting on something, let go the instant we are not.
+ */
+let waiting = 0;
+
+function watch(child: ChildProcess, on: boolean): void {
+	if (on) child.ref();
+	else child.unref();
 	for (const stream of [child.stdin, child.stdout, child.stderr]) {
-		(stream as { unref?: () => void } | null)?.unref?.();
+		const handle = stream as { ref?: () => void; unref?: () => void } | null;
+		if (on) handle?.ref?.();
+		else handle?.unref?.();
+	}
+}
+
+async function holding<T>(work: () => Promise<T>): Promise<T> {
+	waiting += 1;
+	if (waiting === 1) for (const child of started) watch(child, true);
+	try {
+		return await work();
+	} finally {
+		waiting -= 1;
+		if (waiting === 0) for (const child of started) watch(child, false);
 	}
 }
 
@@ -226,7 +246,7 @@ function readFrame(block: string): { readonly event: string; readonly data: stri
 function overStdio(command: string, args: readonly string[]): Connection {
 	const child = spawn(command, [...args], { stdio: ["pipe", "pipe", "pipe"] });
 	const pending = new Pending();
-	loose(child);
+	started.add(child);
 
 	// Where an MCP server says why it would not start, and the only place it says it. Kept to a tail
 	// so a chatty one cannot grow without bound over a long turn.
@@ -367,7 +387,7 @@ function overHttp(url: string): Connection {
 function overSse(url: string): Connection {
 	const pending = new Pending();
 	const child = spawn("curl", ["-sS", "-N", "-H", "Accept: text/event-stream", url]);
-	loose(child);
+	started.add(child);
 
 	let arrive: (where: string) => void = () => {};
 	let fail: (error: Error) => void = () => {};
@@ -450,7 +470,11 @@ function connect(server: Server): Connection {
 }
 
 /** The handshake, and then everything the server can do — in pages, because some of them page. */
-async function greet(connection: Connection): Promise<readonly Listed[]> {
+function greet(connection: Connection): Promise<readonly Listed[]> {
+	return holding(() => shakeHands(connection));
+}
+
+async function shakeHands(connection: Connection): Promise<readonly Listed[]> {
 	await connection.call(
 		"initialize",
 		{
@@ -546,10 +570,9 @@ function register(
 		// descriptions are in the request already.
 		parameters: shapeOf(tool.inputSchema) as never,
 		async execute(_toolCallId, params) {
-			const answered = (await connection.call("tools/call", {
-				name: tool.name,
-				arguments: params ?? {},
-			})) as Answered;
+			const answered = (await holding(() =>
+				connection.call("tools/call", { name: tool.name, arguments: params ?? {} }),
+			)) as Answered;
 			const content = carried(answered);
 
 			// Thrown rather than returned, because that is how a pi tool reports failure: a failure
