@@ -14,8 +14,8 @@ import { Type } from "typebox";
  */
 const WAKE_FILE = process.env.AGENT_DIVE_WAKE_FILE ?? "/home/agent/.run/wake.json";
 
-/** Below this a wakeup is a spin, and the plane refuses it anyway; saying so here is saying it in time. */
-const MIN_SECONDS = 60;
+/** A second, because "right after this turn" is a real thing to want and the plane can honour it. */
+const MIN_SECONDS = 1;
 const MAX_SECONDS = 30 * 24 * 60 * 60;
 
 export default function (pi: ExtensionAPI): void {

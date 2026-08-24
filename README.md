@@ -300,7 +300,7 @@ nobody watching should not need a command to notice.
 There is no path from the sandbox to the plane, and this does not open one: the request is a file
 the agent writes, which the plane reads and removes once the turn is over. So the plane checks it
 rather than trusting it. One wakeup is pending at a time, so asking again moves the appointment
-instead of adding to it; the delay is held between a minute and a month; and the wakeup carries
+instead of adding to it; the delay is held between a second and a month; and the wakeup carries
 participant trust, never operator, however it asks. The note comes back fenced like anything else
 the agent did not hear from its operator, introduced as the reminder it is rather than as an
 instruction — the turn that wrote it may have been reading a stranger at the time.

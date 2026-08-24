@@ -264,10 +264,11 @@ describe("a turn that asked for another turn", () => {
 		expect(schedules[0]?.body).toBe("second");
 	});
 
-	it("holds a request for ten seconds to the soonest it may be", async () => {
+	// A wakeup with no wait is a turn that never ends, taken by an agent that cannot see it looping.
+	it("holds a request for no wait at all to the soonest it may be", async () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
 		const asked = Date.now();
-		await takeTurn(plane, { afterSeconds: 10, note: "right away" });
+		await takeTurn(plane, { afterSeconds: 0, note: "right away" });
 
 		const [schedule] = await plane.scheduler.list("scout");
 		const wait = Date.parse(schedule?.nextRunAt ?? "") - asked;

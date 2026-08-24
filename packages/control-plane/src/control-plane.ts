@@ -132,8 +132,8 @@ export interface AgentSummary {
  */
 export const WAKE_CHANNEL = "wake";
 
-/** The soonest an agent may ask to be woken. Under a minute a wakeup is a spin, not a plan. */
-export const MIN_WAKE_SECONDS = 60;
+/** The soonest an agent may ask to be woken: the next turn, near enough. */
+export const MIN_WAKE_SECONDS = 1;
 
 /** The furthest. Past a month it is not scheduling work, it is leaving a note for a stranger. */
 export const MAX_WAKE_SECONDS = 30 * 24 * 60 * 60;

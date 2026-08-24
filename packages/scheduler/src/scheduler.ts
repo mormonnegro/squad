@@ -10,12 +10,12 @@ export interface WakeupPublisher {
 export interface SchedulerOptions {
 	readonly publisher: WakeupPublisher;
 	readonly store?: ScheduleStore;
-	/** How often to look for due schedules. Cron resolution is a minute, so this only bounds lag. */
+	/** How often to look for due schedules. This is the lag, and an agent may ask to wake in a second. */
 	readonly intervalMs?: number;
 	readonly onError?: (schedule: Schedule, error: Error) => void;
 }
 
-const DEFAULT_INTERVAL_MS = 15_000;
+const DEFAULT_INTERVAL_MS = 1_000;
 
 /**
  * Turns schedules into wakeups.
