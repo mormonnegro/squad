@@ -218,6 +218,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
 
 ```
  ▸ /limit [<amount>|off]  what it has spent today, and the ceiling for it
+   /mcp [<name>|add …]    the MCP servers it has, and the shelf to add from
    /help                  every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
@@ -485,6 +486,59 @@ whatever was sent, so an agent holding a key could not spend it and this one has
 Without the grant the tool is still there and says at the moment of use that it could not search,
 which is a better failure than an agent quietly answering from memory. Each search is billed per
 call, which is why the tool asks for one question rather than keywords to try.
+
+## An agent using tools that live somewhere else
+
+pi has no MCP client, and says so on purpose: build an extension, its README answers. So `mcp.ts`
+sits in the sandbox image beside `wake_me` and `web_search` and is a whole one — the handshake, all
+three transports, and the tools that come back registered as pi's own, so the model cannot tell
+which of them live somewhere else.
+
+Finding a server is the expensive part and it only has to happen once. `/mcp add` puts it on a shelf
+the plane keeps, and gives it to the agent you typed it at:
+
+```
+> /mcp add linear https://mcp.linear.app/mcp
+"linear" is on the shelf, and this agent has it.
+
+Any other agent can have it too, with /mcp linear.
+```
+
+From the second agent on it is a name off a list, which is the whole point of the shelf being the
+plane's rather than the agent's:
+
+```
+> /mcp
+This agent has:
+  files   mcp-files /home/agent
+
+On the shelf:
+  linear  https://mcp.linear.app/mcp
+  sentry  https://mcp.sentry.dev/mcp   (no grant for mcp.sentry.dev)
+
+/mcp linear gives this agent that one.
+
+> /mcp linear
+This agent has "linear": https://mcp.linear.app/mcp
+```
+
+A URL is a remote server, `sse <url>` is one speaking the older transport — the one thing about a
+server a line cannot show by itself — and anything else is a command the agent starts for itself.
+`/mcp drop` takes one off this agent and leaves it on the shelf; `/mcp forget` takes it off the
+shelf and off every agent that had it, because an attachment naming a server that is gone is not an
+attachment.
+
+**There is nowhere in a server to put a credential.** A local one inherits a sandbox whose only road
+out is the egress proxy, a remote one is reached down that same road, and the proxy already writes
+whatever key either of them needs. So connecting to a server that wants one is still two things: the
+line above, and a grant. `/mcp` notices when the second is missing and prints what to paste, but it
+will not write it — a grant comes from the config file and from nowhere else, and putting the whole
+of an agent's reach one typo away from the box its messages are typed into is not a convenience.
+
+The list is written into the sandbox before every turn rather than baked into the container, so a
+server added from the console reaches an agent that is already up on its next turn, and one taken
+away stops being offered. A server that will not answer costs the agent that server's tools and
+says so on stderr; it does not cost the turn.
 
 ## Development
 
