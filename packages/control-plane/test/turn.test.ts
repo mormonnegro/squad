@@ -1,6 +1,7 @@
 import { EventBus } from "@agent-dive/events";
 import { type ExecResult, SANDBOX_EXTENSIONS } from "@agent-dive/sandbox";
 import { describe, expect, it } from "vitest";
+import type { NamedServer } from "../src/mcp.ts";
 import {
 	createTurnHandler,
 	PiTurnRunner,
@@ -41,6 +42,8 @@ class StubSandbox implements TurnSandbox {
 	left: string | undefined;
 	/** A command that says its piece and then runs until something stops it, like a turn does. */
 	holds = false;
+	/** A sandbox that will not take the servers, to see what the turn does about it. */
+	refusesWrites = false;
 
 	async run(
 		agentId: string,
@@ -61,6 +64,13 @@ class StubSandbox implements TurnSandbox {
 			workingDir: options.workingDir,
 		});
 		if (cmd[0] === "sh") {
+			// Two things arrive as a shell: the servers going in, and the wakeup coming out. Telling
+			// them apart by what the script does, since taking one for the other reads as an agent
+			// having asked for a turn it never asked for.
+			if (String(cmd[2]).includes("cat >")) {
+				if (this.refusesWrites) return { exitCode: 1, stdout: "", stderr: "read-only" };
+				return { exitCode: 0, stdout: "", stderr: "" };
+			}
 			if (this.left === undefined) return { exitCode: 1, stdout: "", stderr: "" };
 			const stdout = this.left;
 			// Taken away by the reading, which is the whole point of reading it that way.
@@ -69,8 +79,11 @@ class StubSandbox implements TurnSandbox {
 		}
 		if (this.result.stdout.length > 0) options.onStdout?.(this.result.stdout);
 		if (this.holds && options.signal !== undefined) {
+			// Checked as well as listened for, as the real one is: a stop can land before the command
+			// starts, and a listener alone would wait forever for an event that already happened.
 			await new Promise<void>((resolve) => {
-				options.signal?.addEventListener("abort", () => resolve(), { once: true });
+				if (options.signal?.aborted === true) resolve();
+				else options.signal?.addEventListener("abort", () => resolve(), { once: true });
 			});
 			// Killed, which is what a signal leaves behind rather than a clean exit.
 			return { exitCode: 137, stdout: this.result.stdout, stderr: "" };
@@ -105,6 +118,8 @@ describe("PiTurnRunner", () => {
 			"/usr/local/lib/agent-dive/extensions/wake.ts",
 			"--extension",
 			"/usr/local/lib/agent-dive/extensions/search.ts",
+			"--extension",
+			"/usr/local/lib/agent-dive/extensions/mcp.ts",
 		]);
 	});
 
@@ -116,6 +131,42 @@ describe("PiTurnRunner", () => {
 		const named = command.filter((_, index) => command[index - 1] === "--extension");
 
 		expect(named).toEqual(SANDBOX_EXTENSIONS);
+	});
+
+	/**
+	 * The shelf is the plane's and the file is a copy of the part of it that concerns one agent, so
+	 * it is written again every turn: an agent given a server between one turn and the next hears
+	 * about it on the next one, without a container being recreated to tell it.
+	 */
+	it("puts the servers the agent holds in front of it before pi starts", async () => {
+		const sandbox = new StubSandbox();
+		let held: readonly NamedServer[] = [];
+		const runner = new PiTurnRunner({ sandbox, servers: async () => held });
+
+		await runner.run("a1", "hi");
+
+		expect(sandbox.calls[0]?.cmd).toContain("/home/agent/.run/mcp.json");
+		expect(sandbox.calls[0]?.input).toBe("[]");
+		expect(sandbox.calls[1]?.cmd[0]).toBe("pi");
+
+		held = [{ name: "linear", server: { transport: "http", url: "https://mcp.linear.app/mcp" } }];
+		await runner.run("a1", "otra vez");
+
+		expect(JSON.parse(sandbox.calls[3]?.input ?? "null")).toEqual(held);
+	});
+
+	// Fewer tools is a worse turn. No turn is worse than that.
+	it("takes the turn anyway when the servers could not be written", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.refusesWrites = true;
+		const runner = new PiTurnRunner({
+			sandbox,
+			servers: async () => [
+				{ name: "linear", server: { transport: "http", url: "https://x/mcp" } },
+			],
+		});
+
+		expect((await runner.run("a1", "hi")).text).toBe("done");
 	});
 
 	it("hands over the answer as it is written, not only when the turn is over", async () => {

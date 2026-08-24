@@ -702,6 +702,9 @@ export class ControlPlane {
 		const runner = new PiTurnRunner({
 			sandbox: this.sandboxes,
 			onStep: (agentId, step) => this.#emit({ kind: "step", agentId, step }),
+			// Asked again each turn rather than read once here, so a server added from the console
+			// reaches an agent that is already up on its next turn, without recreating anything.
+			servers: (agentId) => this.#mcp.attached(agentId),
 			...(agent.provider !== undefined ? { provider: agent.provider } : {}),
 			...(agent.model !== undefined ? { model: agent.model } : {}),
 			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),

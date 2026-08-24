@@ -26,6 +26,7 @@ COPY relay.mjs /usr/local/lib/agent-dive/relay.mjs
 # written once and is the agent's from then on, so anything shipped into it could never be fixed.
 COPY wake.ts /usr/local/lib/agent-dive/extensions/wake.ts
 COPY search.ts /usr/local/lib/agent-dive/extensions/search.ts
+COPY mcp.ts /usr/local/lib/agent-dive/extensions/mcp.ts
 
 USER agent
 WORKDIR /home/agent

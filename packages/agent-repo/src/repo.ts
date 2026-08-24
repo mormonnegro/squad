@@ -7,7 +7,6 @@ export const SOUL_FILE = "soul.md";
 export const SKILLS_DIR = "skills";
 export const MEMORY_DIR = "memory";
 export const TOOLS_DIR = "tools";
-export const MCP_FILE = "mcp.json";
 
 /** Memory is partitioned so the agent can scope what it recalls to the subject at hand. */
 export const MEMORY_PARTITIONS = ["users", "projects", "reference"] as const;
@@ -24,7 +23,6 @@ export interface AgentDefinition {
 	readonly skillsDir: string;
 	readonly memoryDir: string;
 	readonly toolsDir: string;
-	readonly mcpConfigPath: string;
 }
 
 export class AgentRepoError extends Error {
@@ -73,7 +71,6 @@ export async function loadAgentRepo(root: string): Promise<AgentDefinition> {
 		skillsDir: join(root, SKILLS_DIR),
 		memoryDir: join(root, MEMORY_DIR),
 		toolsDir: join(root, TOOLS_DIR),
-		mcpConfigPath: join(root, MCP_FILE),
 	};
 }
 
@@ -113,7 +110,6 @@ export function scaffoldAgentRepo(options: InitAgentRepoOptions): readonly Scaff
 			path: SOUL_FILE,
 			content: `# ${options.name}\n\n${options.description ?? "Describe who this agent is and how it works."}\n`,
 		},
-		{ path: MCP_FILE, content: `${JSON.stringify({ mcpServers: {} }, null, 2)}\n` },
 		// Empty directories do not survive a git clone, and this repository is meant to be cloned.
 		{ path: `${SKILLS_DIR}/.gitkeep`, content: "" },
 		{ path: `${TOOLS_DIR}/.gitkeep`, content: "" },

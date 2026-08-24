@@ -1,7 +1,13 @@
 import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
 import type { Reply } from "@agent-dive/channels";
 import type { WakeupHandler } from "@agent-dive/events";
-import { type ExecResult, SANDBOX_EXTENSIONS, SANDBOX_WAKE_FILE } from "@agent-dive/sandbox";
+import {
+	type ExecResult,
+	SANDBOX_EXTENSIONS,
+	SANDBOX_MCP_FILE,
+	SANDBOX_WAKE_FILE,
+} from "@agent-dive/sandbox";
+import type { NamedServer } from "./mcp.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
@@ -103,6 +109,9 @@ export interface PiTurnRunnerOptions {
 	readonly onStep?: (agentId: string, step: AgentStep) => void;
 	readonly wakeFile?: string;
 	readonly extensions?: readonly string[];
+	/** The MCP servers this agent has been given, asked for again at the start of every turn. */
+	readonly servers?: (agentId: string) => Promise<readonly NamedServer[]>;
+	readonly mcpFile?: string;
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
@@ -126,6 +135,8 @@ export class PiTurnRunner {
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 	readonly #wakeFile: string;
 	readonly #extensions: readonly string[];
+	readonly #servers: ((agentId: string) => Promise<readonly NamedServer[]>) | undefined;
+	readonly #mcpFile: string;
 	/** The turn each agent is taking, while it is taking it, so that it can be stopped. */
 	readonly #running = new Map<string, AbortController>();
 
@@ -140,6 +151,8 @@ export class PiTurnRunner {
 		this.#onStep = options.onStep;
 		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
 		this.#extensions = options.extensions ?? SANDBOX_EXTENSIONS;
+		this.#servers = options.servers;
+		this.#mcpFile = options.mcpFile ?? SANDBOX_MCP_FILE;
 	}
 
 	sessionId(agentId: string): string {
@@ -197,9 +210,12 @@ export class PiTurnRunner {
 			onStep: (step) => this.#onStep?.(agentId, step),
 		});
 		const stopping = new AbortController();
+		// Before the first await, so that a stop arriving in the same breath as the turn has something
+		// to stop rather than falling through and letting the turn run on unstoppable.
 		this.#running.set(agentId, stopping);
 		let executed: ExecResult;
 		try {
+			await this.#putServers(agentId);
 			// In its own repository, so what it remembers and what it can do are where it works.
 			executed = await this.#sandbox.run(agentId, this.commandFor(agentId), prompt, {
 				timeoutMs: this.#timeoutMs,
@@ -253,6 +269,30 @@ export class PiTurnRunner {
 			throw new TurnError(`Turn for "${agentId}" got no answer: ${output.failure}`, result);
 		}
 		return result;
+	}
+
+	/**
+	 * Puts the servers this agent has been given where the extension will look, before pi starts.
+	 *
+	 * Written every turn rather than kept, because the shelf is the plane's and this is a copy: an
+	 * agent given a server between one turn and the next would otherwise have to wait for a new
+	 * container to hear about it, and one that had a server taken away would go on being offered a
+	 * tool that nothing answers.
+	 *
+	 * Over stdin, so that a URL or a command line the operator typed is never an argument. A write
+	 * that fails leaves the turn to happen anyway: fewer tools is a worse turn, and no turn is worse
+	 * than that.
+	 */
+	async #putServers(agentId: string): Promise<void> {
+		if (this.#servers === undefined) return;
+		const held = await this.#servers(agentId).catch(() => []);
+		await this.#sandbox
+			.run(
+				agentId,
+				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#mcpFile],
+				JSON.stringify(held),
+			)
+			.catch(() => undefined);
 	}
 
 	/**

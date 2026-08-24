@@ -32,7 +32,6 @@ describe("the agent's own repository", () => {
 		expect([...sandbox.files.keys()]).toEqual([
 			"/home/agent/.self/agent.yaml",
 			"/home/agent/.self/soul.md",
-			"/home/agent/.self/mcp.json",
 			"/home/agent/.self/skills/.gitkeep",
 			"/home/agent/.self/tools/.gitkeep",
 			"/home/agent/.self/memory/users/.gitkeep",

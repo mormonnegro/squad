@@ -12,7 +12,6 @@ export {
 	initAgentRepo,
 	loadAgentRepo,
 	MANIFEST_FILE,
-	MCP_FILE,
 	MEMORY_DIR,
 	MEMORY_PARTITIONS,
 	SANDBOX_REPO_PATH,

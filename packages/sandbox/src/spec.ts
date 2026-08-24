@@ -15,6 +15,14 @@ export const SANDBOX_WAKE_EXTENSION = "/usr/local/lib/agent-dive/extensions/wake
 export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/agent-dive/extensions/search.ts";
 
 /**
+ * The extension that gives the agent the tools the operator connected it to. Shipped in the image.
+ *
+ * pi has no MCP of its own and says so on purpose, pointing at extensions as the way to add it. So
+ * this is not configuration being passed along: it is a whole MCP client, and it is ours.
+ */
+export const SANDBOX_MCP_EXTENSION = "/usr/local/lib/agent-dive/extensions/mcp.ts";
+
+/**
  * Every extension the plane hands the agent, which is a list because there is more than one and
  * naming only the first is a silent way to lose the rest. An extension in the image that nothing
  * names is one the agent never finds, and what that looks like from outside is not an error: it is
@@ -24,6 +32,7 @@ export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/agent-dive/extensions/se
 export const SANDBOX_EXTENSIONS: readonly string[] = [
 	SANDBOX_WAKE_EXTENSION,
 	SANDBOX_SEARCH_EXTENSION,
+	SANDBOX_MCP_EXTENSION,
 ];
 
 /**
@@ -33,6 +42,17 @@ export const SANDBOX_EXTENSIONS: readonly string[] = [
  * is committed, and a request the plane consumes within the minute is not something to keep.
  */
 export const SANDBOX_WAKE_FILE = `${SANDBOX_HOME}/.run/wake.json`;
+
+/**
+ * Where the plane leaves the servers this agent has been given, for the extension to read at the
+ * start of every turn.
+ *
+ * Beside the wakeup rather than in the repository, and for a stronger version of the same reason:
+ * the shelf is the plane's and this is a copy of the part of it that concerns one agent. Keeping it
+ * on the agent's own volume would make it something the agent could edit — which is to say, a way
+ * to be connected to a server nobody granted.
+ */
+export const SANDBOX_MCP_FILE = `${SANDBOX_HOME}/.run/mcp.json`;
 
 export interface SandboxSpec {
 	readonly agentId: string;
@@ -70,6 +90,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		AGENT_DIVE_AGENT_ID: spec.agentId,
 		AGENT_DIVE_REPO: SANDBOX_REPO_PATH,
 		AGENT_DIVE_WAKE_FILE: SANDBOX_WAKE_FILE,
+		AGENT_DIVE_MCP_FILE: SANDBOX_MCP_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,
 		http_proxy: spec.proxyUrl,
