@@ -67,6 +67,25 @@ describe("transcript", () => {
 			]),
 		).toEqual(["a", "", "b"]);
 	});
+
+	// It is the operator's line, but it was not said to the agent, and `> !ls` read back later looks
+	// like the agent was asked to run something it was never even told about.
+	it("marks a shell line with the bang it was typed under, not with the agent's mark", () => {
+		const line = transcript([{ from: "operator", text: "!ls" }])[0];
+
+		expect(line).toContain("!ls");
+		expect(line).not.toContain("> ");
+	});
+
+	// What a command printed belongs to the command, the way it does in a terminal.
+	it("keeps what a command printed against the command", () => {
+		expect(
+			transcript([
+				{ from: "operator", text: "!ls" },
+				{ from: "shell", text: "agent.yaml" },
+			]),
+		).toEqual([expect.stringContaining("!ls"), "agent.yaml"]);
+	});
 });
 
 describe("visible", () => {

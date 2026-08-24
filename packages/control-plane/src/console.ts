@@ -124,6 +124,10 @@ function without<T>(map: ReadonlyMap<string, T>, key: string): ReadonlyMap<strin
  * find out who asked for what. The agent's own text is already ANSI by here, so it passes through.
  */
 function spoken(said: Said): string {
+	// The operator's line, but not one addressed to the agent: it keeps the mark it was typed under,
+	// the bang it starts with, in the colour the prompt had while it was typed. Read back later, a
+	// `> !ls` looks like the agent was asked to run something, and the agent was never told at all.
+	if (said.from === "operator" && isShell(said.text)) return `${ESC}[35m${said.text}${ESC}[39m`;
 	if (said.from === "plane") return `\u001b[31m${said.text}\u001b[39m`;
 	if (said.via !== undefined) return `\u001b[2m‹${said.via}›\u001b[22m ${said.text}`;
 	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;
@@ -151,10 +155,13 @@ export function here(cwd: string, room = 24): string {
  */
 export function transcript(history: readonly Said[]): readonly string[] {
 	const lines: string[] = [];
-	for (const said of history) {
+	for (const [index, said] of history.entries()) {
+		// What a command printed is not a turn of its own: it belongs to the bang above it the way it
+		// does in a terminal, and a blank between them reads as two things that happened separately.
+		const printed = said.from === "shell" && history[index - 1]?.from === "operator";
 		// Between turns rather than after each: a trailing blank costs the pane a row, and the row it
 		// costs is the oldest line of the conversation, given up to hold a gap nobody is reading.
-		if (lines.length > 0) lines.push("");
+		if (lines.length > 0 && !printed) lines.push("");
 		lines.push(...spoken(said).split("\n"));
 	}
 	return lines;
