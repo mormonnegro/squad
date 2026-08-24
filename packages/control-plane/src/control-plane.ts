@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
-import { ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
+import { type Channel, ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
 import { EventBus, FileEventStore } from "@agent-dive/events";
 import {
 	type AuditEntry,
@@ -18,7 +18,13 @@ import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/sche
 import { CreatedAgentStore } from "./created-agents.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
-import { createTurnHandler, PiTurnRunner, type TurnResult, type TurnRunner } from "./turn.ts";
+import {
+	createTurnHandler,
+	PiTurnRunner,
+	type TurnResult,
+	type TurnRunner,
+	type WakeRequest,
+} from "./turn.ts";
 
 export interface AgentConfig {
 	readonly id: string;
@@ -111,8 +117,31 @@ export interface AgentSummary {
 	readonly startedAt: string | undefined;
 	readonly grants: number;
 	readonly schedules: number;
+	/** When the agent asked to be woken next, if it did. ISO instant. */
+	readonly wakeAt: string | undefined;
 	/** Made here rather than declared in the config, which is the only kind the plane may forget. */
 	readonly created: boolean;
+}
+
+/**
+ * The channel an agent's own wakeup arrives on, and answers back to.
+ *
+ * It is registered rather than left unrouted so that a turn nobody else asked for does not also
+ * report a failure to deliver its answer. Nothing is lost by absorbing it: every turn reaches the
+ * console as it is written, and there is nobody else at the other end of a note to oneself.
+ */
+export const WAKE_CHANNEL = "wake";
+
+/** The soonest an agent may ask to be woken. Under a minute a wakeup is a spin, not a plan. */
+export const MIN_WAKE_SECONDS = 60;
+
+/** The furthest. Past a month it is not scheduling work, it is leaving a note for a stranger. */
+export const MAX_WAKE_SECONDS = 30 * 24 * 60 * 60;
+
+class SelfChannel implements Channel {
+	readonly name = WAKE_CHANNEL;
+
+	async send(): Promise<void> {}
 }
 
 const DEFAULT_IMAGE = "agent-dive/sandbox:dev";
@@ -189,6 +218,7 @@ export class ControlPlane {
 		});
 		this.webhooks = new WebhookChannel({ hooks: options.hooks ?? [], publisher: this.bus });
 		this.router.register(this.webhooks);
+		this.router.register(new SelfChannel());
 	}
 
 	/** Host path of the CA certificate mounted into every sandbox. */
@@ -213,12 +243,16 @@ export class ControlPlane {
 
 	async #summarise(agent: AgentConfig): Promise<AgentSummary> {
 		const status = await this.sandboxes.status(agent.id).catch(() => undefined);
+		// Asked of the scheduler rather than counted off the config, which only knows the wakeups an
+		// operator wrote down and would never show the one the agent booked for itself.
+		const schedules = await this.scheduler.list(agent.id).catch(() => []);
 		return {
 			id: agent.id,
 			running: status?.running ?? false,
 			startedAt: status?.startedAt,
 			grants: agent.grants?.length ?? 0,
-			schedules: agent.schedules?.length ?? 0,
+			schedules: schedules.length,
+			wakeAt: schedules.find((schedule) => schedule.createdBy === "agent")?.nextRunAt,
 			created: this.#createdIds.has(agent.id),
 		};
 	}
@@ -294,11 +328,55 @@ export class ControlPlane {
 					this.#emit({ kind: "turn", agentId: id, result });
 				},
 				onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
+				onWake: (id, wake) => this.#scheduleWake(id, wake),
 				// Named by destination, not by agent, so an operator waiting on their own reply is not
 				// told that somebody else's channel is the reason.
 				onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
 			}),
 		);
+	}
+
+	/**
+	 * Books the next turn an agent asked itself for: one, bounded, and never on the operator's word.
+	 *
+	 * The bounds are applied here and not only in the tool that writes the request, because the tool
+	 * is a convenience inside a sandbox where the agent has a shell and could write the file itself.
+	 * They clamp rather than refuse: an agent that asked for ten seconds meant "soon", and answering
+	 * "soon" with a minute keeps the intent while denying the spin.
+	 *
+	 * At most one wakeup is pending, so asking again moves the appointment instead of adding to it —
+	 * without that, an agent that asks every turn fans out into as many turns as it has asked.
+	 */
+	async #scheduleWake(agentId: string, wake: WakeRequest): Promise<void> {
+		try {
+			const afterSeconds = Math.min(
+				Math.max(Math.round(wake.afterSeconds), MIN_WAKE_SECONDS),
+				MAX_WAKE_SECONDS,
+			);
+
+			for (const schedule of await this.scheduler.list(agentId)) {
+				if (schedule.createdBy === "agent") await this.scheduler.remove(schedule.id);
+			}
+
+			await this.scheduler.add({
+				agentId,
+				kind: "once",
+				runAt: new Date(Date.now() + afterSeconds * 1000).toISOString(),
+				channel: WAKE_CHANNEL,
+				body: wake.note,
+				// Never operator, however the agent asks. A single successful injection would otherwise
+				// become permanent: the injected turn books a wakeup that instructs on the next one.
+				trust: "participant",
+				createdBy: "agent",
+			});
+		} catch (error) {
+			// Caught here so it stays caught: a throw would leave the events queued and the turn taken
+			// again, and an agent whose wakeup cannot be written would repeat the turn that asked for it.
+			this.#reportError(
+				`${agentId} wakeup`,
+				error instanceof Error ? error : new Error(String(error)),
+			);
+		}
 	}
 
 	#emit(event: PlaneEvent): void {

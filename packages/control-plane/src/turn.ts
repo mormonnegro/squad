@@ -234,6 +234,8 @@ export interface TurnHandlerOptions {
 	readonly onTurn?: (agentId: string, result: TurnResult) => void;
 	/** The answer as it is written, for whoever is waiting rather than whoever is reading a log. */
 	readonly onSay?: (agentId: string, text: string) => void;
+	/** The next turn the agent asked for. Awaited, so it is booked before this one is over. */
+	readonly onWake?: (agentId: string, wake: WakeRequest) => Promise<void>;
 	/** A reply that had nowhere to go. The turn still counts as taken. */
 	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
@@ -251,6 +253,9 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 			options.onSay?.(agentId, text),
 		);
 		options.onTurn?.(agentId, result);
+		// Before the reply and after the turn: the appointment is state and the reply is a courtesy, and
+		// a process that stops between the two should have kept the one the agent cannot ask for twice.
+		if (result.wake) await options.onWake?.(agentId, result.wake);
 		if (!options.router || result.text.length === 0) return;
 
 		// Every destination is tried, and none of them can undo the turn. The model has been paid and

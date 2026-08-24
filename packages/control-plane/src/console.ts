@@ -197,6 +197,21 @@ export function mouse(input: string): number | undefined {
 	return reported ? by : undefined;
 }
 
+/**
+ * How long until an instant, in the coarsest unit that still says it.
+ *
+ * A wakeup an hour out is not more useful for being told to the second, and the column it goes in is
+ * fourteen characters wide once the border, the pointer and the name have taken theirs.
+ */
+export function until(iso: string, now: number = Date.now()): string {
+	const seconds = Math.max(0, Math.round((Date.parse(iso) - now) / 1000));
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) return `${minutes}m`;
+	const hours = Math.round(minutes / 60);
+	return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
 export function Agents({
 	agents,
 	cursor,
@@ -236,6 +251,11 @@ export function Agents({
 				h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
 				h(Text, { color: mark.color }, mark.glyph),
 				h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${agent.id}`),
+				// An agent that booked its own next turn is going to act while nobody is watching. The
+				// wait is the only warning of that there is, so it is on the row rather than in a command.
+				agent.wakeAt !== undefined
+					? h(Text, { color: "yellow", dimColor: true }, ` ${until(agent.wakeAt)}`)
+					: undefined,
 			);
 		}),
 	);

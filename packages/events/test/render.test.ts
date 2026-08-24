@@ -70,6 +70,33 @@ describe("renderEvent", () => {
 		expect(renderEvent(event({ trust: "public" }))).toContain("<<<UNTRUSTED");
 	});
 
+	// An agent woken by its own note has to know it is its own, or it reports on it as if a stranger
+	// had sent it and the work it meant to continue never continues. The fence stays: the turn that
+	// wrote the note may have been reading a stranger while it did.
+	it("introduces an agent's own note as a reminder, and still fences it", () => {
+		const rendered = renderEvent(
+			event({
+				source: "schedule",
+				trust: "participant",
+				metadata: { createdBy: "agent" },
+				body: "carry on with the migration",
+			}),
+		);
+
+		expect(rendered).toContain("the note you left yourself");
+		expect(rendered).toContain("not a new instruction");
+		expect(rendered).toContain("<<<UNTRUSTED");
+		expect(rendered).toContain("carry on with the migration");
+	});
+
+	it("says nothing of the sort about a wakeup the operator scheduled", () => {
+		const rendered = renderEvent(
+			event({ source: "schedule", trust: "operator", metadata: { createdBy: "operator" } }),
+		);
+
+		expect(rendered).toContain("Message from the operator");
+	});
+
 	it("states the origin so the agent can weigh the source", () => {
 		const rendered = renderEvent(
 			event({ actor: { id: "U9", displayName: "Mallory" }, subject: "urgent" }),

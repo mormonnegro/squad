@@ -8,6 +8,7 @@ const summary = (id: string): AgentSummary => ({
 	startedAt: undefined,
 	grants: 0,
 	schedules: 0,
+	wakeAt: undefined,
 	created: false,
 });
 

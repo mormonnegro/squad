@@ -11,6 +11,7 @@ import {
 	scrolled,
 	type Thinking,
 	transcript,
+	until,
 	visible,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
@@ -190,9 +191,24 @@ describe("Agents", () => {
 		startedAt: undefined,
 		grants: 1,
 		schedules: 0,
+		wakeAt: undefined,
 		created: false,
 	});
 	const three = [listed("scout", true), listed("scribe", true), listed("sleeper", false)];
+
+	// An agent that booked its own next turn will act with nobody watching. The wait is the only
+	// warning of that there is, and it belongs on the row rather than behind a command.
+	it("shows how long until an agent wakes itself", () => {
+		const waiting = {
+			...listed("scout", true),
+			wakeAt: new Date(Date.now() + 900_000).toISOString(),
+		};
+		const drawn = renderToString(
+			h(Agents, { agents: [waiting], cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+		);
+
+		expect(drawn).toContain("scout 15m");
+	});
 
 	it("marks a thinking agent apart from one that is only up", () => {
 		const drawn = renderToString(
@@ -328,5 +344,23 @@ describe("Chat", () => {
 			.slice(0, -1);
 
 		for (const row of said) expect(row.length).toBeLessThanOrEqual(40);
+	});
+});
+
+/** Fourteen characters is what the column has left once the border, the mark and a name have theirs. */
+describe("until", () => {
+	const now = Date.parse("2026-08-23T12:00:00.000Z");
+	const inSeconds = (seconds: number): string => new Date(now + seconds * 1000).toISOString();
+
+	it("says the wait in the coarsest unit that still says it", () => {
+		expect(until(inSeconds(45), now)).toBe("45s");
+		expect(until(inSeconds(900), now)).toBe("15m");
+		expect(until(inSeconds(3 * 3600), now)).toBe("3h");
+		expect(until(inSeconds(2 * 86400), now)).toBe("2d");
+	});
+
+	// A wakeup the scheduler has not got to yet is due, not overdue by however long the tick took.
+	it("does not count backwards past the moment it was due", () => {
+		expect(until(inSeconds(-30), now)).toBe("0s");
 	});
 });

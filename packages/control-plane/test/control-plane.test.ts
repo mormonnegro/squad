@@ -2,7 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ControlPlane, carriesEnv, proxyTokenOf, withDefaults } from "../src/control-plane.ts";
+import {
+	ControlPlane,
+	carriesEnv,
+	MAX_WAKE_SECONDS,
+	MIN_WAKE_SECONDS,
+	proxyTokenOf,
+	withDefaults,
+} from "../src/control-plane.ts";
+import type { TurnRunner, WakeRequest } from "../src/turn.ts";
 
 describe("ControlPlane", () => {
 	let stateDir: string;
@@ -179,5 +187,111 @@ describe("carriesEnv", () => {
 	it("adopts an agent that declared no environment at all", () => {
 		expect(carriesEnv({ PATH: "/usr/bin" }, undefined)).toBe(true);
 		expect(carriesEnv({}, {})).toBe(true);
+	});
+});
+
+/**
+ * An agent booking its own next turn. The plane checks the request rather than trusting the tool
+ * that produced it: the tool lives in a sandbox where the agent also has a shell, so the file it
+ * writes is a file anything in there could have written.
+ */
+describe("a turn that asked for another turn", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-wake-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const asking = (wake?: WakeRequest): TurnRunner => ({
+		async run() {
+			return {
+				text: "",
+				exitCode: 0,
+				stderr: "",
+				ms: 1,
+				tokens: 0,
+				costUsd: 0,
+				...(wake !== undefined ? { wake } : {}),
+			};
+		},
+	});
+
+	const takeTurn = async (plane: ControlPlane, wake?: WakeRequest): Promise<void> => {
+		await plane.attach("scout", asking(wake));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "have a look at the queue",
+		});
+		await plane.bus.drain();
+	};
+
+	it("books what the agent asked for, with an authority the agent cannot raise", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane, { afterSeconds: 900, note: "keep reading the queue" });
+
+		const [schedule] = await plane.scheduler.list("scout");
+		expect(schedule?.kind).toBe("once");
+		expect(schedule?.body).toBe("keep reading the queue");
+		expect(schedule?.createdBy).toBe("agent");
+		// The whole reason an agent may schedule itself at all: a turn taken over by something it read
+		// would otherwise book itself operator authority and keep it for good.
+		expect(schedule?.trust).toBe("participant");
+	});
+
+	it("books nothing for a turn that asked for nothing", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane);
+
+		expect(await plane.scheduler.list("scout")).toEqual([]);
+	});
+
+	// Asking again is asking for the same one at a different time. Without this an agent that asks
+	// every turn is woken once per turn it ever took.
+	it("moves the appointment rather than adding to it", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane, { afterSeconds: 900, note: "first" });
+		await takeTurn(plane, { afterSeconds: 3600, note: "second" });
+
+		const schedules = await plane.scheduler.list("scout");
+		expect(schedules).toHaveLength(1);
+		expect(schedules[0]?.body).toBe("second");
+	});
+
+	it("holds a request for ten seconds to the soonest it may be", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const asked = Date.now();
+		await takeTurn(plane, { afterSeconds: 10, note: "right away" });
+
+		const [schedule] = await plane.scheduler.list("scout");
+		const wait = Date.parse(schedule?.nextRunAt ?? "") - asked;
+		expect(wait).toBeGreaterThanOrEqual(MIN_WAKE_SECONDS * 1000);
+	});
+
+	it("holds a request for a year to the furthest it may be", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const asked = Date.now();
+		await takeTurn(plane, { afterSeconds: 365 * 24 * 60 * 60, note: "eventually" });
+
+		const [schedule] = await plane.scheduler.list("scout");
+		const wait = Date.parse(schedule?.nextRunAt ?? "") - asked;
+		expect(wait).toBeLessThanOrEqual(MAX_WAKE_SECONDS * 1000 + 1000);
+	});
+
+	// The wait is the only sign an operator gets that an agent is going to act unwatched, so it comes
+	// from the scheduler that will actually do the waking, not from the config it was not written in.
+	it("shows the wait beside the agent it belongs to", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane, { afterSeconds: 900, note: "keep reading the queue" });
+
+		const [summary] = await plane.agents();
+		expect(summary?.wakeAt).toBeDefined();
+		expect(summary?.schedules).toBe(1);
 	});
 });
