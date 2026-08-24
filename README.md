@@ -185,6 +185,26 @@ A turn is not waited on, so asking one agent something and then watching another
 of pressing `↑`. Each agent keeps its own conversation, and the answer streams into it with its
 markdown rendered, exactly as `chat` does in the scrollback.
 
+The conversation belongs to the plane rather than to the console, so closing one is not ending it:
+the next console opens on what was said, and the last couple of hundred lines survive the terminal
+being closed, the machine being logged out of and the plane itself being reloaded. It follows that a
+turn nobody at a keyboard started appears there too — a schedule coming due, a webhook arriving, an
+agent waking itself — with a mark saying where it came from:
+
+```
+> ¿cómo va la cola?
+cuatro issues abiertos, ninguno bloqueado.
+‹wake› volver a chequear la cola
+sigue igual.
+‹webhook:github› the nightly build failed on main
+```
+
+The mark is there because the pane gets read back to work out who asked for what, and a line from a
+stranger with a URL drawn the same way as the operator's is the one bug in a chat window that
+matters. Only what arrives on the control socket is drawn as the operator; everything else is named
+for the channel it came in on. A turn that failed says so in the same place, in red, rather than
+only in a log nobody has open.
+
 The console needs a terminal it can take over and a plane to open on. Missing either — a pipe, a CI
 job, no plane running — it prints what `agent` used to print: where the state is and what is in it.
 So `agent | grep` keeps working and nothing has to know which case it is in.
