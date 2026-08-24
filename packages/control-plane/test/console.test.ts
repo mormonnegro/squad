@@ -5,9 +5,9 @@ import { COMMANDS, type Command } from "../src/commands.ts";
 import {
 	Agents,
 	Chat,
-	detail,
 	doing,
 	here,
+	laid,
 	mouse,
 	New,
 	resume,
@@ -307,7 +307,7 @@ describe("Agents", () => {
 			{ columns: 80 },
 		);
 
-		expect(drawn.split("\n")[0]).toMatch(/^╭─{20}╮/);
+		expect(drawn.split("\n")[0]).toMatch(/^╭─{24}╮/);
 	});
 
 	// One of the rows is the one that makes an agent, so three rows hold two agents and it.
@@ -413,75 +413,60 @@ describe("Agents", () => {
 		expect(drawn).toContain("$1.50");
 	});
 
-	// Which agent is walking into its ceiling is the question the money alone cannot answer: $4 is
-	// nothing against fifty and almost everything against five.
-	it("draws what an agent has spent against what it may", () => {
-		const near = renderToString(
-			h(Agents, {
-				agents: [{ ...listed("scout", true), spentUsd: 4, limitUsd: 5 }],
-				cursor: 0,
-				busy: new Map<string, number>(),
-				rows: 10,
-			}),
-		);
-		const far = renderToString(
-			h(Agents, {
-				agents: [{ ...listed("scout", true), spentUsd: 4, limitUsd: 50 }],
-				cursor: 0,
-				busy: new Map<string, number>(),
-				rows: 10,
-			}),
-		);
-
-		expect(near).toContain("▰▰▰▰▱");
-		expect(far).toContain("▰▱▱▱▱");
-	});
-
-	// A ceiling with nothing spent against it is five empty cells saying nothing has happened, which
-	// is what having no row at all says, in no columns.
-	it("draws no bar for an agent that has spent nothing", () => {
-		const drawn = renderToString(
-			h(Agents, {
-				agents: [{ ...listed("scout", true), limitUsd: 5 }],
-				cursor: 0,
-				busy: new Map<string, number>(),
-				rows: 10,
-			}),
-		);
-
-		expect(drawn).not.toContain("▱");
-	});
-
-	// Three things want one row, and which of them goes when it will not hold all three is the whole
-	// rule: the money is why the row is drawn at all, the wait is the warning, and the bar is a second
-	// fact about the money — a fact about a fact is what a narrow terminal can afford to lose.
-	it("gives up the bar before the wait, and the wait before the money", () => {
+	// The numbers are what the row is read for and the name is recoverable — the title row says it in
+	// full — so when they will not all fit it is the name that is cut, not one of the two facts.
+	it("cuts the name rather than a number when the row will not hold both", () => {
 		const agent = {
-			...listed("scribe", true),
+			...listed("support-emma", true),
 			spentUsd: 1.5,
-			limitUsd: 5,
 			wakeAt: new Date(Date.now() + 900_000).toISOString(),
 		};
 
-		expect(detail(agent, 15)).toEqual({ spent: "$1.50", bar: "▰▰▱▱▱", wake: "15m" });
-		expect(detail(agent, 14)).toEqual({ spent: "$1.50", bar: "", wake: "15m" });
-		expect(detail(agent, 6)).toEqual({ spent: "$1.50", bar: "", wake: "" });
+		expect(laid(agent, 18)).toEqual({
+			name: "support…",
+			gap: " ",
+			wake: "15m",
+			spent: "$1.50",
+		});
 	});
 
-	// An agent is a name and, when there is something to say under it, a second row. The budget is
-	// rows and not agents, or the column draws itself past its own border and over the pane beside it.
-	it("counts the row under a name against the room it has", () => {
-		const spending = [
-			{ ...listed("scout", true), spentUsd: 0.42 },
-			{ ...listed("scribe", true), spentUsd: 0.42 },
-		];
+	// Six agents' spending is a question about which of them is the largest, and numbers that start
+	// at six different columns are read one at a time.
+	it("lines the numbers up against the right edge, whatever the name", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: spending, cursor: 0, busy: new Map<string, number>(), rows: 3 }),
+			h(Agents, {
+				agents: [
+					{ ...listed("ana", true), spentUsd: 1.5 },
+					{ ...listed("bernardo", true), spentUsd: 12 },
+				],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		);
+		const [first, second] = drawn.split("\n").slice(2, 4);
+
+		// Where each of them ends, which is what lining numbers up means when they are not the same
+		// length: it is the last digit that has to sit under the last digit.
+		expect((first?.indexOf("$1.50") ?? 0) + "$1.50".length).toBe(
+			(second?.indexOf("$12.00") ?? 0) + "$12.00".length,
+		);
+	});
+
+	// Four decimals is what the plane says in a sentence. Here it is seven columns telling two agents
+	// apart by an amount neither of them has, in the one place a number is scanned rather than read.
+	it("says a spend under a cent short, and leaves the room to the ones that are not", () => {
+		const drawn = renderToString(
+			h(Agents, {
+				agents: [{ ...listed("scout", true), spentUsd: 0.0004 }],
+				cursor: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
 		);
 
-		expect(drawn).toContain("scout");
-		expect(drawn).not.toContain("scribe");
-		expect(drawn).toContain("+ new agent");
+		expect(drawn).toContain("<$0.01");
+		expect(drawn).not.toContain("0.0004");
 	});
 });
 

@@ -24,19 +24,17 @@ import type { Utterance } from "./transcript.ts";
 const REMEMBERED_LINES = 2000;
 
 /**
- * Wide enough for a name, with what the name is costing on the row underneath it.
+ * Wide enough for a name, what it is spending and when it wakes, on the one row they share.
  *
- * Four columns of it are the border and the padding, four more the pointer and the mark. On one row
- * that left the money and the wakeup bidding against each other for the last eight columns, and the
- * money always lost: an agent with a turn booked was the one agent whose spending went unsaid.
+ * Four columns of it are the border and the padding, four more the pointer and the mark. At 22 the
+ * eighteen left over could not hold all three, and the money was what went — so the agent with a turn
+ * booked, the one about to spend again while nobody is watching, was the one agent whose spending
+ * went unsaid. The four extra columns come out of a chat pane that wraps its text anyway.
  */
-const AGENTS_WIDTH = 22;
+const AGENTS_WIDTH = 26;
 
-/** What the row under a name has for the money, once the border, the padding and the indent are paid. */
-const DETAIL_ROOM = AGENTS_WIDTH - 8;
-
-/** How many cells a ceiling is drawn in. Five is a fifth apiece, which is as fine as a glance reads. */
-const BAR = 5;
+/** What a row has for the name and its numbers, once the border, the padding and the mark are paid. */
+const ROW_ROOM = AGENTS_WIDTH - 8;
 
 /** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
 const PROMPT_ROWS = 3;
@@ -373,47 +371,46 @@ function burning(agent: AgentSummary): { color?: string; dimColor: boolean } {
 }
 
 /**
- * How much of a ceiling has gone, as a bar rather than as a second number.
+ * What an agent has spent, in the fewest columns that still answer what this column is asked.
  *
- * `$0.42 / $5.00` needs thirteen of the fourteen columns this row has, and says its answer in
- * arithmetic the eye has to do six times to compare six agents. Five cells say it in one look, and
- * the exact pair is already in the title row for whichever agent is being read.
- *
- * Anything spent at all fills a cell. A ceiling walked into a hundredth at a time is still being
- * walked into, and a bar that stayed empty until the first fifth would say nothing was happening.
+ * Four decimals is what the plane says in a sentence, where there is a whole line to say it on.
+ * Here it is seven columns spent telling two agents apart by an amount neither of them has, in the
+ * one place a number is scanned rather than read: what is looked for down this column is the row
+ * that is not small, and `$0.0004` is a long way of writing small.
  */
-export function ceiling(share: number): string {
-	const full = Math.min(BAR, Math.max(1, Math.round(share * BAR)));
-	return `${"▰".repeat(full)}${"▱".repeat(BAR - full)}`;
+function spending(usd: number): string {
+	// Nothing spent is drawn as nothing, not as `$0.00`: a fleet of ceros is a column of noise to
+	// read past, and what is being looked for here is the row that is not like the others.
+	if (usd <= 0) return "";
+	return usd < 0.01 ? "<$0.01" : money(usd);
 }
 
 /**
- * What the row under a name says, in the room that row has.
+ * A row laid out to the width the column has: the name, then its numbers against the right edge.
  *
- * The money is why the row exists and never gives way. The wait is next, because an agent about to
- * act while nobody is watching is the one thing in this column that cannot be found out by looking
- * again in a second. The bar goes first when something has to: it is a second fact about the money,
- * and a fact about a fact is what a narrow terminal can afford to lose.
+ * The name is what gives way now, which is the reverse of what this did before and is the whole of
+ * the fix. The money and the wait used to queue for whatever a long name had left over, so the agent
+ * that had booked its own next turn was the one whose spending went unsaid — the two facts here that
+ * cannot be had by looking again in a second, and only ever one of them fit. A name cut short is
+ * still that agent and the title row says it in full; a number not drawn is nobody's fact at all.
+ *
+ * Against the edge rather than after the name, because six agents' spending is a question about
+ * which of them is the largest, and numbers starting at six different columns are read one at a time.
  */
-export function detail(
+export function laid(
 	agent: AgentSummary,
-	room: number = DETAIL_ROOM,
-): { readonly spent: string; readonly bar: string; readonly wake: string } {
-	// Nothing spent is drawn as nothing, not as `$0.00`: a fleet of ceros is a column of noise to
-	// read past, and what is being looked for here is the row that is not like the others.
-	const spent = agent.spentUsd > 0 ? money(agent.spentUsd) : "";
-	const waking = agent.wakeAt === undefined ? "" : until(agent.wakeAt);
-	// A piece costs the space in front of it, unless it is the first thing on the row.
-	const fits = (taken: number, piece: string): boolean =>
-		(taken === 0 ? piece.length : taken + 1 + piece.length) <= room;
-	const wake = waking !== "" && fits(spent.length, waking) ? waking : "";
-	const taken = spent.length + (wake === "" ? 0 : (spent === "" ? 0 : 1) + wake.length);
-	const share = against(agent);
-	// Never on its own: a ceiling with nothing spent against it is a bar of five empty cells saying
-	// that nothing has happened, which is what the missing row said already and in no columns at all.
-	const bar =
-		spent !== "" && share !== undefined && fits(taken, "x".repeat(BAR)) ? ceiling(share) : "";
-	return { spent, bar, wake };
+	room: number = ROW_ROOM,
+): { readonly name: string; readonly gap: string; readonly wake: string; readonly spent: string } {
+	const spent = spending(agent.spentUsd);
+	const wake = agent.wakeAt === undefined ? "" : until(agent.wakeAt);
+	const tail = [wake, spent].filter((piece) => piece !== "").join(" ");
+	const name = clipped(agent.id, tail === "" ? room : room - tail.length - 1);
+	return {
+		name,
+		gap: tail === "" ? "" : " ".repeat(Math.max(1, room - name.length - tail.length)),
+		wake,
+		spent,
+	};
 }
 
 export function Agents({
@@ -430,55 +427,29 @@ export function Agents({
 }): ReactElement {
 	// The row under the last agent, which the cursor reaches with the same arrow as any other.
 	const making = cursor >= agents.length;
-	// Counted rather than sliced, because an agent is no longer one row: it is a name, and a second
-	// row under it whenever there is something to put there. The row that makes an agent is taken out
-	// of the budget before any of them are, rather than left whatever they did not use.
-	const budget = Math.max(0, rows - 1);
-	const listed: ReactElement[] = [];
-	let used = 0;
-	for (const [index, agent] of agents.entries()) {
-		if (used >= budget) break;
+	const listed = agents.slice(0, Math.max(0, rows - 1)).map((agent, index) => {
 		// Thinking is worth a different mark from merely being up: with several agents on screen it
 		// is the one thing you cannot find out by asking again in a second.
 		const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
 		const here = index === cursor;
-		listed.push(
-			h(
-				Text,
-				{ key: agent.id, wrap: "truncate" },
-				// A pointer rather than a reversed row: the marks are the colour in this column, and a
-				// highlight behind them takes it away exactly where it is being read.
-				h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
-				h(Text, { color: mark.color }, mark.glyph),
-				h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${agent.id}`),
-			),
+		const row = laid(agent);
+		return h(
+			Text,
+			{ key: agent.id, wrap: "truncate" },
+			// A pointer rather than a reversed row: the marks are the colour in this column, and a
+			// highlight behind them takes it away exactly where it is being read.
+			h(Text, { color: "cyan", bold: true }, here ? "▸ " : "  "),
+			h(Text, { color: mark.color }, mark.glyph),
+			h(Text, { bold: here, dimColor: !here && !agent.running }, ` ${row.name}`),
+			row.gap === "" ? undefined : row.gap,
+			// An agent that booked its own next turn is going to act while nobody is watching, which is
+			// the one thing on this row worth a colour of its own.
+			row.wake === "" ? undefined : h(Text, { color: "yellow", dimColor: true }, row.wake),
+			row.spent === ""
+				? undefined
+				: h(Text, burning(agent), `${row.wake === "" ? "" : " "}${row.spent}`),
 		);
-		used += 1;
-		const said = detail(agent);
-		// A row of its own only when there is something to put on it. An agent that has spent nothing
-		// and booked nothing would otherwise pay a blank line for saying so, and a fleet of them would
-		// halve the number of agents the column can hold in order to say nothing several times.
-		if (used >= budget || (said.spent === "" && said.bar === "" && said.wake === "")) continue;
-		listed.push(
-			h(
-				Text,
-				{ key: `${agent.id}:spend`, wrap: "truncate" },
-				// Indented under the name rather than under the mark, so the money reads as being about
-				// the agent above it and the marks keep a column of their own to be scanned down.
-				"    ",
-				said.spent === "" ? undefined : h(Text, burning(agent), said.spent),
-				said.bar === "" ? undefined : h(Text, burning(agent), ` ${said.bar}`),
-				said.wake === ""
-					? undefined
-					: h(
-							Text,
-							{ color: "yellow", dimColor: true },
-							`${said.spent === "" ? "" : " "}${said.wake}`,
-						),
-			),
-		);
-		used += 1;
-	}
+	});
 	return h(
 		Box,
 		{
