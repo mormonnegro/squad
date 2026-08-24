@@ -8,6 +8,17 @@ export const SANDBOX_HOME = "/home/agent";
 /** Non-root uid:gid the agent process runs as. Must match the sandbox image. */
 export const SANDBOX_USER = "1000:1000";
 
+/** The extension that gives the agent a way to ask for its next turn. Shipped in the image. */
+export const SANDBOX_WAKE_EXTENSION = "/usr/local/lib/agent-dive/extensions/wake.ts";
+
+/**
+ * Where that extension leaves the request, and the plane looks for it once the turn is over.
+ *
+ * Outside the agent's repository on purpose: the repository is the agent's own and everything in it
+ * is committed, and a request the plane consumes within the minute is not something to keep.
+ */
+export const SANDBOX_WAKE_FILE = `${SANDBOX_HOME}/.run/wake.json`;
+
 export interface SandboxSpec {
 	readonly agentId: string;
 	readonly image: string;
@@ -43,6 +54,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		HOME: SANDBOX_HOME,
 		AGENT_DIVE_AGENT_ID: spec.agentId,
 		AGENT_DIVE_REPO: SANDBOX_REPO_PATH,
+		AGENT_DIVE_WAKE_FILE: SANDBOX_WAKE_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,
 		http_proxy: spec.proxyUrl,

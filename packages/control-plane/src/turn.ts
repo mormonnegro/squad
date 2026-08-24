@@ -1,7 +1,7 @@
 import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
 import type { Reply } from "@agent-dive/channels";
 import type { WakeupHandler } from "@agent-dive/events";
-import type { ExecResult } from "@agent-dive/sandbox";
+import { type ExecResult, SANDBOX_WAKE_EXTENSION, SANDBOX_WAKE_FILE } from "@agent-dive/sandbox";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
@@ -18,6 +18,12 @@ export interface TurnSandbox {
 	): Promise<ExecResult>;
 }
 
+/** An agent asking for its next turn: how long from now, and what it wants to be told then. */
+export interface WakeRequest {
+	readonly afterSeconds: number;
+	readonly note: string;
+}
+
 export interface TurnResult {
 	readonly text: string;
 	readonly exitCode: number;
@@ -26,6 +32,31 @@ export interface TurnResult {
 	readonly ms: number;
 	readonly tokens: number;
 	readonly costUsd: number;
+	/** Present when the agent asked to be woken again. What it may ask for is decided upstream. */
+	readonly wake?: WakeRequest;
+}
+
+/**
+ * Reads a wakeup request, and refuses to guess at one that does not read as written.
+ *
+ * The sanctioned way to make one is a tool that cannot produce anything but this, so anything else
+ * arriving here is an agent that wrote the file by hand — which it can, having a shell — and the
+ * safe answer to a request nobody can read is not to act on it.
+ */
+export function parseWake(text: string): WakeRequest | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	if (typeof parsed !== "object" || parsed === null) return undefined;
+
+	const { afterSeconds, note } = parsed as Record<string, unknown>;
+	if (typeof afterSeconds !== "number" || !Number.isFinite(afterSeconds)) return undefined;
+	if (typeof note !== "string" || note.trim().length === 0) return undefined;
+
+	return { afterSeconds, note };
 }
 
 export class TurnError extends Error {
@@ -50,6 +81,8 @@ export interface PiTurnRunnerOptions {
 	readonly command?: readonly string[];
 	/** Called with each thing the agent does inside the sandbox, while it is still doing it. */
 	readonly onStep?: (agentId: string, step: AgentStep) => void;
+	readonly wakeFile?: string;
+	readonly wakeExtension?: string;
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
@@ -71,6 +104,8 @@ export class PiTurnRunner {
 	readonly #timeoutMs: number;
 	readonly #command: readonly string[];
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
+	readonly #wakeFile: string;
+	readonly #wakeExtension: string;
 
 	constructor(options: PiTurnRunnerOptions) {
 		this.#sandbox = options.sandbox;
@@ -81,6 +116,8 @@ export class PiTurnRunner {
 		this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.#command = options.command ?? ["pi"];
 		this.#onStep = options.onStep;
+		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
+		this.#wakeExtension = options.wakeExtension ?? SANDBOX_WAKE_EXTENSION;
 	}
 
 	sessionId(agentId: string): string {
@@ -107,6 +144,10 @@ export class PiTurnRunner {
 			`${this.#repoPath}/${SOUL_FILE}`,
 			"--skill",
 			`${this.#repoPath}/${SKILLS_DIR}`,
+			// Named rather than discovered, for the same reason the skills are: discovery is gated on
+			// the project being trusted, and this one is the plane's rather than the project's anyway.
+			"--extension",
+			this.#wakeExtension,
 			...(this.#provider !== undefined ? ["--provider", this.#provider] : []),
 			...(this.#model !== undefined ? ["--model", this.#model] : []),
 		];
@@ -129,6 +170,11 @@ export class PiTurnRunner {
 			onStdout: (chunk) => output.push(chunk),
 		});
 
+		// Before the exit code is looked at, so that a turn which died having asked to come back still
+		// comes back. A failed turn is the one most worth retrying, and it is also the one that cannot
+		// ask again.
+		const wake = await this.#takeWake(agentId);
+
 		const result: TurnResult = {
 			text: output.text,
 			exitCode: executed.exitCode,
@@ -136,6 +182,7 @@ export class PiTurnRunner {
 			ms: Date.now() - started,
 			tokens: output.tokens,
 			costUsd: output.costUsd,
+			...(wake !== undefined ? { wake } : {}),
 		};
 		// Throwing leaves the events queued, so a turn lost to a bad key is retried rather than
 		// acknowledged as if the agent had answered.
@@ -154,6 +201,22 @@ export class PiTurnRunner {
 			throw new TurnError(`Turn for "${agentId}" got no answer: ${output.failure}`, result);
 		}
 		return result;
+	}
+
+	/**
+	 * Takes the request the turn left behind, and takes it away in the same breath.
+	 *
+	 * Read and removed together because a request left in place is one the next turn finds and acts
+	 * on again: an agent that asked once would be asking every turn from then on, and the wakeups it
+	 * never asked for are the ones nobody thinks to look for.
+	 */
+	async #takeWake(agentId: string): Promise<WakeRequest | undefined> {
+		const read = await this.#sandbox
+			.run(agentId, ["sh", "-c", 'cat "$1" && rm -f "$1"', "sh", this.#wakeFile], "")
+			.catch(() => undefined);
+
+		if (read === undefined || read.exitCode !== 0) return undefined;
+		return parseWake(read.stdout);
 	}
 }
 

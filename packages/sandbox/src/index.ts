@@ -29,5 +29,7 @@ export {
 	containerName,
 	SANDBOX_HOME,
 	SANDBOX_USER,
+	SANDBOX_WAKE_EXTENSION,
+	SANDBOX_WAKE_FILE,
 	type SandboxSpec,
 } from "./spec.ts";

@@ -22,6 +22,10 @@ RUN userdel -r node \
 
 COPY relay.mjs /usr/local/lib/agent-dive/relay.mjs
 
+# The plane's own extensions, kept here rather than in the agent's repository: that repository is
+# written once and is the agent's from then on, so anything shipped into it could never be fixed.
+COPY wake.ts /usr/local/lib/agent-dive/extensions/wake.ts
+
 USER agent
 WORKDIR /home/agent
 CMD ["sleep", "infinity"]

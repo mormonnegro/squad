@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createTurnHandler,
 	PiTurnRunner,
+	parseWake,
 	TurnError,
 	type TurnResult,
 	type TurnSandbox,
@@ -36,6 +37,8 @@ const answered = (text: string): TurnResult => ({
 class StubSandbox implements TurnSandbox {
 	readonly calls: Invocation[] = [];
 	result: ExecResult = { exitCode: 0, stdout: said("done"), stderr: "" };
+	/** What the turn left in the wake file, if anything. Absent is the file not being there. */
+	left: string | undefined;
 
 	async run(
 		agentId: string,
@@ -50,6 +53,13 @@ class StubSandbox implements TurnSandbox {
 			timeoutMs: options.timeoutMs,
 			workingDir: options.workingDir,
 		});
+		if (cmd[0] === "sh") {
+			if (this.left === undefined) return { exitCode: 1, stdout: "", stderr: "" };
+			const stdout = this.left;
+			// Taken away by the reading, which is the whole point of reading it that way.
+			this.left = undefined;
+			return { exitCode: 0, stdout, stderr: "" };
+		}
 		if (this.result.stdout.length > 0) options.onStdout?.(this.result.stdout);
 		return this.result;
 	}
@@ -77,6 +87,8 @@ describe("PiTurnRunner", () => {
 			"/home/agent/.self/soul.md",
 			"--skill",
 			"/home/agent/.self/skills",
+			"--extension",
+			"/usr/local/lib/agent-dive/extensions/wake.ts",
 		]);
 	});
 
@@ -167,6 +179,75 @@ describe("PiTurnRunner", () => {
 		await expect(new PiTurnRunner({ sandbox }).run("a1", "hi")).rejects.toMatchObject({
 			result: { exitCode: 2, stderr: "No API key found" },
 		});
+	});
+
+	it("brings back what the agent asked for its own next turn", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.left = JSON.stringify({ afterSeconds: 1200, note: "seguir con la migración" });
+
+		const result = await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		expect(result.wake).toEqual({ afterSeconds: 1200, note: "seguir con la migración" });
+	});
+
+	it("says nothing about a turn that asked for nothing", async () => {
+		expect((await new PiTurnRunner({ sandbox: new StubSandbox() }).run("a1", "hi")).wake).toBe(
+			undefined,
+		);
+	});
+
+	// The request is taken away as it is read. Left in place it is a request the next turn finds and
+	// asks again, and an agent woken once would be waking for ever without having asked twice.
+	it("does not ask again on the turn after", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.left = JSON.stringify({ afterSeconds: 1200, note: "seguir" });
+		const runner = new PiTurnRunner({ sandbox });
+
+		await runner.run("a1", "hi");
+
+		expect((await runner.run("a1", "otra vez")).wake).toBe(undefined);
+	});
+
+	// A turn that died is the one most worth coming back to, and the one that can no longer ask.
+	it("still brings it back from a turn that failed", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.result = { exitCode: 1, stdout: "", stderr: "boom" };
+		sandbox.left = JSON.stringify({ afterSeconds: 300, note: "reintentar" });
+
+		await expect(new PiTurnRunner({ sandbox }).run("a1", "hi")).rejects.toMatchObject({
+			result: { wake: { afterSeconds: 300, note: "reintentar" } },
+		});
+	});
+});
+
+/**
+ * What may be believed about a file the agent could have written by hand — it has a shell, and the
+ * tool that normally writes this is a convenience rather than a gate.
+ */
+describe("parseWake", () => {
+	it("reads a request as the tool writes it", () => {
+		expect(parseWake('{"afterSeconds":1200,"note":"seguir"}\n')).toEqual({
+			afterSeconds: 1200,
+			note: "seguir",
+		});
+	});
+
+	it("believes nothing it cannot read", () => {
+		expect(parseWake("en veinte minutos")).toBeUndefined();
+		expect(parseWake("")).toBeUndefined();
+		expect(parseWake("null")).toBeUndefined();
+	});
+
+	it("refuses a delay that is not a number of seconds", () => {
+		expect(parseWake('{"afterSeconds":"1200","note":"seguir"}')).toBeUndefined();
+		expect(parseWake('{"note":"seguir"}')).toBeUndefined();
+	});
+
+	// Waking with nothing to be told is waking with amnesia, which is worse than not waking: it
+	// costs a turn and produces an agent asking what it is doing here.
+	it("refuses a wakeup that would say nothing", () => {
+		expect(parseWake('{"afterSeconds":1200,"note":"   "}')).toBeUndefined();
+		expect(parseWake('{"afterSeconds":1200}')).toBeUndefined();
 	});
 });
 
