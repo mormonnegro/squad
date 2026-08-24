@@ -22,9 +22,14 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config.yaml:/etc/agent-dive/config.yaml:ro
     ports:
-      # Only webhooks are published. The proxy stays on the container networks, where the agents
-      # are, because publishing it would put a credential-injecting forwarder on the internet.
+      # Webhooks, and the door a browser comes back through after an MCP login. The proxy stays on
+      # the container networks, where the agents are, because publishing it would put a
+      # credential-injecting forwarder on the internet.
       - "8787:8787"
+      # Bound to loopback, because the only thing that should ever reach it is a browser on this
+      # machine. `/mcp login` sends the operator to a consent screen that redirects to
+      # localhost:8788, and without this the plane would be listening where nobody can knock.
+      - "127.0.0.1:8788:8788"
     networks:
       egress:
         aliases:

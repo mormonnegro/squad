@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
+import { once } from "node:events";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import {
 	beginAuthorization,
 	discover,
@@ -26,13 +26,15 @@ import {
 const ABANDONED_MS = 10 * 60 * 1000;
 
 /**
- * Where the browser comes back to when the client was registered by hand.
+ * The one door the browser comes back through, and always the same number.
  *
- * A registration made on the spot is told whichever port we happened to get, but one made in a
- * developer portal a week ago was told something the operator had to type in — so that case gets a
- * fixed number they can be told in advance, rather than one they would have to guess.
+ * A port picked per login cannot be reached in the deployment this is written for: the plane is a
+ * container and the browser is on the host, so the door has to be one the operator published in
+ * advance. It also gives a client registered by hand in a developer portal a redirect that can be
+ * typed in before any of this runs. The cost is that logins are one at a time — a second collides
+ * on the port and is told so — which is what a person doing this does anyway.
  */
-const FIXED_CALLBACK_PORT = 8788;
+const CALLBACK_PORT = 8788;
 
 const CALLBACK_PATH = "/callback";
 
@@ -41,15 +43,22 @@ function page(title: string, detail: string): string {
 	return `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font:16px system-ui;padding:3rem;max-width:32rem"><h1 style="font-size:1.2rem">${title}</h1><p>${detail}</p></body>`;
 }
 
-async function listen(server: Server, port: number): Promise<number> {
+/**
+ * Every interface rather than loopback, because a port published out of a container is forwarded to
+ * the container's address and a listener on its loopback is not on the other end of that.
+ *
+ * What is left open is a page that answers 404 to everything but the callback and refuses any answer
+ * whose `state` is not the one it just issued. An authorization code delivered here by somebody else
+ * buys nothing: redeeming it also takes the PKCE verifier, which stays in this process.
+ */
+async function listen(server: Server): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
-		server.listen(port, "127.0.0.1", () => {
+		server.listen(CALLBACK_PORT, () => {
 			server.removeListener("error", reject);
 			resolve();
 		});
 	});
-	return (server.address() as AddressInfo).port;
 }
 
 /**
@@ -82,7 +91,7 @@ interface Pending {
 	readonly state: string;
 	readonly settle: (login: OAuthLogin) => void;
 	readonly fail: (error: Error) => void;
-	readonly close: () => void;
+	readonly close: () => Promise<void>;
 }
 
 export interface StartedLogin {
@@ -126,16 +135,17 @@ export class LoginDesk {
 		return this.#pending.has(name);
 	}
 
-	cancel(name: string): void {
+	/** Awaited, because there is one door and whoever cancelled is often about to want it back. */
+	async cancel(name: string): Promise<void> {
 		const pending = this.#pending.get(name);
 		if (pending === undefined) return;
 		this.#pending.delete(name);
-		pending.close();
 		pending.fail(new OAuthError("The login was called off."));
+		await pending.close();
 	}
 
 	async begin(options: BeginLogin): Promise<StartedLogin> {
-		this.cancel(options.name);
+		await this.cancel(options.name);
 
 		let settle: (login: OAuthLogin) => void = () => {};
 		let fail: (error: Error) => void = () => {};
@@ -147,44 +157,51 @@ export class LoginDesk {
 		// unhandled rejection would take the plane down with it.
 		done.catch(() => {});
 
+		// Every answer hangs up. A server that has stopped listening still serves the connections it
+		// already had, so a browser that kept one alive would be answered by the login it finished ten
+		// minutes ago rather than by the one waiting on the same port now.
+		const said = { "content-type": "text/html; charset=utf-8", connection: "close" };
 		const server = createServer((request, response) => {
 			const asked = new URL(request.url ?? "/", `http://127.0.0.1`);
 			if (asked.pathname !== CALLBACK_PATH) {
-				response.writeHead(404).end();
+				response.writeHead(404, { connection: "close" }).end();
 				return;
 			}
 			const finished = this.#returned(options.name, asked);
 			finished.then(
 				() => {
 					response
-						.writeHead(200, { "content-type": "text/html; charset=utf-8" })
+						.writeHead(200, said)
 						.end(page("Logged in.", `${options.host} is reachable now. You can close this tab.`));
 				},
 				(error: Error) => {
-					response
-						.writeHead(400, { "content-type": "text/html; charset=utf-8" })
-						.end(page("That did not work.", error.message));
+					response.writeHead(400, said).end(page("That did not work.", error.message));
 				},
 			);
 		});
 
-		// The port has to exist before the client is registered, because the redirect URI is part of
-		// the registration and cannot be changed afterwards.
-		const wanted = options.clientId === undefined ? 0 : FIXED_CALLBACK_PORT;
-		const port = await listen(server, wanted).catch((error: Error) => {
+		// Before the client is registered, because the redirect URI is part of the registration and
+		// cannot be changed afterwards — and because a login nothing can come back to is not one to start.
+		await listen(server).catch((error: Error) => {
 			throw new OAuthError(
-				`Nothing can listen for the browser coming back${wanted === 0 ? "" : ` on port ${wanted}`}: ${error.message}`,
+				`Nothing can listen for the browser coming back on port ${CALLBACK_PORT}: ${error.message}. Another login may still be waiting.`,
 			);
 		});
-		const redirectUri = `http://localhost:${port}${CALLBACK_PATH}`;
+		const redirectUri = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
 
 		const abandon = setTimeout(() => {
-			this.cancel(options.name);
+			void this.cancel(options.name);
 		}, ABANDONED_MS);
 		abandon.unref();
-		const close = (): void => {
+		const close = async (): Promise<void> => {
 			clearTimeout(abandon);
+			const closed = once(server, "close");
 			server.close();
+			// A closed server waits for every connection still open on it, and the browser being told
+			// how the login went is one of them. Only the idle ones are hung up on: an abandoned tab
+			// keeping a socket alive would otherwise hold the one door shut behind it.
+			server.closeIdleConnections();
+			await closed;
 		};
 
 		let endpoints: OAuthEndpoints;
@@ -196,7 +213,7 @@ export class LoginDesk {
 					? await this.#register(endpoints, redirectUri)
 					: { clientId: options.clientId, redirectUri };
 		} catch (error) {
-			close();
+			await close();
 			throw error;
 		}
 
@@ -256,7 +273,9 @@ export class LoginDesk {
 		if (refused !== null) {
 			const detail = asked.searchParams.get("error_description");
 			this.#pending.delete(name);
-			pending.close();
+			// Not awaited here or below: the browser asking is itself a connection the close waits for,
+			// and it is still waiting to be told how this went.
+			void pending.close();
 			const why = new OAuthError(`${pending.host} refused: ${detail ?? refused}`);
 			pending.fail(why);
 			throw why;
@@ -270,7 +289,7 @@ export class LoginDesk {
 		if (state !== pending.state) throw new OAuthError("That answer belongs to a different login.");
 
 		this.#pending.delete(name);
-		pending.close();
+		void pending.close();
 
 		try {
 			const granted = await exchangeCode(pending.endpoints, pending.client, code, pending.verifier);

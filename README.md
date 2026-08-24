@@ -542,11 +542,14 @@ would refuse the agent refuses that identically:
 It wants an account first: /mcp login notion
 ```
 
-`/mcp login` registers a client, opens the consent screen, and waits on a loopback port for the
-browser to come back. A plane on a server has no browser and the operator's browser cannot see its
-localhost, so the address it lands on can be pasted back instead — `/mcp login notion <address>` —
-and the state check makes that exactly as safe as the other way. What comes back is held on the
-plane, 0600, next to the CA key; the sandbox never sees a token, and neither does the agent.
+`/mcp login` registers a client, opens the consent screen at the console — which is the machine the
+person is at, where a plane in a container is not — and waits on port 8788 for the browser to come
+back. One number rather than one per login, because that door has to be published out of the
+container in advance; the deployment binds it to loopback, and one login happens at a time. Where
+even that cannot be reached, the address the browser lands on can be pasted back instead — `/mcp
+login notion <address>` — and the state check makes that exactly as safe as the other way. What
+comes back is held on the plane, 0600, next to the CA key; the sandbox never sees a token, and
+neither does the agent.
 
 **A finished login is the one capability here that does not come out of the config file.** That is
 deliberate and it is narrow: a consent screen is a person reading a host name and deciding, which is

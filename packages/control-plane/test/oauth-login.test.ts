@@ -15,8 +15,14 @@ interface FakeServer {
 }
 
 const running: FakeServer[] = [];
+/** The callback port is one number for the whole plane, so a test that leaves it held breaks the next. */
+const desks: Array<{ desk: LoginDesk; names: string[] }> = [];
 
 afterEach(async () => {
+	while (desks.length > 0) {
+		const left = desks.pop();
+		for (const name of left?.names ?? []) await left?.desk.cancel(name);
+	}
 	while (running.length > 0) await running.pop()?.close();
 });
 
@@ -79,7 +85,9 @@ async function desk(): Promise<{ desk: LoginDesk; logins: OAuthLogins; opened: s
 	const path = join(await mkdtemp(join(tmpdir(), "agent-dive-login-")), "oauth.json");
 	const logins = new OAuthLogins(path);
 	const opened: string[] = [];
-	return { desk: new LoginDesk(logins, (url) => opened.push(url)), logins, opened };
+	const made = new LoginDesk(logins, (url) => opened.push(url));
+	desks.push({ desk: made, names: ["notion"] });
+	return { desk: made, logins, opened };
 }
 
 /** What the browser does: follow the redirect back to wherever it was told to go. */
@@ -183,7 +191,6 @@ describe("logging in through a browser", () => {
 		expect(started.registered).toBe(false);
 		expect(started.redirectUri).toBe("http://localhost:8788/callback");
 		expect(new URL(started.url).searchParams.get("client_id")).toBe("mine");
-		door.cancel("notion");
 	});
 
 	it("has nothing to finish for a login nobody started", async () => {
@@ -198,12 +205,13 @@ describe("logging in through a browser", () => {
 		const { desk: door } = await desk();
 
 		const first = await door.begin({ name: "notion", url: `${server.url}/mcp`, host: "127.0.0.1" });
+		// The same door, which is the whole difficulty: starting again means the first one really let go.
 		const second = await door.begin({
 			name: "notion",
 			url: `${server.url}/mcp`,
 			host: "127.0.0.1",
 		});
-		expect(second.redirectUri).not.toBe(first.redirectUri);
+		expect(second.redirectUri).toBe(first.redirectUri);
 		await expect(first.done).rejects.toThrow(/called off/);
 
 		const state = new URL(second.url).searchParams.get("state") ?? "";

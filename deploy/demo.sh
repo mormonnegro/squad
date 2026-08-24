@@ -82,6 +82,7 @@ start_plane() {
     -v "$STATE:$STATE" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -p 8787:8787 \
+    -p 127.0.0.1:8788:8788 \
     agent-dive/control-plane:dev run "$STATE/config.yaml" >/dev/null
   docker network connect --alias egress "$EGRESS" "$PLANE"
 }

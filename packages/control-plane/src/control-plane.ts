@@ -637,7 +637,7 @@ export class ControlPlane {
 				await this.#reregisterAll();
 			},
 			logout: async (name) => {
-				this.#desk.cancel(name);
+				await this.#desk.cancel(name);
 				const held = await this.#logins.forget(name);
 				if (held) await this.#reregisterAll();
 				return held;
