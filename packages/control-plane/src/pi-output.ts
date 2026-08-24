@@ -16,6 +16,17 @@ export interface PiOutputOptions {
 	readonly onStep?: (step: AgentStep) => void;
 }
 
+/**
+ * What pi says a thing burned and what it cost.
+ *
+ * On a message, and also on the result of a tool that spent something itself — pi has a place for
+ * both, and deliberately keeps the second out of the first.
+ */
+interface PiUsage {
+	readonly totalTokens?: number;
+	readonly cost?: { readonly total?: number };
+}
+
 /** What pi's `--mode json` stream says, of the parts anyone outside the sandbox can use. */
 interface PiEvent {
 	readonly type?: string;
@@ -28,7 +39,7 @@ interface PiEvent {
 		readonly role?: string;
 		readonly stopReason?: string;
 		readonly errorMessage?: string;
-		readonly usage?: { readonly totalTokens?: number; readonly cost?: { readonly total?: number } };
+		readonly usage?: PiUsage;
 	};
 	readonly assistantMessageEvent?: {
 		readonly type: string;
@@ -169,6 +180,9 @@ export class PiOutput {
 		const id = event.toolCallId ?? "";
 		const started = this.#running.get(id);
 		this.#running.delete(id);
+		// Before the early return, because a tool that spent money spent it whether or not it also
+		// worked, and this is the only place that spending is ever said.
+		this.#billed(event.result);
 		if (event.isError !== true) return;
 
 		this.#step({
@@ -177,6 +191,22 @@ export class PiOutput {
 			failed: true,
 			...(started !== undefined ? { ms: Date.now() - started.at } : {}),
 		});
+	}
+
+	/**
+	 * What a tool spent of its own, which pi hands over here and adds to nothing.
+	 *
+	 * Its message totals are about the model, and rightly so: a tool that runs a command or reads a
+	 * file costs nobody anything. Searching is the exception — it is a call to another provider, on
+	 * another account, billed by the search, and the model driving the turn never sees a token of it.
+	 * Uncounted, the one tool that spends money outside the conversation was also the one spend that
+	 * no ceiling could stop and no total would admit to.
+	 */
+	#billed(result: unknown): void {
+		if (result === null || typeof result !== "object") return;
+		const usage = (result as { usage?: PiUsage }).usage;
+		this.#tokens += usage?.totalTokens ?? 0;
+		this.#cost += usage?.cost?.total ?? 0;
 	}
 
 	#messageEnd(message: PiEvent["message"]): void {

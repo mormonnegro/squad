@@ -224,6 +224,77 @@ describe("PiOutput", () => {
 		expect(out.costUsd).toBeCloseTo(0.0013);
 	});
 
+	// Searching is a call to another provider, billed by the search, that the model driving the turn
+	// never sees a token of. Left out, an agent could search all afternoon under a ceiling it never
+	// touched, and the column that says what it is spending would agree that it had spent nothing.
+	it("counts what a tool spent of its own, which no message will ever mention", () => {
+		const out = new PiOutput();
+
+		out.push(
+			emitted({
+				type: "message_end",
+				message: {
+					role: "assistant",
+					stopReason: "toolUse",
+					usage: { totalTokens: 600, cost: { total: 0.001 } },
+				},
+			}),
+		);
+		out.push(
+			emitted({
+				type: "tool_execution_end",
+				toolCallId: "call_1",
+				toolName: "web_search",
+				isError: false,
+				result: {
+					content: [{ type: "text", text: "Node 25 shipped in October." }],
+					usage: { totalTokens: 4200, cost: { total: 0.0212 } },
+				},
+			}),
+		);
+
+		expect(out.tokens).toBe(4800);
+		expect(out.costUsd).toBeCloseTo(0.0222);
+	});
+
+	it("counts a tool that spent and then failed, because the spending happened either way", () => {
+		const out = new PiOutput();
+
+		out.push(
+			emitted({
+				type: "tool_execution_end",
+				toolCallId: "call_1",
+				toolName: "web_search",
+				isError: true,
+				result: {
+					content: [{ type: "text", text: "The search came back with nothing to say." }],
+					usage: { totalTokens: 900, cost: { total: 0.0105 } },
+				},
+			}),
+		);
+
+		expect(out.costUsd).toBeCloseTo(0.0105);
+	});
+
+	it("charges nothing for the tools that cost nothing", () => {
+		// Which is nearly all of them: running a command or reading a file is somebody's electricity
+		// and nobody's invoice, and a result with no usage on it must leave the total where it was.
+		const out = new PiOutput();
+
+		out.push(
+			emitted({
+				type: "tool_execution_end",
+				toolCallId: "call_1",
+				toolName: "bash",
+				isError: false,
+				result: { content: [{ type: "text", text: "ok" }] },
+			}),
+		);
+
+		expect(out.tokens).toBe(0);
+		expect(out.costUsd).toBe(0);
+	});
+
 	it("keeps a refused turn from passing for a silent one", () => {
 		// A 403 from the proxy, an expired key, a rate limit: pi reports all of them inside the stream
 		// and exits zero, so unnoticed they arrive as an agent that simply had nothing to say.
