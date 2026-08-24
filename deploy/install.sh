@@ -173,9 +173,24 @@ if [ ! -f "$DIR/deploy/config.yaml" ]; then
 
 stateDir: /var/lib/agent-dive
 
+# Everything the agents here may think with. Naming a provider is the whole of configuring it:
+# where it lives and what its key is called are facts about the provider, not decisions. The key
+# itself is never here — it is read from that name in this plane's environment and written onto
+# the request at the proxy, so no agent ever holds it.
+#
+# Every model on this list is reachable by every agent, which is what makes `/model` in the console
+# a choice rather than a grant. Add one and the key it needs goes in deploy/.env.
+models:
+  - id: deepseek-v4-flash
+    provider: deepseek
+
+  # - id: sonnet
+  #   provider: anthropic
+  #   model: claude-sonnet-4-6
+
 # What every agent starts from, and the whole of what an agent made later at the keyboard is.
 defaults:
-  provider: deepseek
+  # One of the ids above. `/model` moves a single agent onto another without editing this file.
   model: deepseek-v4-flash
 
   # US dollars a day, counted across every turn and reset at midnight UTC. An agent can book its
@@ -184,20 +199,7 @@ defaults:
   # nobody remembers to put a ceiling on.
   limitUsd: 5
 
-  env:
-    # A placeholder, and enough: pi only needs to see that the provider is configured. What it
-    # sends is discarded at the proxy and replaced with the real key.
-    DEEPSEEK_API_KEY: injected-by-the-proxy
-
   grants:
-    # Without this an agent cannot think. The model is a grant like any other: somewhere it may
-    # reach, never a key it holds.
-    - id: model
-      host: api.deepseek.com
-      injection:
-        kind: bearer
-        token: { ref: DEEPSEEK_API_KEY }
-
     # How an agent reaches the web at all: both the searching and the reading of what it finds
     # happen on the far side of this one host. Scoped to the endpoint that searches, because the
     # same key against the rest of that API is a second model to think with.

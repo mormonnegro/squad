@@ -76,8 +76,9 @@ start_plane() {
   docker run -d --name "$PLANE" \
     --network "$UPLINK" \
     --label "agent-dive.state=$STATE" \
-    -e MODEL_KEY="$1" \
+    -e DEEPSEEK_API_KEY="$1" \
     -e SEARCH_KEY="$2" \
+    -e ANTHROPIC_API_KEY="${3:-}" \
     -e HOOK_SECRET="$HOOK_SECRET" \
     -v "$STATE:$STATE" \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -96,26 +97,25 @@ write_config() {
   cat > "$STATE/config.yaml" <<YAML
 stateDir: $STATE
 networkName: $EGRESS
-# What every agent starts from, including one made later with \`agent chat <name>\`. Without a model
-# grant here, an agent created at the keyboard would be born unable to think.
+# Everything the agents here may think with. Naming the provider says the rest: the host, the
+# variable its key is read from, and how the key is attached. Every one of these is reachable by
+# every agent, which is what makes \`/model\` at the console a choice and not a grant — try
+# \`/model sonnet\` and the next turn is answered by a different model, on the same container.
+models:
+  - id: deepseek-v4-flash
+    provider: deepseek
+  - id: sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+# What every agent starts from, including one made later with \`agent chat <name>\`.
 defaults:
-  provider: deepseek
+  # One of the ids above. \`/model\` moves a single agent off it without touching this file.
   model: deepseek-v4-flash
   # A day's ceiling, and the only thing between a demo left running and a bill: an agent that books
   # its own next turn goes on spending with nobody watching. Here rather than on one agent, so it
   # also covers the ones made later at the keyboard. Move it from the console with \`/limit\`.
   limitUsd: 2
-  # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
-  # agent's own Authorization before writing the injected one, so this is the whole credential the
-  # agent ever holds.
-  env:
-    DEEPSEEK_API_KEY: injected-by-the-proxy
   grants:
-    - id: model
-      host: api.deepseek.com
-      injection:
-        kind: bearer
-        token: { ref: MODEL_KEY }
     # The one host the agent reaches the web through, and the searching and page-reading both happen
     # on the far side of it — which is why this is a grant anyone can write and "let it browse" is
     # not. Scoped to the one endpoint that searches: the same key on the rest of that API would be a
@@ -167,17 +167,19 @@ reload() {
   docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev . >/dev/null
   write_config
 
-  # Read back off the running container, so a reload never asks for the key again. A key in the
-  # environment wins, which is how the provider gets changed without going through `up` and losing
-  # the agent: the old key would be offered to the new provider and refused as a bad credential.
-  local env key search
+  # Read back off the running container, so a reload never asks for the keys again. A key in the
+  # environment wins, which is how one gets added without going through `up` and losing the agent:
+  # export it, reload, and `/model` stops saying this plane holds nothing for that model.
+  local env key search anthropic
   env=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}')
-  key=$(printf '%s\n' "$env" | sed -n 's/^MODEL_KEY=//p')
+  key=$(printf '%s\n' "$env" | sed -n 's/^DEEPSEEK_API_KEY=//p')
   search=$(printf '%s\n' "$env" | sed -n 's/^SEARCH_KEY=//p')
+  anthropic=$(printf '%s\n' "$env" | sed -n 's/^ANTHROPIC_API_KEY=//p')
 
   docker rm -f "$PLANE" >/dev/null
   start_plane "${DEEPSEEK_API_KEY:-${key:-no-key-configured}}" \
-    "${OPENAI_API_KEY:-${search:-no-key-configured}}"
+    "${OPENAI_API_KEY:-${search:-no-key-configured}}" \
+    "${ANTHROPIC_API_KEY:-$anthropic}"
 
   # Before listing them, so the list is what settled rather than what was mid-flight: an agent whose
   # environment the new config changed is replaced here, and its old container is still up until it is.
@@ -246,7 +248,10 @@ up() {
   docker network create "$UPLINK" >/dev/null
 
   say "starting the control plane"
-  start_plane "${DEEPSEEK_API_KEY:-no-key-configured}" "${OPENAI_API_KEY:-no-key-configured}"
+  # The third is passed through empty when there is none, on purpose: `/model` then says this plane
+  # holds no key for sonnet, which is the truth and the place the answer is to export one and reload.
+  start_plane "${DEEPSEEK_API_KEY:-no-key-configured}" "${OPENAI_API_KEY:-no-key-configured}" \
+    "${ANTHROPIC_API_KEY:-}"
 
   for _ in $(seq 60); do
     [ "$(docker inspect -f '{{.State.Running}}' "$SANDBOX" 2>/dev/null)" = "true" ] && break
