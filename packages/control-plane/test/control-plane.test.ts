@@ -71,6 +71,72 @@ describe("ControlPlane", () => {
 });
 
 /**
+ * The seam `/model` turns on. The command writes a name beside the config it may not edit, and
+ * everything that asks what an agent thinks with has to read that first — otherwise the answer says
+ * it moved and every turn after it goes on being answered by the model it was moved off.
+ */
+describe("the model an agent was moved onto", () => {
+	let stateDir: string;
+	const models = [
+		{
+			id: "flash",
+			provider: "deepseek",
+			model: "deepseek-v4-flash",
+			host: "api.deepseek.com",
+			keyEnv: "DEEPSEEK_API_KEY",
+		},
+		{
+			id: "sonnet",
+			provider: "anthropic",
+			model: "claude-sonnet-4-6",
+			host: "api.anthropic.com",
+			keyEnv: "ANTHROPIC_API_KEY",
+			header: "x-api-key",
+		},
+	];
+	const planeWith = () =>
+		new ControlPlane({ agents: [{ id: "scout", model: "flash" }], stateDir, models });
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-model-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	it("starts on the one the configuration named", async () => {
+		expect((await planeWith().agents())[0]?.model).toBe("flash");
+	});
+
+	it("is the one the console shows after the move", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/model sonnet");
+
+		expect((await plane.agents())[0]?.model).toBe("sonnet");
+	});
+
+	// The config file is the operator's and no plane may write it, so a choice made at the keyboard
+	// has to live beside it. One that only lived in memory would be undone by the next deploy.
+	it("outlives the plane it was chosen on", async () => {
+		await planeWith().command("scout", "/model sonnet");
+
+		expect((await planeWith().agents())[0]?.model).toBe("sonnet");
+	});
+
+	// The name can be created again, and the next agent to hold it is not the one that was moved.
+	it("goes back to the configuration when the agent is purged", async () => {
+		const plane = planeWith();
+		await plane.command("scout", "/model sonnet");
+
+		await plane.remove("scout", { purge: true });
+
+		expect((await planeWith().agents())[0]?.model).toBe("flash");
+	});
+});
+
+/**
  * What an agent inherits, and what it does not.
  *
  * The rule these keep honest: a grant is only ever something the operator wrote. Defaults are how
