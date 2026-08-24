@@ -94,7 +94,7 @@ suite("taking a turn in a live sandbox", () => {
 		// property under test: a turn that could not reach a model is not an agent that said nothing.
 		const runner = new PiTurnRunner({
 			sandbox: manager,
-			provider: "anthropic",
+			model: async () => ({ provider: "anthropic" }),
 			timeoutMs: 60_000,
 		});
 
@@ -132,7 +132,7 @@ suite("taking a turn in a live sandbox", () => {
 	}, 120_000);
 
 	it("writes pi's session onto the agent's own volume", async () => {
-		const runner = new PiTurnRunner({ sandbox: manager, provider: "anthropic" });
+		const runner = new PiTurnRunner({ sandbox: manager });
 		expect(runner.commandFor(AGENT_ID)).toContain("/home/agent/.self/.sessions");
 
 		const writable = await manager.exec(AGENT_ID, [

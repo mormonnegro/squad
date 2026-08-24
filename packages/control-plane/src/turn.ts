@@ -8,6 +8,7 @@ import {
 	SANDBOX_WAKE_FILE,
 } from "@agent-dive/sandbox";
 import type { NamedServer } from "./mcp.ts";
+import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
@@ -97,8 +98,13 @@ export class TurnError extends Error {
 
 export interface PiTurnRunnerOptions {
 	readonly sandbox: TurnSandbox;
-	readonly provider?: string;
-	readonly model?: string;
+	/**
+	 * What to think with, asked again at the start of every turn.
+	 *
+	 * Asked rather than held, for the same reason the servers are: an agent moved onto another model
+	 * from the console should answer with it on its next turn, without waiting for a new container.
+	 */
+	readonly model?: (agentId: string) => Promise<ModelChoice | undefined>;
 	/** Where pi keeps session files. On the agent's volume, so turns survive a new container. */
 	readonly sessionDir?: string;
 	/** The agent's own repository inside the sandbox: its soul, its skills, its memory. */
@@ -126,8 +132,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60_000;
  */
 export class PiTurnRunner {
 	readonly #sandbox: TurnSandbox;
-	readonly #provider: string | undefined;
-	readonly #model: string | undefined;
+	readonly #model: ((agentId: string) => Promise<ModelChoice | undefined>) | undefined;
 	readonly #sessionDir: string;
 	readonly #repoPath: string;
 	readonly #timeoutMs: number;
@@ -142,7 +147,6 @@ export class PiTurnRunner {
 
 	constructor(options: PiTurnRunnerOptions) {
 		this.#sandbox = options.sandbox;
-		this.#provider = options.provider;
 		this.#model = options.model;
 		this.#repoPath = options.repoPath ?? DEFAULT_REPO_PATH;
 		this.#sessionDir = options.sessionDir ?? `${this.#repoPath}/.sessions`;
@@ -163,7 +167,7 @@ export class PiTurnRunner {
 	 * The soul and skills are passed as paths rather than discovered, because discovery is gated on
 	 * pi trusting the project and the answer to "is this project trusted" is the agent itself.
 	 */
-	commandFor(agentId: string): string[] {
+	commandFor(agentId: string, thinksWith?: ModelChoice): string[] {
 		return [
 			...this.#command,
 			"--print",
@@ -182,8 +186,8 @@ export class PiTurnRunner {
 			// Named rather than discovered, for the same reason the skills are: discovery is gated on
 			// the project being trusted, and these are the plane's rather than the project's anyway.
 			...this.#extensions.flatMap((extension) => ["--extension", extension]),
-			...(this.#provider !== undefined ? ["--provider", this.#provider] : []),
-			...(this.#model !== undefined ? ["--model", this.#model] : []),
+			...(thinksWith?.provider !== undefined ? ["--provider", thinksWith.provider] : []),
+			...(thinksWith?.model !== undefined ? ["--model", thinksWith.model] : []),
 		];
 	}
 
@@ -216,8 +220,9 @@ export class PiTurnRunner {
 		let executed: ExecResult;
 		try {
 			await this.#putServers(agentId);
+			const thinksWith = await this.#model?.(agentId);
 			// In its own repository, so what it remembers and what it can do are where it works.
-			executed = await this.#sandbox.run(agentId, this.commandFor(agentId), prompt, {
+			executed = await this.#sandbox.run(agentId, this.commandFor(agentId, thinksWith), prompt, {
 				timeoutMs: this.#timeoutMs,
 				workingDir: this.#repoPath,
 				onStdout: (chunk) => output.push(chunk),

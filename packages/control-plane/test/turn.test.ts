@@ -224,16 +224,38 @@ describe("PiTurnRunner", () => {
 		expect(runner.commandFor("a1")).toContain("/home/agent/.self/.sessions");
 	});
 
-	it("passes the configured provider and model", () => {
-		const runner = new PiTurnRunner({
-			sandbox: new StubSandbox(),
-			provider: "anthropic",
-			model: "claude-opus-4-7",
-		});
+	it("passes the model it was given for this agent", () => {
+		const runner = new PiTurnRunner({ sandbox: new StubSandbox() });
 
-		expect(runner.commandFor("a1")).toEqual(
+		expect(runner.commandFor("a1", { provider: "anthropic", model: "claude-opus-4-7" })).toEqual(
 			expect.arrayContaining(["--provider", "anthropic", "--model", "claude-opus-4-7"]),
 		);
+	});
+
+	/**
+	 * Asked again every turn rather than held from the start, so an agent moved onto another model
+	 * answers with it next time it says anything. Held, and the only way to change what a running
+	 * agent thinks with would be to take its container away.
+	 */
+	it("asks what to think with at the start of every turn", async () => {
+		const sandbox = new StubSandbox();
+		const asked: string[] = [];
+		const models = ["claude-opus-4-7", "claude-haiku-4-5"];
+		const runner = new PiTurnRunner({
+			sandbox,
+			model: async (agentId) => {
+				asked.push(agentId);
+				return { provider: "anthropic", model: models[asked.length - 1] ?? "" };
+			},
+		});
+
+		await runner.run("a1", "hi");
+		await runner.run("a1", "again");
+
+		expect(asked).toEqual(["a1", "a1"]);
+		const ran = sandbox.calls.filter((call) => call.cmd[0] === "pi");
+		expect(ran[0]?.cmd).toEqual(expect.arrayContaining(["--model", "claude-opus-4-7"]));
+		expect(ran[1]?.cmd).toEqual(expect.arrayContaining(["--model", "claude-haiku-4-5"]));
 	});
 
 	it("bounds a turn so a stuck agent cannot hold its sandbox forever", async () => {

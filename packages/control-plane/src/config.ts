@@ -3,6 +3,7 @@ import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
 import type { Hook } from "@agent-dive/channels";
 import { parse as parseYaml } from "yaml";
 import type { AgentConfig, AgentDefaults, ControlPlaneOptions } from "./control-plane.ts";
+import { type Model, modelEnv, modelGrants, PROVIDERS } from "./models.ts";
 
 export class ConfigError extends Error {
 	readonly issues: readonly string[];
@@ -118,6 +119,96 @@ function checkLimit(raw: unknown, label: string, issues: string[]): void {
 	}
 }
 
+/**
+ * Reads one model off the list of the ones this plane may think with.
+ *
+ * Most of it is not written down: naming a provider the table knows says where it lives, what its
+ * key is called and how the key is attached, because those are facts about the provider rather than
+ * decisions the operator gets to make. What is left is the part that is theirs — which models they
+ * want, and what to call each one at the console.
+ */
+function parseModel(raw: unknown, index: number, issues: string[]): Model | undefined {
+	const label = `models[${index}]`;
+	if (!isRecord(raw)) {
+		issues.push(`${label} must be a mapping`);
+		return undefined;
+	}
+
+	const { id, provider, model, host, keyEnv, header } = raw;
+	if (typeof id !== "string" || id.length === 0) {
+		issues.push(`${label}.id is required: the name to pick it by, e.g. "sonnet"`);
+		return undefined;
+	}
+	if (typeof provider !== "string" || provider.length === 0) {
+		issues.push(
+			`${label} ("${id}").provider is required, e.g. ${Object.keys(PROVIDERS).join(", ")}`,
+		);
+		return undefined;
+	}
+
+	const known = PROVIDERS[provider];
+	const at = typeof host === "string" && host.length > 0 ? host : known?.host;
+	const key = typeof keyEnv === "string" && keyEnv.length > 0 ? keyEnv : known?.keyEnv;
+	if (at === undefined || key === undefined) {
+		issues.push(
+			`${label} ("${id}"): nothing here knows "${provider}", so it needs a host and a keyEnv of its own. Known: ${Object.keys(PROVIDERS).join(", ")}`,
+		);
+		return undefined;
+	}
+	// The key is not looked for here, and its absence is not an error. Refusing to start over a
+	// variable nobody has exported yet would make the first run of this thing a configuration
+	// exercise, and there is somewhere better to say it: `/model` marks the ones with no key behind
+	// them, in the place where the answer is to paste one in and try again.
+	const attachedTo = typeof header === "string" && header.length > 0 ? header : known?.header;
+	return {
+		id,
+		provider,
+		// The id is usually the model's own name, so saying it twice is the common case.
+		model: typeof model === "string" && model.length > 0 ? model : id,
+		host: at,
+		keyEnv: key,
+		...(attachedTo !== undefined ? { header: attachedTo } : {}),
+	};
+}
+
+function parseModels(raw: unknown, issues: string[]): readonly Model[] {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw)) {
+		issues.push("models must be a list");
+		return [];
+	}
+
+	const models: Model[] = [];
+	raw.forEach((entry, index) => {
+		const model = parseModel(entry, index, issues);
+		if (model === undefined) return;
+		if (models.some((other) => other.id === model.id)) {
+			issues.push(`models[${index}]: there is already a model called "${model.id}"`);
+			return;
+		}
+		models.push(model);
+	});
+	return models;
+}
+
+/**
+ * Turns the models into what an agent needs to reach them: a grant each, and the placeholder keys.
+ *
+ * Folded into the defaults rather than handed to the plane separately, because that is what they
+ * are — something true of every agent, which an agent's own block may narrow. It also means the
+ * reach is decided here, in the file, and `/model` never has to widen anything to switch.
+ */
+function reaching(defaults: AgentDefaults | undefined, models: readonly Model[]): AgentDefaults {
+	return {
+		...defaults,
+		// The operator's own first, so a hand-written grant on the same host is the one that matches.
+		grants: [...(defaults?.grants ?? []), ...modelGrants(models)],
+		// And theirs wins outright here: an operator who really does want a key inside the container
+		// has said so by naming it, and this should not quietly put a placeholder over it.
+		env: { ...modelEnv(models), ...defaults?.env },
+	};
+}
+
 function parseAgent(
 	raw: unknown,
 	index: number,
@@ -188,6 +279,23 @@ function parseDefaults(
 export interface LoadedConfig extends ControlPlaneOptions {
 	readonly agents: readonly AgentConfig[];
 	readonly stateDir: string;
+	/** Empty when the file declares none, which is a plane whose agents think with what pi is set up for. */
+	readonly models: readonly Model[];
+}
+
+/**
+ * Refuses a model nobody configured, wherever it was named.
+ *
+ * With a `models` block the name of a model is a name off that list, and a string that is not on it
+ * is not an exotic model — it is a typo, or a model whose key nobody exported. Passing it through
+ * would hand it to pi, which fails the turn with a message about a provider rather than about the
+ * line that was mistyped.
+ */
+function checkModel(id: unknown, label: string, models: readonly Model[], issues: string[]): void {
+	if (typeof id !== "string" || models.some((model) => model.id === id)) return;
+	issues.push(
+		`${label}.model is "${id}", which is not one of the models configured: ${models.map((model) => model.id).join(", ")}`,
+	);
 }
 
 export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env): LoadedConfig {
@@ -205,7 +313,9 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 	if (typeof stateDir !== "string" || stateDir.length === 0) issues.push("stateDir is required");
 	if (!Array.isArray(agents) || agents.length === 0) issues.push("agents must be a non-empty list");
 
-	const defaults = parseDefaults(raw.defaults, env, issues);
+	const models = parseModels(raw.models, issues);
+	const declared = parseDefaults(raw.defaults, env, issues);
+	const defaults = models.length > 0 ? reaching(declared, models) : declared;
 
 	const parsedAgents: AgentConfig[] = [];
 	if (Array.isArray(agents)) {
@@ -213,6 +323,22 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 			const agent = parseAgent(entry, index, env, issues);
 			if (agent) parsedAgents.push(agent);
 		});
+	}
+
+	if (models.length > 0) {
+		checkModel(defaults?.model, "defaults", models, issues);
+		for (const agent of parsedAgents)
+			checkModel(agent.model, `agent "${agent.id}"`, models, issues);
+		// The provider is the model's, and a line here that decides nothing is a line somebody will
+		// edit expecting it to.
+		if (defaults?.provider !== undefined)
+			issues.push("defaults.provider: with models configured, the provider comes from the model");
+		for (const agent of parsedAgents) {
+			if (agent.provider !== undefined)
+				issues.push(
+					`agent "${agent.id}".provider: with models configured, the provider comes from the model`,
+				);
+		}
 	}
 
 	const parsedHooks: Hook[] = [];
@@ -239,6 +365,7 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 		stateDir: stateDir as string,
 		agents: parsedAgents,
 		hooks: parsedHooks,
+		models,
 		// After the spread, so the resolved block replaces the one still holding envFrom names.
 		defaults,
 	} as LoadedConfig;

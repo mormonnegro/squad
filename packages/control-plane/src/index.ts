@@ -41,6 +41,15 @@ export {
 	readServer,
 	written,
 } from "./mcp.ts";
+export {
+	KEY_PLACEHOLDER,
+	type Model,
+	type ModelChoice,
+	ModelChoices,
+	modelEnv,
+	modelGrants,
+	PROVIDERS,
+} from "./models.ts";
 export { type AgentStep, PiOutput, type PiOutputOptions } from "./pi-output.ts";
 export {
 	PI_SOCKET_PATH,

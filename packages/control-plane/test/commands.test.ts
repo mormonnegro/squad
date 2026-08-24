@@ -12,6 +12,7 @@ import {
 	shellScript,
 } from "../src/commands.ts";
 import type { McpServer } from "../src/mcp.ts";
+import type { Model } from "../src/models.ts";
 
 /** Where a started login says it is listening, which is the address a paste has to come back to. */
 const WAITING_AT = "http://localhost:54321/callback";
@@ -33,10 +34,19 @@ function context(
 		agentId?: string;
 		/** Made at a keyboard rather than declared, which decides whether deleting it is the last of it. */
 		created?: boolean;
+		/** The models the operator configured, which is the whole of what `/model` may choose from. */
+		models?: readonly Model[];
+		/** The one this agent is on, by whatever name the plane knows it under. */
+		using?: string;
+		/** Models the plane holds no key for: configured, and still not something to think with. */
+		keyless?: readonly string[];
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
 	const set: (number | null)[] = [];
+	const using = { id: start.using };
+	/** Every move that got as far as the plane, which is what a sentence about one cannot show. */
+	const moved: string[] = [];
 	const shelf = new Map<string, McpServer>(Object.entries(start.shelf ?? {}));
 	const held = new Set<string>();
 	const logins = new Set<string>(start.loggedIn ?? []);
@@ -52,6 +62,7 @@ function context(
 		[...shelf.entries()].find(([, one]) => one === server)?.[0] ?? "";
 	return {
 		set,
+		moved,
 		shelf,
 		held,
 		logins,
@@ -67,6 +78,15 @@ function context(
 			setLimit: async (usd: number | null) => {
 				set.push(usd);
 				state.limitUsd = usd ?? undefined;
+			},
+			models: async () => ({
+				all: start.models ?? [],
+				using: using.id,
+				keyless: start.keyless ?? [],
+			}),
+			setModel: async (id: string) => {
+				moved.push(id);
+				using.id = id;
 			},
 			mcp: async () => ({
 				shelf: [...shelf.keys()].flatMap(named),
@@ -300,6 +320,140 @@ describe("/delete", () => {
 
 		expect(answer).toContain("Only the name is");
 		expect(removed).toEqual([]);
+	});
+});
+
+/**
+ * A command that chooses and never grants. Every model it can name was already reachable by every
+ * agent before it was typed, because configuring one is what granted it — so every test here that
+ * ends in `moved` being empty is a way somebody could have thought they had switched and had not.
+ */
+describe("/model", () => {
+	const flash: Model = {
+		id: "flash",
+		provider: "deepseek",
+		model: "deepseek-v4-flash",
+		host: "api.deepseek.com",
+		keyEnv: "DEEPSEEK_API_KEY",
+	};
+	const sonnet: Model = {
+		id: "sonnet",
+		provider: "anthropic",
+		model: "claude-sonnet-4-6",
+		host: "api.anthropic.com",
+		keyEnv: "ANTHROPIC_API_KEY",
+		header: "x-api-key",
+	};
+	const both = [flash, sonnet];
+
+	it("says what this one thinks with and what else there is", async () => {
+		const answer = await runCommand("/model", context({ models: both, using: "flash" }).context);
+
+		expect(answer).toContain("thinks with flash");
+		// The real name beside the nickname: an id is what the operator chose to call it, and the
+		// question behind `/model` is usually which actual model is answering.
+		expect(answer).toContain("deepseek/deepseek-v4-flash");
+		expect(answer).toContain("anthropic/claude-sonnet-4-6");
+		expect(answer).toContain("(this one)");
+	});
+
+	it("reading the list moves nothing", async () => {
+		const { context: ctx, moved } = context({ models: both, using: "flash" });
+
+		await runCommand("/model", ctx);
+
+		expect(moved).toEqual([]);
+	});
+
+	it("says what to type to move it, with a name that would work", async () => {
+		const answer = await runCommand("/model", context({ models: both, using: "flash" }).context);
+
+		expect(answer).toContain("/model sonnet");
+	});
+
+	it("moves the agent onto another configured model", async () => {
+		const { context: ctx, moved } = context({ models: both, using: "flash" });
+
+		const answer = await runCommand("/model sonnet", ctx);
+
+		expect(moved).toEqual(["sonnet"]);
+		expect(answer).toContain("anthropic/claude-sonnet-4-6");
+	});
+
+	/**
+	 * The change looks instant and is not: a turn already running was handed its model when it
+	 * started, and its answer arriving afterwards reads like the switch having done nothing.
+	 */
+	it("says the turn in flight finishes on the old one", async () => {
+		const answer = await runCommand(
+			"/model sonnet",
+			context({ models: both, using: "flash" }).context,
+		);
+
+		expect(answer).toContain("next turn");
+		expect(answer).toContain("already running");
+	});
+
+	// The list is the operator's file read back. A name that is not on it is not something to create,
+	// which is the whole reason a command may touch this at all.
+	it("refuses a name nobody configured, and says the ones there are", async () => {
+		const { context: ctx, moved } = context({ models: both, using: "flash" });
+
+		const answer = await runCommand("/model opus", ctx);
+
+		expect(answer).toContain('no model called "opus"');
+		expect(answer).toContain("flash, sonnet");
+		expect(moved).toEqual([]);
+	});
+
+	it("says an agent is already on the one it was asked for", async () => {
+		const { context: ctx, moved } = context({ models: both, using: "flash" });
+
+		const answer = await runCommand("/model flash", ctx);
+
+		expect(answer).toContain("already thinks with flash");
+		expect(moved).toEqual([]);
+	});
+
+	/**
+	 * Configured and unusable read exactly alike until a turn dies at the proxy against a key this
+	 * plane never had. Said here because here is where the answer is to paste one in and try again.
+	 */
+	it("marks the models this plane holds no key for", async () => {
+		const answer = await runCommand(
+			"/model",
+			context({ models: both, using: "flash", keyless: ["sonnet"] }).context,
+		);
+
+		expect(answer).toContain("no ANTHROPIC_API_KEY");
+	});
+
+	// Done rather than refused: the operator asked for it and can export the key without touching
+	// the choice again. Refusing would be this deciding what they meant.
+	it("moves onto a keyless model anyway, and warns", async () => {
+		const { context: ctx, moved } = context({ models: both, using: "flash", keyless: ["sonnet"] });
+
+		const answer = await runCommand("/model sonnet", ctx);
+
+		expect(moved).toEqual(["sonnet"]);
+		expect(answer).toContain("ANTHROPIC_API_KEY");
+		expect(answer).toContain("refused at the proxy");
+	});
+
+	/** The oldest configurations have no list at all, and typing this is how somebody finds out. */
+	it("shows how to configure one when the plane configures none", async () => {
+		const answer = await runCommand("/model", context().context);
+
+		expect(answer).toContain("configures no models");
+		expect(answer).toContain("models:");
+		expect(answer).toContain("provider: anthropic");
+	});
+
+	it("names the model a hand-written config put the agent on", async () => {
+		const answer = await runCommand("/model", context({ using: "claude-opus-4-7" }).context);
+
+		expect(answer).toContain("claude-opus-4-7");
+		expect(answer).toContain("by hand");
 	});
 });
 

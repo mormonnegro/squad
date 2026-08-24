@@ -769,7 +769,8 @@ describe("Chat", () => {
 			draft: "/",
 			menu: [...COMMANDS],
 			pick: 0,
-			rows: 8,
+			// Room for every one of them, since the point is how they line up against each other.
+			rows: COMMANDS.length + 4,
 			columns: 90,
 		});
 

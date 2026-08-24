@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { LoginStatus, Reachability } from "@agent-dive/proxy";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
+import type { Model } from "./models.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -26,6 +27,25 @@ export interface CommandContext {
 	account(): Promise<{ readonly spentUsd: number; readonly limitUsd: number | undefined }>;
 	/** `null` takes the ceiling off, which is not the same as leaving it to the config. */
 	setLimit(usd: number | null): Promise<void>;
+	/**
+	 * Every model the operator configured, and the name of the one this agent is on — which may be a
+	 * name off no list at all, on a plane whose config names its model the older way.
+	 */
+	models(): Promise<{
+		readonly all: readonly Model[];
+		readonly using: string | undefined;
+		/** The ones with no key behind them, which are configured and still cannot be thought with. */
+		readonly keyless: readonly string[];
+	}>;
+	/**
+	 * Moves this agent onto one of them. A choice among the configured, never a way to add one.
+	 *
+	 * Allowed for the same reason a ceiling is: every model on that list is one the operator wrote
+	 * into their file, keys and all, so the agent could already reach every one of them and this
+	 * changes nothing about its reach. What it changes is what the next turn costs and how good it
+	 * is, which is a thing to decide while watching the agent answer rather than in a text editor.
+	 */
+	setModel(id: string): Promise<void>;
 	/** Every server the plane knows of, and which of them this agent has been given. */
 	mcp(): Promise<{ readonly shelf: readonly NamedServer[]; readonly held: readonly NamedServer[] }>;
 	/**
@@ -73,6 +93,11 @@ export const COMMANDS = [
 		name: "/limit",
 		takes: "[<amount>|off]",
 		does: "what it has spent today, and the ceiling for it",
+	},
+	{
+		name: "/model",
+		takes: "[<name>]",
+		does: "what it thinks with, and the other models you configured",
 	},
 	{
 		name: "/mcp",
@@ -242,6 +267,91 @@ function spentAgainst(account: { spentUsd: number; limitUsd: number | undefined 
 	return account.limitUsd === undefined
 		? `${spent}, against no limit.`
 		: `${spent}, of ${money(account.limitUsd)} a day.`;
+}
+
+/** A model as the two facts about it that are not its name: whose it is, and what they call it. */
+function named(model: Model): string {
+	return `${model.provider}/${model.model}`;
+}
+
+/** How to configure one, which is the answer to "and what do I type" for the third time. */
+const CONFIGURING = [
+	"  models:",
+	"    - id: sonnet",
+	"      provider: anthropic",
+	"      model: claude-sonnet-4-6",
+	"",
+	"The key is read from ANTHROPIC_API_KEY in this plane's own environment. The agent",
+	"never holds it: the proxy writes it onto the request on the way out.",
+].join("\n");
+
+/**
+ * What this agent thinks with, and what else there is to think with.
+ *
+ * The list is the operator's file read back, never added to. Every model on it is already reachable
+ * by every agent — that is what configuring one does — so moving between them changes what a turn
+ * costs and how good it is, and changes nothing about what the agent can get to. That is the whole
+ * reason this is a command rather than an edit and a restart.
+ */
+async function models(words: readonly string[], context: CommandContext): Promise<string> {
+	const { all, using, keyless } = await context.models();
+	const wanted = words.join(" ").trim();
+	// Said wherever the model is said, because it is the difference between a model that works and
+	// one that reads exactly like it works right up to the turn that dies against it.
+	const missing = (model: Model) =>
+		keyless.includes(model.id) ? `   (no ${model.keyEnv} in this plane's environment)` : "";
+
+	if (all.length === 0) {
+		return [
+			using === undefined
+				? "This plane configures no models, so its agents think with whatever pi is set up for."
+				: `This agent thinks with ${using}, which this plane's config names and grants by hand.`,
+			"",
+			"There is nothing to move it onto until the models are a list. One is three lines:",
+			"",
+			CONFIGURING,
+		].join("\n");
+	}
+
+	if (wanted === "") {
+		const other = all.find((model) => model.id !== using);
+		return [
+			using === undefined
+				? "This agent is on none of the configured models. There are:"
+				: `This agent thinks with ${using}. There are:`,
+			"",
+			laidOut(
+				all.map(
+					(model) =>
+						[
+							`  ${model.id}`,
+							`${named(model)}${model.id === using ? "   (this one)" : ""}${missing(model)}`,
+						] as const,
+				),
+			),
+			...(other === undefined
+				? []
+				: ["", `/model ${other.id} moves it onto that one, from its next turn.`]),
+		].join("\n");
+	}
+
+	const found = all.find((model) => model.id === wanted);
+	if (found === undefined) {
+		return `There is no model called "${wanted}". There is: ${all.map((model) => model.id).join(", ")}.`;
+	}
+	if (found.id === using) {
+		return `This agent already thinks with ${found.id}: ${named(found)}.${missing(found)}`;
+	}
+
+	await context.setModel(found.id);
+	// The turn in flight is said out loud because the change looks instant and is not: a turn already
+	// running was handed its model when it started, and the answer arriving afterwards is the old
+	// one's — which reads, to whoever just switched, like the switch having done nothing.
+	const moved = `This agent thinks with ${found.id} from its next turn: ${named(found)}. A turn already running finishes on the one it started with.`;
+	if (!keyless.includes(found.id)) return moved;
+	// Done rather than refused: the operator asked for it, and the key can be exported without
+	// touching this choice. Saying nothing would leave them watching every turn fail instead.
+	return `${moved}\n\nNothing here holds ${found.keyEnv} yet, so turns on it will be refused at the proxy until this plane has it.`;
 }
 
 /** The words `/mcp` reads as instructions, and therefore not names a server may be given. */
@@ -508,6 +618,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	// The words rather than the argument: a server is a name and then a whole command line, and
 	// joining those back into one string only to split them again would lose where each of them ended.
 	if (name === "mcp") return mcp(rest, context);
+	if (name === "model") return models(rest, context);
 	if (name === "delete") return remove(rest, context);
 
 	if (name === "limit") {

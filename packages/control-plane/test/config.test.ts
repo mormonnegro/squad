@@ -246,6 +246,190 @@ agents:
 });
 
 /**
+ * The one capability every agent needs and the one nobody thinks of as a capability. Configuring it
+ * by hand meant four coupled lines — provider, model, a placeholder key, a grant naming the host —
+ * and any one of them wrong is not a startup error but a turn that dies at the proxy.
+ */
+describe("models", () => {
+	const CONFIGURED = `
+stateDir: /state
+models:
+  - id: flash
+    provider: deepseek
+  - id: sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+defaults:
+  model: flash
+agents:
+  - id: scout
+`;
+
+	it("fills in what is known about a provider from its name alone", () => {
+		const config = parseConfig(CONFIGURED, {});
+
+		expect(config.models[0]).toEqual({
+			id: "flash",
+			provider: "deepseek",
+			// Said once: an id that is already the model's name is the common case.
+			model: "flash",
+			host: "api.deepseek.com",
+			keyEnv: "DEEPSEEK_API_KEY",
+		});
+	});
+
+	it("takes the model's real name when the id is only a nickname", () => {
+		expect(parseConfig(CONFIGURED, {}).models[1]?.model).toBe("claude-sonnet-4-6");
+	});
+
+	/**
+	 * The grant and the placeholder are derived rather than written, so they cannot disagree with the
+	 * model they were written for. Every agent gets every model's, which is what lets `/model` choose
+	 * without granting.
+	 */
+	it("grants every agent every configured model, keys and all", () => {
+		const config = parseConfig(CONFIGURED, {});
+		const agent = withDefaults({ id: "made-later" }, config.defaults);
+
+		expect(agent.grants?.map((grant) => grant.host)).toEqual([
+			"api.deepseek.com",
+			"api.anthropic.com",
+		]);
+		expect(agent.env).toEqual({
+			DEEPSEEK_API_KEY: "injected-by-the-proxy",
+			ANTHROPIC_API_KEY: "injected-by-the-proxy",
+		});
+	});
+
+	// An operator who wrote their own grant for the same host meant that one: it is more specific
+	// than anything derived here, and the proxy matches in order.
+	it("leaves the operator's own grants in front of the derived ones", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+models:
+  - id: flash
+    provider: deepseek
+defaults:
+  model: flash
+  grants:
+    - id: mine
+      host: api.deepseek.com
+      injection: { kind: none }
+agents:
+  - id: scout
+`,
+			{},
+		);
+
+		expect(config.defaults?.grants?.map((grant) => grant.id)).toEqual(["mine", "model:flash"]);
+	});
+
+	/**
+	 * The whole point of the block is that a name is enough. A provider nobody has heard of is still
+	 * configurable, but then the two facts the table would have supplied have to be said.
+	 */
+	it("takes a provider nothing knows when it says where it lives and what its key is called", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+models:
+  - id: local
+    provider: my-gateway
+    model: llama-4-70b
+    host: models.acme.internal
+    keyEnv: GATEWAY_TOKEN
+agents:
+  - id: scout
+`,
+			{},
+		);
+
+		expect(config.models[0]?.host).toBe("models.acme.internal");
+		expect(config.models[0]?.keyEnv).toBe("GATEWAY_TOKEN");
+	});
+
+	it("refuses a provider nothing knows and that says neither", () => {
+		expect(() =>
+			parseConfig(`stateDir: /state\nmodels:\n  - id: local\n    provider: my-gateway\n`, {}),
+		).toThrow(/nothing here knows "my-gateway"/);
+	});
+
+	// Two models under one name is one model to `/model` and to the proxy, and which one it is
+	// depends on the order they were written in.
+	it("refuses two models called the same thing", () => {
+		expect(() =>
+			parseConfig(
+				`stateDir: /state\nmodels:\n  - id: flash\n    provider: deepseek\n  - id: flash\n    provider: groq\n`,
+				{},
+			),
+		).toThrow(/there is already a model called "flash"/);
+	});
+
+	/**
+	 * A default naming a model that is not on the list would deploy, and then every agent would start
+	 * on a name pi does not know with no grant for wherever it went looking.
+	 */
+	it("refuses a default on a model nobody configured", () => {
+		expect(() =>
+			parseConfig(
+				`stateDir: /state\nmodels:\n  - id: flash\n    provider: deepseek\ndefaults:\n  model: ghost\nagents:\n  - id: scout\n`,
+				{},
+			),
+		).toThrow(/not one of the models configured: flash/);
+	});
+
+	it("refuses an agent on a model nobody configured", () => {
+		expect(() =>
+			parseConfig(
+				`stateDir: /state\nmodels:\n  - id: flash\n    provider: deepseek\nagents:\n  - id: scout\n    model: ghost\n`,
+				{},
+			),
+		).toThrow(/agent "scout".model is "ghost"/);
+	});
+
+	// Both said, and they can disagree: the model already names its provider, so the loose one is
+	// either redundant or wrong, and there is no way to tell which from here.
+	it("refuses a provider written beside a configured model", () => {
+		expect(() =>
+			parseConfig(
+				`stateDir: /state\nmodels:\n  - id: flash\n    provider: deepseek\ndefaults:\n  model: flash\n  provider: groq\nagents:\n  - id: scout\n`,
+				{},
+			),
+		).toThrow(/the provider comes from the model/);
+	});
+
+	/**
+	 * The one thing a missing key must not do. `deploy/install.sh` writes the variable through empty
+	 * if the operator has not exported one yet, and refusing to start there would make the first run
+	 * a configuration exercise instead of a working plane. `/model` says it where it can be fixed.
+	 */
+	it("starts with a model whose key nobody has exported yet", () => {
+		expect(() => parseConfig(CONFIGURED, {})).not.toThrow();
+	});
+
+	it("refuses models that are not a list", () => {
+		expect(() => parseConfig("stateDir: /s\nmodels: {}\nagents:\n  - id: a\n", {})).toThrow(
+			/models must be a list/,
+		);
+	});
+
+	// Without a block, provider and model are whatever the file said and go to pi untouched. This is
+	// every configuration written before the block existed.
+	it("leaves a file with no models saying exactly what it said", () => {
+		const config = parseConfig(
+			`stateDir: /state\ndefaults:\n  provider: anthropic\n  model: claude-opus-4-7\nagents:\n  - id: scout\n`,
+			{},
+		);
+
+		expect(config.models).toEqual([]);
+		expect(config.defaults?.provider).toBe("anthropic");
+		expect(config.defaults?.model).toBe("claude-opus-4-7");
+		expect(config.defaults?.grants).toBeUndefined();
+	});
+});
+
+/**
  * The example is the only documentation of the configuration, and documentation drifts silently.
  * It once shipped without a grant for the model, which parses, deploys and then cannot think.
  */
@@ -268,7 +452,7 @@ describe("the example configuration", () => {
 		}
 	});
 
-	it("names the provider it grants, rather than leaving pi to pick one", async () => {
+	it("starts its agents on a model it configured, rather than leaving pi to pick one", async () => {
 		// Said nowhere, pi falls back to its own default provider, and the grant is then for a host
 		// the agent never calls: every turn dies at the proxy against a perfectly correct config.
 		const config = parseConfig(await readFile(EXAMPLE, "utf8"), {
@@ -277,8 +461,9 @@ describe("the example configuration", () => {
 			DEPLOY_HOOK_SECRET: "s3cret",
 		});
 
-		expect(config.defaults?.provider).toBeDefined();
-		expect(config.defaults?.model).toBeDefined();
+		const chosen = config.models.find((model) => model.id === config.defaults?.model);
+		expect(chosen?.provider).toBeDefined();
+		expect(chosen?.host).toBe("api.deepseek.com");
 	});
 });
 

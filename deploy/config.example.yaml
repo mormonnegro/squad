@@ -3,6 +3,34 @@
 
 stateDir: /var/lib/agent-dive
 
+# Everything the agents here may think with. Naming a provider is the whole of configuring it: where
+# it lives, what its key is called and how the key is attached are facts about the provider, not
+# decisions, so they are not written out. The key itself is never here — it is read from the named
+# variable in this plane's own environment and written onto the request at the proxy, so no agent
+# ever holds it.
+#
+# Every model in this list is reachable by every agent, which is what makes `/model` a choice rather
+# than a grant: the console can move an agent between them because putting one here was the approval.
+# What stops one agent thinking expensively is its ceiling, which is per agent and below.
+models:
+  # The id is the name to pick it by, and doubles as the model when it is already the model's name.
+  - id: deepseek-v4-flash
+    provider: deepseek
+
+  # Anything whose name is not the model's says both. The key here is ANTHROPIC_API_KEY.
+  - id: sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+
+  # A provider nothing here knows still works, by writing out the two things that were the table's:
+  # where it lives, and what the variable holding its key is called.
+  #
+  # - id: local
+  #   provider: my-gateway
+  #   model: llama-4-70b
+  #   host: models.acme.internal
+  #   keyEnv: GATEWAY_TOKEN
+
 # What every agent starts from, and the whole of what an agent made later is. `agent chat <name>`
 # offers to create a name no agent answers to, and this is the operator's answer, given in advance,
 # to what that agent may reach — because the one thing the keyboard may never do is grant.
@@ -10,7 +38,8 @@ stateDir: /var/lib/agent-dive
 # An agent's own block adds to these rather than replacing them; a grant it declares with the same
 # id wins, which is how one agent is narrowed without narrowing the rest.
 defaults:
-  provider: deepseek
+  # One of the ids above. `/model` moves a single agent onto another without editing this file, and
+  # what it says here is where every agent starts and where a new one begins.
   model: deepseek-v4-flash
 
   # US dollars a day, counted across every turn and reset at midnight UTC. An agent that books its
@@ -21,19 +50,7 @@ defaults:
   # may touch it at all. Leave it out for no ceiling.
   limitUsd: 5
 
-  env:
-    # A placeholder, and enough: pi only needs to see that the provider is configured. The value it
-    # sends is discarded at the proxy and replaced with the real one.
-    DEEPSEEK_API_KEY: injected-by-the-proxy
   grants:
-    # Without this a new agent cannot think, and would find that out mid-turn as a refusal at the
-    # proxy. The model is a grant like any other: somewhere the agent may reach, never a key it holds.
-    - id: model
-      host: api.deepseek.com
-      injection:
-        kind: bearer
-        token: { ref: DEEPSEEK_API_KEY }
-
     # How an agent reaches the web at all. Both the searching and the reading of what it finds happen
     # on the far side of this one host, which is the only reason "let it search" is a grant somebody
     # can write: an agent that fetched pages itself would need every domain a result might live on

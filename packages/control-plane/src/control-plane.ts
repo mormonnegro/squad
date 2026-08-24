@@ -32,6 +32,7 @@ import {
 	shellScript,
 } from "./commands.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
+import { type Model, type ModelChoice, ModelChoices } from "./models.ts";
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
@@ -105,6 +106,14 @@ export interface ControlPlaneOptions {
 	readonly agents: readonly AgentConfig[];
 	/** Applied to every agent, and the whole of what an agent created at runtime is. */
 	readonly defaults?: AgentDefaults;
+	/**
+	 * Every model this plane may think with, which is the whole of what `/model` can choose from.
+	 *
+	 * What each of them costs to reach is already in the defaults by the time this arrives: the
+	 * grants and the placeholder keys are folded in when the configuration is read, so this is the
+	 * list itself rather than a second source of capability.
+	 */
+	readonly models?: readonly Model[];
 	/** Host directory for durable state: event queues, schedules and the proxy CA. */
 	readonly stateDir: string;
 	readonly image?: string;
@@ -171,11 +180,13 @@ export interface AgentSummary {
 	readonly spentUsd: number;
 	readonly limitUsd: number | undefined;
 	/**
-	 * What it thinks with, after the defaults have been folded in.
+	 * What it thinks with: the model it was moved onto at the console, or the config's if it has not
+	 * been moved.
 	 *
 	 * The one fact about an agent that changes what every answer costs and how good it is, and the
 	 * one nothing on screen used to say: the way to find it out was to go and read the operator's
-	 * file, which is the wrong place to learn it from while an agent is answering badly.
+	 * file, which is the wrong place to learn it from while an agent is answering badly — and now
+	 * also the wrong answer, since a console can move an agent onto another one.
 	 */
 	readonly model: string | undefined;
 }
@@ -245,6 +256,13 @@ export class ControlPlane {
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
+	readonly #models: readonly Model[];
+	readonly #choices: ModelChoices;
+	/**
+	 * The same store the broker resolves grants against, kept so the plane can ask whether a key is
+	 * there at all — never for the value, which belongs on the wire and nowhere else.
+	 */
+	readonly #secrets: SecretStore;
 	readonly #mcp: McpShelf;
 	readonly #logins: OAuthLogins;
 	readonly #desk: LoginDesk;
@@ -286,6 +304,9 @@ export class ControlPlane {
 		this.#deleted = new AgentNameStore(join(this.#stateDir, "deleted.json"), "deletedAt");
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
+		this.#models = options.models ?? [];
+		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
+		this.#secrets = options.secrets ?? new EnvSecretStore();
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
 		this.#desk = new LoginDesk(this.#logins, (url) => this.#emit({ kind: "open", url }));
@@ -315,7 +336,7 @@ export class ControlPlane {
 			ca: loadOrCreateCertificateAuthority(join(this.#stateDir, "pki")),
 			// Layered over whatever was given, so a grant may name an environment variable or a login
 			// and the broker cannot tell the difference at the moment it writes the header.
-			secrets: new OAuthSecretStore(this.#logins, options.secrets ?? new EnvSecretStore()),
+			secrets: new OAuthSecretStore(this.#logins, this.#secrets),
 			directory: this.directory,
 			onAudit: (entry) => {
 				options.onAudit?.(entry);
@@ -376,7 +397,7 @@ export class ControlPlane {
 			schedules: schedules.length,
 			wakeAt: schedules.find((schedule) => schedule.createdBy === "agent")?.nextRunAt,
 			created: this.#createdIds.has(agent.id),
-			model: agent.model,
+			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
 		};
 	}
 
@@ -445,6 +466,7 @@ export class ControlPlane {
 			if (this.#createdIds.delete(agentId)) await this.#created.forget(agentId);
 			else await this.#deleted.add(agentId);
 			await this.#spend.forget(agentId);
+			await this.#choices.forget(agentId);
 			// The conversation goes with the name. What was said to this agent is about the repository
 			// that just went, and keeping it would hand a conversation to whoever gets the name next.
 			await this.#transcript.forget(agentId);
@@ -520,6 +542,56 @@ export class ControlPlane {
 		return {
 			spentUsd: account.spentUsd,
 			limitUsd: account.limitUsd === undefined ? declared : (account.limitUsd ?? undefined),
+		};
+	}
+
+	/**
+	 * Which of the configured models an agent is on.
+	 *
+	 * Chosen at the keyboard wins over the one in the config, on the same terms as a spending
+	 * ceiling: both are a choice among things the operator has already approved, which is why the
+	 * console is allowed to make them, and neither is written back to the operator's file.
+	 */
+	async #modelFor(agentId: string): Promise<Model | undefined> {
+		const chosen = await this.#choices.chosen(agentId);
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.model;
+		const named = chosen ?? declared;
+		return this.#models.find((model) => model.id === named);
+	}
+
+	/**
+	 * The configured models this plane holds no key for.
+	 *
+	 * A model is three lines of configuration and one exported variable, and the variable is the half
+	 * that is not in the file — so it is the half that gets forgotten, and the failure it causes is a
+	 * turn dying at the proxy over a host nobody typed. Asked of the same store the broker resolves
+	 * against, and only ever whether there is something there.
+	 */
+	async #keyless(): Promise<readonly string[]> {
+		const missing: string[] = [];
+		for (const model of this.#models) {
+			const held = await this.#secrets.resolve({ ref: model.keyEnv }).catch(() => undefined);
+			if (held === undefined || held.length === 0) missing.push(model.id);
+		}
+		return missing;
+	}
+
+	/**
+	 * What pi is actually told, which is the model when there is a list of them to choose from and
+	 * the raw provider and model name when there is not.
+	 *
+	 * The second half is not a fallback so much as the older way of saying it: a configuration that
+	 * names a provider and a model and writes the grant out by hand goes on working as it did, and
+	 * has no `/model` to switch with because it has no list to switch among.
+	 */
+	async #thinksWith(agentId: string): Promise<ModelChoice | undefined> {
+		const found = await this.#modelFor(agentId);
+		if (found !== undefined) return found;
+		const agent = this.#agents.find((one) => one.id === agentId);
+		if (agent === undefined) return undefined;
+		return {
+			...(agent.provider !== undefined ? { provider: agent.provider } : {}),
+			...(agent.model !== undefined ? { model: agent.model } : {}),
 		};
 	}
 
@@ -649,6 +721,18 @@ export class ControlPlane {
 			remove: () => this.remove(agentId, { purge: true }),
 			account: () => this.#account(agentId),
 			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
+			models: async () => ({
+				all: this.#models,
+				// Falls back to the name in the config, so a plane with no list still answers the
+				// question the command was typed to ask.
+				using:
+					(await this.#modelFor(agentId))?.id ??
+					this.#agents.find((agent) => agent.id === agentId)?.model,
+				keyless: await this.#keyless(),
+			}),
+			// No reregistering after it: every configured model was already reachable, which is the
+			// whole reason this one is allowed to be a command at all.
+			setModel: (id) => this.#choices.choose(agentId, id),
 			mcp: async () => ({
 				shelf: await this.#mcp.servers(),
 				held: await this.#mcp.attached(agentId),
@@ -886,11 +970,15 @@ export class ControlPlane {
 		await this.#reregister(agent.id);
 
 		await this.sandboxes.start(agent.id);
+		// The manifest wants the model qualified by whoever serves it, so a configured one is written
+		// out in full rather than by the short name it is picked by here.
+		const thinking = await this.#modelFor(agent.id);
+		const named = thinking !== undefined ? `${thinking.provider}/${thinking.model}` : agent.model;
 		await ensureSelfRepo({
 			sandbox: this.sandboxes,
 			agentId: agent.id,
 			...(agent.description !== undefined ? { description: agent.description } : {}),
-			...(agent.model !== undefined ? { model: agent.model } : {}),
+			...(named !== undefined ? { model: named } : {}),
 		});
 
 		const runner = new PiTurnRunner({
@@ -899,8 +987,9 @@ export class ControlPlane {
 			// Asked again each turn rather than read once here, so a server added from the console
 			// reaches an agent that is already up on its next turn, without recreating anything.
 			servers: (agentId) => this.#mcp.attached(agentId),
-			...(agent.provider !== undefined ? { provider: agent.provider } : {}),
-			...(agent.model !== undefined ? { model: agent.model } : {}),
+			// Asked again each turn for the same reason, so `/model` reaches an agent that is already
+			// up on its next turn rather than on its next container.
+			model: (agentId) => this.#thinksWith(agentId),
 			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),
 		});
 		await this.attach(agent.id, runner);
