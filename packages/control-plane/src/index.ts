@@ -31,6 +31,16 @@ export {
 	controlSocketPath,
 } from "./control-server.ts";
 export { LogFeed } from "./feed.ts";
+export {
+	hostOf,
+	type McpServer,
+	McpShelf,
+	type NamedServer,
+	type ReadServer,
+	readName,
+	readServer,
+	written,
+} from "./mcp.ts";
 export { type AgentStep, PiOutput, type PiOutputOptions } from "./pi-output.ts";
 export {
 	PI_SOCKET_PATH,
