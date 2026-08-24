@@ -578,3 +578,179 @@ describe("a turn that was stopped", () => {
 		expect(plane.stopTurn("scout")).toBe(false);
 	});
 });
+
+/**
+ * The ceiling, which exists because an agent that books its own next turn spends all night whether
+ * or not anyone is awake. Cost was reported per turn and added up nowhere, so the first anyone knew
+ * of a loop was the bill.
+ */
+describe("what an agent may spend", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-spend-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const costing = (costUsd: number): TurnRunner => ({
+		async run() {
+			return { text: "listo", exitCode: 0, stderr: "", ms: 1, tokens: 100, costUsd };
+		},
+	});
+
+	const say = (plane: ControlPlane, body: string) =>
+		plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body,
+		});
+
+	it("adds up what the turns cost", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", costing(0.3));
+		await say(plane, "una");
+		await plane.bus.drain();
+		await say(plane, "otra");
+		await plane.bus.drain();
+
+		expect((await plane.agents()).find((a) => a.id === "scout")?.spentUsd).toBeCloseTo(0.6, 10);
+	});
+
+	/**
+	 * Refused at the start of the turn rather than inside it: the point is not to stop a turn but not
+	 * to start one, and a turn stopped halfway has already been paid for.
+	 */
+	it("stops taking turns once the ceiling is reached", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout", limitUsd: 1 }], stateDir });
+		let turns = 0;
+		await plane.attach("scout", {
+			async run() {
+				turns += 1;
+				return { text: "listo", exitCode: 0, stderr: "", ms: 1, tokens: 100, costUsd: 0.8 };
+			},
+		});
+
+		await say(plane, "una");
+		await plane.bus.drain();
+		await say(plane, "otra");
+		await plane.bus.drain();
+		await say(plane, "y otra");
+		await plane.bus.drain();
+
+		// Two turns: the second one crossed the ceiling, and the third never started.
+		expect(turns).toBe(2);
+	});
+
+	/**
+	 * Said in the conversation, because a plane that silently stops answering is indistinguishable
+	 * from a broken one. The message it refused is already there — it was written down when it
+	 * arrived — so what is missing without this is the reason, not the question.
+	 */
+	it("says in the conversation why it is not answering", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout", limitUsd: 0.5 }], stateDir });
+		await plane.attach("scout", costing(0.6));
+		await say(plane, "una");
+		await plane.bus.drain();
+		await say(plane, "otra");
+		await plane.bus.drain();
+
+		const said = (await plane.transcripts()).scout ?? [];
+		expect(said.at(-2)).toMatchObject({ from: "operator", text: "otra" });
+		expect(said.at(-1)?.from).toBe("plane");
+		expect(said.at(-1)?.text).toContain("spending limit reached");
+		expect(said.at(-1)?.text).toContain("$0.50");
+	});
+
+	it("takes the ceiling from the config when nobody has set one at the keyboard", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout", limitUsd: 5 }], stateDir });
+
+		expect((await plane.agents()).find((a) => a.id === "scout")?.limitUsd).toBe(5);
+	});
+
+	it("prefers the ceiling set at the keyboard over the one in the file", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout", limitUsd: 5 }], stateDir });
+
+		await plane.command("scout", "/limit 2");
+
+		expect((await plane.agents()).find((a) => a.id === "scout")?.limitUsd).toBe(2);
+	});
+
+	/**
+	 * `/limit off` means no ceiling, not "forget I said anything". Falling back to the config here
+	 * would quietly reinstate the very ceiling the operator was taking off, and the only way to find
+	 * out would be to hit it.
+	 */
+	it("does not hand back the config's ceiling when the operator takes one off", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout", limitUsd: 5 }], stateDir });
+
+		await plane.command("scout", "/limit off");
+
+		expect((await plane.agents()).find((a) => a.id === "scout")?.limitUsd).toBeUndefined();
+	});
+
+	it("takes turns again once the ceiling moves", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout", limitUsd: 0.5 }], stateDir });
+		let turns = 0;
+		await plane.attach("scout", {
+			async run() {
+				turns += 1;
+				return { text: "listo", exitCode: 0, stderr: "", ms: 1, tokens: 100, costUsd: 0.6 };
+			},
+		});
+		await say(plane, "una");
+		await plane.bus.drain();
+		await say(plane, "otra");
+		await plane.bus.drain();
+		expect(turns).toBe(1);
+
+		await plane.command("scout", "/limit 10");
+		await say(plane, "y ahora");
+		await plane.bus.drain();
+
+		expect(turns).toBe(2);
+	});
+
+	/**
+	 * A command is the operator talking about the agent, not to it. Waking the agent to tell it its
+	 * own ceiling changed would spend money to answer a question about spending money.
+	 */
+	it("answers a command without waking the agent", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		let turns = 0;
+		await plane.attach("scout", {
+			async run() {
+				turns += 1;
+				return { text: "listo", exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0 };
+			},
+		});
+
+		const answer = await plane.command("scout", "/limit 5");
+		await plane.bus.drain();
+
+		expect(turns).toBe(0);
+		expect(answer).toContain("$5.00");
+	});
+
+	/** Both halves, because a ceiling that changed with nothing to show for it has no reason on record. */
+	it("keeps the command and its answer in the conversation", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+
+		await plane.command("scout", "/limit 5");
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "/limit 5" },
+			{ from: "plane" },
+		]);
+	});
+
+	it("refuses a command for an agent that is not here", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+
+		await expect(plane.command("ghost", "/limit 5")).rejects.toThrow(/No agent/);
+	});
+});

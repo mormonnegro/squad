@@ -100,6 +100,10 @@ networkName: $EGRESS
 defaults:
   provider: deepseek
   model: deepseek-v4-flash
+  # A day's ceiling, and the only thing between a demo left running and a bill: an agent that books
+  # its own next turn goes on spending with nobody watching. Here rather than on one agent, so it
+  # also covers the ones made later at the keyboard. Move it from the console with \`/limit\`.
+  limitUsd: 2
   # Not the key. pi wants the variable set, and what it sends is discarded: the proxy strips the
   # agent's own Authorization before writing the injected one, so this is the whole credential the
   # agent ever holds.

@@ -281,3 +281,48 @@ describe("the example configuration", () => {
 		expect(config.defaults?.model).toBeDefined();
 	});
 });
+
+/**
+ * The one setting whose failure mode is a bill. A ceiling that silently did nothing because it was
+ * written as `"5"` would be discovered by exceeding it, which is the thing it was written to prevent.
+ */
+describe("limitUsd", () => {
+	it("reads a ceiling in US dollars a day", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+agents:
+  - id: scout
+    limitUsd: 5
+`,
+			{},
+		);
+
+		expect(config.agents[0]).toMatchObject({ limitUsd: 5 });
+	});
+
+	it("says so rather than ignoring a ceiling it cannot read", () => {
+		for (const written of ['"5"', "0", "-1", "5 dollars"]) {
+			expect(() =>
+				parseConfig(`stateDir: /state\nagents:\n  - id: scout\n    limitUsd: ${written}\n`, {}),
+			).toThrow(ConfigError);
+		}
+	});
+
+	it("checks the one in defaults too, since it is the one that covers every agent", () => {
+		expect(() =>
+			parseConfig(`stateDir: /state\ndefaults:\n  limitUsd: "5"\nagents:\n  - id: scout\n`, {}),
+		).toThrow(/limitUsd/);
+	});
+
+	// The reason for having it in defaults: an agent created from the CLI a month from now is the
+	// one nobody is going to remember to put a ceiling on.
+	it("gives an agent that named no ceiling the one from defaults", () => {
+		const config = parseConfig(
+			`stateDir: /state\ndefaults:\n  limitUsd: 2\nagents:\n  - id: scout\n`,
+			{},
+		);
+
+		expect(withDefaults({ id: "scout" }, config.defaults)).toMatchObject({ limitUsd: 2 });
+	});
+});

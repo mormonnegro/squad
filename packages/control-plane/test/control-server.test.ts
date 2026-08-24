@@ -255,6 +255,26 @@ describe("the control socket", () => {
 		await expect(client.remove("scou", false)).rejects.toThrow(/No agent "scou"/);
 	});
 
+	/**
+	 * A command changes a ceiling, so it may only arrive here. The socket is the one surface carrying
+	 * operator trust, and a webhook that could set its own agent's limit would be a stranger with a
+	 * URL raising it.
+	 */
+	it("runs a command and answers with what it said about it", async () => {
+		const answer = await client.command("scout", "/limit 5");
+
+		expect(answer).toContain("$5.00");
+		expect((await client.agents()).find((a) => a.id === "scout")?.limitUsd).toBe(5);
+	});
+
+	it("answers a command it does not have with the ones it does", async () => {
+		expect(await client.command("scout", "/spend")).toContain("/limit");
+	});
+
+	it("refuses a command for an agent this plane does not run", async () => {
+		await expect(client.command("scou", "/limit 5")).rejects.toThrow(/No agent "scou"/);
+	});
+
 	it("lets only its owner near it, because holding it is the whole authorization", async () => {
 		const mode = (await stat(server.socketPath)).mode & 0o777;
 		expect(mode).toBe(0o600);

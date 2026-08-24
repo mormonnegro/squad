@@ -1,4 +1,5 @@
 import type { AuditEntry } from "@agent-dive/proxy";
+import { money } from "./commands.ts";
 import type { PlaneEvent } from "./control-plane.ts";
 import type { AgentStep } from "./pi-output.ts";
 import type { TurnResult } from "./turn.ts";
@@ -177,9 +178,4 @@ function duration(ms: number | undefined): string | undefined {
 
 function thousands(count: number): string {
 	return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
-}
-
-/** Two decimals hide the price of most single turns, which is the price worth watching add up. */
-function money(usd: number): string {
-	return `$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)}`;
 }

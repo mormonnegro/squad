@@ -12,6 +12,15 @@ stateDir: /var/lib/agent-dive
 defaults:
   provider: deepseek
   model: deepseek-v4-flash
+
+  # US dollars a day, counted across every turn and reset at midnight UTC. An agent that books its
+  # own next turn runs with nobody watching, so this is what decides how much a loop can cost before
+  # somebody notices. Reaching it stops the agent taking turns and says so in its conversation; the
+  # messages are not lost, and the next day it goes on. `/limit` in the console moves it for one
+  # agent without editing this file — that is a ceiling, never a grant, which is why the keyboard
+  # may touch it at all. Leave it out for no ceiling.
+  limitUsd: 5
+
   env:
     # A placeholder, and enough: pi only needs to see that the provider is configured. The value it
     # sends is discarded at the proxy and replaced with the real one.

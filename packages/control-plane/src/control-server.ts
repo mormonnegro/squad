@@ -23,6 +23,8 @@ export type ControlRequest =
 	  }
 	| { readonly id: string; readonly op: "create"; readonly agentId: string }
 	| { readonly id: string; readonly op: "stop"; readonly agentId: string }
+	/** A line the operator typed at an agent that is about it rather than to it. */
+	| { readonly id: string; readonly op: "command"; readonly agentId: string; readonly line: string }
 	| { readonly id: string; readonly op: "logs" }
 	| { readonly id: string; readonly op: "transcripts" };
 
@@ -180,6 +182,14 @@ export class ControlServer {
 					id: request.id,
 					ok: true,
 					text: this.#plane.stopTurn(request.agentId) ? "stopped" : "",
+				});
+			} else if (request.op === "command") {
+				// The answer is written into the conversation as well as returned, so a console shows it
+				// without knowing what any command means, and a second console shows it too.
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: await this.#plane.command(request.agentId, request.line),
 				});
 			} else if (request.op === "create") {
 				this.#write(socket, {

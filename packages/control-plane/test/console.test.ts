@@ -215,6 +215,8 @@ describe("Agents", () => {
 		schedules: 0,
 		wakeAt: undefined,
 		created: false,
+		spentUsd: 0,
+		limitUsd: undefined,
 	});
 	const three = [listed("scout", true), listed("scribe", true), listed("sleeper", false)];
 

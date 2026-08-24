@@ -106,6 +106,18 @@ function parseEnvFrom(
 	return resolved;
 }
 
+/**
+ * Checked rather than passed through, because this is the one setting whose failure mode is a bill.
+ * A ceiling written as `"5"` or as `5 dollars` that silently did nothing would be discovered by
+ * exceeding it.
+ */
+function checkLimit(raw: unknown, label: string, issues: string[]): void {
+	if (raw === undefined) return;
+	if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+		issues.push(`${label}.limitUsd must be a positive number of US dollars a day, e.g. 5`);
+	}
+}
+
 function parseAgent(
 	raw: unknown,
 	index: number,
@@ -129,6 +141,7 @@ function parseAgent(
 		...(isRecord(literal) ? literal : {}),
 		...parseEnvFrom(envFrom, label, env, issues),
 	};
+	checkLimit(raw.limitUsd, label, issues);
 
 	// Grants and schedules are handed to the proxy and scheduler as written; both validate their
 	// own shape and report better errors than a second copy of their rules would.
@@ -164,6 +177,7 @@ function parseDefaults(
 		...(isRecord(literal) ? literal : {}),
 		...parseEnvFrom(envFrom, "defaults", env, issues),
 	};
+	checkLimit(raw.limitUsd, "defaults", issues);
 
 	return {
 		...rest,

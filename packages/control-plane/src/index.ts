@@ -1,3 +1,4 @@
+export { type CommandContext, isCommand, money, runCommand } from "./commands.ts";
 export { ConfigError, type LoadedConfig, loadConfig, parseConfig } from "./config.ts";
 export { ControlClient, ControlError } from "./control-client.ts";
 export {

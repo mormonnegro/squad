@@ -1,6 +1,7 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
 import wrapAnsi from "wrap-ansi";
+import { isCommand } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
@@ -509,6 +510,12 @@ function App({
 	 */
 	const ask = useCallback(
 		async (agentId: string, body: string): Promise<void> => {
+			// A command is about the agent rather than to it, and is answered by the plane without
+			// waking anything. Both halves come back on the feed like everything else here.
+			if (isCommand(body)) {
+				await client.command(agentId, body).catch(() => {});
+				return;
+			}
 			await client.wake(agentId, body).catch(() => {});
 		},
 		[client],
@@ -668,6 +675,9 @@ function App({
 				["↑↓", "agent"],
 				["^U^D", "scroll"],
 				["tab", panel === "chat" ? "logs" : "chat"],
+				// A key nobody guesses is pressable. The rest of this row is what to press to move
+				// around; this one is what to press to be told what else there is.
+				["/", "commands"],
 				["^C", "quit"],
 				// Last, so that the rest of the row does not move as it comes and goes, and shown only
 				// while there is something to stop: the key does nothing at any other time, and offering

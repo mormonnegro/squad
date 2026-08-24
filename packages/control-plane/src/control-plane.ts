@@ -15,9 +15,11 @@ import {
 } from "@agent-dive/proxy";
 import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
+import { money, runCommand } from "./commands.ts";
 import { CreatedAgentStore } from "./created-agents.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
+import { SpendLedger } from "./spend.ts";
 import { overheard, Transcript, type Utterance } from "./transcript.ts";
 import {
 	createTurnHandler,
@@ -43,6 +45,14 @@ export interface AgentConfig {
 	readonly memoryBytes?: number;
 	readonly nanoCpus?: number;
 	readonly schedules?: readonly Omit<NewSchedule, "agentId">[];
+	/**
+	 * The most this agent may spend in a day, in US dollars.
+	 *
+	 * An agent that books its own next turn can spend all night without anybody deciding that it
+	 * should, which is the one failure here that arrives as a bill rather than as a bug. A ceiling
+	 * set at the keyboard overrides this one, and neither is written back to the operator's file.
+	 */
+	readonly limitUsd?: number;
 }
 
 /** What every agent starts from: the same shape as an agent, minus the one thing that names it. */
@@ -132,6 +142,9 @@ export interface AgentSummary {
 	readonly wakeAt: string | undefined;
 	/** Made here rather than declared in the config, which is the only kind the plane may forget. */
 	readonly created: boolean;
+	/** What it has spent today, and the ceiling it is spending against, in US dollars. */
+	readonly spentUsd: number;
+	readonly limitUsd: number | undefined;
 }
 
 /**
@@ -181,6 +194,7 @@ export class ControlPlane {
 	readonly #created: CreatedAgentStore;
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
+	readonly #spend: SpendLedger;
 	readonly #createdIds = new Set<string>();
 	readonly #stateDir: string;
 	readonly #image: string;
@@ -207,6 +221,7 @@ export class ControlPlane {
 		this.#onTurn = options.onTurn;
 		this.#created = new CreatedAgentStore(join(this.#stateDir, "agents.json"));
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
+		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -282,7 +297,9 @@ export class ControlPlane {
 		// Asked of the scheduler rather than counted off the config, which only knows the wakeups an
 		// operator wrote down and would never show the one the agent booked for itself.
 		const schedules = await this.scheduler.list(agent.id).catch(() => []);
+		const account = await this.#account(agent.id);
 		return {
+			...account,
 			id: agent.id,
 			running: status?.running ?? false,
 			startedAt: status?.startedAt,
@@ -344,6 +361,7 @@ export class ControlPlane {
 
 		if (options.purge === true && this.#createdIds.delete(agentId)) {
 			await this.#created.forget(agentId);
+			await this.#spend.forget(agentId);
 			this.#agents.splice(index, 1);
 		}
 	}
@@ -356,30 +374,85 @@ export class ControlPlane {
 	 */
 	async attach(agentId: string, runner: TurnRunner): Promise<void> {
 		this.#runners.set(agentId, runner);
-		await this.bus.register(
-			agentId,
-			createTurnHandler({
-				runner,
-				router: this.router,
-				onStart: (id) => this.#emit({ kind: "thinking", agentId: id }),
-				onTurn: (id, result) => {
-					this.#onTurn?.(id, result);
-					this.#emit({ kind: "turn", agentId: id, result });
-					if (result.text.length > 0) {
-						void this.#record(id, { from: "agent", text: result.text });
-					}
-					// Said as a failure because that is what it is to anyone who was waiting: an answer
-					// that is not coming. It is also what releases them — a `wake` still holding on for
-					// the rest of it would otherwise wait out its whole timeout for nothing.
-					if (result.stopped) this.#reportError(id, new Error("stopped"));
-				},
-				onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
-				onWake: (id, wake) => this.#applyWake(id, wake),
-				// Named by destination, not by agent, so an operator waiting on their own reply is not
-				// told that somebody else's channel is the reason.
-				onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
-			}),
-		);
+		const handler = createTurnHandler({
+			runner,
+			router: this.router,
+			onStart: (id) => this.#emit({ kind: "thinking", agentId: id }),
+			onTurn: (id, result) => {
+				this.#onTurn?.(id, result);
+				this.#emit({ kind: "turn", agentId: id, result });
+				void this.#spend.record(id, result.costUsd);
+				if (result.text.length > 0) {
+					void this.#record(id, { from: "agent", text: result.text });
+				}
+				// Said as a failure because that is what it is to anyone who was waiting: an answer
+				// that is not coming. It is also what releases them — a `wake` still holding on for
+				// the rest of it would otherwise wait out its whole timeout for nothing.
+				if (result.stopped) this.#reportError(id, new Error("stopped"));
+			},
+			onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
+			onWake: (id, wake) => this.#applyWake(id, wake),
+			// Named by destination, not by agent, so an operator waiting on their own reply is not
+			// told that somebody else's channel is the reason.
+			onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
+		});
+
+		// The ceiling is checked here rather than inside the turn, because the point is not to stop a
+		// turn but not to start one. The events are answered for either way: they are already in the
+		// conversation, written down when they arrived, so refusing costs the reader nothing — and
+		// leaving them queued would only mean spending the moment the ceiling moved.
+		await this.bus.register(agentId, async (wakeup) => {
+			const refusal = await this.#overspent(agentId);
+			if (refusal !== undefined) {
+				this.#reportError(agentId, new Error(refusal));
+				return;
+			}
+			await handler(wakeup);
+		});
+	}
+
+	/** Why this agent may not take a turn right now, if it may not. */
+	async #overspent(agentId: string): Promise<string | undefined> {
+		const { spentUsd, limitUsd } = await this.#account(agentId);
+		if (limitUsd === undefined || spentUsd < limitUsd) return undefined;
+		return `spending limit reached: ${money(spentUsd)} of ${money(limitUsd)} today. No turns until it resets at midnight UTC, or until the limit does`;
+	}
+
+	/**
+	 * What an agent has spent today and what it may spend.
+	 *
+	 * A ceiling set at the keyboard wins over the one in the config, and removing it is not the same
+	 * as never having set one: `/limit off` means no ceiling, and falling back to the file would
+	 * quietly reinstate the one the operator had just taken off.
+	 */
+	async #account(agentId: string): Promise<{ spentUsd: number; limitUsd: number | undefined }> {
+		const account = await this.#spend.account(agentId);
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.limitUsd;
+		return {
+			spentUsd: account.spentUsd,
+			limitUsd: account.limitUsd === undefined ? declared : (account.limitUsd ?? undefined),
+		};
+	}
+
+	/**
+	 * Runs a line the operator typed as a command rather than as a message.
+	 *
+	 * Both halves go into the conversation, because that is where they were typed and where the
+	 * answer will be read: a ceiling that changed with nothing to show for it is one nobody can
+	 * later work out the reason for. The agent is not woken — this is the operator talking about
+	 * the agent, not to it, and a turn spent reading a settings change is a turn wasted.
+	 */
+	async command(agentId: string, line: string): Promise<string> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		await this.#record(agentId, { from: "operator", text: line });
+		const answer = await runCommand(line, {
+			account: () => this.#account(agentId),
+			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
+		});
+		await this.#record(agentId, { from: "plane", text: answer });
+		return answer;
 	}
 
 	/**

@@ -113,6 +113,13 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to wake");
 	}
 
+	/** Runs a slash command against an agent, and answers with what it said about it. */
+	async command(agentId: string, line: string): Promise<string> {
+		const response = await this.#once({ op: "command", agentId, line });
+		if ("text" in response) return response.text;
+		throw new ControlError("unexpected answer to command");
+	}
+
 	/** Stops the turn an agent is taking. Answers whether there was one to stop. */
 	async stop(agentId: string): Promise<boolean> {
 		const response = await this.#once({ op: "stop", agentId });

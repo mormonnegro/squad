@@ -157,7 +157,7 @@ asking to see the thing, not to be told a fact about it:
 │                ││ │ >                                                        │ │
 │                ││ ╰──────────────────────────────────────────────────────────╯ │
 ╰────────────────╯╰──────────────────────────────────────────────────────────────╯
- ↑↓ agent   ^U^D scroll   tab logs   ^C quit
+ ↑↓ agent   ^U^D scroll   tab logs   / commands   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
@@ -198,6 +198,23 @@ typed rather than when it is answered: it goes into the conversation the moment 
 and the turn in front of it finishes first. Several lines said that way are answered together as
 one turn, so an agent told four things while busy takes one turn about four things instead of four
 turns that each saw a quarter of it.
+
+A line starting with `/` is a command about the agent rather than something said to it, answered by
+the plane without waking anything — a turn spent reading a settings change is a turn wasted. `/` on
+its own lists what there is, which is why the key is in the hint row: a command nobody can guess is
+one nobody uses.
+
+```
+> /limit
+$0.42 spent today, against no limit.
+> /limit 5
+Spending limit set to $5.00 a day. $0.42 spent today, of $5.00 a day.
+```
+
+Both halves go into the conversation, because that is where they were typed and where the answer
+gets read: a ceiling that changed with nothing to show for it is one nobody can later work out the
+reason for. A message that merely begins with a path — `/etc/hosts is wrong` — is still a message,
+since `/etc` is answered as a command that does not exist rather than quietly swallowed.
 
 The conversation belongs to the plane rather than to the console, so closing one is not ending it:
 the next console opens on what was said, and the last couple of hundred lines survive the terminal
@@ -341,6 +358,34 @@ pushing its wakeup a year away to be rid of it has only moved it a month, and le
 otherwise. The note comes back fenced like anything else
 the agent did not hear from its operator, introduced as the reminder it is rather than as an
 instruction — the turn that wrote it may have been reading a stranger at the time.
+
+## What an agent may spend
+
+An agent that books its own next turn is one that goes on running with nobody watching, and until
+there is a ceiling the first anyone knows of a loop is the bill. What a turn cost was reported on
+the feed all along and added up nowhere, which is the same as not knowing:
+
+```yaml
+defaults:
+  limitUsd: 5
+```
+
+US dollars a day, counted across every turn and reset at midnight UTC — the plane's midnight, since
+one of the two machines has to decide when the day turns over and it is the plane that enforces it.
+In `defaults` it covers the agents made later at the keyboard too, which are exactly the ones nobody
+remembers to put a ceiling on; an agent's own block narrows it.
+
+Reaching it stops the agent taking turns rather than stopping a turn in flight — the point is not to
+kill work halfway, which has already been paid for, but not to start more. Nothing is lost: messages
+that arrive while it is over the ceiling are in the conversation, written down when they arrived,
+and the plane says there why it is not answering. That matters more than it sounds, because a plane
+that quietly stops answering is indistinguishable from a broken one.
+
+`/limit` in the console moves it for one agent without editing the file. A ceiling is the one setting
+the keyboard may touch, and it is safe for the same reason a grant is not: it can only ever take
+capability away. `/limit off` means no ceiling and not "forget I said anything" — the config's value
+does not come back, since reinstating the ceiling somebody was in the act of removing is a surprise
+they would find out about by hitting it.
 
 ## An agent searching the web
 
