@@ -18,6 +18,15 @@ export interface EventBusOptions {
 	readonly maxAttempts?: number;
 	readonly onDeadLetter?: (agentId: string, dead: readonly QueuedEvent[]) => void;
 	readonly onError?: (agentId: string, error: Error) => void;
+	/**
+	 * An event once it is queued, whether or not a turn can take it yet.
+	 *
+	 * This is the moment somebody said something, and it is not the moment the agent is told: an
+	 * agent already mid-turn hears it when that one ends, which may be minutes later. Anything that
+	 * shows a conversation wants the first moment, so that a message typed at a busy agent appears
+	 * where it was typed instead of arriving later as if it had just been thought of.
+	 */
+	readonly onAccepted?: (event: AgentEvent) => void;
 }
 
 /**
@@ -35,6 +44,7 @@ export class EventBus {
 	readonly #maxAttempts: number;
 	readonly #onDeadLetter: ((agentId: string, dead: readonly QueuedEvent[]) => void) | undefined;
 	readonly #onError: ((agentId: string, error: Error) => void) | undefined;
+	readonly #onAccepted: ((event: AgentEvent) => void) | undefined;
 	#idle: Promise<void> = Promise.resolve();
 
 	constructor(options: EventBusOptions = {}) {
@@ -42,6 +52,7 @@ export class EventBus {
 		this.#maxAttempts = options.maxAttempts ?? 3;
 		this.#onDeadLetter = options.onDeadLetter;
 		this.#onError = options.onError;
+		this.#onAccepted = options.onAccepted;
 	}
 
 	/** Registers the runtime that takes turns for an agent, and drains anything already queued. */
@@ -58,6 +69,9 @@ export class EventBus {
 	async publish(input: NewAgentEvent): Promise<AgentEvent> {
 		const event = createEvent(input);
 		await this.#store.append(event);
+		// Before the turn is scheduled, so that for an idle agent the question is in the conversation
+		// before the answer to it starts arriving.
+		this.#onAccepted?.(event);
 		void this.#schedule(event.agentId);
 		return event;
 	}

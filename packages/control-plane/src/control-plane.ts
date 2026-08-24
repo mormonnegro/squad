@@ -109,19 +109,16 @@ export type PlaneEvent =
 	| { readonly kind: "error"; readonly context: string; readonly message: string }
 	/** A piece of an answer being written. The whole of it arrives again as a turn. */
 	| { readonly kind: "say"; readonly agentId: string; readonly text: string }
+	/** A line of the conversation, as it goes into the transcript that outlives the console. */
+	| { readonly kind: "said"; readonly agentId: string; readonly said: Utterance }
 	/**
-	 * A line of the conversation, as it goes into the transcript that outlives the console.
+	 * A turn starting, which is a different moment from the message that caused it: a burst is one
+	 * turn, and a message arriving at a busy agent waits for the one in front of it to finish.
 	 *
-	 * `heard` is the half the agent was told, and so the half that means a turn has started. The
-	 * console needs that said outright: a turn nobody in the room asked for looks exactly like one
-	 * that never happened.
+	 * The console needs this said outright. A turn nobody in the room asked for — a schedule, a
+	 * webhook, an agent waking itself — looks exactly like one that never happened otherwise.
 	 */
-	| {
-			readonly kind: "said";
-			readonly agentId: string;
-			readonly said: Utterance;
-			readonly heard: boolean;
-	  }
+	| { readonly kind: "thinking"; readonly agentId: string }
 	/** Something an agent did inside its sandbox, reported while the turn is still running. */
 	| { readonly kind: "step"; readonly agentId: string; readonly step: AgentStep };
 
@@ -218,6 +215,14 @@ export class ControlPlane {
 		this.bus = new EventBus({
 			store: new FileEventStore(join(this.#stateDir, "events")),
 			onError: (agentId, error) => this.#reportError(agentId, error),
+			// Written down where it was said rather than where it was answered. An agent mid-turn may
+			// not hear this for minutes, and a message that appeared only then would look, to the person
+			// who typed it, like one the console had dropped. It is also the only recording that happens
+			// once: a turn that fails is retried, and one that recorded what it was asked would write
+			// the same question into the conversation again on every attempt.
+			onAccepted: (event) => {
+				void this.#record(event.agentId, overheard(event));
+			},
 		});
 		this.scheduler = new Scheduler({
 			publisher: this.bus,
@@ -356,14 +361,12 @@ export class ControlPlane {
 			createTurnHandler({
 				runner,
 				router: this.router,
-				onHeard: async (id, events) => {
-					for (const event of events) await this.#record(id, overheard(event), true);
-				},
+				onStart: (id) => this.#emit({ kind: "thinking", agentId: id }),
 				onTurn: (id, result) => {
 					this.#onTurn?.(id, result);
 					this.#emit({ kind: "turn", agentId: id, result });
 					if (result.text.length > 0) {
-						void this.#record(id, { from: "agent", text: result.text }, false);
+						void this.#record(id, { from: "agent", text: result.text });
 					}
 					// Said as a failure because that is what it is to anyone who was waiting: an answer
 					// that is not coming. It is also what releases them — a `wake` still holding on for
@@ -448,8 +451,8 @@ export class ControlPlane {
 	 * Said before it is written, and the write is not what the caller waits on. A transcript is a
 	 * courtesy to the reader, and a disk that cannot take it is not a reason to hold up the turn.
 	 */
-	async #record(agentId: string, said: Utterance, heard: boolean): Promise<void> {
-		this.#emit({ kind: "said", agentId, said, heard });
+	async #record(agentId: string, said: Utterance): Promise<void> {
+		this.#emit({ kind: "said", agentId, said });
 		await this.#transcript.append(agentId, said).catch((error: Error) => {
 			this.#onError?.(`${agentId} transcript`, error);
 		});
@@ -461,7 +464,7 @@ export class ControlPlane {
 		// A failure reported against an agent's own name is a turn that did not answer, and the person
 		// who asked is owed that in the conversation rather than only in a log they are not reading.
 		if (this.#agents.some((agent) => agent.id === context)) {
-			void this.#record(context, { from: "plane", text: error.message }, false);
+			void this.#record(context, { from: "plane", text: error.message });
 		}
 	}
 

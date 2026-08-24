@@ -54,6 +54,8 @@ export class LogFeed {
 		if (event.kind === "say") return;
 		// The conversation, which this feed reports as turns and errors already. Both would be here.
 		if (event.kind === "said") return;
+		// A feed is read after the fact, where a turn that started is a turn that also ended.
+		if (event.kind === "thinking") return;
 		if (event.kind === "step") this.#step(event.agentId, event.step);
 		else if (event.kind === "audit") this.#egress(event.entry);
 		else if (event.kind === "error") this.#error(event.context, event.message);

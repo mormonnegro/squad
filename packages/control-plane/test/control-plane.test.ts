@@ -420,7 +420,7 @@ describe("what an agent was told, and what it said", () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
 		const seen: string[] = [];
 		plane.observe((event) => {
-			if (event.kind === "said") seen.push(`${event.said.from}:${event.heard}`);
+			if (event.kind === "said") seen.push(event.said.from);
 		});
 
 		await plane.attach("scout", answering("listo"));
@@ -433,7 +433,72 @@ describe("what an agent was told, and what it said", () => {
 		});
 		await plane.bus.drain();
 
-		expect(seen).toEqual(["operator:true", "agent:false"]);
+		expect(seen).toEqual(["operator", "agent"]);
+	});
+
+	// What someone typed at an agent that was already thinking. It is queued and answered by the turn
+	// after this one, which is right — but it was said now, and a console that showed it only when the
+	// turn got to it would look, to the person who typed it, like one that had thrown it away.
+	it("puts a message in the conversation when it arrives, not when it is answered", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const answer = { text: "listo", exitCode: 0, stderr: "", ms: 0, tokens: 0, costUsd: 0 };
+		let end: () => void = () => {};
+		let holding = false;
+		// Only the first turn is held. The second is the one that answers what was queued behind it,
+		// and it has to be allowed to finish for this to be a test of two turns rather than of a hang.
+		await plane.attach("scout", {
+			run: async () => {
+				if (holding) return answer;
+				holding = true;
+				return new Promise((resolve) => {
+					end = () => resolve(answer);
+				});
+			},
+		});
+
+		const speak = async (body: string): Promise<void> => {
+			await plane.bus.publish({
+				agentId: "scout",
+				source: "channel",
+				trust: "operator",
+				channel: "cli:test",
+				body,
+			});
+		};
+		await speak("lo primero");
+		await speak("y esto también");
+
+		// While the first turn is still running: both lines are there, and neither has been answered.
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "lo primero" },
+			{ from: "operator", text: "y esto también" },
+		]);
+
+		end();
+		await plane.bus.drain();
+		expect((await plane.transcripts()).scout).toHaveLength(4);
+	});
+
+	// The other half of recording on arrival: the turn boundary is no longer a line of conversation,
+	// and the console draws its spinner off this rather than off somebody having spoken.
+	it("says a turn started, however few or many messages started it", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		let starts = 0;
+		plane.observe((event) => {
+			if (event.kind === "thinking") starts += 1;
+		});
+
+		await plane.attach("scout", answering("listo"));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "schedule",
+			trust: "participant",
+			channel: "wake",
+			body: "revisá",
+		});
+		await plane.bus.drain();
+
+		expect(starts).toBe(1);
 	});
 });
 

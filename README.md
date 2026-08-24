@@ -193,6 +193,12 @@ A turn is not waited on, so asking one agent something and then watching another
 of pressing `↑`. Each agent keeps its own conversation, and the answer streams into it with its
 markdown rendered, exactly as `chat` does in the scrollback.
 
+Saying something to an agent that is already thinking is allowed, and the line appears where it was
+typed rather than when it is answered: it goes into the conversation the moment the plane has it,
+and the turn in front of it finishes first. Several lines said that way are answered together as
+one turn, so an agent told four things while busy takes one turn about four things instead of four
+turns that each saw a quarter of it.
+
 The conversation belongs to the plane rather than to the console, so closing one is not ending it:
 the next console opens on what was said, and the last couple of hundred lines survive the terminal
 being closed, the machine being logged out of and the plane itself being reloaded. It follows that a

@@ -451,9 +451,10 @@ function App({
 			feed.push(event);
 			if (event.kind === "said") {
 				setTalk((prev) => append(prev, event.agentId, shown(event.said)));
-				// A turn starts when the agent is told something, whoever told it. This is the only
-				// notice the console gets of one it did not ask for.
-				if (event.heard) setBusy((prev) => new Map(prev).set(event.agentId, Date.now()));
+			} else if (event.kind === "thinking") {
+				// The only notice the console gets of a turn it did not ask for, and the only thing that
+				// separates an agent working from an agent that was spoken to and has not started yet.
+				setBusy((prev) => new Map(prev).set(event.agentId, Date.now()));
 			} else if (event.kind === "say") {
 				const writer =
 					writers.get(event.agentId) ??
