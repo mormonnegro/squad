@@ -296,3 +296,112 @@ describe("a turn that asked for another turn", () => {
 		expect(summary?.schedules).toBe(1);
 	});
 });
+
+/**
+ * The conversation, which belongs to the plane and not to whoever happens to be watching.
+ *
+ * A console is a window onto it. Closing one used to be the same as ending it, and a turn nobody at
+ * a keyboard started — a schedule, a webhook — went by without appearing in it at all.
+ */
+describe("what an agent was told, and what it said", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-talk-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const answering = (text: string): TurnRunner => ({
+		async run() {
+			return { text, exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0 };
+		},
+	});
+
+	it("keeps both halves of a turn, in the order they happened", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", answering("la cola está vacía"));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "mirá la cola",
+		});
+		await plane.bus.drain();
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "mirá la cola" },
+			{ from: "agent", text: "la cola está vacía" },
+		]);
+	});
+
+	// The complaint this exists for: the wakeup landed, the turn ran, and the console showed nothing,
+	// because the only thing that ever wrote to it was the prompt.
+	it("keeps a turn nobody at a keyboard started", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", answering("sigue arriba"));
+		await plane.scheduler.add({
+			agentId: "scout",
+			kind: "once",
+			runAt: new Date(Date.now() - 1000).toISOString(),
+			channel: "wake",
+			body: "volver a chequear el sitio",
+			trust: "participant",
+			createdBy: "agent",
+		});
+		await plane.scheduler.tick();
+		await plane.bus.drain();
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "agent", via: "wake" },
+			{ from: "agent", text: "sigue arriba" },
+		]);
+	});
+
+	// A failed turn said nothing. Without this the person who asked watches a spinner stop and is
+	// told why only in a log they are not reading.
+	it("says why a turn had no answer, where the question was asked", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", {
+			async run() {
+				throw new Error("exited 1: no model");
+			},
+		});
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "mirá la cola",
+		});
+		await plane.bus.drain();
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "mirá la cola" },
+			{ from: "plane", text: "exited 1: no model" },
+		]);
+	});
+
+	it("shows a line to whoever is watching before it writes it down", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const seen: string[] = [];
+		plane.observe((event) => {
+			if (event.kind === "said") seen.push(`${event.said.from}:${event.heard}`);
+		});
+
+		await plane.attach("scout", answering("listo"));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "dale",
+		});
+		await plane.bus.drain();
+
+		expect(seen).toEqual(["operator:true", "agent:false"]);
+	});
+});

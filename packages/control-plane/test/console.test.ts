@@ -3,10 +3,9 @@ import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
 import {
 	Agents,
-	append,
 	Chat,
-	extend,
 	mouse,
+	resume,
 	saidBy,
 	scrolled,
 	type Thinking,
@@ -35,6 +34,26 @@ describe("transcript", () => {
 
 	it("gives an answer the lines it was written with", () => {
 		expect(transcript([{ from: "agent", text: "one\ntwo" }])).toEqual(["one", "two"]);
+	});
+
+	// The operator's line and a webhook's are both text addressed to the agent, and only one of them
+	// may be obeyed. A pane that drew them alike could not be read back through to find out which.
+	it("names what arrived from somewhere other than the keyboard", () => {
+		const line = transcript([{ from: "other", via: "webhook:github", text: "ship it" }])[0];
+
+		expect(line).toContain("‹webhook:github›");
+		expect(line).toContain("ship it");
+	});
+
+	it("names the agent's own wakeup as one, rather than as an answer", () => {
+		expect(transcript([{ from: "agent", via: "wake", text: "seguir" }])[0]).toContain("‹wake›");
+	});
+
+	// A turn that failed said nothing, and the person who asked is owed the reason where they asked.
+	it("says a failure in the conversation it happened in", () => {
+		expect(transcript([{ from: "plane", text: "exited 1" }])[0]).toBe(
+			"\u001b[31mexited 1\u001b[39m",
+		);
 	});
 
 	// Between turns and not after each: the pane shows the last rows that fit, so a trailing blank
@@ -154,29 +173,29 @@ describe("scrolled", () => {
 });
 
 /**
- * How a streamed answer is assembled: one empty thing said, then chunks added to it.
+ * A conversation is not this console's questions and answers, it is everything an agent was told
+ * and everything it said, whoever set it going.
  */
-describe("extend", () => {
-	const started = append(new Map(), "scout", { from: "agent", text: "" });
+describe("resume", () => {
+	it("picks up the conversation the plane kept", () => {
+		const talk = resume({ scout: [{ from: "operator", text: "hola" }] });
 
-	it("adds a chunk to the answer in progress", () => {
-		const talk = extend(extend(started, "scout", "web"), "scout", "hook");
-
-		expect(saidBy(talk, "scout")).toEqual([{ from: "agent", text: "webhook" }]);
+		expect(saidBy(talk, "scout")).toEqual([{ from: "operator", text: "hola" }]);
 	});
 
-	// A chunk can outlive the turn it belongs to — the plane keeps writing for a moment after an
-	// error was said in place — and there is nothing for it to land on.
-	it("has nothing to add before anything was said", () => {
-		expect(extend(new Map(), "scout", "web")).toEqual(new Map());
+	// The stored line is the words. Markdown becomes ANSI on the way in, once, rather than on every
+	// keystroke that re-wraps the pane.
+	it("renders the agent's markdown as the terminal will show it", () => {
+		const [said] = saidBy(resume({ scout: [{ from: "agent", text: "**hecho**" }] }), "scout");
+
+		expect(said?.text).not.toBe("**hecho**");
+		expect(said?.text).toContain("hecho");
 	});
 
-	it("leaves the other agents' conversations where they were", () => {
-		const both = append(started, "scribe", { from: "operator", text: "hola" });
+	it("keeps where a line came from, so the pane can say", () => {
+		const talk = resume({ scout: [{ from: "agent", via: "wake", text: "seguir" }] });
 
-		expect(saidBy(extend(both, "scout", "web"), "scribe")).toEqual([
-			{ from: "operator", text: "hola" },
-		]);
+		expect(saidBy(talk, "scout")[0]?.via).toBe("wake");
 	});
 });
 

@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
+import type { Utterance } from "./transcript.ts";
 
 export class ControlError extends Error {
 	constructor(message: string) {
@@ -89,6 +90,13 @@ export class ControlClient {
 		const response = await this.#once({ op: "agents" });
 		if ("agents" in response) return response.agents;
 		throw new ControlError("unexpected answer to agents");
+	}
+
+	/** Every conversation the plane has kept, so a console that opens is not a conversation that starts. */
+	async transcripts(): Promise<Record<string, readonly Utterance[]>> {
+		const response = await this.#once({ op: "transcripts" });
+		if ("transcripts" in response) return response.transcripts;
+		throw new ControlError("unexpected answer to transcripts");
 	}
 
 	/** Makes an agent that was not in the config, and waits for its sandbox to be up. */

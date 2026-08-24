@@ -5,6 +5,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
+import type { Utterance } from "./transcript.ts";
 
 /**
  * Written with `createElement` rather than JSX, which is not a style choice.
@@ -59,8 +60,38 @@ export interface Thinking {
 }
 
 export interface Said {
-	readonly from: "operator" | "agent";
+	readonly from: Utterance["from"];
+	/** Ready to draw: an agent's markdown has already become whatever the terminal shows of it. */
 	readonly text: string;
+	readonly via?: string;
+}
+
+/** Markdown as the terminal will have it, for a line that arrives whole rather than in pieces. */
+export function painted(text: string): string {
+	let out = "";
+	const stream = new MarkdownStream({
+		write: (chunk) => {
+			out += chunk;
+		},
+		color: true,
+	});
+	stream.push(text);
+	stream.end();
+	return out;
+}
+
+/**
+ * A line of the transcript as this console will draw it.
+ *
+ * Rendered on the way in rather than on the way out, because the way out happens on every keystroke
+ * and every frame of a spinner, and a conversation is re-wrapped whole each time.
+ */
+export function shown(said: Utterance): Said {
+	return {
+		from: said.from,
+		text: said.from === "agent" ? painted(said.text) : said.text,
+		...(said.via !== undefined ? { via: said.via } : {}),
+	};
 }
 
 type Panel = "chat" | "logs";
@@ -75,23 +106,31 @@ export function append(talk: Talk, agentId: string, said: Said): Talk {
 	return new Map(talk).set(agentId, [...saidBy(talk, agentId), said]);
 }
 
-/** Adds to the last thing an agent was saying, which is how an answer arrives: in pieces. */
-export function extend(talk: Talk, agentId: string, chunk: string): Talk {
-	const history = saidBy(talk, agentId);
-	const last = history[history.length - 1];
-	if (last === undefined) return talk;
-	return new Map(talk).set(agentId, [
-		...history.slice(0, -1),
-		{ from: last.from, text: last.text + chunk },
-	]);
+function without<T>(map: ReadonlyMap<string, T>, key: string): ReadonlyMap<string, T> {
+	const next = new Map(map);
+	next.delete(key);
+	return next;
+}
+
+/**
+ * One line of conversation, marked for whoever is saying it.
+ *
+ * Everything that is neither the operator nor the agent answering is named for where it came from,
+ * and that naming is the point: a webhook body and the person at the keyboard both arrive as text
+ * addressed to the agent, and a pane that drew them alike is one you cannot read back through to
+ * find out who asked for what. The agent's own text is already ANSI by here, so it passes through.
+ */
+function spoken(said: Said): string {
+	if (said.from === "plane") return `\u001b[31m${said.text}\u001b[39m`;
+	if (said.via !== undefined) return `\u001b[2m‹${said.via}›\u001b[22m ${said.text}`;
+	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;
+	return said.text;
 }
 
 /**
  * A conversation as the lines it occupies, most recent last.
  *
- * The agent's own text is already rendered markdown carrying its ANSI, so it is passed through
- * untouched; only what the operator typed is marked, and it is marked here rather than stored that
- * way so the transcript stays the words and not the decoration.
+ * Marked here rather than stored marked, so the transcript stays the words and not the decoration.
  */
 export function transcript(history: readonly Said[]): readonly string[] {
 	const lines: string[] = [];
@@ -99,8 +138,7 @@ export function transcript(history: readonly Said[]): readonly string[] {
 		// Between turns rather than after each: a trailing blank costs the pane a row, and the row it
 		// costs is the oldest line of the conversation, given up to hold a gap nobody is reading.
 		if (lines.length > 0) lines.push("");
-		const body = said.from === "operator" ? `\u001b[36m> ${said.text}\u001b[39m` : said.text;
-		lines.push(...body.split("\n"));
+		lines.push(...spoken(said).split("\n"));
 	}
 	return lines;
 }
@@ -340,9 +378,11 @@ function Logs({
 function App({
 	client,
 	initial,
+	conversations,
 }: {
 	readonly client: ControlClient;
 	readonly initial: readonly AgentSummary[];
+	readonly conversations: Talk;
 }): ReactElement {
 	const { exit } = useApp();
 	const { rows, columns } = useWindowSize();
@@ -350,7 +390,10 @@ function App({
 	const [cursor, setCursor] = useState(0);
 	const [panel, setPanel] = useState<Panel>("chat");
 	const [lines, setLines] = useState<readonly string[]>([]);
-	const [talk, setTalk] = useState<Talk>(new Map());
+	const [talk, setTalk] = useState<Talk>(conversations);
+	// An answer being written, which is not in the transcript yet because it is not finished. Kept
+	// apart from the conversation so that when it is finished it replaces itself rather than repeats.
+	const [live, setLive] = useState<ReadonlyMap<string, string>>(new Map());
 	const [draft, setDraft] = useState("");
 	// When each turn started, rather than merely that one did: the elapsed seconds come from here.
 	const [busy, setBusy] = useState<ReadonlyMap<string, number>>(new Map());
@@ -359,7 +402,13 @@ function App({
 	const [top, setTop] = useState<number | undefined>(undefined);
 
 	const selected = agents[Math.min(cursor, agents.length - 1)];
-	const said = selected === undefined ? [] : saidBy(talk, selected.id);
+	const writing = selected === undefined ? undefined : live.get(selected.id);
+	const said =
+		selected === undefined
+			? []
+			: writing === undefined
+				? saidBy(talk, selected.id)
+				: [...saidBy(talk, selected.id), { from: "agent" as const, text: writing }];
 
 	// Two borders, the title row and the footer are the rows the panel does not get; its own border
 	// and padding are the columns. What is left is what the chat has to wrap itself into, and it has
@@ -372,20 +421,61 @@ function App({
 	// the render that changes what is being shown rather than in an effect, which would draw the old
 	// place once before correcting it.
 	const showing = `${panel}:${selected?.id ?? ""}`;
-	const [shown, setShown] = useState(showing);
-	if (shown !== showing) {
-		setShown(showing);
+	const [drawn, setDrawn] = useState(showing);
+	if (drawn !== showing) {
+		setDrawn(showing);
 		setTop(undefined);
 	}
 
 	// Once, for the life of the console: the plane streams until the socket closes, and asking twice
 	// would double every line.
+	//
+	// The same stream feeds both panes, and that is what makes the chat a conversation rather than a
+	// record of this console's own questions: a turn a schedule or a webhook started arrives here
+	// exactly like one typed in, because nothing about it went through the prompt.
 	useEffect(() => {
 		const feed = new LogFeed(
 			(line) => setLines((prev) => [...prev, line.replace(/\n$/, "")].slice(-REMEMBERED_LINES)),
 			{ color: true },
 		);
-		client.logs((event) => feed.push(event));
+		// One per agent, held open for the length of an answer: markdown cannot be rendered a delta at
+		// a time without somewhere to keep the half-finished line.
+		const writers = new Map<string, MarkdownStream>();
+		const finished = (agentId: string): void => {
+			writers.delete(agentId);
+			setLive((prev) => without(prev, agentId));
+			setBusy((prev) => without(prev, agentId));
+		};
+
+		client.logs((event) => {
+			feed.push(event);
+			if (event.kind === "said") {
+				setTalk((prev) => append(prev, event.agentId, shown(event.said)));
+				// A turn starts when the agent is told something, whoever told it. This is the only
+				// notice the console gets of one it did not ask for.
+				if (event.heard) setBusy((prev) => new Map(prev).set(event.agentId, Date.now()));
+			} else if (event.kind === "say") {
+				const writer =
+					writers.get(event.agentId) ??
+					new MarkdownStream({
+						write: (chunk) =>
+							setLive((prev) =>
+								new Map(prev).set(event.agentId, (prev.get(event.agentId) ?? "") + chunk),
+							),
+						color: true,
+					});
+				writers.set(event.agentId, writer);
+				writer.push(event.text);
+			} else if (event.kind === "turn") {
+				// The finished answer is already on its way as a `said`, so what is being written is
+				// dropped rather than kept: they are the same words, and both would be both.
+				finished(event.agentId);
+			} else if (event.kind === "error") {
+				// Named by agent for a turn that failed, and by something else for everything else. A
+				// context that is not an agent clears nothing, which is what it should do.
+				finished(event.context);
+			}
+		});
 	}, [client]);
 
 	// Only while something is thinking. A console redrawing ten times a second at rest is one that
@@ -408,42 +498,17 @@ function App({
 		return () => clearInterval(timer);
 	}, [client]);
 
+	/**
+	 * Says something to an agent, and shows none of it.
+	 *
+	 * Nothing is written here, on purpose. The line typed and the answer to it both come back on the
+	 * feed, from the plane that wrote them down, and that is what makes reopening the console pick a
+	 * conversation up rather than start one. Writing them here as well would show each of them twice.
+	 * A turn that fails arrives the same way: as the plane saying why there was no answer.
+	 */
 	const ask = useCallback(
 		async (agentId: string, body: string): Promise<void> => {
-			setTalk((prev) =>
-				append(append(prev, agentId, { from: "operator", text: body }), agentId, {
-					from: "agent",
-					text: "",
-				}),
-			);
-			setBusy((prev) => new Map(prev).set(agentId, Date.now()));
-
-			let streamed = false;
-			const out = new MarkdownStream({
-				write: (chunk) => setTalk((prev) => extend(prev, agentId, chunk)),
-				color: true,
-			});
-			try {
-				const text = await client.wake(agentId, body, (delta) => {
-					streamed = true;
-					out.push(delta);
-				});
-				// A plane that answered without streaming still has an answer to show, and so does one
-				// whose turn produced its text only at the end.
-				if (!streamed && text.length > 0) out.push(text);
-				if (!streamed && text.length === 0) out.push("_(nothing)_");
-			} catch (error) {
-				// A turn that failed is not a conversation that ended. The session is still there and the
-				// next line is a new turn, so this is said in place and nothing is torn down.
-				out.push(`\n\u001b[31m${(error as Error).message}\u001b[39m`);
-			} finally {
-				out.end();
-				setBusy((prev) => {
-					const next = new Map(prev);
-					next.delete(agentId);
-					return next;
-				});
-			}
+			await client.wake(agentId, body).catch(() => {});
 		},
 		[client],
 	);
@@ -602,6 +667,11 @@ function App({
 	);
 }
 
+/** The conversations the plane kept, as the console draws them. */
+export function resume(kept: Record<string, readonly Utterance[]>): Talk {
+	return new Map(Object.entries(kept).map(([agentId, history]) => [agentId, history.map(shown)]));
+}
+
 /**
  * The console, which is what `agent` on its own opens.
  *
@@ -612,9 +682,12 @@ function App({
  */
 export async function openConsole(client: ControlClient): Promise<number> {
 	const initial = await client.agents();
+	// Fetched before anything is subscribed to, and that order is the whole of it: a conversation
+	// asked for while the feed was already arriving would show the lines that landed in between twice.
+	const conversations = resume(await client.transcripts().catch(() => ({})));
 	process.stdout.write(MOUSE_ON);
 	try {
-		const app = render(h(App, { client, initial }), { exitOnCtrlC: false });
+		const app = render(h(App, { client, initial, conversations }), { exitOnCtrlC: false });
 		await app.waitUntilExit();
 	} finally {
 		// Whatever happened. A terminal left reporting its mouse prints an escape sequence at whoever

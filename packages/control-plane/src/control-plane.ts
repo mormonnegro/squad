@@ -18,6 +18,7 @@ import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/sche
 import { CreatedAgentStore } from "./created-agents.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
+import { overheard, Transcript, type Utterance } from "./transcript.ts";
 import {
 	createTurnHandler,
 	PiTurnRunner,
@@ -108,6 +109,19 @@ export type PlaneEvent =
 	| { readonly kind: "error"; readonly context: string; readonly message: string }
 	/** A piece of an answer being written. The whole of it arrives again as a turn. */
 	| { readonly kind: "say"; readonly agentId: string; readonly text: string }
+	/**
+	 * A line of the conversation, as it goes into the transcript that outlives the console.
+	 *
+	 * `heard` is the half the agent was told, and so the half that means a turn has started. The
+	 * console needs that said outright: a turn nobody in the room asked for looks exactly like one
+	 * that never happened.
+	 */
+	| {
+			readonly kind: "said";
+			readonly agentId: string;
+			readonly said: Utterance;
+			readonly heard: boolean;
+	  }
 	/** Something an agent did inside its sandbox, reported while the turn is still running. */
 	| { readonly kind: "step"; readonly agentId: string; readonly step: AgentStep };
 
@@ -168,6 +182,7 @@ export class ControlPlane {
 	readonly #agents: AgentConfig[];
 	readonly #defaults: AgentDefaults | undefined;
 	readonly #created: CreatedAgentStore;
+	readonly #transcript: Transcript;
 	readonly #createdIds = new Set<string>();
 	readonly #stateDir: string;
 	readonly #image: string;
@@ -193,6 +208,7 @@ export class ControlPlane {
 		this.#onError = options.onError;
 		this.#onTurn = options.onTurn;
 		this.#created = new CreatedAgentStore(join(this.#stateDir, "agents.json"));
+		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
@@ -234,6 +250,20 @@ export class ControlPlane {
 	observe(listener: (event: PlaneEvent) => void): () => void {
 		this.#watchers.add(listener);
 		return () => this.#watchers.delete(listener);
+	}
+
+	/**
+	 * Every conversation the plane is keeping, oldest line first.
+	 *
+	 * Read whole and at once rather than an agent at a time, because a console that fetched them as
+	 * it needed them would be fetching against a feed already arriving: the lines that landed while
+	 * the request was in flight are exactly the ones it would then show twice.
+	 */
+	async transcripts(): Promise<Record<string, readonly Utterance[]>> {
+		const conversations = await Promise.all(
+			this.#agents.map(async (agent) => [agent.id, await this.#transcript.read(agent.id)] as const),
+		);
+		return Object.fromEntries(conversations);
 	}
 
 	/** What each agent is and whether its sandbox is up. */
@@ -323,9 +353,15 @@ export class ControlPlane {
 			createTurnHandler({
 				runner,
 				router: this.router,
+				onHeard: async (id, events) => {
+					for (const event of events) await this.#record(id, overheard(event), true);
+				},
 				onTurn: (id, result) => {
 					this.#onTurn?.(id, result);
 					this.#emit({ kind: "turn", agentId: id, result });
+					if (result.text.length > 0) {
+						void this.#record(id, { from: "agent", text: result.text }, false);
+					}
 				},
 				onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
 				onWake: (id, wake) => this.#scheduleWake(id, wake),
@@ -341,8 +377,8 @@ export class ControlPlane {
 	 *
 	 * The bounds are applied here and not only in the tool that writes the request, because the tool
 	 * is a convenience inside a sandbox where the agent has a shell and could write the file itself.
-	 * They clamp rather than refuse: an agent that asked for ten seconds meant "soon", and answering
-	 * "soon" with a minute keeps the intent while denying the spin.
+	 * They clamp rather than refuse, because both ends of the range are ways of saying something an
+	 * agent can mean: no wait at all becomes the next second, and a year becomes a month.
 	 *
 	 * At most one wakeup is pending, so asking again moves the appointment instead of adding to it —
 	 * without that, an agent that asks every turn fans out into as many turns as it has asked.
@@ -383,9 +419,28 @@ export class ControlPlane {
 		for (const watcher of this.#watchers) watcher(event);
 	}
 
+	/**
+	 * Puts a line in the conversation: out to whoever is watching now, and down for whoever opens a
+	 * console later.
+	 *
+	 * Said before it is written, and the write is not what the caller waits on. A transcript is a
+	 * courtesy to the reader, and a disk that cannot take it is not a reason to hold up the turn.
+	 */
+	async #record(agentId: string, said: Utterance, heard: boolean): Promise<void> {
+		this.#emit({ kind: "said", agentId, said, heard });
+		await this.#transcript.append(agentId, said).catch((error: Error) => {
+			this.#onError?.(`${agentId} transcript`, error);
+		});
+	}
+
 	#reportError(context: string, error: Error): void {
 		this.#onError?.(context, error);
 		this.#emit({ kind: "error", context, message: error.message });
+		// A failure reported against an agent's own name is a turn that did not answer, and the person
+		// who asked is owed that in the conversation rather than only in a log they are not reading.
+		if (this.#agents.some((agent) => agent.id === context)) {
+			void this.#record(context, { from: "plane", text: error.message }, false);
+		}
 	}
 
 	/** The proxy credential issued to an agent. Present only after start. */

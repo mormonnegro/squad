@@ -25,6 +25,7 @@ export {
 	RELAY_PATH,
 } from "./pi-session.ts";
 export { type EnsureSelfRepoOptions, ensureSelfRepo } from "./self.ts";
+export { overheard, Transcript, type Utterance } from "./transcript.ts";
 export {
 	type AttachedStream,
 	type ByteTransport,

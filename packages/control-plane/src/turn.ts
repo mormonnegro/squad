@@ -1,6 +1,6 @@
 import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
 import type { Reply } from "@agent-dive/channels";
-import type { WakeupHandler } from "@agent-dive/events";
+import type { AgentEvent, WakeupHandler } from "@agent-dive/events";
 import { type ExecResult, SANDBOX_WAKE_EXTENSION, SANDBOX_WAKE_FILE } from "@agent-dive/sandbox";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 
@@ -232,6 +232,11 @@ export interface TurnHandlerOptions {
 	readonly runner: TurnRunner;
 	readonly router?: ReplyRouter;
 	readonly onTurn?: (agentId: string, result: TurnResult) => void;
+	/**
+	 * What the turn is about to answer, before it answers it. Awaited, so that a turn which fails or
+	 * never returns still leaves behind what it was asked — which is the half worth having then.
+	 */
+	readonly onHeard?: (agentId: string, events: readonly AgentEvent[]) => Promise<void>;
 	/** The answer as it is written, for whoever is waiting rather than whoever is reading a log. */
 	readonly onSay?: (agentId: string, text: string) => void;
 	/** The next turn the agent asked for. Awaited, so it is booked before this one is over. */
@@ -249,6 +254,7 @@ export interface TurnHandlerOptions {
  */
 export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 	return async ({ agentId, events, prompt }) => {
+		await options.onHeard?.(agentId, events);
 		const result = await options.runner.run(agentId, prompt, (text) =>
 			options.onSay?.(agentId, text),
 		);

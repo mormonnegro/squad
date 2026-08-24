@@ -83,9 +83,10 @@ describe("the control socket", () => {
 		expect(text).toBe("cuatro issues abiertos");
 	});
 
-	it("keeps the pieces of an answer out of everyone else's terminal", async () => {
-		// A turn is one line in a feed. Half-sentences belong to the person waiting for them, and a
-		// log with two agents talking at once would be unreadable if it carried every word twice.
+	// A console watches a conversation it did not necessarily start — a schedule, a webhook — and an
+	// answer it only learns about once finished is one it draws after the wait rather than during it.
+	// What a feed does with the pieces is the feed's business; the socket carries them.
+	it("carries the pieces of an answer to whoever is only watching", async () => {
 		await plane.attach("scribe", {
 			run: async (_id, _prompt, onText) => {
 				onText?.("anot");
@@ -99,8 +100,22 @@ describe("the control socket", () => {
 
 		await client.wake("scribe", "anotalo");
 
-		expect(seen.map((event) => event.kind)).not.toContain("say");
+		expect(seen).toContainEqual({ kind: "say", agentId: "scribe", text: "anot" });
 		expect(seen).toContainEqual(expect.objectContaining({ kind: "turn", agentId: "scribe" }));
+	});
+
+	// Both halves of the turn, so that a console opening later can read back who asked for what.
+	it("keeps what was said for a console that was not open at the time", async () => {
+		await plane.attach("scribe", {
+			run: async () => ({ text: "anotado", exitCode: 0, stderr: "", ms: 0, tokens: 0, costUsd: 0 }),
+		});
+
+		await client.wake("scribe", "anotalo");
+
+		expect((await client.transcripts()).scribe).toMatchObject([
+			{ from: "operator", text: "anotalo" },
+			{ from: "agent", text: "anotado" },
+		]);
 	});
 
 	it("tells the operator the turn failed instead of waiting out the timeout", async () => {

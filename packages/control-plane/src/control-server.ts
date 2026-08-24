@@ -4,6 +4,7 @@ import net from "node:net";
 import { join } from "node:path";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { Utterance } from "./transcript.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
 
@@ -21,11 +22,17 @@ export type ControlRequest =
 			readonly purge: boolean;
 	  }
 	| { readonly id: string; readonly op: "create"; readonly agentId: string }
-	| { readonly id: string; readonly op: "logs" };
+	| { readonly id: string; readonly op: "logs" }
+	| { readonly id: string; readonly op: "transcripts" };
 
 export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agents: readonly AgentSummary[] }
 	| { readonly id: string; readonly ok: true; readonly agent: AgentSummary }
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly transcripts: Record<string, readonly Utterance[]>;
+	  }
 	| { readonly id: string; readonly ok: true; readonly text: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
 	| { readonly id: string; readonly event: PlaneEvent }
@@ -145,12 +152,17 @@ export class ControlServer {
 		try {
 			if (request.op === "agents") {
 				this.#write(socket, { id: request.id, ok: true, agents: await this.#plane.agents() });
-			} else if (request.op === "logs") {
-				// Turns, not the tokens they are made of: a log is read after the fact, and the whole
-				// answer arrives as one line the moment the turn ends.
-				const stop = this.#plane.observe((event) => {
-					if (event.kind !== "say") this.#write(socket, { id: request.id, event });
+			} else if (request.op === "transcripts") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					transcripts: await this.#plane.transcripts(),
 				});
+			} else if (request.op === "logs") {
+				// Everything, including the answer as it is being written. A subscriber reading a log
+				// wants the finished turn and drops the rest; a subscriber showing a conversation cannot
+				// wait for it, and used to see nothing at all from a turn it had not asked for itself.
+				const stop = this.#plane.observe((event) => this.#write(socket, { id: request.id, event }));
 				socket.once("close", stop);
 			} else if (request.op === "wake") {
 				this.#write(socket, {
