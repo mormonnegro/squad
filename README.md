@@ -217,9 +217,9 @@ the plane without waking anything — a turn spent reading a settings change is 
 slash opens the list of what there is, over the prompt, filtered by whatever is typed after it:
 
 ```
- ▸ /limit [<amount>|off]  what it has spent today, and the ceiling for it
-   /mcp [<name>|add …]    the MCP servers it has, and the shelf to add from
-   /help                  every command there is
+ ▸ /limit [<amount>|off]        what it has spent today, and the ceiling for it
+   /mcp [<name>|add …|login …]  the MCP servers it has, and the shelf to add from
+   /help                        every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
 ╰──────────────────────────────────────────────────────────────────────╯
@@ -513,8 +513,8 @@ This agent has:
   files   mcp-files /home/agent
 
 On the shelf:
-  linear  https://mcp.linear.app/mcp
-  sentry  https://mcp.sentry.dev/mcp   (no grant for mcp.sentry.dev)
+  linear  https://mcp.linear.app/mcp   (logged in)
+  sentry  https://mcp.sentry.dev/mcp   (no grant)
 
 /mcp linear gives this agent that one.
 
@@ -531,9 +531,33 @@ attachment.
 **There is nowhere in a server to put a credential.** A local one inherits a sandbox whose only road
 out is the egress proxy, a remote one is reached down that same road, and the proxy already writes
 whatever key either of them needs. So connecting to a server that wants one is still two things: the
-line above, and a grant. `/mcp` notices when the second is missing and prints what to paste, but it
-will not write it — a grant comes from the config file and from nowhere else, and putting the whole
-of an agent's reach one typo away from the box its messages are typed into is not a convenience.
+line above, and a way in. Which way is not a question the operator should have to answer out of a
+README, so the server is asked — `initialize` is what any client sends first, and a server that
+would refuse the agent refuses that identically:
+
+```
+> /mcp add notion https://mcp.notion.com/mcp
+"notion" is on the shelf, and this agent has it.
+
+It wants an account first: /mcp login notion
+```
+
+`/mcp login` registers a client, opens the consent screen, and waits on a loopback port for the
+browser to come back. A plane on a server has no browser and the operator's browser cannot see its
+localhost, so the address it lands on can be pasted back instead — `/mcp login notion <address>` —
+and the state check makes that exactly as safe as the other way. What comes back is held on the
+plane, 0600, next to the CA key; the sandbox never sees a token, and neither does the agent.
+
+**A finished login is the one capability here that does not come out of the config file.** That is
+deliberate and it is narrow: a consent screen is a person reading a host name and deciding, which is
+a stronger act of approval than a line of YAML rather than a weaker one, and `/mcp` is the
+operator's keyboard rather than anything the agent can reach. The grant it makes is one host, that
+server's own path, and only for as long as the agent is holding the server — `/mcp drop` takes the
+reach with it, and `/mcp logout` takes it from everyone.
+
+A server that wants no account and is still out of reach is the other case, and it stays the
+operator's: `/mcp` prints the grant to paste but will not write it, because putting the whole of an
+agent's reach one typo away from the box its messages are typed into is not a convenience.
 
 The list is written into the sandbox before every turn rather than baked into the container, so a
 server added from the console reaches an agent that is already up on its next turn, and one taken

@@ -75,6 +75,13 @@ agents:
         injection:
           kind: none
 
+    # An MCP server the operator logged into needs nothing here. `/mcp login <name>` sends them to
+    # that server's consent screen, and what comes back grants one host and that server's own path,
+    # for as long as the agent holds the server. It is the only capability not in this file, and it
+    # is allowed because a consent screen is a person approving a named host, which is a stronger
+    # act than a line here rather than a weaker one. A server that wants no account is a grant like
+    # any other, written above.
+
     schedules:
       - kind: cron
         expression: "0 9 * * 1-5"
