@@ -685,8 +685,9 @@ neither does the agent.
 
 **A finished login is the one capability here that does not come out of the config file.** That is
 deliberate and it is narrow: a consent screen is a person reading a host name and deciding, which is
-a stronger act of approval than a line of YAML rather than a weaker one, and `/mcp` is the
-operator's keyboard rather than anything the agent can reach. The grant it makes is one host, that
+a stronger act of approval than a line of YAML rather than a weaker one. An agent can ask for that
+screen to be put in front of its operator, below, and gets no further by asking — what comes back is
+a person's answer to a question they were shown. The grant it makes is one host, that
 server's own path, and only for as long as the agent is holding the server — `/mcp drop` takes the
 reach with it, and `/mcp logout` takes it from everyone.
 
@@ -698,6 +699,62 @@ The list is written into the sandbox before every turn rather than baked into th
 server added from the console reaches an agent that is already up on its next turn, and one taken
 away stops being offered. A server that will not answer costs the agent that server's tools and
 says so on stderr; it does not cost the turn.
+
+## An agent asking for what it needs
+
+The failure this fixes is a paragraph. An agent that wanted one MCP server would write out, patiently
+and correctly, the host to add to `agent.yaml` and the command that approves it — and then sit there
+until somebody read the paragraph. That is a day, or a week, or never, and the agent had done
+everything right. `console_command` is a pi extension shipped in the image beside `wake_me` and
+`web_search`, and it asks for console commands by name:
+
+```
+‹ask› /mcp add ahrefs https://mcp.ahrefs.com/mcp
+"ahrefs" is on the shelf, and this agent has it.
+
+It wants an account first: /mcp login ahrefs
+
+‹ask› /mcp login ahrefs
+Log in to mcp.ahrefs.com here — opened already, if this console is somewhere with a browser:
+
+  https://auth.ahrefs.com/authorize?response_type=code&client_id=…
+
+Waiting at http://localhost:8788/callback. If that page cannot reach the plane, paste
+the address it lands on back as: /mcp login ahrefs <address>
+```
+
+The link opens in the operator's browser, and that is the whole of what the agent could not do for
+itself: the console runs on the machine the person is at, and a plane in a container is not. Which is
+also why the answer goes to the console rather than back to the agent — an agent that wants to know
+how it went pairs the request with `wake_me` and finds the server attached on its next turn.
+
+It travels on the channel the wakeup uses, a file the plane reads and removes once the turn is over,
+so this opens no route from the sandbox to the plane either. A list rather than one line, because
+adding a server and logging into it is two commands and one intention: both go in a turn and run in
+order, where an agent that could only ask for the first half would spend a turn waiting to be allowed
+to ask for the second. A turn the operator stopped asks for nothing — a consent screen opening after
+they hit stop is the turn carrying on without them.
+
+**What an agent may ask for is decided outside the command**, by a list of lines, and both callers
+then share one plane underneath: an agent gets exactly the command the operator gets, or it gets
+nothing at all. Nothing sees a quieter version of the plane, because two versions is how they drift.
+The line between the two is not "destructive" — it is whether an agent that has been talked into this
+by something it read could get anywhere by it. Connecting a server, opening a consent screen, moving
+between configured models and being held to a tighter ceiling widen nothing. Deleting itself, raising
+or removing its ceiling, logging a server out, forgetting one for every agent: those stay with the
+operator. So does pasting back an address of its own — the trip home from a consent screen is the
+person's, or the screen was never in it.
+
+A refusal is not a dead end. It prints the line the operator would have typed:
+
+```
+‹ask› /limit 50
+This agent asked for a ceiling of $50.00 a day, which is above the $5.00 it has. It can ask to
+be held to less, never to more: /limit $50.00, if you meant it.
+```
+
+That is the point rather than the consolation. The operator finds out the command exists by being
+handed it, at the moment it is the answer, in the pane they were already looking at.
 
 ## Development
 

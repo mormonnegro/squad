@@ -806,7 +806,10 @@ export class ControlPlane {
 			// Checked each time round rather than once, because the line before this one may have been
 			// the ceiling moving, and a pair of them is otherwise both measured against the old one.
 			const { limitUsd } = await this.#account(agentId);
-			await this.#record(agentId, { from: "agent", text: line });
+			// Marked the way the agent's own wakeup note is, because unmarked is how the console draws the
+			// agent answering: a bare `/mcp login notion` sitting among replies is a line the operator has
+			// to remember not having typed. `‹ask›` says the agent asked for this one.
+			await this.#record(agentId, { from: "agent", via: "ask", text: line });
 
 			const refusal = agentMayNot(line, { agentId, limitUsd });
 			if (refusal !== undefined) {

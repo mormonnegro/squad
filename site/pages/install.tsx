@@ -97,6 +97,12 @@ alias dive='ssh -t root@your-vps agent'
 						the conversation, <code>/limit</code>, <code>/model</code>, <code>/mcp</code>, and{" "}
 						<code>!</code> into the sandbox itself.
 					</p>
+					<p className="small muted">
+						You do not have to know those commands exist. An agent that needs a tool server can ask
+						for one itself, and the consent screen opens in your browser here — the agent gets no
+						further than putting the question in front of you. Anything that would widen its reach
+						is still yours to type, and asking for one prints you the line.
+					</p>
 					<div className="note">
 						<p>
 							<strong>Why there is no web UI to log into.</strong> The control plane holds the

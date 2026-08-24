@@ -452,17 +452,20 @@ describe("a turn that asked for a console command", () => {
 	});
 
 	// Written down as the agent's, because it was the agent's. A transcript that showed it as the
-	// operator's is one you cannot read back to find out who asked for the server.
+	// operator's is one you cannot read back to find out who asked for the server. The mark is what
+	// holds it apart from the agent merely answering, which is drawn with no mark at all.
 	it("puts both halves in the conversation, under the name of whoever said them", async () => {
 		const plane = new ControlPlane({ agents: [scout], stateDir });
 		await takeTurn(plane, "/mcp add ahrefs https://mcp.ahrefs.test/mcp");
 
-		expect((await plane.transcripts()).scout).toMatchObject([
+		const said = (await plane.transcripts()).scout ?? [];
+		expect(said).toMatchObject([
 			{ from: "operator", text: "conectate a ahrefs" },
 			{ from: "agent", text: "listo" },
-			{ from: "agent", text: "/mcp add ahrefs https://mcp.ahrefs.test/mcp" },
+			{ from: "agent", via: "ask", text: "/mcp add ahrefs https://mcp.ahrefs.test/mcp" },
 			{ from: "plane" },
 		]);
+		expect(said[1]?.via).toBeUndefined();
 	});
 
 	// Adding a server and then doing something with it is one intention and two lines, and the second
