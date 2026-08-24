@@ -18,6 +18,15 @@ export interface Utterance {
 	 */
 	readonly from: "operator" | "agent" | "other" | "plane" | "shell";
 	readonly text: string;
+	/**
+	 * Whether the plane is reporting a thing that went wrong or a thing that worked, when it is
+	 * reporting either. Most of what the plane says is neither — a listing, an account, what a
+	 * command did — and that is the absent case and by far the commonest one.
+	 *
+	 * Meaning rather than decoration, which is why it is kept here: only the plane knows whether the
+	 * sentence it just wrote is bad news, and a console left to guess from the words would guess.
+	 */
+	readonly tone?: "bad" | "good";
 	/** How it reached the agent, when that is not the operator typing: a channel, or its own wakeup. */
 	readonly via?: string;
 	/** Written by the transcript, so a caller only has to have the words. */

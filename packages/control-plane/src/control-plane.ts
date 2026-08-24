@@ -579,11 +579,16 @@ export class ControlPlane {
 					await this.#reregisterAll();
 					await this.#record(agentId, {
 						from: "plane",
+						tone: "good",
 						text: `Logged in to ${host}. This agent can reach "${name}" now.`,
 					});
 				},
 				async (error: Error) => {
-					await this.#record(agentId, { from: "plane", text: `${name}: ${error.message}` });
+					await this.#record(agentId, {
+						from: "plane",
+						tone: "bad",
+						text: `${name}: ${error.message}`,
+					});
 				},
 			)
 			.catch(() => {});
@@ -781,7 +786,7 @@ export class ControlPlane {
 		// A failure reported against an agent's own name is a turn that did not answer, and the person
 		// who asked is owed that in the conversation rather than only in a log they are not reading.
 		if (this.#agents.some((agent) => agent.id === context)) {
-			void this.#record(context, { from: "plane", text: error.message });
+			void this.#record(context, { from: "plane", tone: "bad", text: error.message });
 		}
 	}
 

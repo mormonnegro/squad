@@ -5,6 +5,7 @@ import { COMMANDS, type Command } from "../src/commands.ts";
 import {
 	Agents,
 	Chat,
+	doing,
 	here,
 	mouse,
 	resume,
@@ -54,9 +55,24 @@ describe("transcript", () => {
 
 	// A turn that failed said nothing, and the person who asked is owed the reason where they asked.
 	it("says a failure in the conversation it happened in", () => {
-		expect(transcript([{ from: "plane", text: "exited 1" }])[0]).toBe(
+		expect(transcript([{ from: "plane", tone: "bad", text: "exited 1" }])[0]).toBe(
 			"\u001b[31mexited 1\u001b[39m",
 		);
+	});
+
+	it("says a thing that worked in the colour of a thing that worked", () => {
+		expect(transcript([{ from: "plane", tone: "good", text: "logged in" }])[0]).toBe(
+			"\u001b[32mlogged in\u001b[39m",
+		);
+	});
+
+	// Nearly everything the plane says is an answer to a question that was asked, and red is what
+	// makes the few lines that are not answers stand out. Coloured alike, none of them did.
+	it("leaves an answer the colour of the terminal it was asked in", () => {
+		expect(transcript([{ from: "plane", text: "On the shelf:\n  notion" }])).toEqual([
+			"On the shelf:",
+			"  notion",
+		]);
 	});
 
 	// Between turns and not after each: the pane shows the last rows that fit, so a trailing blank
@@ -457,6 +473,45 @@ describe("Chat", () => {
 		expect(drawn).not.toContain("> ");
 	});
 
+	// Forty seconds is the same forty seconds whether the agent is stuck on the model or running a
+	// test suite, and only one of those is worth waiting out.
+	it("says what it is doing beside how long it has been doing it", () => {
+		const drawn = chat({
+			history: [],
+			columns: 60,
+			thinking: { frame: "⠙", seconds: 42, step: "bash pnpm test" },
+		});
+
+		expect(drawn).toContain("⠙ 42s");
+		expect(drawn).toContain("bash pnpm test");
+	});
+
+	// The prompt is what a hand is on, so it is the step that gives way rather than the line being
+	// typed — and a step that was cut says so, rather than merely stopping.
+	it("gives the room to the line being typed, and cuts the step to what is left", () => {
+		const drawn = chat({
+			history: [],
+			columns: 40,
+			draft: "segui",
+			thinking: { frame: "⠙", seconds: 4, step: `bash ${"x".repeat(200)}` },
+		}).split("\n");
+
+		expect(drawn).toHaveLength(3);
+		expect(drawn[1]).toContain("segui");
+		expect(drawn[1]).toContain("…");
+	});
+
+	// The shell prompt has to say which directory the next command runs in, and that is this row.
+	it("says nothing about a step while the prompt is the sandbox's", () => {
+		const drawn = chat({
+			history: [],
+			shell: "/work",
+			thinking: { frame: "⠙", seconds: 4, step: "bash pnpm test" },
+		});
+
+		expect(drawn).not.toContain("pnpm test");
+	});
+
 	/**
 	 * The one thing a pane may never do. Anything it draws past its last row lands on the border, on
 	 * the column beside it, and below the bottom of the terminal — the screen does not scroll, it
@@ -583,6 +638,24 @@ describe("Chat", () => {
 });
 
 /** The prompt has one row and the line being typed needs most of it, so the directory gets little. */
+describe("doing", () => {
+	it("says the tool and what it is on", () => {
+		expect(doing({ action: "read", detail: "src/proxy.ts" })).toBe("read src/proxy.ts");
+	});
+
+	// A step's detail is a whole shell command or a diff, and this row is one row. The feed keeps
+	// the rest, which is where a thing is read once it has already happened.
+	it("takes the first line of a detail that runs to several", () => {
+		expect(doing({ action: "bash", detail: "  pnpm   test \n--watch\nmore" })).toBe(
+			"bash pnpm test",
+		);
+	});
+
+	it("is the tool alone when there is nothing to say about it", () => {
+		expect(doing({ action: "think", detail: "" })).toBe("think");
+	});
+});
+
 describe("here", () => {
 	it("says the agent's home the way a shell does", () => {
 		expect(here("/home/agent/.self")).toBe("~/.self");

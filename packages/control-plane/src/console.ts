@@ -9,6 +9,7 @@ import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
 import { openInBrowser } from "./oauth-login.ts";
+import type { AgentStep } from "./pi-output.ts";
 import type { Utterance } from "./transcript.ts";
 
 /**
@@ -67,12 +68,35 @@ const MARKS = {
 export interface Thinking {
 	readonly frame: string;
 	readonly seconds: number;
+	/** The last thing the agent did, for the one line beside the clock. */
+	readonly step?: string;
+}
+
+/** The least a prompt may be narrowed to before what is beside it starts giving way instead. */
+const DRAFT_ROOM = 20;
+
+/**
+ * A step as the one line beside the clock says it: what it is, and what it is on.
+ *
+ * Only the first line, because a step's detail is a whole shell command or a diff and the prompt row
+ * is one row. The rest of it is in the feed, which is where a thing is read after it has happened.
+ */
+export function doing(step: AgentStep): string {
+	const first = step.detail.split("\n")[0]?.replace(/\s+/g, " ").trim() ?? "";
+	return first === "" ? step.action : `${step.action} ${first}`;
+}
+
+/** Cut to fit, with a mark to say it was cut. Nothing at all when there is no room to say anything. */
+function clipped(text: string, room: number): string {
+	if (room < 2) return "";
+	return text.length <= room ? text : `${text.slice(0, room - 1)}…`;
 }
 
 export interface Said {
 	readonly from: Utterance["from"];
 	/** Ready to draw: an agent's markdown has already become whatever the terminal shows of it. */
 	readonly text: string;
+	readonly tone?: Utterance["tone"];
 	readonly via?: string;
 }
 
@@ -100,6 +124,7 @@ export function shown(said: Utterance): Said {
 	return {
 		from: said.from,
 		text: said.from === "agent" ? painted(said.text) : said.text,
+		...(said.tone !== undefined ? { tone: said.tone } : {}),
 		...(said.via !== undefined ? { via: said.via } : {}),
 	};
 }
@@ -138,7 +163,14 @@ function spoken(said: Said): string {
 	if (said.from === "operator" && isShell(said.text)) {
 		return `${ESC}[35m! ${said.text.slice(1).trimStart()}${ESC}[39m`;
 	}
-	if (said.from === "plane") return `\u001b[31m${said.text}\u001b[39m`;
+	// Red was the plane's whole voice, and the plane mostly answers questions: a list of MCP servers,
+	// an account, what a command just did. A screen of red says everything is on fire, which is how
+	// nothing on it gets read as being on fire — so red is kept for bad news, green says a thing
+	// worked, and an answer is left the colour of the terminal the question was typed into.
+	if (said.from === "plane") {
+		if (said.tone === undefined) return said.text;
+		return `${ESC}[${said.tone === "good" ? 32 : 31}m${said.text}${ESC}[39m`;
+	}
 	if (said.via !== undefined) return `\u001b[2m‹${said.via}›\u001b[22m ${said.text}`;
 	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;
 	return said.text;
@@ -433,9 +465,20 @@ export function Chat({
 			: thinking !== undefined
 				? `${thinking.frame} ${thinking.seconds}s `
 				: "> ";
+	// The box takes its border and padding out of the width before anything else is measured.
+	const width = columns - (boxed ? 4 : 0);
+	// Beside the clock rather than in the conversation: what a turn is doing right now is worth a
+	// glance while it is happening and nothing at all afterwards, and the feed already keeps the
+	// record. `27s` alone was the difference between slow and stuck; this is the difference between
+	// stuck on the model and stuck on a test suite. It gives way to the line being typed rather than
+	// the other way round, because the prompt is what a hand is on.
+	const doing =
+		shell === undefined && thinking?.step !== undefined
+			? clipped(thinking.step, width - mark.length - DRAFT_ROOM)
+			: "";
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
-	// its end, where the cursor is. The box takes its border and padding out of the width first.
-	const room = Math.max(0, columns - (boxed ? 4 : 0) - mark.length - 1);
+	// its end, where the cursor is.
+	const room = Math.max(0, width - mark.length - (doing === "" ? 0 : doing.length + 1) - 1);
 	const hue = shell !== undefined ? "magenta" : thinking !== undefined ? "yellow" : "cyan";
 	return h(
 		Box,
@@ -475,6 +518,7 @@ export function Chat({
 				Text,
 				{ wrap: "truncate" },
 				h(Text, { color: hue }, mark),
+				doing === "" ? null : h(Text, { dimColor: true }, `${doing} `),
 				draft.slice(Math.max(0, draft.length - room)),
 				h(Text, { inverse: true }, " "),
 			),
@@ -532,6 +576,8 @@ function App({
 	const [pick, setPick] = useState(0);
 	// When each turn started, rather than merely that one did: the elapsed seconds come from here.
 	const [busy, setBusy] = useState<ReadonlyMap<string, number>>(new Map());
+	// The last thing each agent did, kept only for as long as it is still doing something.
+	const [step, setStep] = useState<ReadonlyMap<string, string>>(new Map());
 	const [frame, setFrame] = useState(0);
 	// The row the panel has been scrolled back to, or nothing at all while it is following the end.
 	const [top, setTop] = useState<number | undefined>(undefined);
@@ -585,6 +631,7 @@ function App({
 			writers.delete(agentId);
 			setLive((prev) => without(prev, agentId));
 			setBusy((prev) => without(prev, agentId));
+			setStep((prev) => without(prev, agentId));
 		};
 
 		client.logs((event) => {
@@ -595,6 +642,11 @@ function App({
 				// The only notice the console gets of a turn it did not ask for, and the only thing that
 				// separates an agent working from an agent that was spoken to and has not started yet.
 				setBusy((prev) => new Map(prev).set(event.agentId, Date.now()));
+				setStep((prev) => without(prev, event.agentId));
+			} else if (event.kind === "step") {
+				// Only the latest is kept. There is one line for this, and what a turn did four tools ago
+				// is what the feed is for.
+				setStep((prev) => new Map(prev).set(event.agentId, doing(event.step)));
 			} else if (event.kind === "say") {
 				const writer =
 					writers.get(event.agentId) ??
@@ -812,12 +864,14 @@ function App({
 		selected === undefined ? { model: "", spend: "" } : standing(selected, width - tabs.length);
 	const heat = selected === undefined ? { dimColor: true } : burning(selected);
 	const started = selected === undefined ? undefined : busy.get(selected.id);
+	const latest = selected === undefined ? undefined : step.get(selected.id);
 	const thinking: Thinking | undefined =
 		started === undefined
 			? undefined
 			: {
 					frame: SPINNER[frame % SPINNER.length] ?? SPINNER[0],
 					seconds: Math.floor((Date.now() - started) / 1000),
+					...(latest !== undefined ? { step: latest } : {}),
 				};
 
 	return h(
