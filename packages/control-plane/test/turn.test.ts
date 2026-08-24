@@ -1,5 +1,5 @@
 import { EventBus } from "@agent-dive/events";
-import type { ExecResult } from "@agent-dive/sandbox";
+import { type ExecResult, SANDBOX_EXTENSIONS } from "@agent-dive/sandbox";
 import { describe, expect, it } from "vitest";
 import {
 	createTurnHandler,
@@ -89,7 +89,19 @@ describe("PiTurnRunner", () => {
 			"/home/agent/.self/skills",
 			"--extension",
 			"/usr/local/lib/agent-dive/extensions/wake.ts",
+			"--extension",
+			"/usr/local/lib/agent-dive/extensions/search.ts",
 		]);
+	});
+
+	// The bug this exists for is silence rather than an error: search shipped in the image and was
+	// never named on the command, so the agent had no tool for the web and went at it with curl —
+	// and reported the proxy refusing every domain as though the internet were down.
+	it("hands over every extension in the image, not only the first one written", () => {
+		const command = new PiTurnRunner({ sandbox: new StubSandbox() }).commandFor("a1");
+		const named = command.filter((_, index) => command[index - 1] === "--extension");
+
+		expect(named).toEqual(SANDBOX_EXTENSIONS);
 	});
 
 	it("hands over the answer as it is written, not only when the turn is over", async () => {

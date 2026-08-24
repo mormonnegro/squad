@@ -11,6 +11,21 @@ export const SANDBOX_USER = "1000:1000";
 /** The extension that gives the agent a way to ask for its next turn. Shipped in the image. */
 export const SANDBOX_WAKE_EXTENSION = "/usr/local/lib/agent-dive/extensions/wake.ts";
 
+/** The extension that gives the agent a way to reach the web. Shipped in the image. */
+export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/agent-dive/extensions/search.ts";
+
+/**
+ * Every extension the plane hands the agent, which is a list because there is more than one and
+ * naming only the first is a silent way to lose the rest. An extension in the image that nothing
+ * names is one the agent never finds, and what that looks like from outside is not an error: it is
+ * the agent solving the problem some worse way it does have — reaching for `curl` where it had a
+ * tool, and reporting the proxy's refusal as though the web were down.
+ */
+export const SANDBOX_EXTENSIONS: readonly string[] = [
+	SANDBOX_WAKE_EXTENSION,
+	SANDBOX_SEARCH_EXTENSION,
+];
+
 /**
  * Where that extension leaves the request, and the plane looks for it once the turn is over.
  *

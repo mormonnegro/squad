@@ -1,7 +1,7 @@
 import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
 import type { Reply } from "@agent-dive/channels";
 import type { AgentEvent, WakeupHandler } from "@agent-dive/events";
-import { type ExecResult, SANDBOX_WAKE_EXTENSION, SANDBOX_WAKE_FILE } from "@agent-dive/sandbox";
+import { type ExecResult, SANDBOX_EXTENSIONS, SANDBOX_WAKE_FILE } from "@agent-dive/sandbox";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
@@ -82,7 +82,7 @@ export interface PiTurnRunnerOptions {
 	/** Called with each thing the agent does inside the sandbox, while it is still doing it. */
 	readonly onStep?: (agentId: string, step: AgentStep) => void;
 	readonly wakeFile?: string;
-	readonly wakeExtension?: string;
+	readonly extensions?: readonly string[];
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
@@ -105,7 +105,7 @@ export class PiTurnRunner {
 	readonly #command: readonly string[];
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 	readonly #wakeFile: string;
-	readonly #wakeExtension: string;
+	readonly #extensions: readonly string[];
 
 	constructor(options: PiTurnRunnerOptions) {
 		this.#sandbox = options.sandbox;
@@ -117,7 +117,7 @@ export class PiTurnRunner {
 		this.#command = options.command ?? ["pi"];
 		this.#onStep = options.onStep;
 		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
-		this.#wakeExtension = options.wakeExtension ?? SANDBOX_WAKE_EXTENSION;
+		this.#extensions = options.extensions ?? SANDBOX_EXTENSIONS;
 	}
 
 	sessionId(agentId: string): string {
@@ -145,9 +145,8 @@ export class PiTurnRunner {
 			"--skill",
 			`${this.#repoPath}/${SKILLS_DIR}`,
 			// Named rather than discovered, for the same reason the skills are: discovery is gated on
-			// the project being trusted, and this one is the plane's rather than the project's anyway.
-			"--extension",
-			this.#wakeExtension,
+			// the project being trusted, and these are the plane's rather than the project's anyway.
+			...this.#extensions.flatMap((extension) => ["--extension", extension]),
 			...(this.#provider !== undefined ? ["--provider", this.#provider] : []),
 			...(this.#model !== undefined ? ["--model", this.#model] : []),
 		];
