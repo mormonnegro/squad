@@ -94,8 +94,8 @@ alias dive='ssh -t root@your-vps agent'
 `}</Code>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,
-						the conversation, <code>/limit</code>, <code>/mcp</code>, and <code>!</code> into the
-						sandbox itself.
+						the conversation, <code>/limit</code>, <code>/model</code>, <code>/mcp</code>, and{" "}
+						<code>!</code> into the sandbox itself.
 					</p>
 					<div className="note">
 						<p>
@@ -115,21 +115,22 @@ alias dive='ssh -t root@your-vps agent'
 					<h2>Say what an agent may reach</h2>
 					<p>
 						<code>/opt/agent-dive/deploy/config.yaml</code> is the whole surface: agents, what each
-						may reach, when each wakes up, which webhooks exist, and — under <code>defaults</code> —
-						what an agent made later at the keyboard starts from. The installer writes a working
-						one; this is the shape of it.
+						may reach, which models there are to think with, when each wakes up, which webhooks
+						exist, and — under <code>defaults</code> — what an agent made later at the keyboard
+						starts from. The installer writes a working one; this is the shape of it.
 					</p>
 					<Code label="deploy/config.yaml">{`
+models:
+  - id: deepseek-v4-flash      # naming the provider says the rest
+    provider: deepseek
+  - id: sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+
 defaults:
-  provider: deepseek
-  model: deepseek-v4-flash
+  model: deepseek-v4-flash     # /model moves one agent onto another
   limitUsd: 5                  # dollars a day, reset at midnight UTC
   grants:
-    - id: model
-      host: api.deepseek.com
-      injection:
-        kind: bearer
-        token: { ref: DEEPSEEK_API_KEY }
     - id: search
       host: api.openai.com
       pathPrefix: /v1/responses  # the one endpoint that searches
