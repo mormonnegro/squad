@@ -97,7 +97,7 @@ export const COMMANDS = [
 	{
 		name: "/model",
 		takes: "[<name>]",
-		does: "what it thinks with, and the other models you configured",
+		does: "what it thinks with, and what else there is",
 	},
 	{
 		name: "/mcp",

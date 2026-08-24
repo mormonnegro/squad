@@ -120,10 +120,11 @@ cp config.example.yaml config.yaml
 docker compose up -d --build
 ```
 
-`config.example.yaml` is the whole surface: agents, what each may reach, when each wakes up, which
-webhooks exist, and — under `defaults` — what an agent made later starts from. No secret is in it — it names environment variables, and the process holds
-the values. That is the point: the file describing what an agent can reach should be committable
-and diffable, because a grant nobody noticed being added is the failure mode.
+`config.example.yaml` is the whole surface: agents, what each may reach, which models there are to
+think with, when each wakes up, which webhooks exist, and — under `defaults` — what an agent made
+later starts from. No secret is in it: it names environment variables, and the process holds the
+values. That is the point: the file describing what an agent can reach should be committable and
+diffable, because a grant nobody noticed being added is the failure mode.
 
 Two things in the deployment are load-bearing and easy to get wrong:
 
@@ -243,6 +244,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
 
 ```
  ▸ /limit [<amount>|off]        what it has spent today, and the ceiling for it
+   /model [<name>]              what it thinks with, and what else there is
    /mcp [<name>|add …|login …]  the MCP servers it has, and the shelf to add from
    /delete                      delete this agent, after asking whether you meant it
    /help                        every command there is
@@ -492,6 +494,67 @@ pushing its wakeup a year away to be rid of it has only moved it a month, and le
 otherwise. The note comes back fenced like anything else
 the agent did not hear from its operator, introduced as the reminder it is rather than as an
 instruction — the turn that wrote it may have been reading a stranger at the time.
+
+## What an agent thinks with
+
+A model is the one capability every agent needs and the one nobody thinks of as a capability. It
+used to be configured as four coupled things — the provider, the model, a placeholder key in the
+sandbox's environment and a grant naming the provider's host — and any one of them wrong is not a
+startup error but a turn that dies at the proxy, complaining about something the operator never
+typed. So it is a list, and naming a provider is the whole of configuring it:
+
+```yaml
+models:
+  - id: deepseek-v4-flash
+    provider: deepseek
+
+  - id: sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+
+defaults:
+  model: deepseek-v4-flash
+```
+
+Where a provider lives, what its key is called and whether the key goes in a bearer header or one of
+its own are facts about the provider rather than decisions anybody gets to make, so they are not
+written out. What is left is the part that is the operator's: which models they want, and what to
+call each one. The id doubles as the model when it is already the model's name, which is the common
+case; a provider nothing here knows still works by saying the two things the table would have — a
+`host` and a `keyEnv`.
+
+The key is never in this file, and never in the agent. `keyEnv` names a variable of the control
+plane's own environment, and the grant each model produces is what writes it onto the request on
+the way out — the same wire-level injection every other credential here gets, for the same reason.
+
+`/model` in the console moves one agent onto another of them:
+
+```
+> /model
+This agent thinks with deepseek-v4-flash. There are:
+
+  deepseek-v4-flash  deepseek/deepseek-v4-flash   (this one)
+  sonnet             anthropic/claude-sonnet-4-6
+
+/model sonnet moves it onto that one, from its next turn.
+```
+
+This is a choice among the configured and never a way to add one, which is what makes it a command
+rather than an edit and a restart. Every model on that list is already reachable by every agent —
+configuring one is what granted it — so moving between them changes what a turn costs and how good
+it is, and changes nothing at all about what the agent can get to. The keyboard may never grant, and
+this does not.
+
+Which is also why nothing is recreated to do it. The container was started holding a placeholder for
+every configured model, not just the one it was on, and the runner asks what to think with at the
+start of every turn — so a switch lands on the next turn, and a turn already running finishes on the
+model it was handed when it started. That last part is said out loud, because the change looks
+instant and is not.
+
+A model whose key this plane does not hold is still listed, marked as having no key behind it. It is
+not a reason to refuse to start: `install.sh` writes the variable through empty when nobody has
+exported one yet, and refusing there would make the first run of this a configuration exercise
+instead of a working plane. `/model` is the place the answer is to paste one in and reload.
 
 ## What an agent may spend
 
