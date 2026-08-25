@@ -1,7 +1,14 @@
 import { dirname } from "node:path";
 import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
-import { createElement as h, type ReactElement, useCallback, useEffect, useState } from "react";
+import {
+	createElement as h,
+	type ReactElement,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import wrapAnsi from "wrap-ansi";
 import { type Command, completions, isCommand, isShell, money } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
@@ -37,6 +44,16 @@ const AGENTS_WIDTH = 24;
 
 /** What a row has for the name and its numbers, once the border, the padding and the mark are paid. */
 const ROW_ROOM = AGENTS_WIDTH - 6;
+
+/**
+ * What the chat has to fit into: the terminal, less the agents column and the pane's own border.
+ *
+ * Wanted in two places that are far apart — the render, and the transcript that is painted before the
+ * first render happens — and a table drawn to the wrong one of them is a table with a fold in it.
+ */
+export function chatWidth(columns: number): number {
+	return Math.max(1, columns - AGENTS_WIDTH - 4);
+}
 
 /** The three rows the prompt occupies now that it is in a box: its two borders and its line. */
 const PROMPT_ROWS = 3;
@@ -108,13 +125,14 @@ export interface Said {
 }
 
 /** Markdown as the terminal will have it, for a line that arrives whole rather than in pieces. */
-export function painted(text: string): string {
+export function painted(text: string, width: number): string {
 	let out = "";
 	const stream = new MarkdownStream({
 		write: (chunk) => {
 			out += chunk;
 		},
 		color: true,
+		width,
 	});
 	stream.push(text);
 	stream.end();
@@ -126,11 +144,15 @@ export function painted(text: string): string {
  *
  * Rendered on the way in rather than on the way out, because the way out happens on every keystroke
  * and every frame of a spinner, and a conversation is re-wrapped whole each time.
+ *
+ * The pane's width comes along for the one thing that cannot be decided later: a table is drawn to a
+ * width and stays drawn to it, so a terminal resized afterwards folds its columns the way it folds a
+ * paragraph. Prose is unaffected — it is wrapped fresh on every frame.
  */
-export function shown(said: Utterance): Said {
+export function shown(said: Utterance, width: number): Said {
 	return {
 		from: said.from,
-		text: said.from === "agent" ? painted(said.text) : said.text,
+		text: said.from === "agent" ? painted(said.text, width) : said.text,
 		...(said.tone !== undefined ? { tone: said.tone } : {}),
 		...(said.via !== undefined ? { via: said.via } : {}),
 	};
@@ -1207,7 +1229,11 @@ export function App({
 	// and padding are the columns. What is left is what the chat has to wrap itself into, and it has
 	// to know: nothing downstream can put a paragraph back once it has been drawn too wide.
 	const body = Math.max(1, rows - 4);
-	const width = Math.max(1, columns - AGENTS_WIDTH - 4);
+	const width = chatWidth(columns);
+	// The log stream is opened once and the window can be resized at any point in it, so the width a
+	// table is drawn to is read when the table arrives rather than closed over when the stream opens.
+	const room = useRef(width);
+	room.current = width;
 	// A blank row under the title, so the tabs read as the pane's own header rather than as the first
 	// line of the conversation under them. It is paid for out of the conversation, which is why a short
 	// pane does without: the last row a six-row terminal should spend on anything is one spent on air.
@@ -1245,7 +1271,7 @@ export function App({
 		client.logs((event) => {
 			feed.push(event);
 			if (event.kind === "said") {
-				setTalk((prev) => append(prev, event.agentId, shown(event.said)));
+				setTalk((prev) => append(prev, event.agentId, shown(event.said, room.current)));
 			} else if (event.kind === "thinking") {
 				// The only notice the console gets of a turn it did not ask for, and the only thing that
 				// separates an agent working from an agent that was spoken to and has not started yet.
@@ -1264,6 +1290,7 @@ export function App({
 								new Map(prev).set(event.agentId, (prev.get(event.agentId) ?? "") + chunk),
 							),
 						color: true,
+						width: room.current,
 					});
 				writers.set(event.agentId, writer);
 				writer.push(event.text);
@@ -2018,8 +2045,13 @@ export function App({
 }
 
 /** The conversations the plane kept, as the console draws them. */
-export function resume(kept: Record<string, readonly Utterance[]>): Talk {
-	return new Map(Object.entries(kept).map(([agentId, history]) => [agentId, history.map(shown)]));
+export function resume(kept: Record<string, readonly Utterance[]>, width: number): Talk {
+	return new Map(
+		Object.entries(kept).map(([agentId, history]) => [
+			agentId,
+			history.map((said) => shown(said, width)),
+		]),
+	);
 }
 
 /**
@@ -2034,7 +2066,10 @@ export async function openConsole(client: ControlClient): Promise<number> {
 	const initial = await client.agents();
 	// Fetched before anything is subscribed to, and that order is the whole of it: a conversation
 	// asked for while the feed was already arriving would show the lines that landed in between twice.
-	const conversations = resume(await client.transcripts().catch(() => ({})));
+	const conversations = resume(
+		await client.transcripts().catch(() => ({})),
+		chatWidth(process.stdout.columns ?? 80),
+	);
 	process.stdout.write(MOUSE_ON);
 	try {
 		const app = render(h(App, { client, initial, conversations }), { exitOnCtrlC: false });

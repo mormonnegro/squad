@@ -490,6 +490,7 @@ async function say(
 	const out = new MarkdownStream({
 		write: (chunk) => process.stdout.write(chunk),
 		color: process.stdout.isTTY === true,
+		width: process.stdout.columns ?? 80,
 	});
 
 	let opened = false;

@@ -1,3 +1,6 @@
+import stringWidth from "string-width";
+import wrapAnsi from "wrap-ansi";
+
 const BOLD = "\u001b[1m";
 const BOLD_OFF = "\u001b[22m";
 const DIM = "\u001b[2m";
@@ -10,6 +13,9 @@ const CODE = "\u001b[36m";
 const CODE_OFF = "\u001b[39m";
 
 const LINK = /^\[([^\]]*)\]\(([^)]*)\)/;
+
+/** Room enough for a table to be a table. Overridden by whoever knows the pane it is drawn into. */
+const COLUMNS = 80;
 
 /**
  * How far into a line it is safe to render before the rest of it has arrived.
@@ -87,6 +93,139 @@ export function renderInline(text: string): string {
 	return out;
 }
 
+/** `---`, `:--`, `--:` or `:-:`: the row that says a table is a table, and how it leans. */
+const LEAN = /^(:?)-+(:?)$/;
+/** A figure, which belongs against the column it is compared down. Currencies and percents included. */
+const FIGURE = /^[-+]?[$€£]?\d[\d.,\s]*%?$/;
+
+type Lean = "left" | "right" | "center";
+
+/**
+ * One row's cells, with the pipes that bound them spent.
+ *
+ * The outer pipes are optional in the markdown and meaningless either way, so a row that has them and
+ * a row that does not have to come out with the same number of cells — otherwise the header sits one
+ * column off its own body.
+ */
+function cells(line: string): readonly string[] {
+	let inner = line.trim();
+	if (inner.startsWith("|")) inner = inner.slice(1);
+	if (inner.endsWith("|") && !inner.endsWith("\\|")) inner = inner.slice(0, -1);
+	return inner.split(/(?<!\\)\|/).map((cell) => cell.trim().replaceAll("\\|", "|"));
+}
+
+/** What the widths would be if nothing had to give: every cell whole, on one line. */
+function natural(rows: readonly (readonly string[])[]): readonly number[] {
+	const widths: number[] = [];
+	for (const row of rows) {
+		for (const [index, cell] of row.entries()) {
+			widths[index] = Math.max(widths[index] ?? 0, stringWidth(cell));
+		}
+	}
+	return widths;
+}
+
+/**
+ * The widths the table will actually be drawn at.
+ *
+ * What has to give gives from the widest column, one column at a time, because the widest column is
+ * the prose one and prose is the only thing here that reads the same folded onto a second line. Take
+ * it evenly instead and the number columns lose the digits that were the point of the table.
+ */
+function fit(widths: readonly number[], room: number): readonly number[] {
+	const fitted = [...widths];
+	let total = fitted.reduce((sum, width) => sum + width, 0);
+	while (total > room) {
+		let widest = 0;
+		let most = 0;
+		for (const [index, width] of fitted.entries()) {
+			if (width > most) {
+				most = width;
+				widest = index;
+			}
+		}
+		if (most <= 1) break;
+		fitted[widest] = most - 1;
+		total--;
+	}
+	return fitted;
+}
+
+function padded(text: string, width: number, lean: Lean): string {
+	const room = width - stringWidth(text);
+	if (room <= 0) return text;
+	if (lean === "right") return " ".repeat(room) + text;
+	if (lean === "left") return text + " ".repeat(room);
+	const left = Math.floor(room / 2);
+	return " ".repeat(left) + text + " ".repeat(room - left);
+}
+
+/**
+ * A markdown table as the rows of a terminal.
+ *
+ * Alignment is the whole job. A table is a shape before it is words — the eye reads down a column to
+ * compare, and pipes that do not line up are worse than no table at all, because the shape is there
+ * promising something the numbers under it do not keep. So the cells are padded to a common width,
+ * the prose in them is folded rather than let out past the pane, and the pipes become the one
+ * vertical line per boundary that a reader can actually follow down the page.
+ */
+export function renderTable(lines: readonly string[], columns: number): readonly string[] {
+	const parsed = lines.map(cells);
+	// The lean row is markdown's, not the reader's: it carries no data and is spent on knowing which
+	// way each column is read. Absent, the table is still a table — plenty of agents skip it.
+	const leaning = parsed[1]?.every((cell) => LEAN.test(cell)) === true ? parsed[1] : undefined;
+	const head = parsed[0] ?? [];
+	const body = parsed.slice(leaning === undefined ? 1 : 2);
+
+	const count = Math.max(head.length, ...body.map((row) => row.length), 1);
+	const square = [head, ...body].map((row) =>
+		Array.from({ length: count }, (_, index) => row[index] ?? ""),
+	);
+
+	const leans: readonly Lean[] = Array.from({ length: count }, (_, index) => {
+		const said = LEAN.exec(leaning?.[index] ?? "");
+		if (said?.[2] === ":") return said[1] === ":" ? "center" : "right";
+		if (said !== null && said[1] === ":") return "left";
+		// Nothing said, so the column says it: a column of figures is compared, and a comparison is read
+		// down the last digit. Anything else, even one cell of it, is prose and starts at the left.
+		const column = body.map((row) => row[index] ?? "").filter((cell) => cell !== "");
+		return column.length > 0 && column.every((cell) => FIGURE.test(cell)) ? "right" : "left";
+	});
+
+	// Bold has one off switch and the cells may already have used it — `**Keyword**` closes the header's
+	// bold along with its own — so every off inside a header cell is turned back on.
+	const painted = square.map((row, index) =>
+		row.map((cell) => {
+			const inline = renderInline(cell);
+			return index === 0 ? BOLD + inline.replaceAll(BOLD_OFF, BOLD) + BOLD_OFF : inline;
+		}),
+	);
+
+	const gaps = 3 * (count - 1);
+	const widths = fit(natural(painted), Math.max(count, columns - gaps));
+	const bar = `${DIM}│${DIM_OFF}`;
+
+	const out: string[] = [];
+	for (const [index, row] of painted.entries()) {
+		// Folded here rather than by the pane, which knows nothing of columns and would fold the whole
+		// row into the left margin. A cell that takes two lines makes the row two lines tall.
+		const folded = row.map((cell, column) =>
+			wrapAnsi(cell, widths[column] ?? 1, { hard: true, trim: true }).split("\n"),
+		);
+		const tall = Math.max(...folded.map((cell) => cell.length));
+		for (let line = 0; line < tall; line++) {
+			const drawn = folded.map((cell, column) =>
+				padded(cell[line] ?? "", widths[column] ?? 1, leans[column] ?? "left"),
+			);
+			out.push(drawn.join(` ${bar} `).trimEnd());
+		}
+		if (index === 0) {
+			out.push(DIM + widths.map((width) => "─".repeat(width)).join("─┼─") + DIM_OFF);
+		}
+	}
+	return out;
+}
+
 interface Block {
 	/** Written once, when the line is classified. */
 	readonly prefix: string;
@@ -98,6 +237,8 @@ interface Block {
 	readonly verbatim: boolean;
 	/** A fence marker is scaffolding rather than content, and leaves no line behind. */
 	readonly silent: boolean;
+	/** A row of a table, which is held until the table it belongs to has ended. */
+	readonly table: boolean;
 }
 
 const ORDERED = /^\d{1,9}[.)]$/;
@@ -113,6 +254,13 @@ export interface MarkdownStreamOptions {
 	 * another program and markdown is the format they already asked for.
 	 */
 	readonly color: boolean;
+	/**
+	 * How many columns the text is being drawn into.
+	 *
+	 * Only a table asks. Everything else here is a line of prose, and prose is folded downstream by
+	 * whoever owns the pane; a table has to be folded while its columns are still known.
+	 */
+	readonly width?: number;
 }
 
 /**
@@ -126,16 +274,19 @@ export interface MarkdownStreamOptions {
 export class MarkdownStream {
 	readonly #write: (text: string) => void;
 	readonly #color: boolean;
+	readonly #width: number;
 
 	#line = "";
 	#block: Block | undefined;
 	#shown = "";
 	#fenced = false;
 	#tail = "";
+	#rows: string[] = [];
 
 	constructor(options: MarkdownStreamOptions) {
 		this.#write = options.write;
 		this.#color = options.color;
+		this.#width = options.width ?? COLUMNS;
 	}
 
 	push(text: string): void {
@@ -169,10 +320,30 @@ export class MarkdownStream {
 			this.#tail = "";
 			return;
 		}
-		if (this.#line.length === 0) return;
-		this.#render(this.#line, true);
-		this.#endLine();
-		this.#line = "";
+		if (this.#line.length > 0) {
+			this.#render(this.#line, true);
+			this.#endLine();
+			this.#line = "";
+		}
+		this.#drawTable();
+	}
+
+	/**
+	 * Draws the table that has been collecting, now that something other than a row has arrived.
+	 *
+	 * This is the one place the stream stops streaming, and it has to: the width of a column is not
+	 * known until the last row that could widen it is in. A single row is not a table but a line that
+	 * happens to start with a pipe, and it goes out as the prose it is.
+	 */
+	#drawTable(): void {
+		const rows = this.#rows;
+		this.#rows = [];
+		if (rows.length === 0) return;
+		if (rows.length < 2) {
+			for (const row of rows) this.#write(`${renderInline(row)}\n`);
+			return;
+		}
+		for (const line of renderTable(rows, this.#width)) this.#write(`${line}\n`);
 	}
 
 	#endLine(): void {
@@ -191,14 +362,21 @@ export class MarkdownStream {
 			const space = rest.search(/\s/);
 			if (space === -1 && !complete) return;
 
-			this.#block = this.#classify(
+			const block = this.#classify(
 				space === -1 ? rest : rest.slice(0, space),
 				indent,
 				space !== -1,
 			);
-			this.#write(this.#block.prefix);
+			// Anything that is not another row is the end of the table above it.
+			if (!block.table) this.#drawTable();
+			this.#block = block;
+			this.#write(block.prefix);
 		}
 
+		if (this.#block.table) {
+			if (complete) this.#rows.push(line);
+			return;
+		}
 		if (this.#block.silent) return;
 
 		const body = line.slice(this.#block.bodyFrom);
@@ -219,13 +397,23 @@ export class MarkdownStream {
 	 * heading — the whole point of the fence is that its contents are not markdown.
 	 */
 	#classify(marker: string, indent: number, spaced: boolean): Block {
-		const plain = { bodyFrom: 0, verbatim: false, silent: false, prefix: "", suffix: "" };
+		const plain = {
+			bodyFrom: 0,
+			verbatim: false,
+			silent: false,
+			table: false,
+			prefix: "",
+			suffix: "",
+		};
 		if (marker.startsWith("```") || marker.startsWith("~~~")) {
 			this.#fenced = !this.#fenced;
 			return { ...plain, silent: true };
 		}
 		// Indented by the fence rather than by the prefix, so the code keeps its own indentation.
 		if (this.#fenced) return { ...plain, prefix: `${DIM}  `, suffix: DIM_OFF, verbatim: true };
+
+		// A line that opens with a pipe opens a table, and nothing else opens with a pipe.
+		if (marker.startsWith("|")) return { ...plain, silent: true, table: true };
 
 		const after = indent + marker.length + (spaced ? 1 : 0);
 		if (RULE.test(marker)) {

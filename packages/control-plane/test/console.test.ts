@@ -233,7 +233,7 @@ describe("scrolled", () => {
  */
 describe("resume", () => {
 	it("picks up the conversation the plane kept", () => {
-		const talk = resume({ scout: [{ from: "operator", text: "hola" }] });
+		const talk = resume({ scout: [{ from: "operator", text: "hola" }] }, 80);
 
 		expect(saidBy(talk, "scout")).toEqual([{ from: "operator", text: "hola" }]);
 	});
@@ -241,14 +241,14 @@ describe("resume", () => {
 	// The stored line is the words. Markdown becomes ANSI on the way in, once, rather than on every
 	// keystroke that re-wraps the pane.
 	it("renders the agent's markdown as the terminal will show it", () => {
-		const [said] = saidBy(resume({ scout: [{ from: "agent", text: "**hecho**" }] }), "scout");
+		const [said] = saidBy(resume({ scout: [{ from: "agent", text: "**hecho**" }] }, 80), "scout");
 
 		expect(said?.text).not.toBe("**hecho**");
 		expect(said?.text).toContain("hecho");
 	});
 
 	it("keeps where a line came from, so the pane can say", () => {
-		const talk = resume({ scout: [{ from: "agent", via: "wake", text: "seguir" }] });
+		const talk = resume({ scout: [{ from: "agent", via: "wake", text: "seguir" }] }, 80);
 
 		expect(saidBy(talk, "scout")[0]?.via).toBe("wake");
 	});

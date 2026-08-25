@@ -461,8 +461,12 @@ agent may read; typed here it is an instruction the agent may follow.
 The answer is printed as it is written, not when the turn is over, and its markdown is rendered:
 bold is bold, a bullet is a bullet, a fenced block is dimmed and left exactly as typed. Nothing is
 shown until it can be shown right — an unclosed `**` is held back rather than printed and taken
-back — so words appear a fraction behind the agent instead of a paragraph behind it. Redirected
-into a file or piped into another program, the output is the markdown itself, untouched.
+back — so words appear a fraction behind the agent instead of a paragraph behind it. A table is the
+one thing that cannot be shown as it is written: its columns are only as wide as the last row that
+could widen them, so it is held until it ends and then drawn to the pane — cells padded to a common
+width, figures against the right where they are compared, prose folded inside its own column rather
+than let out past the border. Redirected into a file or piped into another program, the output is
+the markdown itself, untouched.
 
 `chat` is the same turn in a loop: pi keeps a session per agent, so the agent remembers the
 previous line.
