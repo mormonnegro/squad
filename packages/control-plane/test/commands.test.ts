@@ -62,6 +62,8 @@ function context(
 		discovers?: Partial<EmailOffer>;
 		/** What the provider says about a password it will not take. */
 		mailRefuses?: string;
+		/** What clearing turns out to have come to: a turn stopped, a conversation there to forget. */
+		clearing?: { readonly stopped: boolean; readonly remembered: boolean };
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -76,6 +78,8 @@ function context(
 	const pasted: { name: string; redirected: string }[] = [];
 	/** Every deletion that got as far as the plane, which is the half no answer can show. */
 	const removed: string[] = [];
+	/** The same for clearing, where the answer is a sentence and the plane is where the work happens. */
+	const cleared: string[] = [];
 	const serving = [...(start.serving ?? [])];
 	const takenBy = start.takenBy ?? new Map<number, string>();
 	const bot = { held: start.bot };
@@ -103,6 +107,7 @@ function context(
 		started,
 		pasted,
 		removed,
+		cleared,
 		serving,
 		bot,
 		offered,
@@ -110,6 +115,10 @@ function context(
 			agent: { id: start.agentId ?? "scout", created: start.created ?? true },
 			remove: async () => {
 				removed.push(start.agentId ?? "scout");
+			},
+			clear: async () => {
+				cleared.push(start.agentId ?? "scout");
+				return start.clearing ?? { stopped: false, remembered: true };
 			},
 			account: async () => state,
 			setLimit: async (usd: number | null) => {
@@ -511,6 +520,74 @@ describe("/delete", () => {
 
 		expect(answer).toContain("Only the name is");
 		expect(removed).toEqual([]);
+	});
+});
+
+/**
+ * The other command that throws something away, and the one that is meant to be cheap.
+ *
+ * `/delete` asks first because what it takes cannot be got back. This takes the conversation and
+ * leaves the agent, so the tests here are mostly about the answer saying which of the two happened —
+ * an operator who thinks `/clear` might have taken the repository will never type it twice.
+ */
+describe("/clear", () => {
+	it("forgets the conversation as soon as it is typed", async () => {
+		const { context: ctx, cleared } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/clear", ctx);
+
+		expect(cleared).toEqual(["scout"]);
+		expect(answer).toContain("scout has forgotten the conversation");
+	});
+
+	// The whole reason it can go without a confirmation, so it is said every time rather than in a
+	// help nobody reads: what an operator is afraid of here is the thing that did not happen.
+	it("says the repository is still there", async () => {
+		const { context: ctx } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/clear", ctx);
+
+		expect(answer).toContain("repository is untouched");
+		expect(answer).toContain("wrote down to remember");
+		expect(answer).toContain("/model, /mcp, /limit and /serve");
+	});
+
+	// Stopping the turn is what makes the clearing stick, so it is not something to do quietly: an
+	// answer that did not mention it would leave an operator wondering where the turn went.
+	it("says so when a turn had to be stopped for it", async () => {
+		const { context: ctx } = context({
+			agentId: "scout",
+			clearing: { stopped: true, remembered: true },
+		});
+
+		const answer = await runCommand("/clear", ctx);
+
+		expect(answer).toContain("Stopped the turn scout was taking");
+	});
+
+	// Typed at an agent that has said nothing. "Forgotten the conversation" would be a sentence about
+	// something that never existed, and the next question is always whether the command worked.
+	it("says there was nothing to forget rather than claiming to have forgotten it", async () => {
+		const { context: ctx, cleared } = context({
+			agentId: "scout",
+			clearing: { stopped: false, remembered: false },
+		});
+
+		const answer = await runCommand("/clear", ctx);
+
+		expect(answer).toContain("had no conversation to forget");
+		expect(cleared).toEqual(["scout"]);
+	});
+
+	// It takes nothing, so a word after it was meant to be something. Answered rather than ignored,
+	// because the one guess worth ruling out is that it names an agent to clear.
+	it("clears nothing on a word it does not know", async () => {
+		const { context: ctx, cleared } = context({ agentId: "scout" });
+
+		const answer = await runCommand("/clear scout", ctx);
+
+		expect(answer).toContain("is not something /clear takes");
+		expect(cleared).toEqual([]);
 	});
 });
 
@@ -1612,6 +1689,19 @@ describe("agentMayNot", () => {
 	it("refuses deleting, and names the line that would", () => {
 		expect(agentMayNot("/delete", scout)).toContain("/delete scout");
 		expect(agentMayNot("/delete scout", scout)).toContain("/delete scout");
+	});
+
+	/**
+	 * Nothing here is about what clearing would cost the agent — it costs it little, which is why an
+	 * operator may do it without being asked twice. It is about what the conversation is: the record
+	 * of how the agent got where it is, an injection included. An agent that could clear its own is
+	 * one that can be talked into erasing the evidence of having been talked into something.
+	 */
+	it("refuses clearing the record of how it got here, and names the line that would", () => {
+		const refusal = agentMayNot("/clear", scout);
+
+		expect(refusal).toContain("record of how it got here");
+		expect(refusal).toContain("/clear");
 	});
 
 	// The shelf is shared. A drop is this agent giving one up; a forget takes it off every agent

@@ -192,6 +192,15 @@ export type PlaneEvent =
 	/** A line of the conversation, as it goes into the transcript that outlives the console. */
 	| { readonly kind: "said"; readonly agentId: string; readonly said: Utterance }
 	/**
+	 * The conversation thrown away, so that whoever is showing it stops showing it.
+	 *
+	 * Said rather than left to the console that asked, because the console is not the only thing
+	 * holding this and need not be the thing that cleared it: a second console open on the same plane
+	 * would otherwise go on displaying a conversation that no longer exists anywhere else, and start
+	 * appending to it.
+	 */
+	| { readonly kind: "cleared"; readonly agentId: string }
+	/**
 	 * A turn starting, which is a different moment from the message that caused it: a burst is one
 	 * turn, and a message arriving at a busy agent waits for the one in front of it to finish.
 	 *
@@ -345,6 +354,15 @@ export class ControlPlane {
 	readonly #deleted: AgentNameStore;
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
+	/**
+	 * Agents whose conversation was thrown away while they were mid-turn.
+	 *
+	 * A stopped turn still comes back with as far as it got, and that half-paragraph belongs to a
+	 * conversation that no longer exists: written down it would be the whole of what a cleared agent
+	 * remembers, and shown it would be the one thing left in an emptied pane. Held only for the moment
+	 * between the stop and the turn handing in its remains.
+	 */
+	readonly #clearedMidTurn = new Set<string>();
 	readonly #spend: SpendLedger;
 	/**
 	 * Which ports each agent has open on whatever machine a console is running on.
@@ -655,7 +673,10 @@ export class ControlPlane {
 				this.#onTurn?.(id, result);
 				this.#emit({ kind: "turn", agentId: id, result });
 				void this.#spend.record(id, result.costUsd);
-				if (result.text.length > 0) {
+				// Not into a conversation that was thrown away while this turn was taking it: as far as
+				// it got is the one thing that would be left in an emptied pane, and the whole of what a
+				// cleared agent is written down as remembering. The feed above still has it.
+				if (result.text.length > 0 && !this.#clearedMidTurn.has(id)) {
 					void this.#record(id, { from: "agent", text: result.text });
 				}
 				// Under the agent's name and a word, so it lands in the log rather than in the
@@ -687,7 +708,13 @@ export class ControlPlane {
 				this.#reportError(agentId, new Error(refusal));
 				return;
 			}
-			await handler(wakeup);
+			try {
+				await handler(wakeup);
+			} finally {
+				// However the turn ended, it has nothing further to hand in, so the next line to arrive
+				// belongs to the conversation starting here rather than to any that was thrown away.
+				this.#clearedMidTurn.delete(agentId);
+			}
 		});
 	}
 
@@ -1174,6 +1201,7 @@ export class ControlPlane {
 			// typed at rather than a name off the line: whatever is typed after `/delete` is a word to be
 			// checked against this agent, never a way to reach a different one.
 			remove: () => this.remove(agentId, { purge: true }),
+			clear: () => this.clear(agentId),
 			account: () => this.#account(agentId),
 			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
 			models: async () => ({
@@ -1409,6 +1437,37 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Throws away the conversation an agent is in, in all three places it is kept.
+	 *
+	 * The three are one thing to a person and three to this: what the model is shown at the start of
+	 * the next turn, the transcript that outlives the console, and whatever pane is displaying it.
+	 * Clearing fewer than all of them is worse than clearing none — an agent whose pane went empty
+	 * while it still remembered everything would look cleared and answer as though it were not.
+	 *
+	 * The turn in flight goes first, and that is not a courtesy. pi holds the session open for the
+	 * length of a turn and writes it out at the end, so a file deleted underneath a running turn comes
+	 * straight back with everything in it: the clear would appear to work and be undone a minute
+	 * later, which is the one outcome worth ruling out. Stopping is also what the operator meant —
+	 * the thought in progress is part of what they asked to be rid of.
+	 */
+	async clear(agentId: string): Promise<{ stopped: boolean; remembered: boolean }> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		// Before anything is thrown away, and synchronously with the stop: a stopped turn still has its
+		// half-answer to hand in, and a line handed in after this would be the one part of the
+		// conversation that survived being cleared.
+		this.#clearedMidTurn.add(agentId);
+		const stopped = this.stopTurn(agentId);
+		if (!stopped) this.#clearedMidTurn.delete(agentId);
+		const remembered = (await this.#runners.get(agentId)?.forget?.(agentId)) ?? false;
+		await this.#transcript.forget(agentId);
+		this.#emit({ kind: "cleared", agentId });
+		this.#emit({ kind: "note", who: agentId, action: "cleared", detail: "the conversation" });
+		return { stopped, remembered };
+	}
+
+	/**
 	 * Settles the one appointment an agent keeps with itself: books it, moves it, or drops it.
 	 *
 	 * The bounds are applied here and not only in the tool that writes the request, because the tool
@@ -1487,8 +1546,10 @@ export class ControlPlane {
 		this.#onError?.(context, error);
 		this.#emit({ kind: "error", context, message: error.message });
 		// A failure reported against an agent's own name is a turn that did not answer, and the person
-		// who asked is owed that in the conversation rather than only in a log they are not reading.
-		if (this.#agents.some((agent) => agent.id === context)) {
+		// who asked is owed that in the conversation rather than only in a log they are not reading —
+		// unless the conversation it would be owed in has just been thrown away, which is the one case
+		// where they know why the turn did not answer: they ended it.
+		if (this.#agents.some((agent) => agent.id === context) && !this.#clearedMidTurn.has(context)) {
 			void this.#record(context, { from: "plane", tone: "bad", text: error.message });
 		}
 	}

@@ -48,6 +48,8 @@ class StubSandbox implements TurnSandbox {
 	holds = false;
 	/** A sandbox that will not take the servers, to see what the turn does about it. */
 	refusesWrites = false;
+	/** The session files pi has left behind, which are what forgetting a conversation reaches. */
+	sessions: string[] = [];
 
 	async run(
 		agentId: string,
@@ -67,6 +69,7 @@ class StubSandbox implements TurnSandbox {
 			timeoutMs: options.timeoutMs,
 			workingDir: options.workingDir,
 		});
+		if (cmd[0] === "find") return this.#find(cmd);
 		if (cmd[0] === "sh") {
 			// Three things arrive as a shell: the servers going in, and the wakeup and the commands
 			// coming out. Told apart by what the script does and which file it names, since taking one
@@ -95,6 +98,22 @@ class StubSandbox implements TurnSandbox {
 			return { exitCode: 137, stdout: this.result.stdout, stderr: "" };
 		}
 		return this.result;
+	}
+
+	/**
+	 * Enough of `find` to be worth testing against: the one pattern shape the runner asks for.
+	 *
+	 * Matching is the whole point of the stub. A sandbox that answered "yes, deleted" to any pattern
+	 * would pass a runner that cleared every agent on the box.
+	 */
+	#find(cmd: readonly string[]): ExecResult {
+		const pattern = cmd[cmd.indexOf("-name") + 1] ?? "";
+		const tail = pattern.startsWith("*") ? pattern.slice(1) : pattern;
+		const hit = this.sessions.filter((name) =>
+			pattern.startsWith("*") ? name.endsWith(tail) : name === tail,
+		);
+		if (cmd.includes("-delete")) this.sessions = this.sessions.filter((one) => !hit.includes(one));
+		return { exitCode: 0, stdout: hit.join("\n"), stderr: "" };
 	}
 }
 
@@ -338,6 +357,30 @@ describe("PiTurnRunner", () => {
 
 	it("says there was nothing to stop when the agent was not taking a turn", () => {
 		expect(new PiTurnRunner({ sandbox: new StubSandbox() }).stop("a1")).toBe(false);
+	});
+
+	it("forgets the session pi keeps for the agent", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.sessions = ["2026-08-25T05-09-25-472Z_agent-dive-scout.jsonl"];
+
+		expect(await new PiTurnRunner({ sandbox }).forget("scout")).toBe(true);
+		expect(sandbox.sessions).toEqual([]);
+	});
+
+	// One agent's name ending in another's is not a coincidence to be ruled out, it is how people name
+	// things. The underscore pi writes between the timestamp and the id is what keeps them apart.
+	it("leaves alone an agent whose name ends in the one being forgotten", async () => {
+		const sandbox = new StubSandbox();
+		const neighbour = "2026-08-25T05-09-25-472Z_agent-dive-my-agent-dive-scout.jsonl";
+		sandbox.sessions = [neighbour, "2026-08-25T06-00-00-000Z_agent-dive-scout.jsonl"];
+
+		await new PiTurnRunner({ sandbox }).forget("scout");
+
+		expect(sandbox.sessions).toEqual([neighbour]);
+	});
+
+	it("says there was nothing when the agent has never taken a turn", async () => {
+		expect(await new PiTurnRunner({ sandbox: new StubSandbox() }).forget("scout")).toBe(false);
 	});
 
 	// Being woken a second later by the very turn somebody just stopped is not stopping. The request

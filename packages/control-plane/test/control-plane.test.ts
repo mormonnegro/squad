@@ -1202,6 +1202,244 @@ describe("a turn that was stopped", () => {
 });
 
 /**
+ * Throwing the conversation away, which is one thing to a person and three to the plane: what the
+ * model is shown next turn, the transcript that outlives the console, and the pane displaying it.
+ * Clearing fewer than all three is worse than clearing none.
+ */
+describe("a conversation thrown away", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-clear-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	/** A runner that remembers between turns, which is the only kind with anything to forget. */
+	const remembering = (): { runner: TurnRunner; forgotten: string[] } => {
+		const forgotten: string[] = [];
+		return {
+			forgotten,
+			runner: {
+				async run() {
+					return { text: "listo", exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0 };
+				},
+				async forget(agentId: string) {
+					forgotten.push(agentId);
+					return true;
+				},
+			},
+		};
+	};
+
+	const said = async (plane: ControlPlane, body: string): Promise<void> => {
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body,
+		});
+		await plane.bus.drain();
+	};
+
+	it("forgets it in all three places at once", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner, forgotten } = remembering();
+		const cleared: string[] = [];
+		plane.observe((event) => {
+			if (event.kind === "cleared") cleared.push(event.agentId);
+		});
+		await plane.attach("scout", runner);
+		await said(plane, "hola");
+
+		expect(await plane.clear("scout")).toEqual({ stopped: false, remembered: true });
+		expect((await plane.transcripts()).scout ?? []).toEqual([]);
+		expect(forgotten).toEqual(["scout"]);
+		expect(cleared).toEqual(["scout"]);
+	});
+
+	// pi holds the session open for the length of a turn and writes it out at the end, so a file
+	// deleted underneath a running one comes straight back with everything in it. The clear would
+	// appear to work and be undone a minute later.
+	it("stops the turn in flight, so the clearing sticks", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner, forgotten } = remembering();
+		let running: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			running = resolve;
+		});
+		let end: (result: TurnResult) => void = () => {};
+		await plane.attach("scout", {
+			...runner,
+			async run() {
+				running();
+				return new Promise<TurnResult>((resolve) => {
+					end = resolve;
+				});
+			},
+			stop() {
+				end({ text: "", exitCode: 137, stderr: "", ms: 1, tokens: 0, costUsd: 0, stopped: true });
+				return true;
+			},
+		});
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "escribime algo largo",
+		});
+		await started;
+
+		expect(await plane.clear("scout")).toMatchObject({ stopped: true });
+		expect(forgotten).toEqual(["scout"]);
+	});
+
+	// The half-answer a stopped turn hands in on its way out, which arrives after the clearing and
+	// would otherwise be the whole of what a cleared agent remembers.
+	it("keeps nothing the stopped turn had left to say", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const seen: string[] = [];
+		plane.observe((event) => {
+			if (event.kind === "said") seen.push(event.said.text);
+		});
+		let running: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			running = resolve;
+		});
+		let end: (result: TurnResult) => void = () => {};
+		await plane.attach("scout", {
+			async run() {
+				running();
+				return new Promise<TurnResult>((resolve) => {
+					end = resolve;
+				});
+			},
+			// Hands the half in a tick later, the way a killed process does rather than a stub.
+			stop() {
+				setTimeout(() => {
+					end({
+						text: "iba por la mit",
+						exitCode: 137,
+						stderr: "",
+						ms: 1,
+						tokens: 0,
+						costUsd: 0,
+						stopped: true,
+					});
+				}, 0);
+				return true;
+			},
+			async forget() {
+				return true;
+			},
+		});
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "escribime algo largo",
+		});
+		await started;
+		await plane.clear("scout");
+		await plane.bus.drain();
+
+		expect((await plane.transcripts()).scout ?? []).toEqual([]);
+		expect(seen).toEqual(["escribime algo largo"]);
+	});
+
+	// Typed at an agent that was thinking, which is when it is typed. What the command answers is the
+	// first line of the conversation that starts here, and is not the stopped turn's to take with it.
+	it("keeps what it answered, though the stopped turn is still handing itself in", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		let running: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			running = resolve;
+		});
+		let end: (result: TurnResult) => void = () => {};
+		await plane.attach("scout", {
+			async run() {
+				running();
+				return new Promise<TurnResult>((resolve) => {
+					end = resolve;
+				});
+			},
+			stop() {
+				setTimeout(() => {
+					end({
+						text: "iba por la mit",
+						exitCode: 137,
+						stderr: "",
+						ms: 1,
+						tokens: 0,
+						costUsd: 0,
+						stopped: true,
+					});
+				}, 0);
+				return true;
+			},
+			async forget() {
+				return true;
+			},
+		});
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "escribime algo largo",
+		});
+		await started;
+
+		expect(await plane.command("scout", "/clear")).toContain("Stopped the turn scout was taking");
+		await plane.bus.drain();
+
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "plane", text: expect.stringContaining("Stopped the turn scout was taking") },
+		]);
+	});
+
+	it("says there was nothing to forget", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", {
+			async run() {
+				return { text: "", exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0 };
+			},
+			async forget() {
+				return false;
+			},
+		});
+
+		expect(await plane.clear("scout")).toEqual({ stopped: false, remembered: false });
+	});
+
+	// The agent is what the repository is, and a conversation is what it was doing lately. Losing one
+	// is not losing the other, which is the whole reason this is not /delete.
+	it("leaves the agent where it was", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner } = remembering();
+		await plane.attach("scout", runner);
+		await plane.clear("scout");
+		await said(plane, "de nuevo");
+
+		expect((await plane.agents()).map((agent) => agent.id)).toEqual(["scout"]);
+		expect((await plane.transcripts()).scout).toMatchObject([
+			{ from: "operator", text: "de nuevo" },
+			{ from: "agent", text: "listo" },
+		]);
+	});
+
+	it("refuses an agent that is not in the plane", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await expect(plane.clear("nadie")).rejects.toThrow('No agent "nadie"');
+	});
+});
+
+/**
  * The ceiling, which exists because an agent that books its own next turn spends all night whether
  * or not anyone is awake. Cost was reported per turn and added up nowhere, so the first anyone knew
  * of a loop was the bill.

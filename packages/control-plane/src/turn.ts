@@ -245,6 +245,41 @@ export class PiTurnRunner {
 		return running !== undefined;
 	}
 
+	/**
+	 * Throws away what the agent remembers of the conversation, so the next turn starts on nothing.
+	 *
+	 * Only the session goes. The repository beside it is the agent — its soul, its skills, what it
+	 * chose to write down — and that is the part worth keeping across a conversation that had gone
+	 * somewhere useless.
+	 *
+	 * pi names its file `{when}_{session}.jsonl`, so the id is matched inside the name rather than
+	 * being the whole of it. The underscore is part of the pattern and not decoration: an agent may be
+	 * called `my-agent-dive-scout`, and matching on the id alone would have clearing `scout` take that
+	 * agent's conversation too, since one name ends in the other. No agent name may hold an underscore,
+	 * so the one pi writes is the only one there is and it anchors the match.
+	 *
+	 * The pattern goes to `find` as a single argument rather than through a shell. Nothing an operator
+	 * may name an agent could survive a shell as anything but a filename, but a glob that something
+	 * else expands is not where that guarantee should be load-bearing.
+	 */
+	async forget(agentId: string): Promise<boolean> {
+		const found = await this.#sandbox.run(
+			agentId,
+			[
+				"find",
+				this.#sessionDir,
+				"-maxdepth",
+				"1",
+				"-name",
+				`*_${this.sessionId(agentId)}.jsonl`,
+				"-print",
+				"-delete",
+			],
+			"",
+		);
+		return found.stdout.trim().length > 0;
+	}
+
 	async run(
 		agentId: string,
 		prompt: string,
@@ -381,6 +416,13 @@ export interface TurnRunner {
 	run(agentId: string, prompt: string, onText?: (delta: string) => void): Promise<TurnResult>;
 	/** Stops the turn in flight, and says whether there was one. A runner may have none to stop. */
 	stop?(agentId: string): boolean;
+	/**
+	 * Throws away what the agent remembers of the conversation, and says whether there was any.
+	 *
+	 * Optional because remembering between turns is a thing a runner does rather than a thing one is:
+	 * a runner that starts every turn fresh has nothing here to throw away.
+	 */
+	forget?(agentId: string): Promise<boolean>;
 }
 
 export interface ReplyRouter {

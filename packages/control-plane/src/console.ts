@@ -1272,6 +1272,12 @@ export function App({
 			feed.push(event);
 			if (event.kind === "said") {
 				setTalk((prev) => append(prev, event.agentId, shown(event.said, room.current)));
+			} else if (event.kind === "cleared") {
+				// Including the half-written answer and the turn it belonged to. The turn was stopped to
+				// make the clearing stick, so a pane left holding its last paragraph would be showing the
+				// one part of the conversation that outlived it.
+				setTalk((prev) => without(prev, event.agentId));
+				finished(event.agentId);
 			} else if (event.kind === "thinking") {
 				// The only notice the console gets of a turn it did not ask for, and the only thing that
 				// separates an agent working from an agent that was spoken to and has not started yet.

@@ -93,11 +93,11 @@ export class Transcript {
 	}
 
 	/**
-	 * Throws the conversation away, for a name the plane is done with.
+	 * Throws the conversation away, leaving the agent it belonged to alone.
 	 *
-	 * Only ever called where the name itself is being forgotten. A file left behind under a name
-	 * nothing answers to any more is not merely litter: the name can be given out again, and the
-	 * agent made under it would open its first console holding somebody else's memory.
+	 * Called for a name being forgotten and for an agent only starting over. The first is why a file
+	 * is never left behind: a name can be given out again, and the agent made under it would open its
+	 * first console holding somebody else's memory.
 	 */
 	async forget(agentId: string): Promise<void> {
 		await this.#serialize(() => rm(this.#path(agentId), { force: true }));

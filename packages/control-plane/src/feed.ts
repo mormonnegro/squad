@@ -59,6 +59,9 @@ export class LogFeed {
 		if (event.kind === "thinking") return;
 		// A page to open is for whoever is at a console with a browser, and this is neither.
 		if (event.kind === "open") return;
+		// For a pane holding the conversation, which a feed is not: this is the record of what happened
+		// and clearing one is a thing that happened, reported as the note that comes with it.
+		if (event.kind === "cleared") return;
 		if (event.kind === "step") this.#step(event.agentId, event.step);
 		else if (event.kind === "audit") this.#egress(event.entry);
 		else if (event.kind === "error") this.#error(event.context, event.message);

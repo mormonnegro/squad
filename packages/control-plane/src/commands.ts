@@ -146,6 +146,14 @@ export interface CommandContext {
 	 * which is what keeps a command from being a way to delete something you were not even looking at.
 	 */
 	remove(): Promise<void>;
+	/**
+	 * Throws away the conversation without touching the agent, and says what that came to.
+	 *
+	 * The other half of `remove`, and the reason both are here: an agent that has talked itself into a
+	 * corner is usually not an agent worth deleting, and before this the only way out of the corner
+	 * was taking the repository with it.
+	 */
+	clear(): Promise<{ stopped: boolean; remembered: boolean }>;
 	addServer(name: string, server: McpServer): Promise<void>;
 	attachServer(name: string): Promise<void>;
 	detachServer(name: string): Promise<void>;
@@ -239,6 +247,7 @@ export const COMMANDS: readonly Command[] = [
 		takes: "[<address>|<password>|off]",
 		does: "the address it is reached at, and how to connect a mailbox",
 	},
+	{ name: "/clear", takes: "", does: "forget the conversation, and start it again on nothing" },
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{ name: "/help", takes: "", does: "every command there is" },
 ] as const;
@@ -1151,6 +1160,36 @@ async function remove(words: readonly string[], context: CommandContext): Promis
 }
 
 /**
+ * Forgetting the conversation, which is the cheap way out of one that has gone somewhere useless.
+ *
+ * Not confirmed, unlike the other command here that throws something away. What `/delete` takes
+ * cannot be got back and this can be lived without: the agent keeps everything it chose to write
+ * down, and what goes is the part that was only ever a means to it. A conversation is also the thing
+ * most often worth ending — one talked into a corner, one grown long enough that every turn now pays
+ * to re-read it — and a key to press every time would put the price on the ordinary case.
+ */
+async function clear(words: readonly string[], context: CommandContext): Promise<string> {
+	const unknown = words[0];
+	if (unknown !== undefined) return `"${unknown}" is not something /clear takes. It takes nothing.`;
+
+	const { id } = context.agent;
+	const { stopped, remembered } = await context.clear();
+	const what = stopped
+		? `Stopped the turn ${id} was taking, and forgot the conversation.`
+		: remembered
+			? `${id} has forgotten the conversation.`
+			: `${id} had no conversation to forget.`;
+
+	return [
+		what,
+		"",
+		`The repository is untouched: ${id}'s soul, its skills and whatever it wrote down to remember`,
+		"are what outlive a conversation, and are why throwing one away costs little. So is everything",
+		"/model, /mcp, /limit and /serve have set. The next thing said starts it again on nothing.",
+	].join("\n");
+}
+
+/**
  * Runs a command and says what happened, in a sentence meant to be read in the conversation.
  *
  * Every answer is a full sentence rather than an acknowledgement, because this goes where the
@@ -1170,6 +1209,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "telegram") return telegram(rest, context);
 	if (name === "email") return email(rest, context);
 	if (name === "delete") return remove(rest, context);
+	if (name === "clear") return clear(rest, context);
 
 	if (name === "limit") {
 		if (argument === "") return spentAgainst(await context.account());
@@ -1222,6 +1262,13 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 
 	if (name === "delete") {
 		return `This agent asked to delete itself, and that one stays with you: /delete ${asking.agentId} takes it and its repository, and nothing else does.`;
+	}
+
+	// The conversation is where an injection would be sitting, so an agent that could clear its own is
+	// one that can be talked into erasing the record of being talked into things. Cheap for an
+	// operator to do and worth nothing to an attacker, which is exactly the line this list draws.
+	if (name === "clear") {
+		return "This agent asked to forget the conversation. That one stays with you, because the conversation is the record of how it got here — including whatever put it up to asking: /clear, if you meant it.";
 	}
 
 	if (name === "limit") {

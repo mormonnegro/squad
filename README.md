@@ -255,6 +255,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
    /serve [<port>|stop <port>]        open a port inside it on the machine you are sitting at
    /telegram [<token>|off]            the Telegram bot it answers on, and how to pair one
    /email [<address>|<password>|off]  the address it is reached at, and how to connect a mailbox
+   /clear                             forget the conversation, and start it again on nothing
    /delete                            delete this agent, after asking whether you meant it
    /help                              every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
@@ -306,6 +307,35 @@ Both halves go into the conversation, because that is where they were typed and 
 gets read: a ceiling that changed with nothing to show for it is one nobody can later work out the
 reason for. A message that merely begins with a path — `/etc/hosts is wrong` — is still a message,
 since `/etc` is answered as a command that does not exist rather than quietly swallowed.
+
+`/clear` throws the conversation away and leaves the agent standing, which is what you want the
+other nine times out of ten — an agent that has talked itself into a corner is rarely one worth
+deleting, and before this the only way out of the corner took the repository with it:
+
+```
+> /clear
+scout has forgotten the conversation.
+
+The repository is untouched: scout's soul, its skills and whatever it wrote down to remember
+are what outlive a conversation, and are why throwing one away costs little. So is everything
+/model, /mcp, /limit and /serve have set. The next thing said starts it again on nothing.
+```
+
+It says that every time, and the saying is half the command: a clear nobody is sure of the cost of
+is one that gets put off until the context is a mess. Unlike `/delete` it asks nothing first,
+because what it takes is the only part of an agent that is cheap to lose.
+
+A conversation lives in three places and all three go together — what the model is shown at the
+start of the next turn, the transcript on disk that outlives the console, and the pane you are
+reading. Clearing fewer than all three would be worse than clearing none: an agent whose pane went
+empty while it still remembered everything would look cleared and answer as though it were not. A
+second console open on the same plane is told as well, rather than being left showing a
+conversation that no longer exists anywhere and appending to it.
+
+The turn in flight is stopped first, and that is not a courtesy. The session is held open for the
+length of a turn and written out at the end, so a conversation deleted underneath a running one
+comes straight back with everything in it a minute later — the one outcome worth ruling out. It is
+also what you meant: the thought in progress is part of what you asked to be rid of.
 
 `/delete` is the way back out of the row that makes an agent, and the only command here that
 destroys anything. There is one kind of delete and it is the whole one — the container, the
@@ -1196,7 +1226,10 @@ from a console whose operator could already have run anything they liked in that
 itself, raising
 or removing its ceiling, logging a server out, forgetting one for every agent: those stay with the
 operator. So does pasting back an address of its own — the trip home from a consent screen is the
-person's, or the screen was never in it.
+person's, or the screen was never in it. So does clearing its own conversation, which is the test at
+its plainest: the conversation is the record of how the agent got here, whatever put it up to asking
+included, and an agent that could clear its own is one that can be talked into erasing the evidence
+of being talked into things.
 
 A refusal is not a dead end. It prints the line the operator would have typed:
 
