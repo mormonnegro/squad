@@ -4,7 +4,7 @@ import { baseAddress } from "./autoconfig.ts";
 export type MailHeaders = Readonly<Record<string, string | undefined>>;
 
 /** An address off a header, and the name it was written under if it was written under one. */
-export interface Mailbox {
+export interface Sender {
 	readonly address: string;
 	readonly name?: string;
 }
@@ -16,7 +16,7 @@ export interface Mailbox {
  * comparisons decide who is trusted — a provider that echoes `Nico@` where it was told `nico@` must
  * not be the difference between an operator and a stranger.
  */
-export function parseAddress(value: string): Mailbox | undefined {
+export function parseAddress(value: string): Sender | undefined {
 	const trimmed = value.trim();
 	const angled = /<([^<>]*)>[^<>]*$/.exec(trimmed);
 	const address = (angled?.[1] ?? trimmed).trim().toLowerCase();
@@ -88,6 +88,46 @@ export function agentFor(recipients: readonly string[], mailbox: string): string
 /** Whether an address is the connected mailbox itself, tag or no tag. */
 export function isOwnAddress(address: string, mailbox: string): boolean {
 	return baseAddress(address.trim().toLowerCase()) === baseAddress(mailbox.trim().toLowerCase());
+}
+
+/**
+ * Whether the provider vouched for the domain this message says it is from.
+ *
+ * `From:` is a line of text the sender chose, and an agent that took operator instructions from
+ * whoever typed the right address in it would take them from anybody. Something has to prove the
+ * domain, and that something is DKIM.
+ *
+ * It is read rather than checked because it was already checked. The receiving provider verified the
+ * signature at the moment of delivery, when the sender's keys were still the keys it signed with, and
+ * wrote down what it found; re-verifying days later against DNS that has since rotated is a worse
+ * answer arrived at more expensively. RFC 8601 requires a provider to strip these headers on the way
+ * in so its own is the only one, and it is read off that provider's own server over TLS — so only the
+ * first is looked at, which is the one the provider put there.
+ */
+export function authenticated(results: readonly string[], from: string): boolean {
+	const first = results[0];
+	if (first === undefined) return false;
+
+	const domain = from.slice(from.lastIndexOf("@") + 1).toLowerCase();
+
+	for (const part of first.split(";")) {
+		const verdict = /\b(dkim|dmarc)\s*=\s*(\w+)/i.exec(part);
+		if (verdict?.[2]?.toLowerCase() !== "pass") continue;
+
+		// DMARC is alignment by definition: it passes only when a passing signature names the domain the
+		// message says it came from, which is the whole of the question being asked here.
+		if (verdict[1]?.toLowerCase() === "dmarc") {
+			const stated = /header\.from\s*=\s*<?([^\s;>)]+)/i.exec(part)?.[1]?.toLowerCase();
+			if (stated === undefined || stated === domain) return true;
+			continue;
+		}
+
+		const signed = /header\.[di]\s*=\s*@?([^\s;>)]+)/i.exec(part)?.[1]?.toLowerCase();
+		// A subdomain signed by its parent is aligned. `mail.example.com` under `example.com` is the
+		// ordinary arrangement, not somebody else's domain.
+		if (signed !== undefined && (signed === domain || domain.endsWith(`.${signed}`))) return true;
+	}
+	return false;
 }
 
 const BULK = /^(?:bulk|list|junk|auto_reply)$/i;

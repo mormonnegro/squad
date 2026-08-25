@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	addressesIn,
 	agentFor,
+	authenticated,
 	automated,
 	isOwnAddress,
 	parseAddress,
@@ -51,6 +52,53 @@ describe("agentFor", () => {
 	it("knows the mailbox writing to itself, under any tag", () => {
 		expect(isOwnAddress("agents+scout@example.com", mailbox)).toBe(true);
 		expect(isOwnAddress("someone@example.com", mailbox)).toBe(false);
+	});
+});
+
+describe("authenticated", () => {
+	const google = [
+		"mx.google.com;",
+		"       dkim=pass header.i=@example.com header.s=s1 header.b=Ab3;",
+		"       spf=pass (google.com: domain of nico@example.com designates 1.2.3.4 as permitted sender) smtp.mailfrom=nico@example.com;",
+		"       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com",
+	].join("\n");
+
+	// The whole of operator trust by mail rests here. `From:` is a line the sender chose, so an agent
+	// that trusted it would take instructions from whoever typed the right address into it.
+	it("takes the provider's word that the domain was signed", () => {
+		expect(authenticated([google], "nico@example.com")).toBe(true);
+		expect(authenticated(["mx.test; dkim=pass header.d=example.com"], "nico@example.com")).toBe(
+			true,
+		);
+	});
+
+	it("counts a subdomain signed by its parent as the same domain", () => {
+		const signed = ["mx.test; dkim=pass header.d=example.com"];
+		expect(authenticated(signed, "nico@mail.example.com")).toBe(true);
+		// The other way round is not alignment: a signature from a subdomain says nothing about the root.
+		expect(authenticated(["mx.test; dkim=pass header.d=mail.example.com"], "s@example.com")).toBe(
+			false,
+		);
+	});
+
+	it("refuses a pass that was for somebody else's domain", () => {
+		const elsewhere = [
+			"mx.test; dkim=pass header.i=@attacker.test; dmarc=pass header.from=attacker.test",
+		];
+		expect(authenticated(elsewhere, "nico@example.com")).toBe(false);
+	});
+
+	it("refuses what did not pass, and what was never checked", () => {
+		expect(authenticated(["mx.test; dkim=fail header.d=example.com"], "s@example.com")).toBe(false);
+		expect(authenticated(["mx.test; dkim=none"], "s@example.com")).toBe(false);
+		expect(authenticated([], "s@example.com")).toBe(false);
+	});
+
+	// A sender may put an Authentication-Results of their own in the message. The provider prepends its
+	// own on the way in, so the first is the one that was written by the machine that did the checking.
+	it("reads only the one the provider put there", () => {
+		const forged = "mx.test; dkim=pass header.d=example.com";
+		expect(authenticated(["mx.google.com; dkim=fail", forged], "nico@example.com")).toBe(false);
 	});
 });
 
