@@ -3,7 +3,16 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
-import { type Channel, ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
+import {
+	type Bot,
+	type Channel,
+	ChannelRouter,
+	type Hook,
+	pairingPhrase,
+	startLink,
+	TelegramChannel,
+	WebhookChannel,
+} from "@agent-dive/channels";
 import { EventBus, FileEventStore, isOwnNote } from "@agent-dive/events";
 import {
 	type AuditEntry,
@@ -33,6 +42,8 @@ import {
 	SHELL_TIMEOUT_MS,
 	shellOutput,
 	shellScript,
+	type TelegramStanding,
+	withoutSecrets,
 } from "./commands.ts";
 import { ExecStream } from "./exec-stream.ts";
 import { ProviderKeys } from "./keys.ts";
@@ -59,6 +70,7 @@ import { RELAY_PATH } from "./pi-session.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
+import { TelegramBots } from "./telegram.ts";
 import { overheard, Transcript, type Utterance } from "./transcript.ts";
 import {
 	createTurnHandler,
@@ -243,6 +255,18 @@ class SelfChannel implements Channel {
 	async send(): Promise<void> {}
 }
 
+function standingOf(bot: Bot): TelegramStanding {
+	return {
+		username: bot.username,
+		paired: bot.operators.length > 0,
+		chats: bot.chats.length,
+		link:
+			bot.pairing !== undefined && bot.username !== undefined
+				? startLink(bot.username, bot.pairing)
+				: undefined,
+	};
+}
+
 /**
  * How long a forwarded connection waits for something to be listening on the port it was opened for.
  *
@@ -271,6 +295,7 @@ export class ControlPlane {
 	readonly directory = new StaticAgentDirectory();
 	readonly broker: EgressBroker;
 	readonly webhooks: WebhookChannel;
+	readonly telegram: TelegramChannel;
 
 	readonly #agents: AgentConfig[];
 	/**
@@ -315,6 +340,7 @@ export class ControlPlane {
 	/** The half of that store this plane may write: the provider keys given at the console. */
 	readonly #keys: ProviderKeys;
 	readonly #mcp: McpShelf;
+	readonly #bots: TelegramBots;
 	readonly #logins: OAuthLogins;
 	readonly #desk: LoginDesk;
 	/**
@@ -365,6 +391,7 @@ export class ControlPlane {
 		);
 		this.#secrets = this.#keys;
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
+		this.#bots = new TelegramBots(join(this.#stateDir, "telegram.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
 		this.#desk = new LoginDesk(this.#logins, (url) => this.#emit({ kind: "open", url }));
 
@@ -401,7 +428,20 @@ export class ControlPlane {
 			},
 		});
 		this.webhooks = new WebhookChannel({ hooks: options.hooks ?? [], publisher: this.bus });
+		this.telegram = new TelegramChannel({
+			publisher: this.bus,
+			// The channel learns things a message at a time — who the operator is, which chats to answer
+			// in, how far it has read — and none of that may be lost to a restart. A pairing that did not
+			// survive one is an operator who has to pair again without being told why.
+			onChange: (bot) => {
+				void this.#bots.save(bot).catch((error: Error) => {
+					this.#reportError(`${bot.agentId} telegram`, error);
+				});
+			},
+			onError: (agentId, error) => this.#reportError(`${agentId} telegram`, error),
+		});
 		this.router.register(this.webhooks);
+		this.router.register(this.telegram);
 		this.router.register(new SelfChannel());
 	}
 
@@ -534,6 +574,9 @@ export class ControlPlane {
 			// What it was given, not what was found: a server stays on the shelf for the agents that
 			// are left, and for the one somebody makes next.
 			await this.#mcp.forgetAgent(agentId);
+			// The bot is this agent as far as anyone writing to it is concerned, so it goes with the name.
+			// The token stays good at BotFather's end; what stops is this plane answering with it.
+			await this.disconnectTelegram(agentId);
 			this.#agents.splice(index, 1);
 		}
 	}
@@ -909,6 +952,47 @@ export class ControlPlane {
 		return { url: started.url, redirectUri: started.redirectUri };
 	}
 
+	/** What this agent's bot is, if it has one. Read off the record, so it costs no request. */
+	telegramStanding(agentId: string): TelegramStanding | undefined {
+		const bot = this.telegram.bot(agentId);
+		return bot === undefined ? undefined : standingOf(bot);
+	}
+
+	/**
+	 * Gives an agent a bot, and answers with what it takes to finish.
+	 *
+	 * The token is checked against Telegram before it is written down, because a token that turns out
+	 * to be a typo would otherwise be discovered as an agent that never answers — and nothing about
+	 * that failure points at the line where it was pasted.
+	 *
+	 * Connecting leaves the bot listening to nobody at all. Pairing is what binds an account to it,
+	 * and until somebody has tapped the link the plane has a bot and no operator for it.
+	 */
+	async connectTelegram(agentId: string, token: string): Promise<TelegramStanding> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		const identity = await this.telegram.identify(token);
+		const bot: Bot = {
+			agentId,
+			token,
+			...(identity.username !== undefined ? { username: identity.username } : {}),
+			operators: [],
+			chats: [],
+			pairing: pairingPhrase(),
+		};
+		await this.#bots.save(bot);
+		this.telegram.add(bot);
+		return standingOf(bot);
+	}
+
+	/** Puts an agent's bot down, and says whether there was one. The token stays BotFather's. */
+	async disconnectTelegram(agentId: string): Promise<boolean> {
+		const had = await this.#bots.forget(agentId);
+		this.telegram.remove(agentId);
+		return had;
+	}
+
 	/**
 	 * Runs a line the operator typed as a command rather than as a message.
 	 *
@@ -921,7 +1005,9 @@ export class ControlPlane {
 		if (!this.#agents.some((agent) => agent.id === agentId)) {
 			throw new Error(`No agent "${agentId}" in this plane`);
 		}
-		await this.#record(agentId, { from: "operator", text: line });
+		// The line is written down without its secret half: `/telegram <token>` is a credential typed
+		// into a prompt, and a transcript is read back on a screen and kept on disk long after.
+		await this.#record(agentId, { from: "operator", text: withoutSecrets(line) });
 		const answer = await runCommand(line, this.#commandContext(agentId));
 		await this.#record(agentId, { from: "plane", text: answer });
 		return answer;
@@ -1006,6 +1092,9 @@ export class ControlPlane {
 				if (held) await this.#reregisterAll();
 				return held;
 			},
+			telegram: async () => this.telegramStanding(agentId),
+			connectTelegram: (token) => this.connectTelegram(agentId, token),
+			disconnectTelegram: () => this.disconnectTelegram(agentId),
 		};
 	}
 
@@ -1287,6 +1376,14 @@ export class ControlPlane {
 
 		for (const agent of this.#agents) await this.#startAgent(agent);
 
+		// After the agents, so a message arriving in the first second of a poll meets a plane that can
+		// take a turn for it. A bot whose agent is gone is left on the shelf rather than started: the
+		// token is still good, and it comes back with the name if the name does.
+		for (const bot of await this.#bots.all()) {
+			if (this.#agents.some((agent) => agent.id === bot.agentId)) this.telegram.add(bot);
+		}
+		this.telegram.start();
+
 		// Anything left queued by a previous process is delivered before new work arrives.
 		await this.bus.recover();
 		this.scheduler.start();
@@ -1297,6 +1394,7 @@ export class ControlPlane {
 		this.#started = false;
 
 		this.scheduler.stop();
+		this.telegram.stop();
 		await this.webhooks.close();
 		await this.broker.close();
 		// Sandboxes are left running. They are the agents, not this process's scratch space.

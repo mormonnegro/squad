@@ -11,6 +11,8 @@ import {
 	runCommand,
 	shellOutput,
 	shellScript,
+	type TelegramStanding,
+	withoutSecrets,
 } from "../src/commands.ts";
 import type { McpServer } from "../src/mcp.ts";
 import type { Model } from "../src/models.ts";
@@ -48,6 +50,10 @@ function context(
 		takenBy?: ReadonlyMap<number, string>;
 		/** Ports something is actually listening on inside the sandbox. */
 		bound?: readonly number[];
+		/** The bot this agent already answers on, as an earlier `/telegram <token>` would have left it. */
+		bot?: TelegramStanding;
+		/** What Telegram says about a token it will not have, which the command has to pass on. */
+		refuses?: string;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -64,6 +70,9 @@ function context(
 	const removed: string[] = [];
 	const serving = [...(start.serving ?? [])];
 	const takenBy = start.takenBy ?? new Map<number, string>();
+	const bot = { held: start.bot };
+	/** Every token the command handed on, which is what tells a refusal apart from a typo caught early. */
+	const offered: string[] = [];
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
@@ -80,6 +89,8 @@ function context(
 		pasted,
 		removed,
 		serving,
+		bot,
+		offered,
 		context: {
 			agent: { id: start.agentId ?? "scout", created: start.created ?? true },
 			remove: async () => {
@@ -152,6 +163,25 @@ function context(
 				logins.add(name);
 			},
 			logout: async (name: string) => logins.delete(name),
+			telegram: async () => bot.held,
+			connectTelegram: async (token: string) => {
+				offered.push(token);
+				if (start.refuses !== undefined) throw new Error(start.refuses);
+				// What the plane does with a fresh token: a bot nobody is paired to yet, and a link to fix that.
+				const standing = {
+					username: "scout_test_bot",
+					paired: false,
+					chats: 0,
+					link: "https://t.me/scout_test_bot?start=kqm3nvbh27",
+				};
+				bot.held = standing;
+				return standing;
+			},
+			disconnectTelegram: async () => {
+				const had = bot.held !== undefined;
+				bot.held = undefined;
+				return had;
+			},
 		} satisfies CommandContext,
 	};
 }
@@ -972,6 +1002,119 @@ describe("/mcp login", () => {
 	});
 });
 
+describe("/telegram", () => {
+	/** Shaped like BotFather's: a public bot id, a colon, and the half that is the account. */
+	const TOKEN = "8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw";
+
+	it("sends whoever has no bot to @BotFather", async () => {
+		const { context: ctx } = context();
+
+		const answer = await runCommand("/telegram", ctx);
+
+		expect(answer).toContain("has no Telegram bot");
+		expect(answer).toContain("@BotFather");
+	});
+
+	it("gives back a link to press rather than an id to look up", async () => {
+		const { context: ctx, bot, offered } = context();
+
+		const answer = await runCommand(`/telegram ${TOKEN}`, ctx);
+
+		expect(offered).toEqual([TOKEN]);
+		expect(answer).toContain("https://t.me/scout_test_bot?start=");
+		expect(bot.held?.paired).toBe(false);
+	});
+
+	// Whoever presses Start is the operator, so an unpressed link is the whole of what is left to do.
+	it("keeps offering the link until somebody has taken it", async () => {
+		const { context: ctx } = context({
+			bot: {
+				username: "scout_bot",
+				paired: false,
+				chats: 0,
+				link: "https://t.me/scout_bot?start=x",
+			},
+		});
+
+		expect(await runCommand("/telegram", ctx)).toContain("Nobody is paired to it yet");
+	});
+
+	it("says where a paired bot answers, in the plural or not", async () => {
+		const one = context({
+			bot: { username: "scout_bot", paired: true, chats: 1, link: undefined },
+		});
+		const three = context({
+			bot: { username: "scout_bot", paired: true, chats: 3, link: undefined },
+		});
+
+		expect(await runCommand("/telegram", one.context)).toContain("the chat you paired in");
+		expect(await runCommand("/telegram", three.context)).toContain("3 chats");
+	});
+
+	// A bot BotFather never gave a @name to: there is no link to build, and a broken one would be worse.
+	it("says a nameless bot needs a name before it can be paired", async () => {
+		const { context: ctx } = context({
+			bot: { username: undefined, paired: false, chats: 0, link: undefined },
+		});
+
+		const answer = await runCommand("/telegram", ctx);
+
+		expect(answer).toContain("no @name");
+		expect(answer).not.toContain("https://t.me/");
+	});
+
+	it("passes on Telegram's own words about a token it will not have", async () => {
+		const { context: ctx, bot } = context({ refuses: "Unauthorized" });
+
+		expect(await runCommand(`/telegram ${TOKEN}`, ctx)).toContain("Unauthorized");
+		expect(bot.held).toBeUndefined();
+	});
+
+	it("does not hand on something that is not a token at all", async () => {
+		const { context: ctx, offered } = context();
+
+		expect(await runCommand("/telegram hunter2", ctx)).toContain("not a bot token");
+		expect(await runCommand(`/telegram ${TOKEN} and more`, ctx)).toContain("A token is one word");
+		expect(offered).toEqual([]);
+	});
+
+	// The pairing on the old bot is not carried over, and saying so is the difference between an
+	// operator who presses the new link and one who waits for messages that never come.
+	it("says a replacement starts pairing again", async () => {
+		const { context: ctx } = context({
+			bot: { username: "old_bot", paired: true, chats: 2, link: undefined },
+		});
+
+		const answer = await runCommand(`/telegram ${TOKEN}`, ctx);
+
+		expect(answer).toContain("@old_bot");
+		expect(answer).toContain("Pairing starts again");
+	});
+
+	it("puts a bot down, and does not claim to have put down nothing", async () => {
+		const { context: ctx, bot } = context({
+			bot: { username: "scout_bot", paired: true, chats: 1, link: undefined },
+		});
+
+		expect(await runCommand("/telegram off", ctx)).toContain("no longer has a bot");
+		expect(bot.held).toBeUndefined();
+		expect(await runCommand("/telegram off", ctx)).toContain("had no bot to put down");
+	});
+});
+
+describe("withoutSecrets", () => {
+	it("spends the token and keeps the bot it names", () => {
+		expect(withoutSecrets("/telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw")).toBe(
+			"/telegram 8123456789:…",
+		);
+	});
+
+	it("leaves a line with nothing to hide exactly as it was typed", () => {
+		expect(withoutSecrets("/telegram off")).toBe("/telegram off");
+		expect(withoutSecrets("/serve 3000")).toBe("/serve 3000");
+	});
+});
+
 describe("isShell", () => {
 	it("is the bang and nothing else about the line", () => {
 		expect(isShell("!ls -la")).toBe(true);
@@ -1210,6 +1353,21 @@ describe("agentMayNot", () => {
 
 	it("refuses closing an account the operator opened", () => {
 		expect(agentMayNot("/mcp logout ahrefs", scout)).toContain("/mcp logout ahrefs");
+	});
+
+	/**
+	 * The only refusal here that does not tell the operator what to type. Every other one ends at a
+	 * line worth running, but a bot an agent found somewhere is a bot the agent chose, and pairing it
+	 * would hand an account the agent picked the right to give it orders. Echoing the token would be
+	 * putting that line one paste away.
+	 */
+	it("refuses the whole of Telegram, without repeating what it asked for", () => {
+		const refusal = agentMayNot(`/telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw`, scout);
+
+		expect(refusal).toContain("who may instruct it");
+		expect(refusal).not.toContain("AAHdq");
+		expect(agentMayNot("/telegram", scout)).toBeDefined();
+		expect(agentMayNot("/telegram off", scout)).toBeDefined();
 	});
 
 	// Answered by the command itself, which says what there is instead. A refusal here would be this

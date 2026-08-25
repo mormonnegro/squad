@@ -14,6 +14,8 @@ export interface Bot {
 	readonly agentId: string;
 	/** BotFather's token. It is the whole account: whoever holds it is the bot. */
 	readonly token: string;
+	/** What it is called on Telegram, kept so a console can name it without asking Telegram again. */
+	readonly username?: string;
 	/** Telegram user ids whose messages carry operator trust. */
 	readonly operators: readonly number[];
 	/** Chats the bot answers in at all. Anything from elsewhere is dropped unread. */
@@ -372,13 +374,16 @@ export class TelegramChannel implements Channel {
 	async #pair(bot: Bot, from: TelegramUser, chat: TelegramChat, text: string): Promise<void> {
 		if (!text.includes(bot.pairing ?? "")) return;
 
-		this.#change(bot.agentId, (held) => ({
-			agentId: held.agentId,
-			token: held.token,
-			operators: [...held.operators, from.id],
-			chats: held.chats.includes(chat.id) ? held.chats : [...held.chats, chat.id],
-			...(held.offset !== undefined ? { offset: held.offset } : {}),
-		}));
+		this.#change(bot.agentId, (held) => {
+			// The phrase is spent by being used. Left on the record it is a second key to the same door,
+			// and one that opens it for whoever finds it rather than for whoever was given it.
+			const { pairing: _spent, ...rest } = held;
+			return {
+				...rest,
+				operators: [...held.operators, from.id],
+				chats: held.chats.includes(chat.id) ? held.chats : [...held.chats, chat.id],
+			};
+		});
 		// The phrase is not a message to the agent, so nothing is published for it. What is owed is an
 		// answer to the person who just tapped a link and is looking at an empty chat.
 		await this.#say(

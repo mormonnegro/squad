@@ -10,6 +10,17 @@ export interface LoginPage {
 	readonly redirectUri: string;
 }
 
+/** What an agent's Telegram bot is, in the terms a console has to say it in. */
+export interface TelegramStanding {
+	readonly username: string | undefined;
+	/** Whether an account has been bound. Until one is, the bot listens to nobody. */
+	readonly paired: boolean;
+	/** How many chats it answers in. */
+	readonly chats: number;
+	/** The link that would pair it, while it is unpaired. */
+	readonly link: string | undefined;
+}
+
 /**
  * What a command may do, which is deliberately less than what the plane can.
  *
@@ -98,6 +109,12 @@ export interface CommandContext {
 	/** Finishes one from the address the browser was sent to, pasted back by hand. */
 	returned(name: string, redirected: string): Promise<void>;
 	logout(name: string): Promise<boolean>;
+	/** The bot this agent answers on, if it has one. */
+	telegram(): Promise<TelegramStanding | undefined>;
+	/** Gives it a bot, checking the token against Telegram before writing it down. */
+	connectTelegram(token: string): Promise<TelegramStanding>;
+	/** Takes the bot away. Answers whether there was one. */
+	disconnectTelegram(): Promise<boolean>;
 }
 
 /**
@@ -142,6 +159,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/serve",
 		takes: "[<port>|stop <port>]",
 		does: "open a port inside it on the machine you are sitting at",
+	},
+	{
+		name: "/telegram",
+		takes: "[<token>|off]",
+		does: "the Telegram bot it answers on, and how to pair one",
 	},
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{ name: "/help", takes: "", does: "every command there is" },
@@ -725,6 +747,102 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 	return `This agent has "${verb}": ${written(found.server)}${await whatNext(verb, found.server, context)}`;
 }
 
+/** BotFather's shape: the bot's own id, a colon, and the half that is the secret. */
+const BOT_TOKEN = /\b(\d{6,})(:[\w-]{20,})\b/;
+
+const NEW_BOT = [
+	"Talk to @BotFather on Telegram, send it /newbot, and paste back what it gives you:",
+	"/telegram 8123456:AAH…",
+].join("\n");
+
+/**
+ * A command line as it should be written down, with the secret in it spent rather than kept.
+ *
+ * The conversation is where a command and its answer are read, which means it is also a pane on a
+ * screen and a file that outlives the moment. A bot token is the whole account — anyone holding it
+ * can read every message the agent is sent and answer as it — and there is no reason for it to be
+ * legible in either place. The bot's own id is public, so what is left still says which bot it was.
+ */
+export function withoutSecrets(line: string): string {
+	return line.replace(BOT_TOKEN, (_whole, id: string) => `${id}:…`);
+}
+
+function pairing(id: string, standing: TelegramStanding): string {
+	if (standing.link === undefined) {
+		// getMe answered without a username, which a bot can be left in by BotFather. Nothing can build
+		// a link without one, and saying so beats a link that goes nowhere.
+		return `Nobody is paired to it yet, and it has no @name for a link to use. Give it one in @BotFather, then reconnect it.`;
+	}
+	return [
+		"Nobody is paired to it yet. Open this and press Start, and it is yours:",
+		standing.link,
+		"",
+		`Whoever does that is the one ${id} takes instructions from. Anyone else who writes to it is`,
+		"heard, and what they write arrives as something to consider rather than something to do.",
+	].join("\n");
+}
+
+function standing(id: string, said: TelegramStanding): string {
+	const name = said.username === undefined ? "The bot" : `@${said.username}`;
+	if (!said.paired) return `${name} is ${id}'s bot.\n\n${pairing(id, said)}`;
+
+	const where =
+		said.chats === 1 ? "the chat you paired in" : `${said.chats} chats it has been spoken to in`;
+	return [
+		`${name} is ${id}'s bot, paired to you, answering in ${where}.`,
+		`Write to it and ${id} takes a turn.`,
+		"",
+		"/telegram off puts it down.",
+	].join("\n");
+}
+
+/**
+ * The bot an agent answers on, and the two things there are to do about it.
+ *
+ * Pairing is deliberately not something typed here. Binding the operator to an account has to happen
+ * on the side that can prove which account it is, so the console's half is a link and Telegram's half
+ * is whoever taps it — and nobody has to find out their own numeric user id to be recognised.
+ */
+async function telegram(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", ...rest] = words;
+
+	if (first === "") {
+		const said = await context.telegram();
+		return said === undefined ? `${id} has no Telegram bot.\n\n${NEW_BOT}` : standing(id, said);
+	}
+
+	if (first === "off" || first === "stop") {
+		const had = await context.disconnectTelegram();
+		return had
+			? `${id} no longer has a bot. The token is still yours at @BotFather, and /telegram takes it back.`
+			: `${id} had no bot to put down.`;
+	}
+
+	if (rest.length > 0) return "A token is one word. Paste only the line @BotFather gave you.";
+	if (!BOT_TOKEN.test(first)) return `That is not a bot token.\n\n${NEW_BOT}`;
+
+	const before = await context.telegram();
+	let said: TelegramStanding;
+	try {
+		said = await context.connectTelegram(first);
+	} catch (error) {
+		// Telegram's own words. "Unauthorized" is a token that was revoked or mistyped and "Not Found" is
+		// one that never existed, and which of the two it is decides whether to go back to @BotFather.
+		return `Telegram would not take that token: ${(error as Error).message}`;
+	}
+
+	const replaced =
+		before === undefined
+			? []
+			: [
+					"",
+					`That replaces ${before.username === undefined ? "the bot it had" : `@${before.username}`}, which ${id} no longer answers on. Pairing starts again: the`,
+					"account paired to the old one has no hold on this one.",
+				];
+	return [`@${said.username} is ${id}'s bot.`, ...replaced, "", pairing(id, said)].join("\n");
+}
+
 /**
  * Deletes the agent, once its own name has come back with the command.
  *
@@ -786,6 +904,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "mcp") return mcp(rest, context);
 	if (name === "model") return models(rest, context);
 	if (name === "serve") return serve(rest, context);
+	if (name === "telegram") return telegram(rest, context);
 	if (name === "delete") return remove(rest, context);
 
 	if (name === "limit") {
@@ -852,6 +971,14 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 		// an agent that wants to be held to something tighter than nothing is asking for less.
 		if (asking.limitUsd === undefined || amount <= asking.limitUsd) return undefined;
 		return `This agent asked for a ceiling of ${money(amount)} a day, which is above the ${money(asking.limitUsd)} it has. It can ask to be held to less, never to more: /limit ${money(amount)}, if you meant it.`;
+	}
+
+	if (name === "telegram") {
+		// Deliberately without the line it asked for, unlike every other refusal here. This is the one
+		// where printing it would be the attack: a token the agent was handed by something it read,
+		// pasted by an operator who was only being helpful, is a stranger's bot wired to somebody else's
+		// agent — and the first person to tap the pairing link is the one it takes instructions from.
+		return "This agent asked about its Telegram bot. That one stays with you: /telegram decides who may instruct it, and nothing an agent can ask for may move that.";
 	}
 
 	if (name === "mcp") {
