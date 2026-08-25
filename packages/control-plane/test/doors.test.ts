@@ -196,8 +196,32 @@ describe("LocalDoors", () => {
 		await local.reconcile(door);
 		await local.reconcile(door);
 
-		expect(said).toEqual([`✗ scout could not open ${at} here — 127.0.0.1 EADDRINUSE`]);
+		expect(said).toHaveLength(1);
+		expect(said[0]).toContain(`✗ scout could not open ${at} here — 127.0.0.1 in use`);
 		await expect(reach("::1", at, "hola")).rejects.toMatchObject({ code: "ECONNREFUSED" });
+	});
+
+	/**
+	 * The failure this was found by, and the one a bind will not report. A dev server on the wildcard
+	 * address and a door on `127.0.0.1` are two sockets to the kernel, and BSD gives the connection
+	 * to the more specific of them — so the bind succeeds, the operator's own work stops answering,
+	 * and the reason is an agent they were not thinking about at the time.
+	 */
+	it("will not take a number from a server holding the wildcard address", async () => {
+		const at = await free();
+		const theirs = net.createServer((socket) => socket.end("THEIRS"));
+		await new Promise<void>((resolve) => theirs.listen({ port: at }, resolve));
+		shutting.push(() => theirs.close());
+
+		const inside = await shouting();
+		const said: string[] = [];
+		await opened(
+			async () => net.createConnection({ host: "127.0.0.1", port: inside }),
+			said,
+		).reconcile([{ agentId: "scout", served: { port: 3000, at } }]);
+
+		expect(said[0]).toContain("already answers there");
+		expect(await reach("127.0.0.1", at, "hola")).toBe("THEIRS");
 	});
 
 	// Asking for the port again is what retries it, so a door that was dropped must not be remembered

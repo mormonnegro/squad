@@ -13,6 +13,9 @@ import { type Served, servedAt } from "./ports.ts";
  */
 const LOOPBACK = ["127.0.0.1", "::1"] as const;
 
+/** Long for a connection that never leaves the machine, and short enough to settle a door. */
+const PROBE_MS = 250;
+
 /** A port an agent is serving, and the agent whose sandbox it is inside. */
 export interface Door {
 	readonly agentId: string;
@@ -98,6 +101,11 @@ export class LocalDoors {
 		// machine this is running on is somebody's laptop, with its own idea of what 3000 is for.
 		let contested = false;
 		for (const host of LOOPBACK) {
+			if (await answering(host, door.served.at)) {
+				contested = true;
+				refused.push(`${host} in use`);
+				continue;
+			}
 			const server = net.createServer((socket) => void this.#join(id, door, socket));
 			try {
 				await listen(server, host, door.served.at);
@@ -110,12 +118,21 @@ export class LocalDoors {
 			}
 		}
 
-		// Half a door is worse than none. A number one family refuses is a number something on this
-		// machine already answers on, and a link that works in a browser preferring `::1` and not in
-		// whatever the operator reaches for next is a worse afternoon than being told the number is
-		// taken. A machine with no IPv6 at all refuses differently, and that half is kept.
-		if (bound.length === 0 || contested) {
+		// Taking it would have worked, which is the trouble. A dev server listening on `*:3000` has the
+		// wildcard, and BSD lets a later bind to `127.0.0.1:3000` succeed beside it and win every
+		// connection, so the operator's own work quietly stops answering and the reason is an agent
+		// they were not thinking about. Half a door is refused for a plainer reason: a link that opens
+		// in a browser preferring `::1` and not in whatever they reach for next is worse than a no.
+		if (contested) {
 			for (const server of bound) server.close();
+			this.#say(
+				door.agentId,
+				`could not open ${door.served.at} here — ${refused.join(", ")}. Something on this machine already answers there: free it, or have the agent bind another port inside and /serve that one.`,
+				true,
+			);
+			return;
+		}
+		if (bound.length === 0) {
 			this.#say(
 				door.agentId,
 				`could not open ${door.served.at} here — ${refused.join(", ")}`,
@@ -124,6 +141,8 @@ export class LocalDoors {
 			return;
 		}
 		this.#open.set(id, bound);
+		// A machine with no IPv6 refuses `::1` and nothing is wrong, so the half that worked is the news
+		// and the half that did not is a parenthesis on the same line rather than a failure of its own.
 		const half = refused.length > 0 ? ` (${refused.join(", ")})` : "";
 		this.#say(door.agentId, `${servedAt(door.agentId, door.served)} → :${door.served.port}${half}`);
 	}
@@ -158,6 +177,33 @@ export class LocalDoors {
 		stream.on("error", shut);
 		stream.on("close", shut);
 	}
+}
+
+/**
+ * Whether anything already answers there, which is not the same question as whether it can be bound.
+ *
+ * Asked because a bind does not reliably refuse. A server on the wildcard address and a server on a
+ * specific one are two sockets to the kernel, and BSD hands the connection to the more specific of
+ * them — so binding over somebody's dev server succeeds, steals its traffic, and reports nothing. A
+ * connection that is accepted is the only thing that settles it on both platforms.
+ */
+function answering(host: string, port: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = net.connect({ host, port });
+		// Hung up on rather than reset: what is being knocked on is somebody else's server, and a
+		// connection torn out from under it mid-answer is a reset in their log, or a crash, for a
+		// question they never agreed to be asked.
+		socket.once("connect", () => {
+			socket.end();
+			resolve(true);
+		});
+		const give = (): void => {
+			socket.destroy();
+			resolve(false);
+		};
+		socket.setTimeout(PROBE_MS, give);
+		socket.once("error", give);
+	});
 }
 
 function listen(server: Server, host: string, port: number): Promise<void> {
