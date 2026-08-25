@@ -46,6 +46,10 @@ export interface EmailStanding {
 	readonly port: number;
 	/** Whether the host was told to us or guessed at, so an answer can admit which. */
 	readonly guessed: boolean;
+	/** Whether the agent can answer, or whether this is a mailbox it can only be written to at. */
+	readonly writes: boolean;
+	/** What the submission server said when it refused, on a mailbox that cannot be written from. */
+	readonly mute: string | undefined;
 	/** The agent that mail arriving with no tag on it goes to. */
 	readonly fallback: string;
 	/** Addresses whose mail is read as instructions. Empty until somebody pairs. */
@@ -69,6 +73,8 @@ export interface EmailOffer {
 	readonly closed: string | undefined;
 	/** Whether what was discovered points at a bridge on somebody's desktop rather than a server. */
 	readonly bridge: boolean;
+	/** Where this account hands mail in to be sent, when the provider says. Absent means read-only. */
+	readonly outgoing?: { readonly host: string; readonly port: number };
 }
 
 /**
@@ -984,8 +990,22 @@ function askForPassword(offer: EmailOffer): string {
 					`    ${offer.appPasswords}`,
 				];
 
+	// Both servers named in one line, because the question the password step raises is how many
+	// credentials this is going to take. A provider issues an app password for the account rather than
+	// for a protocol, so the answer is one, and saying it here is cheaper than being asked.
+	const found =
+		offer.outgoing === undefined
+			? [
+					`${offer.host}:${offer.port} reads ${offer.address}. Nothing there says where its mail is handed`,
+					"in to be sent, so an agent on it can be written to and cannot write back.",
+				]
+			: [
+					`${offer.host}:${offer.port} reads ${offer.address} and ${offer.outgoing.host}:${offer.outgoing.port} sends from it.`,
+					"One app password does both.",
+				];
+
 	return [
-		`${offer.host}:${offer.port} reads ${offer.address}.`,
+		...found,
 		...guessed,
 		"",
 		...where,
@@ -1020,10 +1040,43 @@ function pairingByMail(id: string, said: EmailStanding): string {
 		"",
 		`    ${said.phrase}`,
 		"",
-		`Whoever sends it is the one ${id} takes instructions from, and for now the only one: an`,
-		"address strangers already have is one where every message read would spend a turn, so",
-		"everyone else's mail is left unread until this can write back.",
+		`Whoever sends it is the one ${id} takes instructions from, and the only one: an address`,
+		"strangers already have is one where every message read would spend a turn, so everyone",
+		"else's mail is left unread.",
 	].join("\n");
+}
+
+/**
+ * Whether an answer goes anywhere, which is the difference between a channel and a suggestion box.
+ *
+ * Worth saying in both directions. An operator who does not know the agent writes back watches an
+ * inbox for nothing; one who assumes it does, on a provider that refused the same password at its
+ * submission server, is waiting on answers that were thrown away at the far end of every turn.
+ */
+function writing(id: string, said: EmailStanding): readonly string[] {
+	if (said.writes) {
+		return [
+			`${id} answers from that same address and under the same subject, so what it writes back`,
+			"arrives in the thread you started and a reply to that comes back to the same agent.",
+		];
+	}
+
+	// Two different situations wearing the same face. Nothing published is a provider that never
+	// offered, and there is nothing to retry; a refusal is a password that got half way in, and typing
+	// the two lines again is the whole of what there is to do about it.
+	if (said.mute === undefined) {
+		return [
+			`${id} can be written to and cannot write back: ${said.mailbox} publishes nowhere to hand`,
+			"mail in to be sent.",
+		];
+	}
+	return [
+		`${id} can be written to and cannot write back. Its submission server refused the same password:`,
+		"",
+		`    ${said.mute}`,
+		"",
+		`Connecting the mailbox again with /email ${said.mailbox} tries that half once more.`,
+	];
 }
 
 function reachedAt(id: string, said: EmailStanding): string {
@@ -1048,8 +1101,10 @@ function reachedAt(id: string, said: EmailStanding): string {
 		`That is ${said.mailbox} on ${said.host}:${said.port}, and it serves every agent on this plane:`,
 		`each one is reached at its own name tagged onto the address, ${untagged}`,
 		"",
-		`Mail from ${said.operators.join(", ")} is read as instructions, and nobody else's is read at all`,
-		"yet — an address strangers already have is one where every message read would spend a turn.",
+		...writing(id, said),
+		"",
+		`Mail from ${said.operators.join(", ")} is read as instructions and nobody else's is read at all: an`,
+		"address strangers already have is one where every message read would spend a turn.",
 		"",
 		"/email off puts the mailbox down, for every agent.",
 	].join("\n");

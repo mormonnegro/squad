@@ -14,9 +14,11 @@
 	"dependencies": {
 		"@agent-dive/events": "workspace:*",
 		"imapflow": "^1.0.191",
-		"mailparser": "^3.7.2"
+		"mailparser": "^3.7.2",
+		"nodemailer": "^9.0.5"
 	},
 	"devDependencies": {
-		"@types/mailparser": "^3.4.5"
+		"@types/mailparser": "^3.4.5",
+		"@types/nodemailer": "^8.0.1"
 	}
 }

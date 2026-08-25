@@ -54,18 +54,35 @@ describe("readClientConfig", () => {
 	// The document lists every protocol the provider speaks, and POP comes first often enough that
 	// taking the first `incomingServer` would connect a mailbox that deletes as it reads.
 	it("takes the IMAP server and not whichever one came first", () => {
-		expect(readClientConfig(CLIENT_CONFIG)).toEqual({
+		expect(readClientConfig(CLIENT_CONFIG).incoming).toEqual({
 			host: "imap.example.com",
 			port: 993,
 			found: "autoconfig",
 		});
 	});
 
+	// The same document says where the account's mail is handed in, and it is the same credential
+	// that submits it. Reading both out of one fetch is what makes sending cost nothing to set up.
+	it("takes the submission server out of the same document", () => {
+		expect(readClientConfig(CLIENT_CONFIG).outgoing).toEqual({
+			host: "smtp.example.com",
+			port: 465,
+		});
+	});
+
 	it("finds nothing in a document that offers no IMAP", () => {
 		const popOnly = CLIENT_CONFIG.replace(/type="imap"/, 'type="pop3"');
-		expect(readClientConfig(popOnly)).toBeUndefined();
-		expect(readClientConfig("<html>404 not found</html>")).toBeUndefined();
-		expect(readClientConfig("")).toBeUndefined();
+		expect(readClientConfig(popOnly).incoming).toBeUndefined();
+		expect(readClientConfig("<html>404 not found</html>").incoming).toBeUndefined();
+		expect(readClientConfig("")).toEqual({});
+	});
+
+	// Reading is the channel and sending is the improvement on it, so a provider that publishes only
+	// half of itself is one whose mail is still worth reading.
+	it("takes an incoming server from a document with no outgoing one", () => {
+		const noSmtp = CLIENT_CONFIG.replace(/type="smtp"/, 'type="ews"');
+		expect(readClientConfig(noSmtp).incoming).toMatchObject({ host: "imap.example.com" });
+		expect(readClientConfig(noSmtp).outgoing).toBeUndefined();
 	});
 });
 
@@ -76,38 +93,49 @@ describe("discover", () => {
 		}) as unknown as typeof globalThis.fetch;
 
 		expect(await discover("nico+scout@fastmail.com", refuses)).toEqual({
-			host: "imap.fastmail.com",
-			port: 993,
-			username: "nico+scout@fastmail.com",
-			found: "known",
+			incoming: {
+				host: "imap.fastmail.com",
+				port: 993,
+				username: "nico+scout@fastmail.com",
+				found: "known",
+			},
+			outgoing: { host: "smtp.fastmail.com", port: 465 },
 		});
 	});
 
 	// iCloud refuses the whole address, and the refusal reads exactly like a wrong password.
 	it("logs in to iCloud with the local part alone", async () => {
-		expect(await discover("nico@icloud.com")).toMatchObject({ username: "nico" });
+		expect((await discover("nico@icloud.com")).incoming).toMatchObject({ username: "nico" });
 	});
 
 	it("reads a domain that publishes its own autoconfig", async () => {
 		const found = await discover("someone@example.com", answering(CLIENT_CONFIG));
 
 		expect(found).toEqual({
-			host: "imap.example.com",
-			port: 993,
-			username: "someone@example.com",
-			found: "autoconfig",
+			incoming: {
+				host: "imap.example.com",
+				port: 993,
+				username: "someone@example.com",
+				found: "autoconfig",
+			},
+			outgoing: { host: "smtp.example.com", port: 465 },
 		});
 	});
 
-	// Right often enough to be worth making, and marked as a guess so an answer can say so.
-	it("falls back to the conventional name, and admits it is a guess", async () => {
+	// Right often enough to be worth making, and marked as a guess so an answer can say so. Both are
+	// guessed together: the conventional names travel in pairs, and one bad guess reported as two
+	// kinds of trouble is two things to debug where there was one.
+	it("falls back to the conventional names, and admits it is a guess", async () => {
 		const found = await discover("someone@nothing-here.invalid", answering("", 404));
 
 		expect(found).toEqual({
-			host: "imap.nothing-here.invalid",
-			port: 993,
-			username: "someone@nothing-here.invalid",
-			found: "guess",
+			incoming: {
+				host: "imap.nothing-here.invalid",
+				port: 993,
+				username: "someone@nothing-here.invalid",
+				found: "guess",
+			},
+			outgoing: { host: "smtp.nothing-here.invalid", port: 465 },
 		});
 	});
 });

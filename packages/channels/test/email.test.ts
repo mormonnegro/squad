@@ -1,6 +1,13 @@
 import type { NewAgentEvent } from "@agent-dive/events";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Account, addressFor, EmailChannel, type Session } from "../src/email.ts";
+import {
+	type Account,
+	addressFor,
+	EmailChannel,
+	type Post,
+	type Letter as Sent,
+	type Session,
+} from "../src/email.ts";
 import { pairingPhrase } from "../src/phrase.ts";
 
 class RecordingPublisher {
@@ -95,6 +102,25 @@ class FakeMailbox {
 	}
 }
 
+/** Stands in for a provider's submission server, keeping the envelope rather than the delivery. */
+class FakeSubmission {
+	readonly sent: Sent[] = [];
+	/** What the server says when the password is put to it, which is nothing when it is happy. */
+	refuses: string | undefined;
+
+	open = (): Post => ({
+		verify: async () => {
+			if (this.refuses !== undefined) throw new Error(this.refuses);
+			return true;
+		},
+		sendMail: async (letter: Sent) => {
+			this.sent.push(letter);
+			return {};
+		},
+		close: () => {},
+	});
+}
+
 async function until(condition: () => boolean, what: string): Promise<void> {
 	for (let waited = 0; waited < 400; waited += 1) {
 		if (condition()) return;
@@ -111,6 +137,7 @@ const ACCOUNT: Account = {
 	port: 993,
 	username: "agents@example.com",
 	password: "secret",
+	outgoing: { host: "smtp.example.com", port: 465 },
 	fallback: "scout",
 	operators: ["nico@example.com"],
 };
@@ -124,6 +151,7 @@ afterEach(() => {
 interface Running {
 	readonly channel: EmailChannel;
 	readonly mailbox: FakeMailbox;
+	readonly submission: FakeSubmission;
 	readonly publisher: RecordingPublisher;
 	readonly changes: Account[];
 	readonly dropped: Array<{ why: string; count: number }>;
@@ -134,6 +162,8 @@ interface Setup {
 	readonly agents?: readonly string[];
 	/** Mail already sitting in the box when the plane first connects to it. */
 	readonly holding?: readonly Letter[];
+	/** A mailbox with nowhere to hand mail in, which is what a provider publishing only IMAP gives. */
+	readonly readsOnly?: boolean;
 }
 
 /**
@@ -146,22 +176,26 @@ interface Setup {
 async function running(setup: Setup = {}): Promise<Running> {
 	const mailbox = new FakeMailbox();
 	mailbox.hold(...(setup.holding ?? []));
+	const submission = new FakeSubmission();
 	const publisher = new RecordingPublisher();
 	const changes: Account[] = [];
 	const dropped: Array<{ why: string; count: number }> = [];
 	const agents = setup.agents ?? ["scout", "clerk"];
+	const wanted: Account = { ...ACCOUNT, ...setup.account };
+	const { outgoing: _nowhere, ...reading } = wanted;
 	const channel = new EmailChannel({
-		account: { ...ACCOUNT, ...setup.account },
+		account: setup.readsOnly === true ? reading : wanted,
 		publisher,
 		agents: () => agents,
 		open: mailbox.open,
+		post: submission.open,
 		onChange: (changed) => changes.push(changed),
 		onDropped: (why, count) => dropped.push({ why, count }),
 	});
 	stoppers.push(() => channel.stop());
 	channel.start();
 	await until(() => mailbox.reads > 0, "the first read");
-	return { channel, mailbox, publisher, changes, dropped };
+	return { channel, mailbox, submission, publisher, changes, dropped };
 }
 
 describe("addressFor and pairingPhrase", () => {
@@ -262,7 +296,7 @@ describe("EmailChannel", () => {
 	});
 
 	// A mailbox is an address strangers already have, and every message that got through would spend a
-	// turn. Nothing is lost by waiting: an agent cannot write back yet.
+	// turn — and now that agents answer, send a message out under the operator's own address.
 	it("drops a stranger, and counts them rather than listing them", async () => {
 		const { mailbox, publisher, dropped } = await running();
 
@@ -374,13 +408,163 @@ describe("EmailChannel", () => {
 
 		expect(publisher.published[0]).toMatchObject({ body: "still here" });
 	});
+});
 
-	it("refuses to write, rather than answering into the dark", async () => {
-		const { channel } = await running();
+describe("writing back", () => {
+	/** An operator's mail that lands on an agent, which is what a reply is a reply to. */
+	async function asked(where: Running, letter: Partial<Letter> = {}): Promise<void> {
+		where.mailbox.deliver({
+			uid: 1,
+			from: "Nico <nico@example.com>",
+			to: "agents+clerk@example.com",
+			subject: "deploy",
+			body: "ship it",
+			results: SIGNED,
+			extra: { "Message-ID": "<the-question@example.com>" },
+			...letter,
+		});
+		await until(() => where.publisher.published.length > 0, "the event");
+	}
+
+	/**
+	 * The `From` is the agent's own tagged address rather than the account's, so that a reply to the
+	 * answer comes back to the agent that wrote it instead of to whichever one untagged mail falls to.
+	 */
+	it("writes from the agent's own address, and says so twice", async () => {
+		const where = await running();
+		await asked(where);
+
+		await where.channel.send({
+			agentId: "clerk",
+			channel: "email:nico@example.com",
+			body: "shipped",
+			replyTo: "nico@example.com",
+		});
+
+		expect(where.submission.sent[0]).toMatchObject({
+			from: "clerk <agents+clerk@example.com>",
+			to: "nico@example.com",
+			// Said again because some providers rewrite a `From` that is not the account they know, and
+			// then this is the only line left that routes an answer back to the same agent.
+			replyTo: "agents+clerk@example.com",
+			text: "shipped",
+		});
+	});
+
+	// An answer that arrives as a new message somewhere down an inbox is one the person who asked has
+	// to match up themselves, and mail is the channel where they were never going to be watching.
+	it("lands under the question, by subject and by message id", async () => {
+		const where = await running();
+		await asked(where);
+
+		await where.channel.send({
+			agentId: "clerk",
+			channel: "email:nico@example.com",
+			body: "shipped",
+			replyTo: "nico@example.com",
+		});
+
+		expect(where.submission.sent[0]).toMatchObject({
+			subject: "Re: deploy",
+			inReplyTo: "<the-question@example.com>",
+			references: "<the-question@example.com>",
+		});
+	});
+
+	it("does not say Re: twice about a thread that already had one", async () => {
+		const where = await running();
+		await asked(where, { subject: "Re: deploy" });
+
+		await where.channel.send({
+			agentId: "clerk",
+			channel: "email:nico@example.com",
+			body: "shipped",
+			replyTo: "nico@example.com",
+		});
+
+		expect(where.submission.sent[0]?.subject).toBe("Re: deploy");
+	});
+
+	// A plane that restarted has the mailbox and not what was said in it. The answer still has to go.
+	it("writes to a thread it does not remember, without a message id it does not have", async () => {
+		const { channel, submission } = await running();
+
+		await channel.send({ agentId: "scout", channel: "email:nico@example.com", body: "done" });
+
+		expect(submission.sent[0]).toMatchObject({
+			to: "nico@example.com",
+			subject: "Re: your message",
+		});
+		expect(submission.sent[0]).not.toHaveProperty("inReplyTo");
+	});
+
+	// Two agents on one mailbox, each in its own conversation with the same person.
+	it("keeps one thread per agent rather than one per person", async () => {
+		const where = await running();
+		await asked(where, { uid: 1, to: "agents+clerk@example.com", subject: "deploy" });
+		await asked(where, {
+			uid: 2,
+			to: "agents+scout@example.com",
+			subject: "the weekly numbers",
+			extra: { "Message-ID": "<the-other@example.com>" },
+		});
+		await until(() => where.publisher.published.length === 2, "both events");
+
+		await where.channel.send({ agentId: "clerk", channel: "email:nico@example.com", body: "a" });
+		await where.channel.send({ agentId: "scout", channel: "email:nico@example.com", body: "b" });
+
+		expect(where.submission.sent.map((one) => one.subject)).toEqual([
+			"Re: deploy",
+			"Re: the weekly numbers",
+		]);
+	});
+
+	// The address is on the channel the event arrived on, so an agent cannot be steered into writing
+	// somewhere else by anything in the body of what it read.
+	it("takes the address off the channel when the reply carries none", async () => {
+		const { channel, submission } = await running();
+
+		await channel.send({ agentId: "scout", channel: "email:someone@example.com", body: "done" });
+
+		expect(submission.sent[0]?.to).toBe("someone@example.com");
+	});
+
+	// Said plainly rather than left to fail somewhere further in, because a turn that answered into the
+	// dark would look, to the person who wrote in, like an agent ignoring them.
+	it("refuses to write from a mailbox that was connected for reading only", async () => {
+		const { channel } = await running({ readsOnly: true });
 
 		await expect(
 			channel.send({ agentId: "scout", channel: "email:nico@example.com", body: "done" }),
-		).rejects.toThrow(/does not yet send/);
+		).rejects.toThrow(/reading only/);
+	});
+});
+
+describe("verify", () => {
+	function checking(submission: FakeSubmission): EmailChannel {
+		return new EmailChannel({
+			publisher: new RecordingPublisher(),
+			agents: () => ["scout"],
+			open: new FakeMailbox().open,
+			post: submission.open,
+		});
+	}
+
+	it("says nothing when both halves of the account take the password", async () => {
+		expect(await checking(new FakeSubmission()).verify(ACCOUNT)).toBeUndefined();
+	});
+
+	/**
+	 * Reading is the channel and sending is the improvement on it, so a submission server that refuses
+	 * is not a reason to refuse the mailbox. It is a reason to say so, and to write the account down
+	 * with nowhere to hand mail in — the alternative being an agent that claims it will write back and
+	 * whose answers go nowhere at the far end of a turn.
+	 */
+	it("hands back what the submission server said, rather than refusing the mailbox", async () => {
+		const submission = new FakeSubmission();
+		submission.refuses = "535 5.7.8 Username and Password not accepted";
+
+		expect(await checking(submission).verify(ACCOUNT)).toContain("not accepted");
 	});
 });
 

@@ -41,10 +41,16 @@ importers:
       mailparser:
         specifier: ^3.7.2
         version: 3.9.16
+      nodemailer:
+        specifier: ^9.0.5
+        version: 9.0.5
     devDependencies:
       '@types/mailparser':
         specifier: ^3.4.5
         version: 3.4.6
+      '@types/nodemailer':
+        specifier: ^8.0.1
+        version: 8.0.1
 
   packages/control-plane:
     dependencies:
@@ -712,6 +718,9 @@ packages:
 
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
+
+  '@types/nodemailer@8.0.1':
+    resolution: {integrity: sha512-PxpaInm8V1JQDd4j0ds5HfvWQk8JupS1C0Picb96QJsrrRDjBH+DlK7L4ZdNSqNULhiZRQHc40nLVShaGxXAMw==}
 
   '@types/react-dom@19.2.5':
     resolution: {integrity: sha512-fMPwH9v7r/pp43yUd2/Mbiex5KouJwwR3dzHkhLREUC6764VyDsqxhAxv6OFEYR1RhjOyD1naqba8ECDBe7ZQg==}
@@ -1751,6 +1760,10 @@ snapshots:
   '@types/node@22.20.1':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/nodemailer@8.0.1':
+    dependencies:
+      '@types/node': 22.20.1
 
   '@types/react-dom@19.2.5(@types/react@19.2.18)':
     dependencies:

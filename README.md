@@ -594,7 +594,8 @@ Type the address. Only the address:
 ```
 /email agents@fastmail.com
 
-imap.fastmail.com:993 reads agents@fastmail.com.
+imap.fastmail.com:993 reads agents@fastmail.com and smtp.fastmail.com:465 sends from it.
+One app password does both.
 
 Now make an app password. Your ordinary password will not work, and is not the kind of
 thing to paste into a console:
@@ -611,6 +612,15 @@ it the same thing, so "make an app password" is an instruction that ends in a se
 the longest part of connecting a mailbox and the part people give up in. Where the mailbox lives is
 worked out from the address through autoconfig, `.well-known`, the ISPDB and SRV before falling back
 to the conventional guess, and when it is a guess the answer says so rather than stating it.
+
+Both servers are named in one line because the question a password step raises is how many
+credentials this is going to take. It is one: a provider issues an app password for the account, not
+for a protocol, so the same one that reads the mailbox submits from it. Sending is found in the same
+breath as reading — the autoconfig document lists `<outgoingServer>` beside the `<incomingServer>`,
+and the SRV chain has `_submission._tcp` beside `_imaps._tcp` — which is why writing back costs
+nothing to set up beyond a mailbox you were connecting anyway. It is also why the mail an agent
+sends does not land in spam: it goes out through your own provider, signed by them, off the
+reputation you already have. There is no domain to warm up because there is no new domain.
 
 A provider that will not take a password at all is named at the moment the address is typed, rather
 than after a login fails with a message about credentials that sends you back to check a password
@@ -632,9 +642,9 @@ mail, with this phrase anywhere in the message:
 
     kqm3nvbh27
 
-Whoever sends it is the one scout takes instructions from, and for now the only one: an
-address strangers already have is one where every message read would spend a turn, so
-everyone else's mail is left unread until this can write back.
+Whoever sends it is the one scout takes instructions from, and the only one: an address
+strangers already have is one where every message read would spend a turn, so everyone
+else's mail is left unread.
 ```
 
 Pairing is the same phrase in the same place it is on Telegram, sent by mail this time. What makes
@@ -645,10 +655,11 @@ the receiving provider strip any foreign copy of that header on the way in, so t
 one it wrote. Mail that is not signed and aligned pairs nothing and instructs nothing, whatever it
 says it is.
 
-Telegram fences strangers and publishes them as participants. Mail does not, yet: only the paired
+Telegram fences strangers and publishes them as participants. Mail does not: only the paired
 operator's is read, and everyone else's is dropped. A chat is a room someone let you into, while a
 mailbox is an address that leaks — every message read spends a turn, so publishing whatever arrived
-would put the plane's bill in the hands of whoever found it.
+would put the plane's bill in the hands of whoever found it, and now that agents answer, its
+outgoing mail as well.
 
 Once paired, `/email` says where things stand:
 
@@ -659,8 +670,11 @@ That is agents@fastmail.com on imap.fastmail.com:993, and it serves every agent 
 each one is reached at its own name tagged onto the address, and mail arriving with no tag on
 it comes here, to scout.
 
-Mail from you@example.com is read as instructions, and nobody else's is read at all
-yet — an address strangers already have is one where every message read would spend a turn.
+scout answers from that same address and under the same subject, so what it writes back
+arrives in the thread you started and a reply to that comes back to the same agent.
+
+Mail from you@example.com is read as instructions and nobody else's is read at all: an
+address strangers already have is one where every message read would spend a turn.
 
 /email off puts the mailbox down, for every agent.
 ```
@@ -670,11 +684,18 @@ provider and two agents here, so an agent made tomorrow has an address without a
 a settings page. Mail arriving with no tag goes to the agent the mailbox was connected at. Messages
 fold into a turn the way a webhook's do.
 
-Nothing goes out yet: this reads mail and does not send it, and a turn woken by mail answers in the
-console rather than by reply. That is said plainly at the point of sending rather than left to fail
-somewhere further in, because an agent answering into the dark looks, to the person who wrote in,
-exactly like an agent ignoring them. It is also why nothing is lost by holding strangers back — one
-heard now would be one heard and never answered.
+The answer comes back by mail, from `agents+scout@` rather than from the account, so a reply to it
+returns to the agent that wrote it instead of to whichever one untagged mail falls to. Some
+providers rewrite a `From` that is not the account they know, which is why the `Reply-To` says the
+same thing again: between the two, one survives. The subject and the message id of what came in are
+kept, so the answer arrives under the question in a mail client rather than as a new message
+somewhere down an inbox.
+
+Reading is the channel and sending is the improvement on it, so a submission server that refuses the
+same password is not a reason to refuse the mailbox. The account is written down with nowhere to
+hand mail in, `/email` says so in the provider's own words, and sending a reply from there fails at
+the point of sending rather than somewhere further in — because an agent answering into the dark
+looks, to the person who wrote in, exactly like an agent ignoring them.
 
 An inbox is mostly not for you, so most of what arrives is dropped: anyone who is not the operator,
 anything auto-submitted, a tag that names no agent, and the mailbox's own mail — without that last

@@ -213,6 +213,7 @@ function context(
 					address,
 					host: `imap.${address.split("@")[1] ?? ""}`,
 					port: 993,
+					outgoing: { host: `smtp.${address.split("@")[1] ?? ""}`, port: 465 },
 					found: "known",
 					appPasswords: undefined,
 					closed: undefined,
@@ -235,6 +236,8 @@ function context(
 					host: offer.host,
 					port: offer.port,
 					guessed: offer.found === "guess",
+					writes: offer.outgoing !== undefined,
+					mute: undefined,
 					fallback: here,
 					operators: [],
 					phrase: "kqm3nvbh27",
@@ -1267,6 +1270,8 @@ describe("/email", () => {
 		host: "imap.fastmail.com",
 		port: 993,
 		guessed: false,
+		writes: true,
+		mute: undefined,
 		fallback: "scout",
 		operators: ["nico@example.com"],
 		phrase: undefined,
@@ -1298,6 +1303,17 @@ describe("/email", () => {
 		expect(answer).toContain("https://app.fastmail.com/settings/security/apppassword");
 		// The second line is only the password. The address was typed one line ago.
 		expect(answer).toContain("/email <the app password>");
+	});
+
+	// The question a password step raises is how many credentials this is going to take, and one is a
+	// much better answer given before it is asked than found out later at the submission server.
+	it("names both servers and says one password does both", async () => {
+		const { context: ctx } = context();
+
+		const answer = await runCommand("/email agents@fastmail.com", ctx);
+
+		expect(answer).toContain("smtp.fastmail.com:465 sends from it");
+		expect(answer).toContain("One app password does both");
 	});
 
 	it("admits to a guess rather than stating a host it worked out", async () => {
@@ -1421,6 +1437,39 @@ describe("/email", () => {
 		});
 
 		expect(await runCommand("/email", ctx)).toContain("Invalid credentials");
+	});
+
+	it("says the agent answers where it was written to, and in the same thread", async () => {
+		const { context: ctx } = context({ mailbox: CONNECTED });
+
+		expect(await runCommand("/email", ctx)).toContain("answers from that same address");
+	});
+
+	/**
+	 * An operator who assumes the agent writes back, on a provider whose submission server refused the
+	 * same password, is waiting on answers thrown away at the far end of every turn. The provider's own
+	 * words are what say which refusal it is, and there is a way back into it worth naming.
+	 */
+	it("says an agent cannot write back, and what refused it", async () => {
+		const { context: ctx } = context({
+			mailbox: {
+				...CONNECTED,
+				writes: false,
+				mute: "535 5.7.8 Username and Password not accepted",
+			},
+		});
+
+		const answer = await runCommand("/email", ctx);
+
+		expect(answer).toContain("cannot write back");
+		expect(answer).toContain("Username and Password not accepted");
+		expect(answer).toContain("/email agents@fastmail.com");
+	});
+
+	it("says which half is missing when the provider never offered one", async () => {
+		const { context: ctx } = context({ mailbox: { ...CONNECTED, writes: false } });
+
+		expect(await runCommand("/email", ctx)).toContain("publishes nowhere to hand");
 	});
 
 	it("puts the mailbox down for everyone, and does not claim to have put down nothing", async () => {

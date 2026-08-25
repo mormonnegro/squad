@@ -1,6 +1,8 @@
 import type { NewAgentEvent } from "@agent-dive/events";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
+import nodemailer from "nodemailer";
+import type { Outgoing } from "./autoconfig.ts";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
 import {
 	addressesIn,
@@ -44,6 +46,14 @@ export interface Account {
 	/** How the host was worked out, kept only so an answer can say whether it was told or guessed. */
 	readonly found?: string;
 	/**
+	 * Where this account hands mail in to be sent, when there is somewhere that took the same login.
+	 *
+	 * The credential is the one already asked for — a provider issues an app password for the account,
+	 * not for a protocol — so writing back costs nothing to set up beyond finding this. Absent means a
+	 * mailbox that can be read and not written from, which is a channel that works and cannot answer.
+	 */
+	readonly outgoing?: Outgoing;
+	/**
 	 * Where mail arriving with no tag on it goes.
 	 *
 	 * Because not every provider does plus-addressing, and on one that does not the bare address would
@@ -79,6 +89,8 @@ export interface EmailChannelOptions {
 	readonly onDropped?: (why: string, count: number) => void;
 	/** Opens a session. Given only so a test can hand over a mailbox that is not on the internet. */
 	readonly open?: (account: Account) => Session;
+	/** Opens the way out. Given for the same reason, so nothing under test posts a real message. */
+	readonly post?: (account: Account, outgoing: Outgoing) => Post;
 }
 
 /**
@@ -101,6 +113,31 @@ export interface Session {
 	on(event: "close", listener: () => void): unknown;
 	on(event: "error", listener: (error: Error) => void): unknown;
 	logout(): Promise<void>;
+	close(): void;
+}
+
+/** One message on its way out, filled in as far as this channel ever fills one in. */
+export interface Letter {
+	readonly from: string;
+	readonly to: string;
+	readonly replyTo: string;
+	readonly subject: string;
+	readonly text: string;
+	readonly inReplyTo?: string;
+	readonly references?: string;
+}
+
+/**
+ * The part of a submission server this channel uses, which is a login and one call.
+ *
+ * An interface for the reason `Session` is one. What is worth testing here is not SMTP — that is
+ * nodemailer's — but what goes on the envelope: which agent the mail comes from, which address a
+ * reply to it lands back on, and which thread it appears under in a mail client.
+ */
+export interface Post {
+	/** Logs in without sending anything, which is how a password is checked before it is relied on. */
+	verify(): Promise<unknown>;
+	sendMail(letter: Letter): Promise<unknown>;
 	close(): void;
 }
 
@@ -137,12 +174,23 @@ export class EmailChannel implements Channel {
 	readonly #onError: ((error: Error) => void) | undefined;
 	readonly #onDropped: ((why: string, count: number) => void) | undefined;
 	readonly #open: (account: Account) => Session;
+	readonly #post: (account: Account, outgoing: Outgoing) => Post;
 
 	#running = false;
 	#session: Session | undefined;
 	/** Reading is serialized: two `exists` a moment apart would otherwise read the same mail twice. */
 	#tail: Promise<unknown> = Promise.resolve();
 	#dropped = new Map<string, number>();
+	/**
+	 * The message each conversation last arrived on, so that an answer can land underneath it.
+	 *
+	 * A `Reply` carries a body and who it is for and nothing else, because most channels have nothing
+	 * else. Mail has a subject and a message id, and an answer sent without them arrives as a new
+	 * message somewhere down an inbox rather than under the question it is answering.
+	 *
+	 * Only operators get this far, so this holds one entry per agent per person who writes to it.
+	 */
+	readonly #threads = new Map<string, { readonly subject: string; readonly messageId?: string }>();
 
 	constructor(options: EmailChannelOptions) {
 		this.#account = options.account;
@@ -152,6 +200,7 @@ export class EmailChannel implements Channel {
 		this.#onError = options.onError;
 		this.#onDropped = options.onDropped;
 		this.#open = options.open ?? openImap;
+		this.#post = options.post ?? openSmtp;
 	}
 
 	get account(): Account | undefined {
@@ -190,8 +239,14 @@ export class EmailChannel implements Channel {
 	 * Its own step because the alternative is finding out later: a password with a space missing off
 	 * the end becomes a mailbox that is connected, listed as connected, and never delivers anything —
 	 * and nothing about that silence points back at the line where it was pasted.
+	 *
+	 * Reading has to work and sending does not. A mailbox that can only be read is a channel — it was
+	 * the whole channel until recently — so a submission server that refuses the same password throws
+	 * nothing away here. It is answered with, and the caller writes the account down without anywhere
+	 * to hand mail in, which is a thing `/email` can then say plainly. The alternative is an agent
+	 * that claims it will write back and whose answers go nowhere at the far end of a turn.
 	 */
-	async verify(account: Account): Promise<void> {
+	async verify(account: Account): Promise<string | undefined> {
 		const session = this.#open(account);
 		try {
 			await session.connect();
@@ -200,14 +255,63 @@ export class EmailChannel implements Channel {
 		} finally {
 			session.close();
 		}
+
+		if (account.outgoing === undefined) return undefined;
+		const post = this.#post(account, account.outgoing);
+		try {
+			await post.verify();
+			return undefined;
+		} catch (error) {
+			return (error as Error).message;
+		} finally {
+			post.close();
+		}
 	}
 
-	// Nothing goes out yet. Said plainly rather than left to fail somewhere further in, because a turn
-	// that answered into the dark would look, to the person who wrote in, like an agent ignoring them.
+	/**
+	 * Writes back, from the agent's own address and into the thread the question came in on.
+	 *
+	 * The `From` is `you+scout@`, not the account, because that is what makes a reply to this answer
+	 * come back to the same agent rather than to whichever one the untagged address falls to. Some
+	 * providers rewrite a `From` that is not the account they know, which is the whole reason the
+	 * `Reply-To` says the same thing again: between them, one survives.
+	 */
 	async send(reply: Reply): Promise<void> {
-		throw new ChannelError(
-			`Cannot write to ${reply.channel}: this plane reads mail and does not yet send it.`,
-		);
+		const account = this.#account;
+		if (account === undefined) {
+			throw new ChannelError(`Cannot write to ${reply.channel}: no mailbox is connected.`);
+		}
+		if (account.outgoing === undefined) {
+			throw new ChannelError(
+				`Cannot write to ${reply.channel}: ${account.address} is connected for reading only.`,
+			);
+		}
+
+		const to = reply.replyTo ?? reply.channel.slice(reply.channel.indexOf(":") + 1);
+		if (!to.includes("@")) {
+			throw new ChannelError(`Cannot write to ${reply.channel}: there is no address in it.`);
+		}
+
+		const from = addressFor(account.address, reply.agentId);
+		const thread = this.#threads.get(threadOf(reply.agentId, to));
+		const post = this.#post(account, account.outgoing);
+		try {
+			await post.sendMail({
+				from: `${reply.agentId} <${from}>`,
+				to,
+				replyTo: from,
+				subject: answering(thread?.subject),
+				text: reply.body,
+				// Both, because clients disagree about which one threads: `In-Reply-To` is the answer to
+				// what, and `References` is the conversation it belongs to. With one message known they
+				// are the same id, and a thread of two is where a mail client stops calling it a thread.
+				...(thread?.messageId !== undefined
+					? { inReplyTo: thread.messageId, references: thread.messageId }
+					: {}),
+			});
+		} finally {
+			post.close();
+		}
 	}
 
 	async #read(): Promise<void> {
@@ -326,10 +430,9 @@ export class EmailChannel implements Channel {
 			return this.#pair(account, sender.address, proven, body);
 		}
 
-		// Only the operator, for now. Every message that gets past here spends a turn, and a mailbox is
-		// an address strangers already have: publishing what arrives from anyone would put the plane's
-		// bill in the hands of whoever finds it. Nothing is lost by waiting — an agent cannot write back
-		// yet, so a stranger heard would be a stranger heard and never answered.
+		// Only the operator. Every message that gets past here spends a turn, and a mailbox is an address
+		// strangers already have — publishing whatever arrives from anyone would put the plane's bill in
+		// the hands of whoever finds it, and now that agents answer, its outgoing mail too.
 		if (!account.operators.includes(sender.address)) return this.#drop("not the operator");
 		if (!proven) return this.#drop(`${sender.address} unsigned: DKIM did not vouch for the domain`);
 
@@ -337,6 +440,12 @@ export class EmailChannel implements Channel {
 		const known = this.#agents();
 		const agentId = tag !== undefined && known.includes(tag) ? tag : account.fallback;
 		if (!known.includes(agentId)) return this.#drop(`no agent "${agentId}"`);
+
+		const messageId = headers["message-id"];
+		this.#threads.set(threadOf(agentId, sender.address), {
+			subject: parsed.subject ?? "",
+			...(messageId !== undefined ? { messageId } : {}),
+		});
 
 		await this.#publisher.publish({
 			agentId,
@@ -399,6 +508,29 @@ export class EmailChannel implements Channel {
 		this.#tail = result.catch(() => {});
 		return result;
 	}
+}
+
+/** One agent talking to one person, folded, because a client cases an address however it likes. */
+function threadOf(agentId: string, address: string): string {
+	return `${agentId}\u0000${address.toLowerCase()}`;
+}
+
+/** An answer belongs under the question. A thread nobody here remembers starting needs a line. */
+function answering(subject: string | undefined): string {
+	const asked = subject?.trim() ?? "";
+	if (asked === "") return "Re: your message";
+	return /^re\s*:/i.test(asked) ? asked : `Re: ${asked}`;
+}
+
+function openSmtp(account: Account, outgoing: Outgoing): Post {
+	return nodemailer.createTransport({
+		host: outgoing.host,
+		port: outgoing.port,
+		// 465 is encrypted from the first byte and 587 starts in the clear and upgrades. That is the
+		// whole of the convention, and it holds on servers somebody runs themselves as well.
+		secure: outgoing.port === 465,
+		auth: { user: account.username, pass: account.password },
+	}) as unknown as Post;
 }
 
 function openImap(account: Account): Session {

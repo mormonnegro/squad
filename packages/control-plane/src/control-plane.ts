@@ -396,6 +396,14 @@ export class ControlPlane {
 	#offered: EmailOffer | undefined;
 	/** What went wrong the last time the mailbox was read, so `/email` can say so without a request. */
 	#mailTrouble: string | undefined;
+	/**
+	 * What the submission server said when it refused the password the mailbox was connected with.
+	 *
+	 * Kept because the account itself only records the outcome — nowhere to hand mail in — and that on
+	 * its own reads like a provider that never offered. Whether it was refused or never offered decides
+	 * what to do about it, so the words the provider used are worth the field.
+	 */
+	#mailMute: string | undefined;
 	readonly #logins: OAuthLogins;
 	readonly #desk: LoginDesk;
 	/**
@@ -1088,6 +1096,8 @@ export class ControlPlane {
 			host: account.host,
 			port: account.port,
 			guessed: account.found === "guess",
+			writes: account.outgoing !== undefined,
+			mute: this.#mailMute,
 			fallback: account.fallback,
 			operators: account.operators,
 			phrase: account.pairing,
@@ -1106,7 +1116,8 @@ export class ControlPlane {
 	 */
 	async offerEmail(address: string): Promise<EmailOffer> {
 		const base = baseAddress(address);
-		const [incoming, closed] = await Promise.all([discover(base), closedTo(base)]);
+		const [servers, closed] = await Promise.all([discover(base), closedTo(base)]);
+		const { incoming, outgoing } = servers;
 		const offer: EmailOffer = {
 			address: base,
 			host: incoming.host,
@@ -1115,6 +1126,7 @@ export class ControlPlane {
 			appPasswords: appPasswordPage(base),
 			closed: closed?.why,
 			bridge: needsBridge(incoming),
+			...(outgoing !== undefined ? { outgoing } : {}),
 		};
 		this.#offered = offer;
 		return offer;
@@ -1148,12 +1160,22 @@ export class ControlPlane {
 			fallback: agentId,
 			operators: [],
 			pairing: pairingPhrase(),
+			...(offer.outgoing !== undefined ? { outgoing: offer.outgoing } : {}),
 		};
-		await this.email.verify(account);
-		await this.#mailbox.save(account);
+
+		// Reading decides whether there is a mailbox; sending only decides what it can do. A submission
+		// server that refuses the same password leaves an account written down with nowhere to hand mail
+		// in, which is a thing that can be said out loud — where a mailbox recorded as able to write back
+		// and unable to would be an answer disappearing at the far end of every turn.
+		const mute = await this.email.verify(account);
+		const { outgoing: _refused, ...reading } = account;
+		const settled = mute === undefined ? account : reading;
+
+		await this.#mailbox.save(settled);
 		this.#mailTrouble = undefined;
+		this.#mailMute = mute;
 		this.#offered = undefined;
-		this.email.set(account);
+		this.email.set(settled);
 		return this.emailStanding(agentId) as EmailStanding;
 	}
 
@@ -1163,6 +1185,7 @@ export class ControlPlane {
 		this.email.remove();
 		this.#offered = undefined;
 		this.#mailTrouble = undefined;
+		this.#mailMute = undefined;
 		return had;
 	}
 
