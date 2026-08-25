@@ -165,6 +165,79 @@ describe("completions", () => {
 		expect(completions("/limit ")).toEqual([]);
 		expect(completions("/limit 5")).toEqual([]);
 	});
+
+	/**
+	 * The argument that is a name off a list, offered where the command is typed.
+	 *
+	 * The name was only ever written down two panes away, on a screen about keys, so moving an agent
+	 * meant remembering a word or going to look it up and coming back to a prompt you had cleared.
+	 */
+	describe("under /model", () => {
+		const standing = [
+			{
+				id: "flash",
+				provider: "deepseek",
+				model: "deepseek-v4-flash",
+				host: "api.deepseek.com",
+				keyEnv: "DEEPSEEK_API_KEY",
+				added: false,
+				held: true,
+			},
+			{
+				id: "sonnet",
+				provider: "anthropic",
+				model: "claude-sonnet-4-6",
+				host: "api.anthropic.com",
+				keyEnv: "ANTHROPIC_API_KEY",
+				added: true,
+				held: false,
+			},
+		];
+		const offered = (draft: string, using?: string) =>
+			completions(draft, standing, using).map((command) => command.name);
+
+		// Which is also the gesture: taking `/model` off the menu leaves the space behind it, so the
+		// return that chose the command is the one that opens the list.
+		it("offers the models once the space after the command is there", () => {
+			expect(offered("/model")).toEqual(["/model"]);
+			expect(offered("/model ")).toEqual(["/model flash", "/model sonnet"]);
+		});
+
+		it("narrows to what has been typed", () => {
+			expect(offered("/model fla")).toEqual(["/model flash"]);
+		});
+
+		// Half of remembering a model is remembering whose it is, and the id is the half that was
+		// invented here — the provider's name is the one that was not.
+		it("finds one by the provider, or by the provider's own name for it", () => {
+			expect(offered("/model anthropic")).toEqual(["/model sonnet"]);
+			expect(offered("/model claude")).toEqual(["/model sonnet"]);
+		});
+
+		// At which point the menu is agreeing rather than offering, and a menu that agrees is a menu
+		// holding on to the return that would have sent the line.
+		it("closes once a name is typed in full, so the line can be sent", () => {
+			expect(offered("/model sonnet")).toEqual([]);
+			expect(offered("/model sonnet ")).toEqual([]);
+		});
+
+		it("offers nothing for a name off the list, rather than the whole list back", () => {
+			expect(offered("/model zzz")).toEqual([]);
+		});
+
+		// The two facts about a model that are not its name, which is what makes one row worth picking
+		// over another — and the one that says a row will be refused at the proxy.
+		it("says whose each one is, which it is on, and which cannot be paid for", () => {
+			const said = completions("/model ", standing, "flash").map((command) => command.does);
+
+			expect(said[0]).toBe("deepseek/deepseek-v4-flash   (this one)");
+			expect(said[1]).toBe("anthropic/claude-sonnet-4-6   (no ANTHROPIC_API_KEY)");
+		});
+
+		it("offers nothing when the plane configures no models", () => {
+			expect(completions("/model ")).toEqual([]);
+		});
+	});
 });
 
 /**

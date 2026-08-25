@@ -795,6 +795,23 @@ describe("Chat", () => {
 		expect(marked).toContain(COMMANDS[1]?.name);
 	});
 
+	/**
+	 * Which stops being true the moment the menu is longer than the pane, and it is: the models are on
+	 * it now, and a plane can configure more of them than a short terminal has rows. A list cut at the
+	 * top would leave the cursor arrowed off the bottom, pressing return at a row nobody can see.
+	 */
+	it("brings the fold along when the arrows go past the bottom of it", () => {
+		const many = Array.from({ length: 20 }, (_, index) => ({
+			name: `/model m${index}`,
+			takes: "",
+			does: "openai/gpt-5",
+		}));
+
+		const drawn = chat({ history: [], draft: "/model ", menu: many, pick: 17, rows: 8 });
+
+		expect(drawn.split("\n").find((row) => row.includes("▸"))).toContain("/model m17");
+	});
+
 	// The menu is drawn out of the conversation's rows, not over them: a row drawn where a row
 	// already is scrolls the terminal by one and tears the frame in half.
 	it("takes its rows from the conversation rather than from the prompt", () => {

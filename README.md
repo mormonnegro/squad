@@ -262,6 +262,28 @@ moment a name was highlighted would make `/limit 5` the one thing the menu could
 type. The menu closes itself at the first space, which is what says the command has been chosen and
 the argument is what is being typed now.
 
+Except where the argument is itself a name off a list. Taking `/model` off the menu leaves the space
+behind it, and that space opens the models:
+
+```
+ ▸ /model flash   deepseek/deepseek-v4-flash   (this one)
+   /model sonnet  anthropic/claude-sonnet-4-6
+   /model gpt-5   openai/gpt-5   (no OPENAI_API_KEY)
+╭──────────────────────────────────────────────────────────────────────╮
+│ > /model                                                             │
+╰──────────────────────────────────────────────────────────────────────╯
+ ↑↓ model   ⏎ choose   ^C quit
+```
+
+Same three keys, same two returns. What each row says is the two facts about a model that are not
+its name — whose it is and what they call it — plus the one that decides whether the next turn
+answers at all: a model this plane holds no key for is offered and marked, not hidden, because it is
+configured and the missing half is a key you can paste in two panes over. Typing narrows the list
+against the id, the provider and the provider's own name together, so `/model anthropic` finds the
+one called `sonnet` without knowing that is what it was called. A name typed out in full closes the
+menu, since at that point it is agreeing rather than offering — and a menu that agreed would be
+sitting on the return that sends the line.
+
 Every command is written down once, as the list this menu and `/help` are both drawn from. A
 command documented in only one of those two places is a command half its users never find.
 
@@ -548,6 +570,10 @@ This agent thinks with deepseek-v4-flash. There are:
 
 /model sonnet moves it onto that one, from its next turn.
 ```
+
+That is the answer to a bare `/model`, which is worth having when the question is what this agent is
+on rather than which to move it to. Moving it is the menu the space after the command opens, so the
+name never has to be carried from here back to the prompt.
 
 This is a choice among what exists and never a way to add one, which is what makes it a command
 rather than an edit and a restart. Every model on that list is already reachable by every agent —

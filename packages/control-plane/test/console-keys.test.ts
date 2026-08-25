@@ -335,6 +335,114 @@ describe("the console, pressed at", () => {
 });
 
 /**
+ * The list of models, offered where the command that uses one is typed.
+ *
+ * The names were only ever written down on the setup screen, two panes away, so moving an agent was
+ * remembering a word or leaving the prompt to go and read it. Only true as keystrokes: what the menu
+ * is offering depends on how much of the line is typed, and the return that takes a row off it is the
+ * same key that sends the line under it.
+ */
+describe("the model menu, pressed at", () => {
+	const thinks: readonly ModelStanding[] = [
+		{
+			id: "flash",
+			provider: "deepseek",
+			model: "deepseek-v4-flash",
+			host: "api.deepseek.com",
+			keyEnv: "DEEPSEEK_API_KEY",
+			added: false,
+			held: true,
+		},
+		{
+			id: "mini",
+			provider: "openai",
+			model: "gpt-5-mini",
+			host: "api.openai.com",
+			keyEnv: "OPENAI_API_KEY",
+			added: true,
+			held: true,
+		},
+	];
+
+	const chatting = () => {
+		const it_ = plane({ has: [listed("demo")], thinks });
+		return { ...it_, ...open(it_.client, [listed("demo")]) };
+	};
+
+	it("offers the models this plane has, instead of asking for a name", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/model ");
+
+			expect(screen.screen()).toContain("/model flash");
+			expect(screen.screen()).toContain("deepseek/deepseek-v4-flash");
+			expect(screen.screen()).toContain("↑↓ model");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The gesture the space costs nothing for: taking the command off the menu leaves the space
+	// behind it, so one return gets from a half-typed `/mo` to the list of models.
+	it("opens the list with the same return that took the command off the menu", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/mo");
+			await screen.press(ENTER);
+
+			expect(screen.screen()).toContain("/model mini");
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("puts the model the arrows are standing on into the line, and sends it on the next", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/model ");
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			// Not sent yet: what goes to the plane is on screen first, the way a completed line is
+			// everywhere else a prompt completes one.
+			expect(screen.commanded).toEqual([]);
+			expect(screen.screen()).toContain("/model mini");
+
+			await screen.press(ENTER);
+
+			expect(screen.commanded).toEqual(["/model mini"]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("narrows the list to what has been typed", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/model fla");
+
+			expect(screen.screen()).toContain("/model flash");
+			expect(screen.screen()).not.toContain("/model mini");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Typed in full the menu is agreeing rather than offering, and a menu that agreed would be sitting
+	// on the return that sends the line it agreed with.
+	it("sends a name typed out in full on the first return", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/model flash");
+			await screen.press(ENTER);
+
+			expect(screen.commanded).toEqual(["/model flash"]);
+		} finally {
+			screen.close();
+		}
+	});
+});
+
+/**
  * The screen where a key is given, which only exists as keystrokes.
  *
  * A provider row is drawn in `console.test.ts`. What cannot be drawn is that the letters of an API

@@ -618,7 +618,11 @@ export function Chat({
 	const boxed = rows > PROMPT_ROWS;
 	// The menu is taken out of the conversation rather than laid over it, and never takes the last
 	// row: a pane being dragged to nothing must still be a pane, not a list with nowhere to type.
-	const listed = menu.slice(0, Math.max(0, chatRows(rows) - 1));
+	// Framed rather than cut at the top, because this list is as long as the models are and a cursor
+	// arrowed past the bottom of it would be a return pressed at a row nobody can see.
+	const height = Math.max(0, chatRows(rows) - 1);
+	const from = frameFrom(menu.length, pick, height);
+	const listed = menu.slice(from, from + height);
 	const named = listed.map((command) => `${command.name} ${command.takes}`.trimEnd());
 	const widest = Math.max(0, ...named.map((name) => name.length));
 	const lines = visible(wrapped(transcript(history), columns), chatRows(rows) - listed.length, top);
@@ -685,11 +689,11 @@ export function Chat({
 			h(
 				Text,
 				{ key: command.name, wrap: "truncate" },
-				h(Text, { color: "cyan", bold: true }, index === pick ? " ▸ " : "   "),
+				h(Text, { color: "cyan", bold: true }, index + from === pick ? " ▸ " : "   "),
 				// Padded to the widest of the ones being shown rather than to a number written down
 				// here, which the day a longer command is added becomes a name touching its own
 				// description. Two columns of gap at the least, so they are never one word.
-				h(Text, { bold: index === pick }, named[index]?.padEnd(widest + 2) ?? ""),
+				h(Text, { bold: index + from === pick }, named[index]?.padEnd(widest + 2) ?? ""),
 				h(Text, { dimColor: true }, command.does),
 			),
 		),
@@ -720,8 +724,14 @@ export function Chat({
  */
 export function framed<T>(items: readonly T[], cursor: number, height: number): readonly T[] {
 	if (height <= 0) return [];
-	const from = Math.min(Math.max(0, cursor - height + 1), Math.max(0, items.length - height));
+	const from = frameFrom(items.length, cursor, height);
 	return items.slice(from, from + height);
+}
+
+/** The same window, said as where it starts — for a list whose rows have to know their own index. */
+export function frameFrom(items: number, cursor: number, height: number): number {
+	if (height <= 0) return 0;
+	return Math.min(Math.max(0, cursor - height + 1), Math.max(0, items - height));
 }
 
 /**
@@ -1166,9 +1176,15 @@ export function App({
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
 	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
 	// not over a name, which is not addressed to an agent that exists yet.
-	const menu = panel === "chat" && !shell && selected !== undefined ? completions(draft) : [];
+	const menu =
+		panel === "chat" && !shell && selected !== undefined
+			? completions(draft, models, selected.model)
+			: [];
 	const at = Math.min(pick, menu.length - 1);
 	const chosen = menu[at];
+	// What the arrows are moving through, for the row that says so: a command until one has been
+	// chosen, and after that whatever the chosen one takes.
+	const offering = /\s/.test(draft) ? "model" : "command";
 	const writing = selected === undefined ? undefined : live.get(selected.id);
 	const said =
 		selected === undefined
@@ -1292,10 +1308,12 @@ export function App({
 			.catch((error: unknown) => setUnanswered((error as Error).message));
 	}, [client]);
 
-	// On opening the screen rather than on a timer: what it shows is the plane's environment and a
-	// file only this keyboard writes, and neither of them moves while nobody is looking at it.
+	// On arriving at a screen rather than on a timer: what these show is the plane's environment and a
+	// file only this keyboard writes, and neither of them moves while nobody is looking. The chat
+	// counts as arriving, because the menu under `/model ` is that same list of models, offered where
+	// the command that uses one is typed. The log feed is the one pane with no use for either.
 	useEffect(() => {
-		if (panel === "setup") void readSetup();
+		if (panel !== "logs") void readSetup();
 	}, [panel, readSetup]);
 
 	/**
@@ -1925,7 +1943,7 @@ export function App({
 									// what they did a keystroke ago. A hint left standing for a key the menu has taken is
 									// the same lie as a hint for a key that does nothing.
 									[
-										["↑↓", "command"],
+										["↑↓", offering],
 										["⏎", "choose"],
 										["^C", "quit"],
 									]

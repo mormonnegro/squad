@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { LoginStatus, Reachability } from "@agent-dive/proxy";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
-import type { Model } from "./models.ts";
+import type { Model, ModelStanding } from "./models.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -82,13 +82,28 @@ export interface CommandContext {
 }
 
 /**
+ * A row of the menu the console opens under a `/`: the line it would type, and what that would do.
+ *
+ * Not only the commands. What a command takes is as unguessable as the command was — a model is a
+ * name off a list nobody memorises — so an argument that comes from a list the plane can read is
+ * offered here in the same shape, and the menu does not have to know which kind of row it is drawing.
+ */
+export interface Command {
+	/** The whole line, because that is what picking the row puts in the prompt. */
+	readonly name: string;
+	/** What still has to be typed after it, when anything does. */
+	readonly takes: string;
+	readonly does: string;
+}
+
+/**
  * Every command there is, in one list rather than in a paragraph.
  *
  * Written down as data because two things read it: the help, which is prose, and the menu the
  * console opens under a `/`, which needs the name apart from the sentence about it. A command
  * documented in only one of those two places is a command half of its users never find.
  */
-export const COMMANDS = [
+export const COMMANDS: readonly Command[] = [
 	{
 		name: "/limit",
 		takes: "[<amount>|off]",
@@ -132,18 +147,56 @@ export function isCommand(line: string): boolean {
 	return line.startsWith("/");
 }
 
-export type Command = (typeof COMMANDS)[number];
+/**
+ * The commands a half-typed line could still turn out to be, or the models it could move an agent
+ * onto once it has turned out to be `/model`.
+ *
+ * Otherwise empty the moment the line has a space in it, which is what says the command has been
+ * chosen and what is being typed now is its argument. Without that, a menu offering `/limit` would
+ * still be sitting over `/limit 5` and stealing the return that was meant to send it.
+ */
+export function completions(
+	draft: string,
+	models: readonly ModelStanding[] = [],
+	using?: string,
+): readonly Command[] {
+	if (!isCommand(draft)) return [];
+	// The space is the boundary, which also makes it the gesture: taking `/model` off the menu leaves
+	// a trailing space behind it, so the same return that chose the command opens the list of models.
+	const moving = /^\/model\s+([\s\S]*)$/.exec(draft);
+	if (moving !== null) return moves(moving[1] ?? "", models, using);
+	if (/\s/.test(draft)) return [];
+	return COMMANDS.filter((command) => command.name.startsWith(draft));
+}
 
 /**
- * The commands a half-typed line could still turn out to be.
+ * The models a `/model ` could still be about.
  *
- * Empty the moment the line has a space in it, which is what says the command has been chosen and
- * what is being typed now is its argument. Without that, a menu offering `/limit` would still be
- * sitting over `/limit 5` and stealing the return that was meant to send it.
+ * Every one of these is on the operator's list already, so this offers nothing that could not be
+ * typed — which is the point: a name is only unguessable until something shows it to you, and the
+ * one place it was shown was two panes away on a screen about keys.
  */
-export function completions(draft: string): readonly Command[] {
-	if (!isCommand(draft) || /\s/.test(draft)) return [];
-	return COMMANDS.filter((command) => command.name.startsWith(draft));
+function moves(
+	typed: string,
+	models: readonly ModelStanding[],
+	using: string | undefined,
+): readonly Command[] {
+	const wanted = typed.trim().toLowerCase();
+	// The provider's own name matches too, because half of remembering a model is remembering whose
+	// it is: `anthropic` finds the one called `sonnet` without knowing that is what it was called.
+	const found = models.filter((model) =>
+		`${model.id} ${model.provider} ${model.model}`.toLowerCase().includes(wanted),
+	);
+	// A name typed in full is the menu agreeing rather than offering, and a menu that agrees is a menu
+	// holding on to the return that would have sent the line.
+	if (found.some((model) => model.id.toLowerCase() === wanted)) return [];
+	return found.map((model) => ({
+		name: `/model ${model.id}`,
+		takes: "",
+		does: `${named(model)}${model.id === using ? "   (this one)" : ""}${
+			model.held ? "" : `   (no ${model.keyEnv})`
+		}`,
+	}));
 }
 
 /**
