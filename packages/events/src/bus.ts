@@ -76,6 +76,27 @@ export class EventBus {
 		return event;
 	}
 
+	/**
+	 * Drops queued events the agent is not going to be told about after all, and says how many went.
+	 *
+	 * The queue is not only a buffer. An event that arrives while a turn is running waits behind it,
+	 * and the turn it is waiting on can be the one that makes it moot — so a wakeup fired at 10:00 is
+	 * delivered at 10:02 by an agent that spent the turn deciding it no longer wanted to be woken.
+	 *
+	 * Narrow on purpose, and the caller is the one saying which: only what an agent booked for itself
+	 * is ever moot this way. A message somebody typed at a busy agent is owed an answer whatever the
+	 * agent decided while it was queued, and nothing here may be used to make one go away.
+	 */
+	async discard(agentId: string, moot: (event: AgentEvent) => boolean): Promise<number> {
+		const dropped = (await this.#store.pending(agentId))
+			.filter((item) => moot(item.event))
+			.map((item) => item.event.id);
+		// The same removal acknowledging one uses, because leaving it queued and marking it is a second
+		// state to reason about and every reader of the queue would have to know the difference.
+		if (dropped.length > 0) await this.#store.ack(agentId, dropped);
+		return dropped.length;
+	}
+
 	/** Redelivers work left over from a previous process. */
 	async recover(): Promise<void> {
 		for (const agentId of await this.#store.agentsWithWork()) await this.#schedule(agentId);

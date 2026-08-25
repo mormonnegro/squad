@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentEvent } from "@agent-dive/events";
+import { type AgentEvent, isOwnNote } from "@agent-dive/events";
 
 /**
  * One line of the conversation an agent is part of.
@@ -43,9 +43,7 @@ export interface Utterance {
  * back through it cannot tell you who asked for what.
  */
 export function overheard(event: AgentEvent): Utterance {
-	if (event.source === "schedule" && event.metadata?.createdBy === "agent") {
-		return { from: "agent", via: "wake", text: event.body };
-	}
+	if (isOwnNote(event)) return { from: "agent", via: "wake", text: event.body };
 	if (event.trust === "operator") {
 		return event.source === "channel"
 			? { from: "operator", text: event.body }

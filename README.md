@@ -491,7 +491,16 @@ instead of adding to it; the delay is held between a second and a month; and the
 participant trust, never operator, however it asks. Calling it off is a second tool, `cancel_wake`,
 rather than a time that means never — the clamp is exactly why there is no such time, so an agent
 pushing its wakeup a year away to be rid of it has only moved it a month, and left believing
-otherwise. The note comes back fenced like anything else
+otherwise.
+
+Calling it off drops what the appointment has already produced as well as the appointment, because
+an appointment that has come due is no longer only an appointment. A ten-second wakeup fires while
+a two-minute turn is running and queues behind it — so an agent told halfway through to go and do
+something else would cancel the wakeup, be woken anyway, and be handed a note it wrote to a self it
+had stopped being. Only its own bookings go: a message somebody typed at a busy agent is owed an
+answer whatever the agent decided while it sat in the queue.
+
+The note comes back fenced like anything else
 the agent did not hear from its operator, introduced as the reminder it is rather than as an
 instruction — the turn that wrote it may have been reading a stranger at the time.
 

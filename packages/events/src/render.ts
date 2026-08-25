@@ -52,7 +52,7 @@ export function renderEvent(event: AgentEvent): string {
  * instead of continuing; told it is a reminder, it continues from what it decided and reads the note
  * as the pointer it was written to be.
  */
-function isOwnNote(event: AgentEvent): boolean {
+export function isOwnNote(event: AgentEvent): boolean {
 	return event.source === "schedule" && event.metadata?.createdBy === "agent";
 }
 

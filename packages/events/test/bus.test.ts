@@ -206,6 +206,30 @@ describe("EventBus", () => {
 		expect(prompt).toContain("<<<UNTRUSTED");
 		expect(prompt).toContain("delete everything");
 	});
+
+	// What arrives during a turn is delivered by the turn after it, and by then the turn it waited on
+	// may be exactly what makes it moot. Dropping it is the caller's call and only ever its own.
+	it("drops the queued events a caller says are moot, and leaves the rest", async () => {
+		const bus = new EventBus();
+		const turns: string[][] = [];
+		await bus.register("a1", async ({ events }) => {
+			turns.push(events.map((event) => event.body));
+			if (turns.length > 1) return;
+			await bus.publish({ ...base, source: "schedule", body: "the appointment" });
+			await bus.publish({ ...base, body: "somebody talking" });
+			expect(await bus.discard("a1", (event) => event.source === "schedule")).toBe(1);
+		});
+
+		await bus.publish(base);
+		await bus.drain();
+
+		expect(turns).toEqual([["hi"], ["somebody talking"]]);
+	});
+
+	it("drops nothing for an agent with an empty queue", async () => {
+		const bus = new EventBus();
+		expect(await bus.discard("a1", () => true)).toBe(0);
+	});
 });
 
 describe("FileEventStore", () => {

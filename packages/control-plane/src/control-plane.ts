@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { type Channel, ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
-import { EventBus, FileEventStore } from "@agent-dive/events";
+import { EventBus, FileEventStore, isOwnNote } from "@agent-dive/events";
 import {
 	type AuditEntry,
 	EgressBroker,
@@ -915,6 +915,12 @@ export class ControlPlane {
 			for (const schedule of await this.scheduler.list(agentId)) {
 				if (schedule.createdBy === "agent") await this.scheduler.remove(schedule.id);
 			}
+			// Unbooking the appointment is not enough, because an appointment that has already come due
+			// is no longer only an appointment. A wakeup that fires while the agent is mid-turn queues
+			// behind that turn, so an agent asked to do something else spends a turn deciding to be woken
+			// no longer and is then woken anyway — by a note it wrote to a self it has stopped being.
+			// Only its own bookings go: whoever spoke to it while it was busy is still owed an answer.
+			await this.bus.discard(agentId, isOwnNote);
 			if ("cancel" in wake) return;
 
 			const afterSeconds = Math.min(

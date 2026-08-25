@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { NewAgentEvent } from "@agent-dive/events";
 import type { ExecResult } from "@agent-dive/sandbox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -397,6 +398,98 @@ describe("a turn that asked for another turn", () => {
 		const [summary] = await plane.agents();
 		expect(summary?.wakeAt).toBeDefined();
 		expect(summary?.schedules).toBe(1);
+	});
+
+	/**
+	 * An appointment that has already come due is no longer only an appointment.
+	 *
+	 * A wakeup that fires while the agent is mid-turn queues behind that turn — and the turn it is
+	 * waiting on is the one that decides it should not happen. Unbooking the appointment and leaving
+	 * what it already produced is how an agent calls off its wakeup and is woken by it anyway,
+	 * carrying a note it wrote to a self it has stopped being.
+	 */
+	describe("with its own wakeup already come due behind it", () => {
+		/** The agent's own ten-second wakeup, landing in the queue of a turn that takes longer than ten. */
+		const ownNote: NewAgentEvent = {
+			agentId: "scout",
+			source: "schedule",
+			trust: "participant",
+			channel: "wake",
+			body: "contá el chiste noventa y cuatro",
+			metadata: { createdBy: "agent" },
+		};
+
+		/**
+		 * Runs one turn that is interrupted by `arrives` while it runs, and answers every prompt the
+		 * agent was given — so the ghost turn shows up as a second one rather than not at all.
+		 */
+		const interrupted = async (
+			plane: ControlPlane,
+			arrives: NewAgentEvent,
+			wake: WakeChange,
+		): Promise<readonly string[]> => {
+			const heard: string[] = [];
+			await plane.attach("scout", {
+				async run(_agentId, prompt) {
+					heard.push(prompt);
+					if (heard.length === 1) await plane.bus.publish(arrives);
+					return { text: "", exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0, wake };
+				},
+			});
+			await plane.bus.publish({
+				agentId: "scout",
+				source: "channel",
+				trust: "operator",
+				channel: "cli:test",
+				body: "dejá los chistes y hacé el informe",
+			});
+			await plane.bus.drain();
+			return heard;
+		};
+
+		it("does not wake the agent that just called it off", async () => {
+			const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+			const heard = await interrupted(plane, ownNote, { cancel: true });
+
+			expect(heard).toHaveLength(1);
+			expect(await plane.scheduler.list("scout")).toEqual([]);
+		});
+
+		// Moving the appointment is the same act: the note the agent replaced is the one it no longer
+		// means, and delivering it hands the agent back the intention it just spent a turn dropping.
+		it("does not wake it with the note it just replaced", async () => {
+			const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+			const heard = await interrupted(plane, ownNote, {
+				afterSeconds: 60,
+				note: "seguí el informe",
+			});
+
+			expect(heard).toHaveLength(1);
+			expect((await plane.scheduler.list("scout")).map((one) => one.body)).toEqual([
+				"seguí el informe",
+			]);
+		});
+
+		// The line this must not cross. Whoever spoke to a busy agent is owed an answer whatever the
+		// agent decided while their message sat in the queue, and an agent dropping its own wakeup is
+		// not a reason for somebody else's message to disappear with it.
+		it("still answers what somebody said to it while it was busy", async () => {
+			const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+			const heard = await interrupted(
+				plane,
+				{
+					agentId: "scout",
+					source: "channel",
+					trust: "operator",
+					channel: "cli:test",
+					body: "y de paso fijate el changelog",
+				},
+				{ cancel: true },
+			);
+
+			expect(heard).toHaveLength(2);
+			expect(heard[1]).toContain("changelog");
+		});
 	});
 });
 

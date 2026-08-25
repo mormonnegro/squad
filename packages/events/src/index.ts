@@ -13,7 +13,7 @@ export {
 	type EventSource,
 	type NewAgentEvent,
 } from "./event.ts";
-export { renderEvent, renderTurn } from "./render.ts";
+export { isOwnNote, renderEvent, renderTurn } from "./render.ts";
 export {
 	type EventStore,
 	FileEventStore,
