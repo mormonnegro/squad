@@ -97,8 +97,15 @@ alias dive='ssh -t root@your-vps agent'
 `}</Code>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,
-						the conversation, <code>/limit</code>, <code>/model</code>, <code>/mcp</code>, and{" "}
-						<code>!</code> into the sandbox itself.
+						the conversation, <code>/limit</code>, <code>/model</code>, <code>/mcp</code>,{" "}
+						<code>/serve</code>, and <code>!</code> into the sandbox itself.
+					</p>
+					<p className="small muted">
+						<code>/serve 3000</code> is that connection read backwards. An agent that builds a page
+						has nowhere to put it — the sandbox network is unrouted and nothing is published off the
+						server — so the console opens the port on <em>your</em> loopback instead, and prints{" "}
+						<code>http://scout.localhost:3000</code>. The link works on the laptop it was printed on
+						and nowhere else, and it closes when you close the console.
 					</p>
 					<p className="small muted">
 						You do not have to know those commands exist. An agent that needs a tool server can ask

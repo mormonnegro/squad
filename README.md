@@ -247,6 +247,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
  ▸ /limit [<amount>|off]        what it has spent today, and the ceiling for it
    /model [<name>]              what it thinks with, and what else there is
    /mcp [<name>|add …|login …]  the MCP servers it has, and the shelf to add from
+   /serve [<port>|stop <port>]  open a port inside it on the machine you are sitting at
    /delete                      delete this agent, after asking whether you meant it
    /help                        every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
@@ -856,6 +857,63 @@ both ways: to the agent, so it can report what the server said instead of guessi
 still has to do, and to the operator in the log — the one thing they have to go and fix should not be
 the one thing nobody is told.
 
+## An agent showing you what it built
+
+An agent that writes a frontend has nowhere to put it. The sandbox network is `internal` and that is
+the point — a container on it cannot reach the host or the internet by any address — so a dev server
+it starts is a dev server nobody can open, and what the agent does instead is describe the page.
+
+`/serve` is the way in. It takes two machines to explain, because this runs on two:
+
+```
+> /serve 3000
+scout is serving 3000
+
+  http://scout.localhost:3000
+
+Nothing is listening on 3000 inside the sandbox yet. The link waits: it starts working the
+moment something binds that port in there, with nothing to type here.
+
+A console is what opens these, on the machine it is running on. They are reachable from
+there and from nowhere else: nothing is published off the server, and the sandbox network
+is still as unrouted as it was.
+```
+
+The plane keeps the record and the console opens the listener, and those are usually not the same
+computer. Agents run where the Docker daemon is — a VPS — and the console is the `agent` on your own
+PATH, over SSH or against a socket bind-mounted from a container. So the port comes out on *your*
+loopback, over the control socket the console was already talking on. Nothing is published on the
+server, no firewall rule changes, and the link dies when you close the console rather than staying
+open on a machine nobody is looking at.
+
+Inside the sandbox it goes to `127.0.0.1`, which is the part worth having. Sandboxes share one
+network and can dial each other by container name, so a server bound to `0.0.0.0` is a server every
+other agent on the plane can reach; a server on loopback is one only this reaches. The agent is told
+to bind loopback, and the operator gets the same link either way.
+
+`*.localhost` resolves to loopback in every modern browser with nothing configured anywhere, and the
+name is what says whose server it is. Two agents both running a dev server land on 3000 without
+either of them having chosen it, and one machine has one 3000 — so the number gives way rather than
+the second agent being refused for something it did not do:
+
+```
+> /serve
+scout is serving:
+
+  3000  http://scout.localhost:3000
+  8080  http://scout.localhost:8081   (8080 is scribe's here)
+```
+
+Which is why the answer names both numbers. The port inside the sandbox is the one the agent knows
+about and the one it should keep using; the port in the link is the one to open.
+
+The diagnosis is in the answer rather than in the log, because a browser opens six connections to a
+page and a feed with six identical failures in it is a feed nobody reads. Asking for `/serve` probes
+the port inside the sandbox at that moment and says whether anything is listening — so "the link is
+dead" and "the server is not up yet" are told apart where the person is already looking. And
+`/serve stop` closes the way in and nothing else: whatever is listening in there is exactly where it
+was left.
+
 ## An agent asking for what it needs
 
 The failure this fixes is a paragraph. An agent that wanted one MCP server would write out, patiently
@@ -897,7 +955,10 @@ then share one plane underneath: an agent gets exactly the command the operator 
 nothing at all. Nothing sees a quieter version of the plane, because two versions is how they drift.
 The line between the two is not "destructive" — it is whether an agent that has been talked into this
 by something it read could get anywhere by it. Connecting a server, opening a consent screen, moving
-between configured models and being held to a tighter ceiling widen nothing. Deleting itself, raising
+between configured models and being held to a tighter ceiling widen nothing. Nor does serving a
+port, which is the same test read the other way round: it opens a way *in* rather than a way out,
+from a console whose operator could already have run anything they liked in that sandbox. Deleting
+itself, raising
 or removing its ceiling, logging a server out, forgetting one for every agent: those stay with the
 operator. So does pasting back an address of its own — the trip home from a consent screen is the
 person's, or the screen was never in it.
