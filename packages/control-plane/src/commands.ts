@@ -30,6 +30,48 @@ export interface TelegramStanding {
 }
 
 /**
+ * The plane's mailbox as one agent sees it, which is one mailbox seen from one of its addresses.
+ *
+ * Connected once for the whole plane rather than once per agent: plus-addressing already separates
+ * them, so `you+scout@` and `you+clerk@` are one account to the provider and two agents here. An
+ * operator does this once and every agent it ever has, including the ones made tomorrow, has an
+ * address without anybody going back to a settings page.
+ */
+export interface EmailStanding {
+	/** The account being read. Every agent's address is a tag on this one. */
+	readonly mailbox: string;
+	/** Where this particular agent is reached. */
+	readonly address: string;
+	readonly host: string;
+	readonly port: number;
+	/** Whether the host was told to us or guessed at, so an answer can admit which. */
+	readonly guessed: boolean;
+	/** The agent that mail arriving with no tag on it goes to. */
+	readonly fallback: string;
+	/** Addresses whose mail is read as instructions. Empty until somebody pairs. */
+	readonly operators: readonly string[];
+	/** The phrase that binds the first of them, while there are none. */
+	readonly phrase: string | undefined;
+	/** What went wrong the last time the plane tried to read, if something did. */
+	readonly trouble: string | undefined;
+}
+
+/** What was found out about an address before a password for it has been asked for. */
+export interface EmailOffer {
+	readonly address: string;
+	readonly host: string;
+	readonly port: number;
+	/** How the host was worked out, so an answer can admit to a guess rather than state it. */
+	readonly found: string;
+	/** The exact page where this provider makes app passwords, when it is one we know. */
+	readonly appPasswords: string | undefined;
+	/** Why this provider will refuse any password at all, when it will. */
+	readonly closed: string | undefined;
+	/** Whether what was discovered points at a bridge on somebody's desktop rather than a server. */
+	readonly bridge: boolean;
+}
+
+/**
  * What a command may do, which is deliberately less than what the plane can.
  *
  * A command arrives on the control socket and so carries operator trust, but it is still typed into
@@ -123,6 +165,25 @@ export interface CommandContext {
 	connectTelegram(token: string): Promise<TelegramStanding>;
 	/** Takes the bot away. Answers whether there was one. */
 	disconnectTelegram(): Promise<boolean>;
+	/** The plane's mailbox, seen from this agent's address in it. */
+	email(): Promise<EmailStanding | undefined>;
+	/**
+	 * Works out where an address's mail lives and what it will take, without connecting anything.
+	 *
+	 * Its own step because the answer decides what to say next, and two of the three answers are
+	 * reasons not to go on: a provider that stopped taking passwords, or one whose mail is only
+	 * reachable through a bridge on a desktop this plane is not sitting at.
+	 */
+	offerEmail(address: string): Promise<EmailOffer>;
+	/**
+	 * Finishes it with the password, against the address already offered.
+	 *
+	 * The address is not passed back. It was typed one line ago and asking for it again is asking
+	 * somebody to retype something the console is already holding.
+	 */
+	connectEmail(password: string): Promise<EmailStanding>;
+	/** Puts the mailbox down, for the whole plane. Answers whether there was one. */
+	disconnectEmail(): Promise<boolean>;
 }
 
 /**
@@ -172,6 +233,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/telegram",
 		takes: "[<token>|off]",
 		does: "the Telegram bot it answers on, and how to pair one",
+	},
+	{
+		name: "/email",
+		takes: "[<address>|<password>|off]",
+		does: "the address it is reached at, and how to connect a mailbox",
 	},
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{ name: "/help", takes: "", does: "every command there is" },
@@ -772,7 +838,20 @@ const NEW_BOT = [
  * legible in either place. The bot's own id is public, so what is left still says which bot it was.
  */
 export function withoutSecrets(line: string): string {
+	const email = /^(\s*\/email\s+)(.+)$/i.exec(line);
+	// By the command rather than by the shape of it. An app password is sixteen ordinary letters, often
+	// in four groups of four, and no pattern that catches one leaves a sentence alone. What is known
+	// here is the thing a pattern cannot know: everything after `/email` that is not an address is one.
+	if (email !== null) return `${email[1] ?? ""}${spent(email[2] ?? "")}`;
 	return line.replace(BOT_TOKEN, (_whole, id: string) => `${id}:…`);
+}
+
+function spent(rest: string): string {
+	return rest
+		.split(/\s+/)
+		.filter((word) => word !== "")
+		.map((word) => (word.includes("@") || word === "off" || word === "stop" ? word : "…"))
+		.join(" ");
 }
 
 function pairing(id: string, standing: TelegramStanding): string {
@@ -859,6 +938,172 @@ async function telegram(words: readonly string[], context: CommandContext): Prom
 	return [`@${said.username} is ${id}'s bot.`, ...replaced, "", pairing(id, said)].join("\n");
 }
 
+const NEW_MAILBOX = [
+	"Type the address of a mailbox you already read. Nothing to buy, no domain to own, no DNS to",
+	"wait on — the plane logs in and reads it the way a mail client does:",
+	"",
+	"    /email you@fastmail.com",
+].join("\n");
+
+/**
+ * The password step, once it is known where the mailbox is and that it will take one.
+ *
+ * The link is the point. Every provider buries the app-password screen somewhere different and none
+ * of them call it the same thing, so "make an app password" is an instruction that ends in a search
+ * box — which is the longest part of connecting a mailbox and the part people give up in.
+ */
+function askForPassword(offer: EmailOffer): string {
+	const guessed =
+		offer.found === "guess"
+			? [
+					"",
+					`Nothing published where ${offer.address.split("@")[1] ?? "that domain"}'s mail lives, so that host is the conventional guess. If it is`,
+					"wrong, the login will be the thing that says so.",
+				]
+			: [];
+
+	const where =
+		offer.appPasswords === undefined
+			? [
+					"Make an app password in that provider's security settings. Your ordinary password will",
+					"not work on most of them, and is not the kind of thing to paste into a console.",
+				]
+			: [
+					"Now make an app password. Your ordinary password will not work, and is not the kind of",
+					"thing to paste into a console:",
+					"",
+					`    ${offer.appPasswords}`,
+				];
+
+	return [
+		`${offer.host}:${offer.port} reads ${offer.address}.`,
+		...guessed,
+		"",
+		...where,
+		"",
+		"Then paste it back:",
+		"",
+		"    /email <the app password>",
+	].join("\n");
+}
+
+/** The two answers that are reasons to stop rather than steps on the way. */
+function refusal(offer: EmailOffer): string | undefined {
+	if (offer.closed !== undefined) {
+		return `${offer.address} cannot be connected with a password.\n\n${offer.closed}`;
+	}
+	if (!offer.bridge) return undefined;
+
+	// Proton is the one that does this, and its autoconfig is telling the truth: the mail really is at
+	// 127.0.0.1, on a desktop somewhere running the bridge. Said plainly here, because dialling it
+	// would fail with a connection refused from an address that looked perfectly ordinary.
+	return [
+		`${offer.address} is only reachable through a bridge running on your own computer — its own`,
+		`settings say the mail is at ${offer.host}:${offer.port}, and that is this machine, not that one.`,
+		"There is nothing here for the plane to connect to.",
+	].join("\n");
+}
+
+function pairingByMail(id: string, said: EmailStanding): string {
+	return [
+		`Nobody may instruct ${id} by mail yet. Write to that address from wherever you read your own`,
+		"mail, with this phrase anywhere in the message:",
+		"",
+		`    ${said.phrase}`,
+		"",
+		`Whoever sends it is the one ${id} takes instructions from. Anyone else who writes to it is`,
+		"heard, and what they write arrives as something to consider rather than something to do.",
+	].join("\n");
+}
+
+function reachedAt(id: string, said: EmailStanding): string {
+	const trouble =
+		said.trouble === undefined ? [] : [`The plane cannot read it: ${said.trouble}`, ""];
+
+	if (said.phrase !== undefined) {
+		return [...trouble, `${id} is reached at ${said.address}.`, "", pairingByMail(id, said)].join(
+			"\n",
+		);
+	}
+
+	const untagged =
+		said.fallback === id
+			? `and mail arriving with no tag on it comes here, to ${id}.`
+			: `and mail arriving with no tag on it goes to ${said.fallback}.`;
+
+	return [
+		...trouble,
+		`${id} is reached at ${said.address}. Write to it and ${id} takes a turn.`,
+		"",
+		`That is ${said.mailbox} on ${said.host}:${said.port}, and it serves every agent on this plane:`,
+		`each one is reached at its own name tagged onto the address, ${untagged}`,
+		"",
+		`Mail from ${said.operators.join(", ")} is read as instructions. Everyone else is heard.`,
+		"",
+		"/email off puts the mailbox down, for every agent.",
+	].join("\n");
+}
+
+/**
+ * Google shows an app password in four groups of four and people paste it that way.
+ *
+ * Every provider that formats one like that ignores the spaces, so joining them is what was meant.
+ * A password that is not that shape is left exactly as it was typed, spaces and all, because on a
+ * mailbox somebody runs themselves it may well have one in it.
+ */
+function password(words: readonly string[]): string {
+	return words.every((word) => /^[a-z0-9]+$/i.test(word)) ? words.join("") : words.join(" ");
+}
+
+/**
+ * The mailbox this plane reads, and this agent's address in it.
+ *
+ * Connected once for every agent rather than once per agent, which is the whole design: an operator
+ * who has done this has done it for the agents they have and the ones they have not made yet.
+ *
+ * Two lines because the address has to be looked up before there is anything useful to say about a
+ * password — where to make one, and whether making one is even possible. The address is not asked
+ * for twice; the second line is only the password, against the address the first line held on to.
+ */
+async function email(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", ...rest] = words;
+
+	if (first === "") {
+		const said = await context.email();
+		return said === undefined
+			? `No mailbox is connected, so ${id} has no address.\n\n${NEW_MAILBOX}`
+			: reachedAt(id, said);
+	}
+
+	if (first === "off" || first === "stop") {
+		const had = await context.disconnectEmail();
+		return had
+			? "The mailbox is down, for every agent on this plane. The app password is still yours to revoke\nwherever you made it, and /email takes a mailbox back."
+			: "No mailbox was connected.";
+	}
+
+	if (first.includes("@")) {
+		const offer = await context.offerEmail(first);
+		const stop = refusal(offer);
+		if (stop !== undefined) return stop;
+		if (rest.length === 0) return askForPassword(offer);
+	}
+
+	const said = await connect(password(first.includes("@") ? rest : words), context);
+	return typeof said === "string" ? said : reachedAt(id, said);
+}
+
+async function connect(secret: string, context: CommandContext): Promise<EmailStanding | string> {
+	try {
+		return await context.connectEmail(secret);
+	} catch (error) {
+		// The provider's own words, because which refusal it is decides what to do about it: a password
+		// that was mistyped is retyped, and one refused for a reason of the provider's own is not.
+		return `That did not get in: ${(error as Error).message}`;
+	}
+}
+
 /**
  * Deletes the agent, once its own name has come back with the command.
  *
@@ -921,6 +1166,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "model") return models(rest, context);
 	if (name === "serve") return serve(rest, context);
 	if (name === "telegram") return telegram(rest, context);
+	if (name === "email") return email(rest, context);
 	if (name === "delete") return remove(rest, context);
 
 	if (name === "limit") {
@@ -995,6 +1241,13 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 		// pasted by an operator who was only being helpful, is a stranger's bot wired to somebody else's
 		// agent — and the first person to tap the pairing link is the one it takes instructions from.
 		return "This agent asked about its Telegram bot. That one stays with you: /telegram decides who may instruct it, and nothing an agent can ask for may move that.";
+	}
+
+	if (name === "email") {
+		// Withheld for the same reason, and it reaches further than a bot does. One mailbox serves every
+		// agent on the plane, so an address the agent was handed by something it read is not a mistake
+		// about this agent — it is a stranger reading and answering the mail of all of them.
+		return "This agent asked about email. That one stays with you: /email connects the mailbox every agent here is reached at, and decides whose mail is read as instructions.";
 	}
 
 	if (name === "mcp") {

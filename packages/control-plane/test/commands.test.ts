@@ -4,6 +4,8 @@ import {
 	COMMANDS,
 	type CommandContext,
 	completions,
+	type EmailOffer,
+	type EmailStanding,
 	endedIn,
 	isCommand,
 	isShell,
@@ -54,6 +56,12 @@ function context(
 		bot?: TelegramStanding;
 		/** What Telegram says about a token it will not have, which the command has to pass on. */
 		refuses?: string;
+		/** The mailbox already connected, as an earlier `/email` would have left it. */
+		mailbox?: EmailStanding;
+		/** What discovery turns out to say about an address: a closed provider, a bridge, a guess. */
+		discovers?: Partial<EmailOffer>;
+		/** What the provider says about a password it will not take. */
+		mailRefuses?: string;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -73,6 +81,13 @@ function context(
 	const bot = { held: start.bot };
 	/** Every token the command handed on, which is what tells a refusal apart from a typo caught early. */
 	const offered: string[] = [];
+	const mail: { held: EmailStanding | undefined; offer: EmailOffer | undefined } = {
+		held: start.mailbox,
+		offer: undefined,
+	};
+	/** Every password that got as far as the plane, which is how the redaction is checked from outside. */
+	const passwords: string[] = [];
+	const here = start.agentId ?? "scout";
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
@@ -183,7 +198,50 @@ function context(
 				bot.held = undefined;
 				return had;
 			},
+			email: async () => mail.held,
+			offerEmail: async (address: string) => {
+				const offer: EmailOffer = {
+					address,
+					host: `imap.${address.split("@")[1] ?? ""}`,
+					port: 993,
+					found: "known",
+					appPasswords: undefined,
+					closed: undefined,
+					bridge: false,
+					...start.discovers,
+				};
+				mail.offer = offer;
+				return offer;
+			},
+			connectEmail: async (secret: string) => {
+				passwords.push(secret);
+				if (start.mailRefuses !== undefined) throw new Error(start.mailRefuses);
+				const offer = mail.offer;
+				if (offer === undefined)
+					throw new Error("No address to connect. Type /email <address> first.");
+				const [local = "", domain = ""] = offer.address.split("@");
+				const standing: EmailStanding = {
+					mailbox: offer.address,
+					address: `${local}+${here}@${domain}`,
+					host: offer.host,
+					port: offer.port,
+					guessed: offer.found === "guess",
+					fallback: here,
+					operators: [],
+					phrase: "kqm3nvbh27",
+					trouble: undefined,
+				};
+				mail.held = standing;
+				return standing;
+			},
+			disconnectEmail: async () => {
+				const had = mail.held !== undefined;
+				mail.held = undefined;
+				return had;
+			},
 		} satisfies CommandContext,
+		mail,
+		passwords,
 	};
 }
 
@@ -1125,6 +1183,178 @@ describe("/telegram", () => {
 	});
 });
 
+describe("/email", () => {
+	const CONNECTED: EmailStanding = {
+		mailbox: "agents@fastmail.com",
+		address: "agents+scout@fastmail.com",
+		host: "imap.fastmail.com",
+		port: 993,
+		guessed: false,
+		fallback: "scout",
+		operators: ["nico@example.com"],
+		phrase: undefined,
+		trouble: undefined,
+	};
+
+	it("asks for an address, from a plane that has no mailbox", async () => {
+		const { context: ctx } = context();
+
+		const answer = await runCommand("/email", ctx);
+
+		expect(answer).toContain("No mailbox is connected");
+		expect(answer).toContain("/email");
+	});
+
+	/**
+	 * The link is the point. Every provider buries the app-password screen somewhere different and
+	 * none of them call it the same thing, so "make an app password" is an instruction that ends in a
+	 * search box — which is the longest part of connecting a mailbox and the part people give up in.
+	 */
+	it("answers an address with where that provider makes app passwords", async () => {
+		const { context: ctx } = context({
+			discovers: { appPasswords: "https://app.fastmail.com/settings/security/apppassword" },
+		});
+
+		const answer = await runCommand("/email agents@fastmail.com", ctx);
+
+		expect(answer).toContain("imap.fastmail.com:993");
+		expect(answer).toContain("https://app.fastmail.com/settings/security/apppassword");
+		// The second line is only the password. The address was typed one line ago.
+		expect(answer).toContain("/email <the app password>");
+	});
+
+	it("admits to a guess rather than stating a host it worked out", async () => {
+		const { context: ctx } = context({ discovers: { found: "guess" } });
+
+		expect(await runCommand("/email agents@somewhere.test", ctx)).toContain("conventional guess");
+	});
+
+	// Finding this out after somebody has been sent to make a password wastes the one part of this
+	// that has to be gone and found on another machine.
+	it("stops at a provider that will not take a password at all", async () => {
+		const { context: ctx, passwords } = context({
+			discovers: {
+				closed: "Google switched app passwords off for Workspace accounts in May 2025.",
+			},
+		});
+
+		const answer = await runCommand("/email agents@company.com", ctx);
+
+		expect(answer).toContain("cannot be connected with a password");
+		expect(answer).toContain("May 2025");
+		expect(passwords).toEqual([]);
+	});
+
+	it("stops at a mailbox that is only behind a bridge on somebody's desktop", async () => {
+		const { context: ctx } = context({
+			discovers: { host: "127.0.0.1", port: 1143, bridge: true },
+		});
+
+		const answer = await runCommand("/email agents@proton.me", ctx);
+
+		expect(answer).toContain("bridge running on your own computer");
+		expect(answer).toContain("127.0.0.1:1143");
+	});
+
+	/**
+	 * Google shows an app password in four groups of four and people paste it that way. Every
+	 * provider that formats one like that ignores the spaces, so joining them is what was meant.
+	 */
+	it("takes a password pasted in the groups the provider printed it in", async () => {
+		const { context: ctx, passwords } = context();
+		await runCommand("/email agents@fastmail.com", ctx);
+
+		await runCommand("/email abcd efgh ijkl mnop", ctx);
+
+		expect(passwords).toEqual(["abcdefghijklmnop"]);
+	});
+
+	// A mailbox somebody runs themselves may well have a space in its password.
+	it("leaves a password that is not that shape exactly as it was typed", async () => {
+		const { context: ctx, passwords } = context();
+		await runCommand("/email agents@fastmail.com", ctx);
+
+		await runCommand("/email correct horse-battery staple", ctx);
+
+		expect(passwords).toEqual(["correct horse-battery staple"]);
+	});
+
+	it("connects the address and the password in one line, when both were typed", async () => {
+		const { context: ctx, passwords, mail } = context();
+
+		const answer = await runCommand("/email agents@fastmail.com abcd efgh", ctx);
+
+		expect(passwords).toEqual(["abcdefgh"]);
+		expect(mail.held?.mailbox).toBe("agents@fastmail.com");
+		expect(answer).toContain("agents+scout@fastmail.com");
+	});
+
+	// What is being handed over is every agent on the plane, so an address nothing vouched for opens
+	// nothing at all — and until somebody has mailed the phrase in, the mailbox instructs nobody.
+	it("asks for the phrase by mail while nobody may instruct yet", async () => {
+		const { context: ctx } = context();
+
+		const answer = await runCommand("/email agents@fastmail.com abcd efgh", ctx);
+
+		expect(answer).toContain("Nobody may instruct scout by mail yet");
+		expect(answer).toMatch(/^\s+kqm3nvbh27$/m);
+	});
+
+	it("passes the provider's own refusal back, rather than a sentence of its own", async () => {
+		const { context: ctx } = context({ mailRefuses: "AUTHENTICATIONFAILED: Invalid credentials" });
+		await runCommand("/email agents@fastmail.com", ctx);
+
+		const answer = await runCommand("/email wrongpassword", ctx);
+
+		expect(answer).toContain("AUTHENTICATIONFAILED");
+	});
+
+	it("will not take a password before there is an address for it", async () => {
+		const { context: ctx } = context();
+
+		expect(await runCommand("/email abcdefghijklmnop", ctx)).toContain("No address to connect");
+	});
+
+	// One mailbox for every agent is the whole design, so an answer that only said "your address"
+	// would leave an operator connecting it again for the next agent they make.
+	it("says the mailbox serves the whole plane, not just the agent it was typed at", async () => {
+		const { context: ctx } = context({ mailbox: CONNECTED });
+
+		const answer = await runCommand("/email", ctx);
+
+		expect(answer).toContain("agents+scout@fastmail.com");
+		expect(answer).toContain("serves every agent on this plane");
+		expect(answer).toContain("Mail from nico@example.com is read as instructions");
+	});
+
+	it("says where untagged mail goes, when it is not this agent it goes to", async () => {
+		const { context: ctx } = context({
+			agentId: "clerk",
+			mailbox: { ...CONNECTED, address: "agents+clerk@fastmail.com" },
+		});
+
+		expect(await runCommand("/email", ctx)).toContain("no tag on it goes to scout");
+	});
+
+	// A mailbox that stopped being readable is a mailbox that looks connected and delivers nothing,
+	// and nothing about that silence points at the password that was revoked.
+	it("leads with what went wrong, when the plane cannot read it", async () => {
+		const { context: ctx } = context({
+			mailbox: { ...CONNECTED, trouble: "Invalid credentials (Failure)" },
+		});
+
+		expect(await runCommand("/email", ctx)).toContain("Invalid credentials");
+	});
+
+	it("puts the mailbox down for everyone, and does not claim to have put down nothing", async () => {
+		const { context: ctx, mail } = context({ mailbox: CONNECTED });
+
+		expect(await runCommand("/email off", ctx)).toContain("for every agent on this plane");
+		expect(mail.held).toBeUndefined();
+		expect(await runCommand("/email off", ctx)).toContain("No mailbox was connected");
+	});
+});
+
 describe("withoutSecrets", () => {
 	it("spends the token and keeps the bot it names", () => {
 		expect(withoutSecrets("/telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw")).toBe(
@@ -1135,6 +1365,25 @@ describe("withoutSecrets", () => {
 	it("leaves a line with nothing to hide exactly as it was typed", () => {
 		expect(withoutSecrets("/telegram off")).toBe("/telegram off");
 		expect(withoutSecrets("/serve 3000")).toBe("/serve 3000");
+	});
+
+	/**
+	 * Redacted by which command it is, not by what the word looks like. An app password is a run of
+	 * ordinary letters, so nothing about `abcd efgh` says it is a credential — only the line it is on.
+	 */
+	it("spends an app password whatever shape it was pasted in", () => {
+		expect(withoutSecrets("/email abcd efgh ijkl mnop")).toBe("/email … … … …");
+		expect(withoutSecrets("/email hunter2")).toBe("/email …");
+	});
+
+	// The address is the half worth keeping: a transcript that lost it cannot say which mailbox this
+	// plane was pointed at, and it is not a secret — it is printed on every message the agent sends.
+	it("keeps the address it was pointed at, and the word that puts it down", () => {
+		expect(withoutSecrets("/email agents@fastmail.com")).toBe("/email agents@fastmail.com");
+		expect(withoutSecrets("/email agents@fastmail.com abcd efgh")).toBe(
+			"/email agents@fastmail.com … …",
+		);
+		expect(withoutSecrets("/email off")).toBe("/email off");
 	});
 });
 
@@ -1391,6 +1640,20 @@ describe("agentMayNot", () => {
 		expect(refusal).not.toContain("AAHdq");
 		expect(agentMayNot("/telegram", scout)).toBeDefined();
 		expect(agentMayNot("/telegram off", scout)).toBeDefined();
+	});
+
+	/**
+	 * Refused for the same reason and harder. A mailbox is connected once for every agent on the
+	 * plane, so an agent that could run this would be choosing who instructs the others too — and the
+	 * line it asked for holds an app password, which is not a thing to echo back into a pane.
+	 */
+	it("refuses the whole of email, without repeating what it asked for", () => {
+		const refusal = agentMayNot("/email agents@fastmail.com abcd efgh", scout);
+
+		expect(refusal).toContain("every agent");
+		expect(refusal).not.toContain("abcd");
+		expect(agentMayNot("/email", scout)).toBeDefined();
+		expect(agentMayNot("/email off", scout)).toBeDefined();
 	});
 
 	// Answered by the command itself, which says what there is instead. A refusal here would be this

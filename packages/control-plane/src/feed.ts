@@ -62,6 +62,7 @@ export class LogFeed {
 		if (event.kind === "step") this.#step(event.agentId, event.step);
 		else if (event.kind === "audit") this.#egress(event.entry);
 		else if (event.kind === "error") this.#error(event.context, event.message);
+		else if (event.kind === "note") this.note(event.who, event.action, event.detail);
 		else this.#turn(event.agentId, event.result);
 	}
 

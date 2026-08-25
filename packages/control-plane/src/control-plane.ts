@@ -4,10 +4,18 @@ import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import {
+	type Account,
+	addressFor,
+	appPasswordPage,
 	type Bot,
+	baseAddress,
 	type Channel,
 	ChannelRouter,
+	closedTo,
+	discover,
+	EmailChannel,
 	type Hook,
+	needsBridge,
 	pairingPhrase,
 	startLink,
 	TelegramChannel,
@@ -35,6 +43,8 @@ import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
 	type CommandContext,
+	type EmailOffer,
+	type EmailStanding,
 	endedIn,
 	type LoginPage,
 	money,
@@ -47,6 +57,7 @@ import {
 } from "./commands.ts";
 import { ExecStream } from "./exec-stream.ts";
 import { ProviderKeys } from "./keys.ts";
+import { MailboxStore } from "./mailbox.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
 import {
 	AddedModels,
@@ -198,7 +209,20 @@ export type PlaneEvent =
 	 * machine with the browser. The URL is in the conversation either way — this only saves copying
 	 * a hundred characters out of a pane that had to wrap them.
 	 */
-	| { readonly kind: "open"; readonly url: string };
+	| { readonly kind: "open"; readonly url: string }
+	/**
+	 * Something the plane did that is not a turn, in the columns a turn is already reported in.
+	 *
+	 * Shaped like the feed's own rows on purpose. A mailbox declining two hundred newsletters is worth
+	 * a line and is not worth two hundred, and a line that had nowhere to sit would either be dropped
+	 * or printed in a gutter of its own.
+	 */
+	| {
+			readonly kind: "note";
+			readonly who: string;
+			readonly action: string;
+			readonly detail: string;
+	  };
 
 export interface AgentSummary {
 	readonly id: string;
@@ -297,6 +321,7 @@ export class ControlPlane {
 	readonly broker: EgressBroker;
 	readonly webhooks: WebhookChannel;
 	readonly telegram: TelegramChannel;
+	readonly email: EmailChannel;
 
 	readonly #agents: AgentConfig[];
 	/**
@@ -342,6 +367,17 @@ export class ControlPlane {
 	readonly #keys: ProviderKeys;
 	readonly #mcp: McpShelf;
 	readonly #bots: TelegramBots;
+	readonly #mailbox: MailboxStore;
+	/**
+	 * The address `/email` last looked up, waiting for the password that finishes it.
+	 *
+	 * Held rather than asked for again, because it was typed one line ago and the console is still
+	 * showing it. Not on disk: an offer nobody completed is a question left hanging, and a plane that
+	 * restarted should ask it again rather than resume it.
+	 */
+	#offered: EmailOffer | undefined;
+	/** What went wrong the last time the mailbox was read, so `/email` can say so without a request. */
+	#mailTrouble: string | undefined;
 	readonly #logins: OAuthLogins;
 	readonly #desk: LoginDesk;
 	/**
@@ -393,6 +429,7 @@ export class ControlPlane {
 		this.#secrets = this.#keys;
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#bots = new TelegramBots(join(this.#stateDir, "telegram.json"));
+		this.#mailbox = new MailboxStore(join(this.#stateDir, "mailbox.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
 		this.#desk = new LoginDesk(this.#logins, (url) => this.#emit({ kind: "open", url }));
 
@@ -441,8 +478,28 @@ export class ControlPlane {
 			},
 			onError: (agentId, error) => this.#reportError(`${agentId} telegram`, error),
 		});
+		this.email = new EmailChannel({
+			publisher: this.bus,
+			// Asked at the moment a message arrives rather than held, because a tag is whatever somebody
+			// typed after a `+` and the agent it names may have been made since the mailbox was connected.
+			agents: () => this.#agents.map((agent) => agent.id),
+			onChange: (account) => {
+				void this.#mailbox.save(account).catch((error: Error) => {
+					this.#reportError("email", error);
+				});
+			},
+			onError: (error) => {
+				this.#mailTrouble = error.message;
+				this.#reportError("email", error);
+			},
+			// Counted rather than listed. A mailbox is mostly not for the agent, every day, and a console
+			// that printed every newsletter it declined would be a console nobody reads.
+			onDropped: (why, count) =>
+				this.#emit({ kind: "note", who: "email", action: "dropped", detail: `${why} ×${count}` }),
+		});
 		this.router.register(this.webhooks);
 		this.router.register(this.telegram);
+		this.router.register(this.email);
 		this.router.register(new SelfChannel());
 	}
 
@@ -994,6 +1051,94 @@ export class ControlPlane {
 		return had;
 	}
 
+	/** The plane's mailbox seen from one agent's place in it, or nothing if none is connected. */
+	emailStanding(agentId: string): EmailStanding | undefined {
+		const account = this.email.account;
+		if (account === undefined) return undefined;
+		return {
+			mailbox: account.address,
+			address: addressFor(account.address, agentId),
+			host: account.host,
+			port: account.port,
+			guessed: account.found === "guess",
+			fallback: account.fallback,
+			operators: account.operators,
+			phrase: account.pairing,
+			trouble: this.#mailTrouble,
+		};
+	}
+
+	/**
+	 * Works out where an address's mail lives, and holds the answer against the password to come.
+	 *
+	 * Nothing is connected here and nothing is written down, because two of the three things this can
+	 * discover are reasons not to go on: a provider that stopped issuing app passwords, and one whose
+	 * mail is only reachable through a bridge running on a desktop this plane is not sitting at.
+	 * Finding either of those out after asking somebody for a password wastes the one thing that has
+	 * to be gone and found on another machine.
+	 */
+	async offerEmail(address: string): Promise<EmailOffer> {
+		const base = baseAddress(address);
+		const [incoming, closed] = await Promise.all([discover(base), closedTo(base)]);
+		const offer: EmailOffer = {
+			address: base,
+			host: incoming.host,
+			port: incoming.port,
+			found: incoming.found,
+			appPasswords: appPasswordPage(base),
+			closed: closed?.why,
+			bridge: needsBridge(incoming),
+		};
+		this.#offered = offer;
+		return offer;
+	}
+
+	/**
+	 * Finishes the offer with a password, and starts reading.
+	 *
+	 * Logged into before it is written down, for the same reason a bot token is: a password with a
+	 * character missing off the end becomes a mailbox that is listed as connected and never delivers
+	 * anything, and nothing about that silence points back at the line where it was pasted.
+	 *
+	 * The mailbox arrives listening to nobody. What binds an operator is the phrase mailed back in
+	 * from an address the sending domain signed, because `From:` is a line the sender chose and a
+	 * mailbox that trusted it would take instructions from whoever could type the right address.
+	 */
+	async connectEmail(agentId: string, password: string): Promise<EmailStanding> {
+		const offer = this.#offered;
+		if (offer === undefined) throw new Error("No address to connect. Type /email <address> first.");
+
+		const account: Account = {
+			address: offer.address,
+			host: offer.host,
+			port: offer.port,
+			username: offer.address,
+			password,
+			found: offer.found,
+			// Mail with no tag on it has to reach somebody, and the agent this was typed at is the one
+			// whose address the operator was just told. Not every provider does plus-addressing, and on
+			// one that does not the bare address would otherwise be read and silently dropped.
+			fallback: agentId,
+			operators: [],
+			pairing: pairingPhrase(),
+		};
+		await this.email.verify(account);
+		await this.#mailbox.save(account);
+		this.#mailTrouble = undefined;
+		this.#offered = undefined;
+		this.email.set(account);
+		return this.emailStanding(agentId) as EmailStanding;
+	}
+
+	/** Puts the mailbox down for the whole plane, and says whether there was one. */
+	async disconnectEmail(): Promise<boolean> {
+		const had = await this.#mailbox.forget();
+		this.email.remove();
+		this.#offered = undefined;
+		this.#mailTrouble = undefined;
+		return had;
+	}
+
 	/**
 	 * Runs a line the operator typed as a command rather than as a message.
 	 *
@@ -1096,6 +1241,10 @@ export class ControlPlane {
 			telegram: async () => this.telegramStanding(agentId),
 			connectTelegram: (token) => this.connectTelegram(agentId, token),
 			disconnectTelegram: () => this.disconnectTelegram(agentId),
+			email: async () => this.emailStanding(agentId),
+			offerEmail: (address) => this.offerEmail(address),
+			connectEmail: (password) => this.connectEmail(agentId, password),
+			disconnectEmail: () => this.disconnectEmail(),
 		};
 	}
 
@@ -1385,6 +1534,10 @@ export class ControlPlane {
 		}
 		this.telegram.start();
 
+		const mailbox = await this.#mailbox.get();
+		if (mailbox !== undefined) this.email.set(mailbox);
+		this.email.start();
+
 		// Anything left queued by a previous process is delivered before new work arrives.
 		await this.bus.recover();
 		this.scheduler.start();
@@ -1396,6 +1549,7 @@ export class ControlPlane {
 
 		this.scheduler.stop();
 		this.telegram.stop();
+		this.email.stop();
 		await this.webhooks.close();
 		await this.broker.close();
 		// Sandboxes are left running. They are the agents, not this process's scratch space.
