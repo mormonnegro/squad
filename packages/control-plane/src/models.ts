@@ -52,6 +52,68 @@ export const PROVIDERS: Readonly<
 	xai: { host: "api.x.ai", keyEnv: "XAI_API_KEY" },
 };
 
+/**
+ * A model as somebody said it, before the table filled the rest in.
+ *
+ * The same shape whether it came out of the operator's file or off the setup screen, so that the one
+ * place that knows how a provider name becomes a host and a variable stays one place.
+ */
+export interface ModelSpec {
+	readonly id: string;
+	readonly provider: string;
+	readonly model?: string;
+	readonly host?: string;
+	readonly keyEnv?: string;
+	readonly header?: string;
+}
+
+/**
+ * Fills in everything about a model that is a fact rather than a decision, or says what is missing.
+ *
+ * Returns the reason instead of throwing because both callers want it as words: the config file
+ * collects them into the list of everything wrong with it, and the setup screen puts it on the row
+ * under the one being typed.
+ */
+export function resolveModel(spec: ModelSpec): Model | string {
+	const id = spec.id.trim();
+	const provider = spec.provider.trim();
+	if (id.length === 0) return 'a model needs an id: the name to pick it by, e.g. "sonnet"';
+	if (provider.length === 0) {
+		return `"${id}" needs a provider, e.g. ${Object.keys(PROVIDERS).join(", ")}`;
+	}
+
+	const known = PROVIDERS[provider];
+	const host = spec.host !== undefined && spec.host.length > 0 ? spec.host : known?.host;
+	const keyEnv = spec.keyEnv !== undefined && spec.keyEnv.length > 0 ? spec.keyEnv : known?.keyEnv;
+	if (host === undefined || keyEnv === undefined) {
+		return `nothing here knows "${provider}", so it needs a host and a keyEnv of its own. Known: ${Object.keys(PROVIDERS).join(", ")}`;
+	}
+
+	const header = spec.header !== undefined && spec.header.length > 0 ? spec.header : known?.header;
+	return {
+		id,
+		provider,
+		// The id is usually the model's own name, so saying it twice is the common case.
+		model: spec.model !== undefined && spec.model.length > 0 ? spec.model : id,
+		host,
+		keyEnv,
+		...(header !== undefined ? { header } : {}),
+	};
+}
+
+/** A model as the setup screen has it: which of the two lists it is on, and whether it can be paid. */
+export interface ModelStanding extends Model {
+	/**
+	 * Given at a console rather than declared in the operator's file.
+	 *
+	 * The screen says which, because it decides what can be done to the row: this plane may take back
+	 * what it was handed and may not touch what the file declared, and a list that looked uniform
+	 * would be one where half the rows silently refuse.
+	 */
+	readonly added: boolean;
+	readonly held: boolean;
+}
+
 /** A key this plane could be given, named after the provider that spends it. */
 export interface Provider {
 	/** What the provider is called, which is what the configuration names to get the rest. */
@@ -126,9 +188,98 @@ export function modelGrants(models: readonly Model[]): readonly Grant[] {
 	}));
 }
 
-/** The variables a sandbox needs for pi to believe every configured provider is set up. */
+/**
+ * The variables a sandbox needs for pi to believe every provider is set up.
+ *
+ * Every provider this knows, not only the ones configured now. A container's environment is set once
+ * when it starts, and a model added at the keyboard afterwards would otherwise be a model pi refuses
+ * for want of a variable — fixable only by restarting the agent, which is the thing that was not
+ * supposed to be needed. There is nothing to spend here: each of these is the same worthless string,
+ * and the reach that would make one matter is a grant, which is decided elsewhere and separately.
+ */
 export function modelEnv(models: readonly Model[]): Record<string, string> {
-	return Object.fromEntries(models.map((model) => [model.keyEnv, KEY_PLACEHOLDER]));
+	const names = [
+		...Object.values(PROVIDERS).map((known) => known.keyEnv),
+		...models.map((model) => model.keyEnv),
+	];
+	return Object.fromEntries(names.map((keyEnv) => [keyEnv, KEY_PLACEHOLDER]));
+}
+
+/**
+ * The models this plane was given at the keyboard, on top of the ones its file declares.
+ *
+ * Beside the operator's file rather than in it, which is the same answer every other thing decided
+ * at a console gets here: the file is theirs, this plane may not rewrite it, and a change that
+ * vanished on the next deploy would be worse than one that was never offered. What that costs is
+ * that `config.yaml` is no longer the whole list — which is why the setup screen says, for every
+ * model on it, which of the two it came from.
+ */
+export class AddedModels {
+	readonly #path: string;
+	#tail: Promise<unknown> = Promise.resolve();
+
+	constructor(path: string) {
+		this.#path = path;
+	}
+
+	/** Resolved on the way out, so a provider the table learns about later is filled in correctly. */
+	async all(): Promise<readonly Model[]> {
+		const specs = await this.#serialize(() => this.#read());
+		const models: Model[] = [];
+		for (const spec of specs) {
+			const model = resolveModel(spec);
+			if (typeof model !== "string") models.push(model);
+		}
+		return models;
+	}
+
+	async add(spec: ModelSpec): Promise<void> {
+		await this.#serialize(async () => {
+			const all = (await this.#read()).filter((other) => other.id !== spec.id);
+			all.push(spec);
+			await this.#write(all);
+		});
+	}
+
+	/** True when there was one to drop, so the console can tell a typo from a model that is gone. */
+	async drop(id: string): Promise<boolean> {
+		return await this.#serialize(async () => {
+			const all = await this.#read();
+			const left = all.filter((other) => other.id !== id);
+			if (left.length === all.length) return false;
+			await this.#write(left);
+			return true;
+		});
+	}
+
+	async #read(): Promise<ModelSpec[]> {
+		try {
+			const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
+			if (!Array.isArray(parsed)) return [];
+			return parsed.filter(
+				(entry): entry is ModelSpec =>
+					typeof entry === "object" &&
+					entry !== null &&
+					typeof (entry as ModelSpec).id === "string" &&
+					typeof (entry as ModelSpec).provider === "string",
+			);
+		} catch {
+			return [];
+		}
+	}
+
+	async #write(all: readonly ModelSpec[]): Promise<void> {
+		await mkdir(dirname(this.#path), { recursive: true });
+		const temporary = `${this.#path}.${process.pid}.tmp`;
+		await writeFile(temporary, `${JSON.stringify(all, null, "\t")}\n`, "utf8");
+		await rename(temporary, this.#path);
+	}
+
+	#serialize<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.#tail.then(operation, operation);
+		this.#tail = result.catch(() => {});
+		return result;
+	}
 }
 
 /**

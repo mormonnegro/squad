@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { App } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
-import type { ProviderStanding } from "../src/models.ts";
+import type { ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
 
 /**
  * The console driven by keystrokes, which is the only way some of it is true at all.
@@ -33,6 +33,8 @@ const DOWN = "[B";
 const UP = "[A";
 const ENTER = "\r";
 const TAB = "\t";
+/** What the key marked backspace actually sends, which is what the delete key sends too. */
+const BACKSPACE = "\u007F";
 const ESCAPE = "\u001B";
 
 const listed = (id: string): AgentSummary => ({
@@ -59,11 +61,15 @@ function plane(
 		refuses?: string;
 		has?: readonly AgentSummary[];
 		pays?: readonly ProviderStanding[];
+		thinks?: readonly ModelStanding[];
+		refusesModel?: string;
 	} = {},
 ) {
 	const asked: string[] = [];
 	const commanded: string[] = [];
 	const given: [string, string][] = [];
+	const written: ModelSpec[] = [];
+	const dropped: string[] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
 	let finish: (agent: AgentSummary) => void = () => {};
@@ -94,12 +100,24 @@ function plane(
 		setKey: async (keyEnv: string, value: string) => {
 			given.push([keyEnv, value]);
 		},
+		models: async () => options.thinks ?? [],
+		addModel: async (spec: ModelSpec) => {
+			written.push(spec);
+			// The plane refuses a model it cannot resolve, and the screen has to say so rather than
+			// quietly redraw a list the model is not in.
+			if (options.refusesModel !== undefined) throw new Error(options.refusesModel);
+		},
+		dropModel: async (modelId: string) => {
+			dropped.push(modelId);
+		},
 	} as unknown as ControlClient;
 	return {
 		client,
 		asked,
 		commanded,
 		given,
+		written,
+		dropped,
 		built: (id: string) => finish(listed(id)),
 		broke: (why: string) => fail(new Error(why)),
 	};
@@ -332,8 +350,28 @@ describe("the setup screen, pressed at", () => {
 		paying("anthropic", "ANTHROPIC_API_KEY", [], true, true),
 	];
 
+	const thinking = (
+		id: string,
+		provider: string,
+		added: boolean,
+		held: boolean,
+	): ModelStanding => ({
+		id,
+		provider,
+		model: id,
+		host: `api.${provider}.com`,
+		keyEnv: `${provider.toUpperCase()}_API_KEY`,
+		added,
+		held,
+	});
+
+	const thinks = [
+		thinking("flash", "deepseek", false, false),
+		thinking("mini", "openai", true, true),
+	];
+
 	/** Opens the console and tabs to the setup screen, which is where every one of these starts. */
-	async function setup(options: Parameters<typeof plane>[0] = { pays }) {
+	async function setup(options: Parameters<typeof plane>[0] = { pays, thinks }) {
 		const it_ = plane(options);
 		const console_ = open(it_.client, [listed("demo")]);
 		// One at a time: two writes in a tick arrive as one chunk, which is one keystroke to a terminal
@@ -469,6 +507,148 @@ describe("the setup screen, pressed at", () => {
 			expect(screen.screen()).toContain("demo   chat");
 			expect(screen.screen()).not.toContain("sk-");
 			expect(screen.screen()).not.toContain("ls");
+		} finally {
+			screen.close();
+		}
+	});
+
+	/** The arrows walk one list, so the row after the last key is the first model and not nothing. */
+	it("carries on into the models the keys are for", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+
+			expect(screen.screen()).toContain("declared in deploy/config.yaml");
+
+			await screen.press(DOWN);
+			expect(screen.screen()).toContain("added here");
+			expect(screen.screen()).toContain("⌫ drop model");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The whole of "all the configuration from the program": a model this plane never had, given a
+	// name and a provider at a keyboard, with no file edited and nothing restarted.
+	it("takes a model written out on the row that adds one", async () => {
+		const screen = await setup();
+		try {
+			for (const _ of pays) await screen.press(DOWN);
+			for (const _ of thinks) await screen.press(DOWN);
+			await screen.press(ENTER);
+
+			expect(screen.screen()).toContain("⏎ save");
+
+			await screen.press("sonnet anthropic claude-sonnet-4-6");
+			// Written out rather than hidden: this is a name and a provider, not a secret.
+			expect(screen.screen()).toContain("sonnet anthropic");
+
+			await screen.press(ENTER);
+			expect(screen.written).toEqual([
+				{ id: "sonnet", provider: "anthropic", model: "claude-sonnet-4-6" },
+			]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The provider's own name for a model is the id far more often than not, so leaving it out is the
+	// short way to say the ordinary thing rather than a line the plane has to refuse.
+	it("leaves the provider's own name out when it was not said", async () => {
+		const screen = await setup();
+		try {
+			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
+			await screen.press(ENTER);
+			await screen.press("sonnet anthropic");
+			await screen.press(ENTER);
+
+			expect(screen.written).toEqual([{ id: "sonnet", provider: "anthropic" }]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("says why a model was refused, instead of a list it is quietly not in", async () => {
+		const screen = await setup({
+			pays,
+			thinks,
+			refusesModel: 'nothing here knows "my-gateway"',
+		});
+		try {
+			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
+			await screen.press(ENTER);
+			await screen.press("k2 my-gateway");
+			await screen.press(ENTER);
+
+			expect(screen.screen()).toContain("my-gateway");
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("gives up on a model without adding it", async () => {
+		const screen = await setup();
+		try {
+			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
+			await screen.press(ENTER);
+			await screen.press("sonnet anthropic");
+			await screen.press(ESCAPE);
+
+			expect(screen.written).toEqual([]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Asked before it happens, and answered by one key, because the cursor is already on the row and
+	// the hand is already on the keys that would answer it by accident.
+	it("asks before dropping a model, and drops it when the answer is yes", async () => {
+		const screen = await setup();
+		try {
+			for (const _ of pays) await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(BACKSPACE);
+
+			expect(screen.screen()).toContain("y drop");
+			expect(screen.dropped).toEqual([]);
+
+			await screen.press("y");
+			expect(screen.dropped).toEqual(["mini"]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("keeps a model when the answer is anything else", async () => {
+		const screen = await setup();
+		try {
+			for (const _ of pays) await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(BACKSPACE);
+			await screen.press("n");
+
+			expect(screen.dropped).toEqual([]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	/**
+	 * The half of the list this screen may read and not write.
+	 *
+	 * The plane would refuse it anyway, but the refusal would arrive after the question was answered
+	 * — and a question answered `y` that then does nothing is worse than one that was never asked.
+	 */
+	it("sends a model the file declared back to the file", async () => {
+		const screen = await setup();
+		try {
+			for (const _ of pays) await screen.press(DOWN);
+			await screen.press(BACKSPACE);
+
+			expect(screen.screen()).toContain("drop it there");
+			expect(screen.screen()).not.toContain("y drop");
 		} finally {
 			screen.close();
 		}

@@ -3,7 +3,7 @@ import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
 import type { Hook } from "@agent-dive/channels";
 import { parse as parseYaml } from "yaml";
 import type { AgentConfig, AgentDefaults, ControlPlaneOptions } from "./control-plane.ts";
-import { type Model, modelEnv, modelGrants, PROVIDERS } from "./models.ts";
+import { type Model, modelEnv, modelGrants, PROVIDERS, resolveModel } from "./models.ts";
 
 export class ConfigError extends Error {
 	readonly issues: readonly string[];
@@ -146,29 +146,23 @@ function parseModel(raw: unknown, index: number, issues: string[]): Model | unde
 		return undefined;
 	}
 
-	const known = PROVIDERS[provider];
-	const at = typeof host === "string" && host.length > 0 ? host : known?.host;
-	const key = typeof keyEnv === "string" && keyEnv.length > 0 ? keyEnv : known?.keyEnv;
-	if (at === undefined || key === undefined) {
-		issues.push(
-			`${label} ("${id}"): nothing here knows "${provider}", so it needs a host and a keyEnv of its own. Known: ${Object.keys(PROVIDERS).join(", ")}`,
-		);
-		return undefined;
-	}
 	// The key is not looked for here, and its absence is not an error. Refusing to start over a
 	// variable nobody has exported yet would make the first run of this thing a configuration
-	// exercise, and there is somewhere better to say it: `/model` marks the ones with no key behind
-	// them, in the place where the answer is to paste one in and try again.
-	const attachedTo = typeof header === "string" && header.length > 0 ? header : known?.header;
-	return {
+	// exercise, and there is somewhere better to say it: the setup screen marks the ones with no key
+	// behind them, in the place where the answer is to paste one in.
+	const resolved = resolveModel({
 		id,
 		provider,
-		// The id is usually the model's own name, so saying it twice is the common case.
-		model: typeof model === "string" && model.length > 0 ? model : id,
-		host: at,
-		keyEnv: key,
-		...(attachedTo !== undefined ? { header: attachedTo } : {}),
-	};
+		...(typeof model === "string" ? { model } : {}),
+		...(typeof host === "string" ? { host } : {}),
+		...(typeof keyEnv === "string" ? { keyEnv } : {}),
+		...(typeof header === "string" ? { header } : {}),
+	});
+	if (typeof resolved === "string") {
+		issues.push(`${label} ("${id}"): ${resolved}`);
+		return undefined;
+	}
+	return resolved;
 }
 
 function parseModels(raw: unknown, issues: string[]): readonly Model[] {

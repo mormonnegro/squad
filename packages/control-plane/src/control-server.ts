@@ -4,7 +4,7 @@ import net from "node:net";
 import { join } from "node:path";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
-import type { ProviderStanding } from "./models.ts";
+import type { ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Utterance } from "./transcript.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
@@ -48,7 +48,16 @@ export type ControlRequest =
 			readonly op: "key";
 			readonly keyEnv: string;
 			readonly value: string;
-	  };
+	  }
+	/** Every model there is to think with, and where each of the two lists it comes from. */
+	| { readonly id: string; readonly op: "models" }
+	/**
+	 * A model to think with, added at a console. It arrives here and nowhere else, for the reason
+	 * every other widening does: this socket is the operator's, and a webhook that reached it would be
+	 * a stranger with a URL giving the agents somewhere new to send their thinking.
+	 */
+	| { readonly id: string; readonly op: "add-model"; readonly spec: ModelSpec }
+	| { readonly id: string; readonly op: "drop-model"; readonly modelId: string };
 
 export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agents: readonly AgentSummary[] }
@@ -64,6 +73,7 @@ export type ControlResponse =
 			readonly ok: true;
 			readonly providers: readonly ProviderStanding[];
 	  }
+	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
@@ -240,6 +250,14 @@ export class ControlServer {
 				// The answer says which key, never the key. Everything on this socket can end up in a
 				// terminal's scrollback, and a screenful of it is a screenful somebody will paste.
 				this.#write(socket, { id: request.id, ok: true, text: request.keyEnv });
+			} else if (request.op === "models") {
+				this.#write(socket, { id: request.id, ok: true, models: await this.#plane.models() });
+			} else if (request.op === "add-model") {
+				const model = await this.#plane.addModel(request.spec);
+				this.#write(socket, { id: request.id, ok: true, text: model.id });
+			} else if (request.op === "drop-model") {
+				await this.#plane.dropModel(request.modelId);
+				this.#write(socket, { id: request.id, ok: true, text: request.modelId });
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });

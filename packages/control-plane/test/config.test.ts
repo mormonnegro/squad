@@ -295,7 +295,9 @@ agents:
 			"api.deepseek.com",
 			"api.anthropic.com",
 		]);
-		expect(agent.env).toEqual({
+		// The variables go wider than the grants on purpose: a placeholder is worth nothing and a
+		// container's environment is set once, while what it may actually reach is the grant list.
+		expect(agent.env).toMatchObject({
 			DEEPSEEK_API_KEY: "injected-by-the-proxy",
 			ANTHROPIC_API_KEY: "injected-by-the-proxy",
 		});

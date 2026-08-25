@@ -229,6 +229,148 @@ describe("provider keys", () => {
 });
 
 /**
+ * The other half of a plane you do not have to redeploy to change. A key is no use without a model to
+ * spend it on, and until this the list of models was the file and only the file — so trying a second
+ * provider meant editing YAML over SSH and restarting the thing.
+ */
+describe("a model added at the console", () => {
+	let stateDir: string;
+	const declared = [
+		{
+			id: "flash",
+			provider: "deepseek",
+			model: "deepseek-v4-flash",
+			host: "api.deepseek.com",
+			keyEnv: "DEEPSEEK_API_KEY",
+		},
+	];
+	const planeWith = () =>
+		new ControlPlane({
+			agents: [{ id: "scout", model: "flash" }],
+			stateDir,
+			models: declared,
+			secrets: new EnvSecretStore({ ANTHROPIC_API_KEY: "from-the-machine" }),
+		});
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-models-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const named = async (plane: ControlPlane, id: string) =>
+		(await plane.models()).find((model) => model.id === id);
+
+	it("joins the ones the file declared", async () => {
+		const plane = planeWith();
+
+		await plane.addModel({ id: "sonnet", provider: "anthropic", model: "claude-sonnet-4-6" });
+
+		expect((await plane.models()).map((model) => model.id)).toEqual(["flash", "sonnet"]);
+	});
+
+	// Naming the provider is the whole of configuring it here too, which is the point: the console
+	// asks for the two things that are decisions and fills in the four that are facts.
+	it("fills in the host and the variable from the provider's name", async () => {
+		const plane = planeWith();
+
+		await plane.addModel({ id: "sonnet", provider: "anthropic", model: "claude-sonnet-4-6" });
+
+		expect(await named(plane, "sonnet")).toMatchObject({
+			host: "api.anthropic.com",
+			keyEnv: "ANTHROPIC_API_KEY",
+			header: "x-api-key",
+		});
+	});
+
+	it("says which of the two lists a model is on, so the screen knows what it may do to it", async () => {
+		const plane = planeWith();
+		await plane.addModel({ id: "sonnet", provider: "anthropic" });
+
+		expect(await named(plane, "flash")).toMatchObject({ added: false });
+		expect(await named(plane, "sonnet")).toMatchObject({ added: true });
+	});
+
+	it("says whether this plane can pay for it", async () => {
+		const plane = planeWith();
+
+		await plane.addModel({ id: "sonnet", provider: "anthropic" });
+
+		expect(await named(plane, "sonnet")).toMatchObject({ held: true });
+		expect(await named(plane, "flash")).toMatchObject({ held: false });
+	});
+
+	// The whole reason this is worth doing at the console: a model that needed a restart to become
+	// usable would be a model you may as well have added to the file.
+	it("is something the agents may reach, without anything being restarted", async () => {
+		const plane = planeWith();
+		const before = (await plane.agents()).find((agent) => agent.id === "scout")?.grants ?? 0;
+
+		await plane.addModel({ id: "sonnet", provider: "anthropic" });
+
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(before + 1);
+	});
+
+	it("outlives the plane it was typed at", async () => {
+		await planeWith().addModel({ id: "sonnet", provider: "anthropic" });
+
+		expect((await planeWith().models()).map((model) => model.id)).toContain("sonnet");
+	});
+
+	it("goes away again, and takes the reach with it", async () => {
+		const plane = planeWith();
+		await plane.addModel({ id: "sonnet", provider: "anthropic" });
+
+		const reaching = (await plane.agents()).find((agent) => agent.id === "scout")?.grants ?? 0;
+
+		await plane.dropModel("sonnet");
+
+		expect((await plane.models()).map((model) => model.id)).toEqual(["flash"]);
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(reaching - 1);
+	});
+
+	it("says so rather than pretending, when there was no such model", async () => {
+		await expect(planeWith().dropModel("sonnet")).rejects.toThrow(/No model "sonnet"/);
+	});
+
+	/**
+	 * The file stays the operator's. A console that could overwrite a declaration would make the file
+	 * a suggestion, and the point of writing these somewhere else is that both are still readable.
+	 */
+	it("will not stand in for one the file declared, or take it away", async () => {
+		const plane = planeWith();
+
+		await expect(plane.addModel({ id: "flash", provider: "anthropic" })).rejects.toThrow(
+			/declared in the config file/,
+		);
+		await expect(plane.dropModel("flash")).rejects.toThrow(/declared in the config file/);
+	});
+
+	it("refuses a provider nothing here knows, and says which it does", async () => {
+		await expect(planeWith().addModel({ id: "local", provider: "my-gateway" })).rejects.toThrow(
+			/nothing here knows "my-gateway"/,
+		);
+	});
+
+	// Written out, it works — which is what keeps the table a convenience rather than the boundary.
+	it("takes a provider nothing knows when it is told where it lives", async () => {
+		const plane = planeWith();
+
+		await plane.addModel({
+			id: "local",
+			provider: "my-gateway",
+			model: "llama-4-70b",
+			host: "models.acme.internal",
+			keyEnv: "GATEWAY_TOKEN",
+		});
+
+		expect(await named(plane, "local")).toMatchObject({ host: "models.acme.internal" });
+	});
+});
+
+/**
  * What an agent inherits, and what it does not.
  *
  * The rule these keep honest: a grant is only ever something the operator wrote. Defaults are how

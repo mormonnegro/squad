@@ -36,11 +36,15 @@ import {
 import { ProviderKeys } from "./keys.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
 import {
+	AddedModels,
 	type Model,
 	type ModelChoice,
 	ModelChoices,
+	type ModelSpec,
+	modelGrants,
 	type ProviderStanding,
 	providersOf,
+	resolveModel,
 } from "./models.ts";
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
@@ -265,7 +269,9 @@ export class ControlPlane {
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
-	readonly #models: readonly Model[];
+	/** The ones the operator's file declared. The console adds to these; it never rewrites them. */
+	readonly #declaredModels: readonly Model[];
+	readonly #addedModels: AddedModels;
 	readonly #choices: ModelChoices;
 	/**
 	 * The same store the broker resolves grants against, kept so the plane can ask whether a key is
@@ -315,7 +321,8 @@ export class ControlPlane {
 		this.#deleted = new AgentNameStore(join(this.#stateDir, "deleted.json"), "deletedAt");
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
-		this.#models = options.models ?? [];
+		this.#declaredModels = options.models ?? [];
+		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
 		this.#keys = new ProviderKeys(
 			join(this.#stateDir, "keys.json"),
@@ -562,6 +569,67 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Every model there is to think with: the file's, and then the ones added at the console.
+	 *
+	 * The file's come first so that a console entry reusing one of its ids does not quietly take its
+	 * place — the operator's own declaration is the one that wins, and the duplicate is dropped.
+	 */
+	async models(): Promise<readonly ModelStanding[]> {
+		const all: ModelStanding[] = this.#declaredModels.map((model) => ({
+			...model,
+			added: false,
+			held: false,
+		}));
+		for (const model of await this.#addedModels.all()) {
+			if (!all.some((other) => other.id === model.id)) {
+				all.push({ ...model, added: true, held: false });
+			}
+		}
+		// One resolve per distinct variable rather than per model, because two models on one provider
+		// are one question and the store is a file read.
+		const held = new Map<string, boolean>();
+		for (const model of all) {
+			if (held.has(model.keyEnv)) continue;
+			const key = await this.#secrets.resolve({ ref: model.keyEnv }).catch(() => undefined);
+			held.set(model.keyEnv, key !== undefined && key.length > 0);
+		}
+		return all.map((model) => ({ ...model, held: held.get(model.keyEnv) ?? false }));
+	}
+
+	/**
+	 * Adds a model to think with, without a file to edit or a container to restart.
+	 *
+	 * This is the one thing here that widens what an agent can reach, so it is worth being plain about
+	 * why it is allowed: the socket carrying it is the operator's, a model is the capability every
+	 * agent must have to do anything at all, and the alternative was that trying a second provider
+	 * meant editing YAML on a box over SSH and redeploying. What still holds the line is that the
+	 * spending ceiling is per agent and unchanged, and that this is written down in a file of its own
+	 * — so what an agent may reach is still two files somebody can read, not a thing that happened.
+	 */
+	async addModel(spec: ModelSpec): Promise<Model> {
+		const resolved = resolveModel(spec);
+		if (typeof resolved === "string") throw new Error(resolved);
+		if (this.#declaredModels.some((model) => model.id === resolved.id)) {
+			throw new Error(
+				`"${resolved.id}" is declared in the config file, so it is not ours to change`,
+			);
+		}
+		await this.#addedModels.add(spec);
+		// The grant for it is derived from the list, so every agent has to be told the list changed.
+		await this.#reregisterAll();
+		return resolved;
+	}
+
+	/** Takes back a model added here. One the file declares is refused, for the same reason. */
+	async dropModel(id: string): Promise<void> {
+		if (this.#declaredModels.some((model) => model.id === id)) {
+			throw new Error(`"${id}" is declared in the config file, so it is not ours to change`);
+		}
+		if (!(await this.#addedModels.drop(id))) throw new Error(`No model "${id}" was added here`);
+		await this.#reregisterAll();
+	}
+
+	/**
 	 * Which of the configured models an agent is on.
 	 *
 	 * Chosen at the keyboard wins over the one in the config, on the same terms as a spending
@@ -572,7 +640,7 @@ export class ControlPlane {
 		const chosen = await this.#choices.chosen(agentId);
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.model;
 		const named = chosen ?? declared;
-		return this.#models.find((model) => model.id === named);
+		return (await this.models()).find((model) => model.id === named);
 	}
 
 	/**
@@ -584,12 +652,7 @@ export class ControlPlane {
 	 * against, and only ever whether there is something there.
 	 */
 	async #keyless(): Promise<readonly string[]> {
-		const missing: string[] = [];
-		for (const model of this.#models) {
-			const held = await this.#secrets.resolve({ ref: model.keyEnv }).catch(() => undefined);
-			if (held === undefined || held.length === 0) missing.push(model.id);
-		}
-		return missing;
+		return (await this.models()).filter((model) => !model.held).map((model) => model.id);
 	}
 
 	/**
@@ -603,7 +666,7 @@ export class ControlPlane {
 	async providers(): Promise<readonly ProviderStanding[]> {
 		const here = await this.#keys.here();
 		const standing: ProviderStanding[] = [];
-		for (const provider of providersOf(this.#models)) {
+		for (const provider of providersOf(await this.models())) {
 			const held = await this.#secrets.resolve({ ref: provider.keyEnv }).catch(() => undefined);
 			standing.push({
 				...provider,
@@ -623,7 +686,7 @@ export class ControlPlane {
 	 * file was careful to only name. A provider key fills a grant every agent already holds.
 	 */
 	async setKey(keyEnv: string, value: string): Promise<void> {
-		if (!providersOf(this.#models).some((provider) => provider.keyEnv === keyEnv)) {
+		if (!providersOf(await this.models()).some((provider) => provider.keyEnv === keyEnv)) {
 			throw new Error(`${keyEnv} is not a provider key`);
 		}
 		await this.#keys.keep(keyEnv, value.trim());
@@ -659,6 +722,11 @@ export class ControlPlane {
 	 */
 	async #grantsFor(agentId: string): Promise<readonly Grant[]> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.grants ?? [];
+		// Derived here rather than folded in when the file was read, because the list can grow at the
+		// console now. Behind the declared ones, so a hand-written grant for the same host still wins.
+		const thinking = modelGrants(await this.#addedModels.all()).filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
 		const earned: Grant[] = [];
 		for (const { name, server } of await this.#mcp.attached(agentId)) {
 			const host = hostOf(server);
@@ -672,7 +740,7 @@ export class ControlPlane {
 				injection: { kind: "bearer", token: oauthRef(name) },
 			});
 		}
-		return [...declared, ...earned];
+		return [...declared, ...thinking, ...earned];
 	}
 
 	/**
@@ -789,7 +857,7 @@ export class ControlPlane {
 			account: () => this.#account(agentId),
 			setLimit: (usd) => this.#spend.setLimit(agentId, usd),
 			models: async () => ({
-				all: this.#models,
+				all: await this.models(),
 				// Falls back to the name in the config, so a plane with no list still answers the
 				// question the command was typed to ask.
 				using:

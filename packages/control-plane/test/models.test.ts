@@ -130,14 +130,28 @@ describe("modelEnv", () => {
 	 * restart.
 	 */
 	it("gives the container a worthless value under every configured model's variable", () => {
-		expect(modelEnv([deepseek, anthropic])).toEqual({
+		expect(modelEnv([deepseek, anthropic])).toMatchObject({
 			DEEPSEEK_API_KEY: KEY_PLACEHOLDER,
 			ANTHROPIC_API_KEY: KEY_PLACEHOLDER,
 		});
 	});
 
-	it("says nothing when nothing is configured", () => {
-		expect(modelEnv([])).toEqual({});
+	/**
+	 * The same reason, one step further out: a model added at the console after the container was
+	 * started would need a variable nobody put there, and the only cure would be restarting the agent
+	 * — which is exactly what adding a model from the console is meant to avoid.
+	 */
+	it("sets one for every provider it knows, not only for the configured ones", () => {
+		const named = Object.keys(modelEnv([deepseek]));
+
+		expect(named).toEqual(expect.arrayContaining(["GROQ_API_KEY", "MISTRAL_API_KEY"]));
+		expect(new Set(Object.values(modelEnv([deepseek])))).toEqual(new Set([KEY_PLACEHOLDER]));
+	});
+
+	it("still names a variable no provider in the table uses", () => {
+		expect(modelEnv([{ ...deepseek, keyEnv: "MY_GATEWAY_TOKEN" }])).toMatchObject({
+			MY_GATEWAY_TOKEN: KEY_PLACEHOLDER,
+		});
 	});
 });
 

@@ -8,7 +8,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
-import type { ProviderStanding } from "./models.ts";
+import type { ModelStanding, ProviderStanding } from "./models.ts";
 import { openInBrowser } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import type { Utterance } from "./transcript.ts";
@@ -725,18 +725,42 @@ export function framed<T>(items: readonly T[], cursor: number, height: number): 
 }
 
 /**
- * What a key on this screen is, said where one is about to be typed.
+ * What this screen is, said above the lists it is.
  *
- * The second line is the one that has to be there. Everything else in this console is careful about
- * never widening what an agent may reach, and a screen that takes credentials looks exactly like the
- * place that rule was quietly dropped — so it says what it is instead: the file decided the hosts,
- * this is the part of a model that was never in the file.
+ * The second paragraph is the one that has to be there. Everything else in this console is careful
+ * about never widening what an agent may reach, and a screen that takes credentials and adds models
+ * looks exactly like the place that rule was quietly dropped — so it says where what is typed here
+ * goes instead: beside the operator's file, never into it, and never over what it declared.
  */
 const KEYS = [
-	"What the proxy writes onto a request on its way out of an agent, in place of the worthless value the container holds. It is not in the sandbox, not in a transcript, and not shown again once it is here.",
+	"A key is what the proxy writes onto a request on its way out of an agent, in place of the worthless value the container holds. It is not in the sandbox, not in a transcript, and not shown again once it is here.",
 	"",
-	"Not a grant. Which models exist and which hosts they live on is deploy/config.yaml, and nothing typed here reaches anything that file did not already approve. A key takes hold on the next turn — nothing restarts.",
+	"Both lists are this plane's own, kept beside deploy/config.yaml rather than in it: what that file declares is read here and changed only there. Everything given here holds from the next turn — nothing restarts.",
 ];
+
+/** A row on the setup screen: a key to fill in, a model, or the row that adds one. */
+export type SetupRow =
+	| { readonly kind: "provider"; readonly provider: ProviderStanding }
+	| { readonly kind: "model"; readonly model: ModelStanding }
+	| { readonly kind: "add" };
+
+/**
+ * The screen's rows in the order the arrows walk them, headers and blank lines left out.
+ *
+ * Shared with the keyboard rather than built twice, because what return does depends on which row it
+ * is standing on — and a cursor counting one list while the screen draws another is a key pressed at
+ * something other than what is highlighted.
+ */
+export function setupRows(
+	providers: readonly ProviderStanding[],
+	models: readonly ModelStanding[],
+): readonly SetupRow[] {
+	return [
+		...providers.map((provider) => ({ kind: "provider", provider }) as const),
+		...models.map((model) => ({ kind: "model", model }) as const),
+		{ kind: "add" } as const,
+	];
+}
 
 /**
  * The providers this plane could pay for, and which of them it can.
@@ -747,19 +771,24 @@ const KEYS = [
  */
 export function Setup({
 	providers,
+	models,
 	cursor,
 	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
 	typing,
 	secret,
+	/** The model being written out, as far as it has been typed, or nothing when none is. */
+	adding,
 	/** What the plane said instead of answering, when it did that. */
 	unanswered,
 	rows,
 	columns,
 }: {
 	readonly providers: readonly ProviderStanding[];
+	readonly models: readonly ModelStanding[];
 	readonly cursor: number;
 	readonly typing: string | undefined;
 	readonly secret: string;
+	readonly adding: string | undefined;
 	readonly unanswered: string | undefined;
 	readonly rows: number;
 	readonly columns: number;
@@ -767,58 +796,106 @@ export function Setup({
 	const boxed = rows > PROMPT_ROWS;
 	const widest = Math.max(0, ...providers.map((provider) => provider.id.length));
 	const widestKey = Math.max(0, ...providers.map((provider) => provider.keyEnv.length));
-	const said = [
-		...KEYS.map((line) => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`)),
-		"",
-		`${ESC}[2mproviders${ESC}[22m`,
-		"",
-	];
-	const row = providers[cursor];
+	const widestModel = Math.max(0, ...models.map((model) => model.id.length));
+	const widestProvider = Math.max(0, ...models.map((model) => model.provider.length));
+	const said = KEYS.map((line) => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`));
+	const walked = setupRows(providers, models);
+	const row = walked[Math.min(cursor, walked.length - 1)];
 	// Above the list, because it is why the list says what it says — and when the plane refused to
 	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
 	const trouble =
 		unanswered === undefined
 			? []
 			: [h(Text, { key: "unanswered", color: "red", wrap: "truncate" }, unanswered)];
+	const listed: ReactElement[] = [];
+	// Where the cursor ends up once the headers and the blank between the two lists are counted in.
+	// The list is framed by what is drawn, and the cursor has to be framed by the same thing or a
+	// short pane scrolls the highlight off its own screen.
+	let at = 0;
+	const heading = (label: string): ReactElement =>
+		h(Text, { key: `heading-${label}`, dimColor: true, wrap: "truncate" }, label);
+	listed.push(heading("providers"));
 	// The same marks the agents column uses, and they mean the same thing here: a dot that is filled
 	// in is something this plane can actually use right now.
-	const listed = providers.map((provider, index) => {
+	for (const [index, provider] of providers.entries()) {
 		const mark = provider.held ? MARKS.running : MARKS.stopped;
-		return h(
-			Text,
-			{ key: provider.keyEnv, wrap: "truncate" },
-			h(Text, { color: mark.color }, mark.glyph),
-			h(Text, pointed(index === cursor, provider.held), ` ${provider.id.padEnd(widest + 2)}`),
-			h(Text, { dimColor: true }, provider.keyEnv.padEnd(widestKey + 2)),
-			// What is waiting on this key, which is the whole reason one row matters more than another.
-			// A provider with no models is still listed: it is how a second one gets set up at all.
+		if (index === cursor) at = listed.length;
+		listed.push(
 			h(
 				Text,
-				{ dimColor: provider.models.length === 0 },
-				provider.models.length === 0 ? "no models" : provider.models.join(" "),
+				{ key: provider.keyEnv, wrap: "truncate" },
+				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, pointed(index === cursor, provider.held), ` ${provider.id.padEnd(widest + 2)}`),
+				h(Text, { dimColor: true }, provider.keyEnv.padEnd(widestKey + 2)),
+				// What is waiting on this key, which is the whole reason one row matters more than another.
+				// A provider with no models is still listed: it is how a second one gets set up at all.
+				h(
+					Text,
+					{ dimColor: provider.models.length === 0 },
+					provider.models.length === 0 ? "no models" : provider.models.join(" "),
+				),
 			),
 		);
-	});
-	// Where the selected key came from, which is the one thing a column of marks cannot say: a key
+	}
+	listed.push(h(Text, { key: "between" }, " "));
+	listed.push(heading("models"));
+	for (const [index, model] of models.entries()) {
+		const mark = model.held ? MARKS.running : MARKS.stopped;
+		const on = providers.length + index;
+		if (on === cursor) at = listed.length;
+		listed.push(
+			h(
+				Text,
+				{ key: `model-${model.id}`, wrap: "truncate" },
+				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, pointed(on === cursor, model.held), ` ${model.id.padEnd(widestModel + 2)}`),
+				h(Text, { dimColor: true }, model.provider.padEnd(widestProvider + 2)),
+				// Which of the two lists this row can be taken out of, said on the row rather than only
+				// under it: half of them refuse the key that drops one, and a list that looked uniform
+				// would be a list where that refusal arrives as a surprise.
+				h(Text, { dimColor: true }, model.added ? "added here" : "from the file"),
+			),
+		);
+	}
+	if (cursor >= providers.length + models.length) at = listed.length;
+	listed.push(
+		h(
+			Text,
+			{ key: "add", wrap: "truncate" },
+			h(Text, { dimColor: true }, "+"),
+			h(Text, pointed(cursor >= providers.length + models.length, false), " a model"),
+		),
+	);
+	// What the row the cursor is on is, which is the one thing a column of marks cannot say: a key
 	// this plane was started with is changed by editing `.env`, and one given here is not.
 	const from =
-		row === undefined
-			? ""
-			: row.here
-				? `${row.keyEnv}   set here`
-				: row.held
-					? `${row.keyEnv}   from this plane's environment`
-					: // Short enough to survive a narrow terminal: the line is truncated rather than wrapped,
-						// and the half that gets cut is the half that says what is wrong.
-						`${row.keyEnv}   no key, refused at the proxy`;
+		row === undefined || row.kind === "add"
+			? "a model to think with, as: name provider [the provider's own name for it]"
+			: row.kind === "model"
+				? // The provider's own name for it, which is the one part of a model the row has no column
+					// for and the part that decides what is actually being paid for.
+					row.model.added
+					? `${row.model.model}   added here`
+					: `${row.model.model}   declared in deploy/config.yaml`
+				: row.provider.here
+					? `${row.provider.keyEnv}   set here`
+					: row.provider.held
+						? `${row.provider.keyEnv}   from this plane's environment`
+						: // Short enough to survive a narrow terminal: the line is truncated rather than wrapped,
+							// and the half that gets cut is the half that says what is wrong.
+							`${row.provider.keyEnv}   no key, refused at the proxy`;
 	const width = columns - (boxed ? 4 : 0);
-	const mark = typing === undefined ? "" : `key for ${typing}  `;
+	const mark =
+		typing === undefined ? (adding === undefined ? "" : "model  ") : `key for ${typing}  `;
 	const room = Math.max(0, width - mark.length - 1);
 	const height = chatRows(rows);
 	// The list is what this screen is, so it takes the rows it needs and the prose above it is what
 	// gives way — the other way round and a short terminal shows three paragraphs and no providers.
 	const all = [...trouble, ...listed];
-	const shown = all.length <= height ? all : [...trouble, ...framed(listed, cursor, height - 1)];
+	const shown =
+		all.length <= height
+			? all
+			: [...trouble, ...framed(listed, at, Math.max(0, height - trouble.length))];
 	const head = visible(wrapped(said, columns, true), Math.max(0, height - shown.length), undefined);
 	return h(
 		Box,
@@ -837,13 +914,12 @@ export function Setup({
 				? {
 						key: "prompt",
 						borderStyle: "round",
-						borderColor: typing === undefined ? "gray" : "cyan",
+						borderColor: typing === undefined && adding === undefined ? "gray" : "cyan",
 						paddingX: 1,
 					}
 				: { key: "prompt" },
-			typing === undefined
-				? h(Text, { wrap: "truncate", dimColor: true }, from)
-				: h(
+			typing !== undefined
+				? h(
 						Text,
 						{ wrap: "truncate" },
 						h(Text, { color: "cyan" }, mark),
@@ -851,7 +927,18 @@ export function Setup({
 						// typing it, and this is a terminal that keeps its own scrollback.
 						"•".repeat(secret.length).slice(Math.max(0, secret.length - room)),
 						h(Text, { inverse: true }, " "),
-					),
+					)
+				: adding !== undefined
+					? // Shown as it is typed, unlike a key: this is a name and a provider, and getting it
+						// wrong is the ordinary way it goes. Nothing here is worth hiding from the room.
+						h(
+							Text,
+							{ wrap: "truncate" },
+							h(Text, { color: "cyan" }, mark),
+							adding.slice(Math.max(0, adding.length - room)),
+							h(Text, { inverse: true }, " "),
+						)
+					: h(Text, { wrap: "truncate", dimColor: true }, from),
 		),
 	);
 }
@@ -931,6 +1018,7 @@ export function App({
 	// The providers, as the plane last answered. Asked for when the screen is opened rather than kept
 	// up to date: nothing else changes them, and the one thing that does is on this keyboard.
 	const [providers, setProviders] = useState<readonly ProviderStanding[]>([]);
+	const [models, setModels] = useState<readonly ModelStanding[]>([]);
 	// Why the list is empty, when it is empty because the plane would not answer. An empty screen that
 	// swallowed the reason reads as a plane with no providers, and the reason is usually that the
 	// console is newer than the plane it is talking to — which is a sentence, not a mystery.
@@ -940,13 +1028,19 @@ export function App({
 	// secret that shared the prompt's state would be one keystroke of `tab` away from a chat pane.
 	const [typing, setTyping] = useState<string | undefined>(undefined);
 	const [secret, setSecret] = useState("");
+	// The model being written out, kept apart from the draft for the same reason: the chat prompt is
+	// one `tab` away and a half-typed line landing in it would be said to an agent.
+	const [adding, setAdding] = useState<string | undefined>(undefined);
+	// The model a drop was asked about, while the console waits to hear it was meant.
+	const [dropping, setDropping] = useState<string | undefined>(undefined);
 
 	// Undefined on the row under the agents, which is not an agent but the way to make one.
 	const selected = agents[Math.min(cursor, agents.length)];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
-	const onProvider = Math.min(where, providers.length - 1);
-	const provider = providers[onProvider];
+	const walk = setupRows(providers, models);
+	const onRow = Math.min(where, walk.length - 1);
+	const setupRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
 	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
 	// not over a name, which is not addressed to an agent that exists yet.
@@ -1066,11 +1160,11 @@ export function App({
 		return () => clearInterval(timer);
 	}, [client]);
 
-	const readProviders = useCallback(() => {
-		client
-			.providers()
-			.then((rows) => {
-				setProviders(rows);
+	const readSetup = useCallback(async (): Promise<void> => {
+		await Promise.all([client.providers(), client.models()])
+			.then(([keys, thinking]) => {
+				setProviders(keys);
+				setModels(thinking);
 				setUnanswered(undefined);
 			})
 			.catch((error: unknown) => setUnanswered((error as Error).message));
@@ -1079,29 +1173,67 @@ export function App({
 	// On opening the screen rather than on a timer: what it shows is the plane's environment and a
 	// file only this keyboard writes, and neither of them moves while nobody is looking at it.
 	useEffect(() => {
-		if (panel === "setup") readProviders();
-	}, [panel, readProviders]);
+		if (panel === "setup") void readSetup();
+	}, [panel, readSetup]);
 
 	/**
-	 * Gives the plane a key, and asks again what it now holds.
+	 * Asks the plane for something, reads the lists back, and leaves the refusal on screen if it came.
 	 *
-	 * Asked again rather than assumed, because what a key does is not decided here: it may be shadowed
-	 * by nothing, it may replace one the machine exported, and an empty one hands the question back to
-	 * the environment. The row has to say which of those happened.
+	 * The order is what matters. Both lists are read again rather than assumed, because what any of
+	 * this did is not decided here — a key may be shadowed, an empty one hands the question back to the
+	 * environment, a model may be refused for a reason only the plane knows. And the reason goes on
+	 * after the read rather than before it, because a successful read clears the last one: written
+	 * first, every refusal would be wiped a tick later by the refresh that was meant to show it.
 	 */
-	const keep = useCallback(
-		async (keyEnv: string, value: string): Promise<void> => {
+	const say = useCallback(
+		async (attempt: () => Promise<void>): Promise<void> => {
+			let trouble: string | undefined;
 			try {
-				await client.setKey(keyEnv, value);
-				setUnanswered(undefined);
+				await attempt();
 			} catch (error) {
-				// A key that was refused and said nothing is a key you would paste again. It is the one
-				// thing on this screen you cannot check by looking.
-				setUnanswered((error as Error).message);
+				trouble = (error as Error).message;
 			}
-			readProviders();
+			await readSetup();
+			if (trouble !== undefined) setUnanswered(trouble);
 		},
-		[client, readProviders],
+		[readSetup],
+	);
+
+	const keep = useCallback(
+		async (keyEnv: string, value: string): Promise<void> =>
+			// A key that was refused and said nothing is a key you would paste again. It is the one thing
+			// on this screen you cannot check by looking.
+			say(() => client.setKey(keyEnv, value)),
+		[client, say],
+	);
+
+	/**
+	 * Adds a model from the line that was typed, or says what was wrong with it.
+	 *
+	 * Words rather than fields, because the fields are two and sometimes three, and a screen that
+	 * asked for them one at a time would be three questions to answer before finding out the first was
+	 * refused. The plane checks the same line the file's models are checked against, so a provider it
+	 * does not know comes back saying which ones it does.
+	 */
+	const write = useCallback(
+		async (line: string): Promise<void> => {
+			const [id = "", provider = "", ...rest] = line.trim().split(/\s+/);
+			await say(() =>
+				client.addModel({
+					id,
+					provider,
+					// Left out when it was not said, so the plane fills it in with the id — which is right
+					// far more often than not, since the id is usually the provider's own name for it.
+					...(rest.length > 0 ? { model: rest.join(" ") } : {}),
+				}),
+			);
+		},
+		[client, say],
+	);
+
+	const forget = useCallback(
+		async (modelId: string): Promise<void> => say(() => client.dropModel(modelId)),
+		[client, say],
 	);
 
 	/**
@@ -1205,6 +1337,13 @@ export function App({
 			if (input === "y" || input === "Y") void ask(deleting, `/delete ${deleting}`, "say");
 			return;
 		}
+		// The same question, about a model, and modal for the same reason: it is asked with the cursor
+		// already standing on the row, so the hand is on the keys that would answer it by accident.
+		if (dropping !== undefined) {
+			setDropping(undefined);
+			if (input === "y" || input === "Y") void forget(dropping);
+			return;
+		}
 		/**
 		 * A key is being typed, and until it is entered or given up on nothing else has the keyboard.
 		 *
@@ -1243,6 +1382,34 @@ export function App({
 				return;
 			}
 			entered(secret + first);
+			return;
+		}
+		// A model is being written out, and like the key above it the branch sits here so that none of
+		// the panes below read a character of it as one of their own.
+		if (adding !== undefined) {
+			const entered = (value: string): void => {
+				setAdding(undefined);
+				if (value.trim().length > 0) void write(value);
+			};
+			if (key.escape) {
+				setAdding(undefined);
+				return;
+			}
+			if (key.return) {
+				entered(adding);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setAdding((prev) => (prev ?? "").slice(0, -1));
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			if (rest.length === 0) {
+				setAdding((prev) => (prev ?? "") + first);
+				return;
+			}
+			entered(adding + first);
 			return;
 		}
 		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
@@ -1284,24 +1451,39 @@ export function App({
 		if (key.upArrow) {
 			// On the setup screen the arrows are the list's, not the agents': the pane is not about the
 			// agent behind it, and moving one out from under a key about to be typed would be a surprise.
-			if (panel === "setup") setWhere(Math.max(0, onProvider - 1));
+			if (panel === "setup") setWhere(Math.max(0, onRow - 1));
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
 			else setCursor((prev) => Math.max(0, prev - 1));
 			return;
 		}
 		if (key.downArrow) {
-			if (panel === "setup") setWhere(Math.min(providers.length - 1, onProvider + 1));
+			if (panel === "setup") setWhere(Math.min(walk.length - 1, onRow + 1));
 			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
 			// One past the last agent, which is the row that makes one.
 			else setCursor((prev) => Math.min(agents.length, prev + 1));
 			return;
 		}
 		if (panel === "setup") {
-			// The only key this screen has of its own. Everything else it does is on the row the arrows
-			// are standing on, which is why there is nothing here to type into until this is pressed.
-			if (key.return && provider !== undefined) {
-				setTyping(provider.keyEnv);
-				setSecret("");
+			// Everything this screen does is about the row the arrows are standing on, which is why there
+			// is nothing here to type into until one of these is pressed.
+			if (key.return && setupRow !== undefined) {
+				if (setupRow.kind === "provider") {
+					setTyping(setupRow.provider.keyEnv);
+					setSecret("");
+				}
+				// The row under the models, which is the one that makes one — the same shape as the row
+				// under the agents, because it is the same idea and a second one would be a second thing
+				// to learn.
+				if (setupRow.kind === "add") setAdding("");
+			}
+			// Backspace rather than a letter, because every letter is a character somebody will one day
+			// type into a box on this screen, and this is the key that already means take it away.
+			if ((key.backspace || key.delete) && setupRow?.kind === "model") {
+				// Said here rather than left to the plane to refuse: the plane's refusal would arrive
+				// after the question was answered, and a `y` that then does nothing is worse than a
+				// question that was never asked.
+				if (setupRow.model.added) setDropping(setupRow.model.id);
+				else setUnanswered(`"${setupRow.model.id}" is the file's — drop it there`);
 			}
 			return;
 		}
@@ -1473,9 +1655,11 @@ export function App({
 					: panel === "setup"
 						? h(Setup, {
 								providers,
-								cursor: Math.max(0, onProvider),
+								models,
+								cursor: Math.max(0, onRow),
 								typing,
 								secret,
+								adding,
 								unanswered,
 								rows: inner,
 								columns: width,
@@ -1515,66 +1699,81 @@ export function App({
 			{ flexDirection: "row", key: "hint" },
 			h(Text, null, " "),
 			// The key stands out from what it does, because the key is the part being looked for.
-			...(typing !== undefined
-				? // A key is being typed and has the keyboard, so the row is the two ways out of that.
+			...(typing !== undefined || adding !== undefined
+				? // Something is being typed and has the keyboard, so the row is the two ways out of that.
 					[
 						["⏎", "save"],
 						["esc", "cancel"],
 						["^C", "quit"],
 					]
-				: panel === "setup"
+				: dropping !== undefined
 					? [
-							["↑↓", "provider"],
-							["⏎", "set key"],
-							["tab", after(panel)],
+							["y", "drop"],
+							["n", "cancel"],
 							["^C", "quit"],
 						]
-					: menu.length > 0
-						? // The keys have been taken by the menu, so the row says what they do now instead of
-							// what they did a keystroke ago. A hint left standing for a key the menu has taken is
-							// the same lie as a hint for a key that does nothing.
+					: panel === "setup"
+						? // What return does here depends on the row, so the row is what the hint says. A hint
+							// naming a key that does nothing on the row under the cursor is the same lie as a
+							// hint for a key that does nothing at all.
 							[
-								["↑↓", "command"],
-								["⏎", "choose"],
+								["↑↓", "move"],
+								...(setupRow?.kind === "provider"
+									? [["⏎", "set key"]]
+									: setupRow?.kind === "add"
+										? [["⏎", "add model"]]
+										: setupRow?.model.added === true
+											? [["⌫", "drop model"]]
+											: []),
+								["tab", after(panel)],
 								["^C", "quit"],
 							]
-						: deleting !== undefined
-							? // A question is open and it has the keyboard, so the row says the two keys that mean
-								// anything. Everything it usually offers would be a way out of answering that does
-								// not exist — and `n` is spelled out rather than left as "any other key", because a
-								// key to press is a thing a hand does and "any other key" is a thing to work out.
+						: menu.length > 0
+							? // The keys have been taken by the menu, so the row says what they do now instead of
+								// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+								// the same lie as a hint for a key that does nothing.
 								[
-									["y", "delete"],
-									["n", "cancel"],
+									["↑↓", "command"],
+									["⏎", "choose"],
 									["^C", "quit"],
 								]
-							: selected === undefined
-								? // Nothing else the row usually offers is true here: there is no conversation to
-									// scroll, no shell to open and no commands, until the name has been given.
+							: deleting !== undefined
+								? // A question is open and it has the keyboard, so the row says the two keys that mean
+									// anything. Everything it usually offers would be a way out of answering that does
+									// not exist — and `n` is spelled out rather than left as "any other key", because a
+									// key to press is a thing a hand does and "any other key" is a thing to work out.
 									[
-										["↑↓", "agent"],
-										["⏎", "create"],
+										["y", "delete"],
+										["n", "cancel"],
 										["^C", "quit"],
 									]
-								: [
-										["↑↓", "agent"],
-										["^U^D", "scroll"],
-										["tab", after(panel)],
-										// A key nobody guesses is pressable. The rest of this row is what to press to move
-										// around; this one is what to press to be told what else there is. In the shell the
-										// two of them say nothing true, and the way back out is worth saying instead.
-										...(shell
-											? [["⌫", "chat"]]
-											: [
-													["/", "commands"],
-													["!", "shell"],
-												]),
-										["^C", "quit"],
-										// Last, so that the rest of the row does not move as it comes and goes, and shown
-										// only while there is something to stop: the key does nothing at any other time,
-										// and offering it then is how a hint becomes a thing that lies.
-										...(busy.size > 0 ? [["esc", "stop"]] : []),
-									]
+								: selected === undefined
+									? // Nothing else the row usually offers is true here: there is no conversation to
+										// scroll, no shell to open and no commands, until the name has been given.
+										[
+											["↑↓", "agent"],
+											["⏎", "create"],
+											["^C", "quit"],
+										]
+									: [
+											["↑↓", "agent"],
+											["^U^D", "scroll"],
+											["tab", after(panel)],
+											// A key nobody guesses is pressable. The rest of this row is what to press to move
+											// around; this one is what to press to be told what else there is. In the shell the
+											// two of them say nothing true, and the way back out is worth saying instead.
+											...(shell
+												? [["⌫", "chat"]]
+												: [
+														["/", "commands"],
+														["!", "shell"],
+													]),
+											["^C", "quit"],
+											// Last, so that the rest of the row does not move as it comes and goes, and shown
+											// only while there is something to stop: the key does nothing at any other time,
+											// and offering it then is how a hint becomes a thing that lies.
+											...(busy.size > 0 ? [["esc", "stop"]] : []),
+										]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

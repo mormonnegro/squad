@@ -3,7 +3,7 @@ import type { Duplex } from "node:stream";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
-import type { ProviderStanding } from "./models.ts";
+import type { ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Utterance } from "./transcript.ts";
 
 export class ControlError extends Error {
@@ -117,6 +117,21 @@ export class ControlClient {
 	/** Gives the plane a provider's key, or takes back the one it was keeping when `value` is empty. */
 	async setKey(keyEnv: string, value: string): Promise<void> {
 		await this.#once({ op: "key", keyEnv, value });
+	}
+
+	async models(): Promise<readonly ModelStanding[]> {
+		const response = await this.#once({ op: "models" });
+		if ("models" in response) return response.models;
+		throw new ControlError("unexpected answer to models");
+	}
+
+	/** Gives the plane somewhere new to think, from the next turn, with nothing restarted. */
+	async addModel(spec: ModelSpec): Promise<void> {
+		await this.#once({ op: "add-model", spec });
+	}
+
+	async dropModel(modelId: string): Promise<void> {
+		await this.#once({ op: "drop-model", modelId });
 	}
 
 	/** Takes one turn. `onText` is called with the answer as it is written, before it is returned. */

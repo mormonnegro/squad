@@ -870,10 +870,31 @@ describe("Setup", () => {
 		{ id: "openai", keyEnv: "OPENAI_API_KEY", models: ["mini"], held: true, here: false },
 		{ id: "groq", keyEnv: "GROQ_API_KEY", models: [], held: true, here: true },
 	];
+	const models = [
+		{
+			id: "flash",
+			provider: "deepseek",
+			model: "deepseek-chat",
+			host: "api.deepseek.com",
+			keyEnv: "DEEPSEEK_API_KEY",
+			added: false,
+			held: false,
+		},
+		{
+			id: "mini",
+			provider: "openai",
+			model: "gpt-5-mini",
+			host: "api.openai.com",
+			keyEnv: "OPENAI_API_KEY",
+			added: true,
+			held: true,
+		},
+	];
 	const pane = (props: {
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
+		adding?: string | undefined;
 		unanswered?: string | undefined;
 		rows?: number;
 		columns?: number;
@@ -881,11 +902,13 @@ describe("Setup", () => {
 		renderToString(
 			h(Setup, {
 				providers,
+				models,
 				cursor: 0,
 				typing: undefined,
 				secret: "",
+				adding: undefined,
 				unanswered: undefined,
-				rows: 20,
+				rows: 24,
 				columns: 60,
 				...props,
 			}),
@@ -915,6 +938,49 @@ describe("Setup", () => {
 		expect(pane({ cursor: 1 })).toContain("from this plane's environment");
 		expect(pane({ cursor: 2 })).toContain("set here");
 		expect(pane({ cursor: 0 })).toContain("no key, refused at the proxy");
+	});
+
+	it("lists the models under the keys they are waiting on", () => {
+		const drawn = pane({});
+
+		expect(drawn).toContain("models");
+		expect(drawn).toContain("flash");
+		expect(drawn).toContain("mini");
+	});
+
+	/**
+	 * Which list a model belongs to, said on the row rather than only under it. Half of them refuse
+	 * the key that drops one, and a list that looked uniform would be one where that is a surprise.
+	 */
+	it("says which models this screen may take back", () => {
+		const drawn = pane({}).split("\n");
+
+		expect(drawn.find((row) => row.includes("from the file"))).toContain("flash");
+		expect(drawn.find((row) => row.includes("added here"))).toContain("mini");
+	});
+
+	// The same shape as the row under the agents, which is the row that makes one. A screen you can
+	// only read is a screen that sends you back to the file this was meant to replace.
+	it("ends the models with the row that adds one", () => {
+		expect(pane({})).toContain("+ a model");
+	});
+
+	it("says of a model row where it was declared", () => {
+		expect(pane({ cursor: 3 })).toContain("declared in deploy/config.yaml");
+		expect(pane({ cursor: 4 })).toContain("added here");
+	});
+
+	// The one row with nothing to say about itself, so it says what typing there is for instead.
+	it("says how a model is written out, on the row that takes one", () => {
+		expect(pane({ cursor: 5, columns: 90 })).toContain("name provider");
+	});
+
+	/** Not a secret, unlike the key: it is a name and a provider, and getting it wrong is ordinary. */
+	it("shows a model being typed as the words it is", () => {
+		const drawn = pane({ adding: "sonnet anthropic" });
+
+		expect(drawn).toContain("model");
+		expect(drawn).toContain("sonnet anthropic");
 	});
 
 	/**

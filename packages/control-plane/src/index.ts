@@ -45,16 +45,20 @@ export {
 	written,
 } from "./mcp.ts";
 export {
+	AddedModels,
 	KEY_PLACEHOLDER,
 	type Model,
 	type ModelChoice,
 	ModelChoices,
+	type ModelSpec,
+	type ModelStanding,
 	modelEnv,
 	modelGrants,
 	PROVIDERS,
 	type Provider,
 	type ProviderStanding,
 	providersOf,
+	resolveModel,
 } from "./models.ts";
 export { type AgentStep, PiOutput, type PiOutputOptions } from "./pi-output.ts";
 export {
