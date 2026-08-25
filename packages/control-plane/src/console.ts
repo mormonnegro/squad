@@ -60,21 +60,6 @@ const PROMPT_ROWS = 3;
 
 const ESC = "\u001b";
 
-/** What one notch of a wheel moves. Three is what a terminal scrolls, so it is what a hand expects. */
-const WHEEL_ROWS = 3;
-
-/**
- * Asks the terminal to report the wheel, and to report it in the encoding that still works past the
- * 223rd column.
- *
- * This is the price of drawing a screen the terminal did not draw. Its own scrollback holds the
- * frames this printed, not the conversation, so a wheel it handles itself scrolls away from a live
- * console into pictures of an older one — and the keys that would have done it instead, shift with
- * the arrows and the page keys, are taken by the terminal for exactly that before they are ours.
- */
-const MOUSE_ON = "\u001b[?1000h\u001b[?1006h";
-const MOUSE_OFF = "\u001b[?1006l\u001b[?1000l";
-
 /**
  * Braille, because it turns in place: every frame is one column wide, so the line beside it does
  * not move while it spins.
@@ -313,30 +298,6 @@ export function scrolled(
 	// at its end already and never reports having been scrolled away from it.
 	const next = Math.max(0, (top ?? last) + by);
 	return next >= last ? undefined : next;
-}
-
-/**
- * The rows a chunk of mouse reporting asks a pane to move, negative for back through what it has
- * already shown — and nothing at all if the chunk is not the mouse, which is how the caller knows
- * to hand it on.
- *
- * Reported as `ESC [ < button ; column ; row M`, where the wheel is buttons 64 and 65. A click is
- * every other button and asks for no movement, but it is still the mouse and still has to be
- * answered here: once the terminal has been asked to report it, a click nobody claims is an escape
- * sequence typed into the prompt. Movement is counted rather than switched on, because one flick of
- * a trackpad arrives as several reports in a single chunk.
- */
-export function mouse(input: string): number | undefined {
-	let reported = false;
-	let by = 0;
-	for (const piece of input.split(ESC)) {
-		const button = /^\[<(\d+);\d+;\d+[Mm]/.exec(piece)?.[1];
-		if (button === undefined) continue;
-		reported = true;
-		if (button === "64") by -= WHEEL_ROWS;
-		else if (button === "65") by += WHEEL_ROWS;
-	}
-	return reported ? by : undefined;
 }
 
 /**
@@ -1532,19 +1493,12 @@ export function App({
 		}
 		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
 		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
-		const scroll = (by: number, pages: number): void => {
+		const scroll = (pages: number): void => {
 			const height = panel === "logs" ? inner : chatRows(inner);
 			const total = panel === "logs" ? lines.length : wrapped(transcript(said), width).length;
-			setTop((prev) => scrolled(prev, by + Math.round(pages * height), { total, height }));
+			setTop((prev) => scrolled(prev, Math.round(pages * height), { total, height }));
 		};
 
-		// First, and before anything looks at the key: a mouse report is an escape sequence, and every
-		// branch below this one would take it for either a keystroke or something to type.
-		const rolled = mouse(input);
-		if (rolled !== undefined) {
-			if (rolled !== 0) scroll(rolled, 0);
-			return;
-		}
 		/**
 		 * A question is up, and until it is answered there is nothing else this keyboard does.
 		 *
@@ -1661,9 +1615,9 @@ export function App({
 			entered(adding + first);
 			return;
 		}
-		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
-		// reaches the agent being watched from whichever one is open. Only while it is thinking: escape
-		// on an agent with nothing to stop is a key pressed at the wrong moment, not a command.
+		// Before the panes, so it reaches the agent being watched from whichever one is open. Only
+		// while it is thinking: escape on an agent with nothing to stop is a key pressed at the wrong
+		// moment, not a command.
 		if (key.escape) {
 			if (selected !== undefined && busy.has(selected.id)) {
 				void client.stop(selected.id).catch(() => {});
@@ -1672,17 +1626,19 @@ export function App({
 		}
 		// Half a pane at a time, from less and from vim. Chords, because every unmodified key that
 		// would have meant this — shift with an arrow, the page keys — is one the terminal keeps for
-		// scrolling its own scrollback and never delivers.
+		// scrolling its own scrollback and never delivers. The wheel is the terminal's too, and left
+		// to it on purpose: an app that asks to be told about the mouse is an app you cannot select
+		// text in, and reading the conversation somewhere else is worth more than a notch of scroll.
 		if (key.ctrl && (input === "u" || input === "d")) {
-			scroll(0, input === "u" ? -0.5 : 0.5);
+			scroll(input === "u" ? -0.5 : 0.5);
 			return;
 		}
 		if (key.pageUp) {
-			scroll(0, -1);
+			scroll(-1);
 			return;
 		}
 		if (key.pageDown) {
-			scroll(0, 1);
+			scroll(1);
 			return;
 		}
 		// While the menu is up these three keys belong to it, which is what they do in every other box
@@ -2076,14 +2032,7 @@ export async function openConsole(client: ControlClient): Promise<number> {
 		await client.transcripts().catch(() => ({})),
 		chatWidth(process.stdout.columns ?? 80),
 	);
-	process.stdout.write(MOUSE_ON);
-	try {
-		const app = render(h(App, { client, initial, conversations }), { exitOnCtrlC: false });
-		await app.waitUntilExit();
-	} finally {
-		// Whatever happened. A terminal left reporting its mouse prints an escape sequence at whoever
-		// clicks in it next, and they will be at a shell prompt with no idea what did that to them.
-		process.stdout.write(MOUSE_OFF);
-	}
+	const app = render(h(App, { client, initial, conversations }), { exitOnCtrlC: false });
+	await app.waitUntilExit();
 	return 0;
 }

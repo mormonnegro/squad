@@ -221,13 +221,15 @@ somebody has been told it stopped. What it had already written stays in the conv
 `stopped` under it, it is not taken again — an interrupted turn comes back, which is what whoever
 pressed the key was preventing — and it does not get to book the turn after it either.
 
-The wheel scrolls the panel, and `^U` and `^D` move it half a pane the way they do in `less`. The
-console asks the terminal for the wheel because it has to: the scrollback belongs to the terminal
-and holds the frames this printed rather than the conversation, so a wheel the terminal keeps for
-itself scrolls away from a live console into pictures of an older one. The keys that would have
-meant this without a chord — shift with the arrows, the page keys — are the ones the terminal takes
-for that same scrollback before they are ever ours. While the mouse is being reported, selecting
-text needs the modifier your terminal reserves for it: ⌥ in iTerm2, fn in Terminal.app.
+`^U` and `^D` move the panel half a pane the way they do in `less`. Chords, because the keys that
+would have meant this without one — shift with the arrows, the page keys — are the ones the terminal
+takes for its own scrollback before they are ever ours, and that scrollback holds the frames this
+printed rather than the conversation.
+
+The mouse is left alone, and the wheel with it. An app only gets told about the wheel by asking the
+terminal to report the mouse, and a terminal reporting the mouse is one you cannot drag a selection
+in — so the wheel would have been bought with the ability to copy what an agent said, which is most
+of what reading it is for.
 
 The tab row says `↑ scrolled` while a panel is not at the end — without that, an answer arriving out
 of sight reads as an agent that said nothing. Where it is scrolled to is a line and not a distance
