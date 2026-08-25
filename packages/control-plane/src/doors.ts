@@ -44,6 +44,7 @@ export class LocalDoors {
 	readonly #dial: (agentId: string, port: number) => Promise<Duplex>;
 	readonly #say: (agentId: string, detail: string, failed?: boolean) => void;
 	readonly #open = new Map<string, readonly Server[]>();
+	readonly #live = new Map<string, Set<Socket>>();
 	readonly #complained = new Set<string>();
 	#tail: Promise<void> = Promise.resolve();
 
@@ -69,18 +70,30 @@ export class LocalDoors {
 	}
 
 	close(): void {
-		for (const servers of this.#open.values()) for (const server of servers) server.close();
-		this.#open.clear();
+		for (const was of [...this.#open.keys()]) this.#shut(was);
 		this.#complained.clear();
+	}
+
+	/**
+	 * Closed to what is arriving and to what already arrived.
+	 *
+	 * Closing the listeners alone only stops the accepting: a browser holding a keep-alive connection
+	 * would keep its bytes crossing into the sandbox long after `/serve stop` said the way in was gone,
+	 * and that sentence is the only thing this has to make true.
+	 */
+	#shut(id: string): void {
+		for (const server of this.#open.get(id) ?? []) server.close();
+		for (const socket of this.#live.get(id) ?? []) socket.destroy();
+		this.#open.delete(id);
+		this.#live.delete(id);
 	}
 
 	async #settle(doors: readonly Door[]): Promise<void> {
 		const keys = new Set(doors.map(key));
-		for (const [was, servers] of this.#open) {
+		for (const was of [...this.#open.keys()]) {
 			if (keys.has(was)) continue;
-			this.#open.delete(was);
 			this.#complained.delete(was);
-			for (const server of servers) server.close();
+			this.#shut(was);
 		}
 
 		for (const door of doors) {
@@ -150,6 +163,10 @@ export class LocalDoors {
 	/** One connection: a stream through the plane into the sandbox, joined to the socket both ways. */
 	async #join(id: string, door: Door, socket: Socket): Promise<void> {
 		socket.on("error", () => socket.destroy());
+		const live = this.#live.get(id) ?? new Set<Socket>();
+		this.#live.set(id, live);
+		live.add(socket);
+		socket.on("close", () => live.delete(socket));
 		let stream: Duplex;
 		try {
 			stream = await this.#dial(door.agentId, door.served.port);
@@ -167,15 +184,21 @@ export class LocalDoors {
 			return;
 		}
 		this.#complained.delete(id);
-		const shut = (): void => {
+		// The door can come down while the dial is still in the air, and a stream piped to a socket that
+		// is already gone is a connection into the sandbox nothing is left holding the other end of.
+		if (socket.destroyed) {
+			stream.destroy();
+			return;
+		}
+		const both = (): void => {
 			socket.destroy();
 			stream.destroy();
 		};
 		socket.pipe(stream);
 		stream.pipe(socket);
-		socket.on("close", shut);
-		stream.on("error", shut);
-		stream.on("close", shut);
+		socket.on("close", both);
+		stream.on("error", both);
+		stream.on("close", both);
 	}
 }
 

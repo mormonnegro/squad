@@ -246,6 +246,25 @@ describe("LocalDoors", () => {
 		expect(said[1]).toBe(`scout http://scout.localhost:${at} → :3000`);
 	});
 
+	/**
+	 * `/serve stop` says the way in is gone, and a browser holding a keep-alive connection is the one
+	 * reader of that sentence who would find out it was not. Closing a server only stops the accepting.
+	 */
+	it("cuts a connection that was already open when the door comes down", async () => {
+		const inside = await shouting();
+		const at = await free();
+		const local = opened(async () => net.createConnection({ host: "127.0.0.1", port: inside }));
+		await local.reconcile([{ agentId: "scout", served: { port: 3000, at } }]);
+
+		const socket = net.createConnection({ host: "127.0.0.1", port: at });
+		socket.on("error", () => {});
+		await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
+		const cut = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+
+		await local.reconcile([]);
+		await cut;
+	});
+
 	it("gives every port back when the console goes", async () => {
 		const inside = await shouting();
 		const at = await free();
