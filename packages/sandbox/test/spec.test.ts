@@ -46,6 +46,12 @@ describe("container hardening", () => {
 		expect(config.HostConfig.PidsLimit).toBe(512);
 	});
 
+	// The cap above is what makes this matter: the image's PID 1 is a `sleep`, which reaps nothing, so
+	// every background server the agent restarts leaves a zombie holding one of the 512.
+	it("gets an init that reaps what a served port leaves behind", () => {
+		expect(config.HostConfig.Init).toBe(true);
+	});
+
 	it("applies resource limits only when asked", () => {
 		expect(config.HostConfig.Memory).toBeUndefined();
 		const limited = buildContainerConfig({

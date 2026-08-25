@@ -158,6 +158,12 @@ export function buildContainerConfig(spec: SandboxSpec): ContainerConfig {
 			CapDrop: ["ALL"],
 			SecurityOpt: ["no-new-privileges"],
 			PidsLimit: 512,
+			// An init that reaps, because the image's own PID 1 is a `sleep` and a `sleep` never waits on
+			// anything. A dev server the agent leaves running is orphaned the moment the turn's shell
+			// exits, and when it is next killed it becomes a zombie holding one of the 512 above. An
+			// agent iterating on a server it restarts all afternoon would arrive at a sandbox that cannot
+			// fork, and nothing in there would say why.
+			Init: true,
 			...(spec.memoryBytes !== undefined ? { Memory: spec.memoryBytes } : {}),
 			...(spec.nanoCpus !== undefined ? { NanoCpus: spec.nanoCpus } : {}),
 			RestartPolicy: { Name: "unless-stopped" },
