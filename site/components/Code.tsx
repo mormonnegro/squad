@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useCopy } from "../lib/copy";
 
 // Enough colour to tell a typed command from its output, and no more. A highlighter that knew the
 // language would be a dependency and a build step for two rules.
@@ -52,21 +53,7 @@ export function Code({
 	children: string;
 }) {
 	const code = children.trim();
-	const [done, setDone] = useState(false);
-	const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-	useEffect(() => () => clearTimeout(timer.current), []);
-
-	async function copy() {
-		try {
-			await navigator.clipboard.writeText(code);
-		} catch {
-			return;
-		}
-		setDone(true);
-		clearTimeout(timer.current);
-		timer.current = setTimeout(() => setDone(false), 1600);
-	}
+	const { done, copy } = useCopy(code);
 
 	return (
 		<div className="code" data-wrap={wrap ? "true" : undefined}>

@@ -1,18 +1,72 @@
 import Link from "next/link";
-import { Code } from "../components/Code";
+import type { ReactNode } from "react";
 import { Console } from "../components/Console";
+import { Feed, type FeedRow } from "../components/Feed";
+import { Install } from "../components/Install";
 import { Layout } from "../components/Layout";
-import { Terminal } from "../components/Terminal";
-import { INSTALL, PI, REPO, TAGLINE } from "../lib/site";
+import { PI, REPO, TAGLINE } from "../lib/site";
 
-const FEED = `
-18:12:53  maxi      bash        pnpm -r test
-18:12:53  maxi      bash      ✗ after 12.4s: FAIL test/turn.test.ts > carries the failure detail
-18:12:53  maxi      read        packages/control-plane/src/turn.ts
-18:12:53  scout     egress    ✗ denied GET api.github.com/repos — no_matching_host
-18:12:53  maxi      answer      El test esperaba el mensaje viejo.
-18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12
-`;
+const FEED: FeedRow[] = [
+	{ at: "18:12:53", who: "maxi", action: "bash", detail: "pnpm -r test" },
+	{
+		at: "18:12:53",
+		who: "maxi",
+		action: "bash",
+		failed: true,
+		detail: "after 12.4s: FAIL test/turn.test.ts > carries the failure detail",
+	},
+	{ at: "18:12:53", who: "maxi", action: "read", detail: "packages/control-plane/src/turn.ts" },
+	{
+		at: "18:12:53",
+		who: "scout",
+		action: "egress",
+		failed: true,
+		detail: "denied GET api.github.com/repos — no_matching_host",
+	},
+	{ at: "18:12:53", who: "maxi", action: "answer", detail: "El test esperaba el mensaje viejo." },
+	{
+		at: "18:12:53",
+		who: "maxi",
+		action: "spent",
+		detail: "1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12",
+	},
+];
+
+const PROBLEMS: { problem: string; body: ReactNode; rule: string }[] = [
+	{
+		problem: "An unattended agent reads what strangers write",
+		body: (
+			<>
+				A GitHub webhook is authentic and still relays an issue body typed by anyone. So every event
+				carries a trust level, and everything that is not from the operator arrives fenced, as data
+				— in one place, so a new channel adapter cannot forget to do it.
+			</>
+		),
+		rule: "Only an operator gives instructions.",
+	},
+	{
+		problem: "A credential can be spent anywhere",
+		body: (
+			<>
+				So the agent never holds one. Egress goes through a proxy that matches the request against
+				operator-approved grants and attaches the secret afterwards. An agent that talks itself into
+				exfiltrating its own API key has nothing to send.
+			</>
+		),
+		rule: "The agent never sees a key.",
+	},
+	{
+		problem: "An agent can edit its own definition",
+		body: (
+			<>
+				Its repository holds a manifest, but a manifest is a request. Grants live in the control
+				plane's config file, which the agent cannot write, and an agent may ask for a capability it
+				does not have.
+			</>
+		),
+		rule: "Nothing it says can grant it anything.",
+	},
+];
 
 const SELF: [string, string][] = [
 	["agent.yaml", "name, model, and the capabilities it asks an operator for"],
@@ -69,13 +123,10 @@ export default function Home() {
 						It is a runtime, not a harness. The thinking is done by <a href={PI}>pi</a> — agent-dive
 						gives it a machine to live on, a way to be woken, and a boundary to work inside.
 					</p>
-					<Code label="on your VPS" wrap>{`
-$ curl -fsSL ${INSTALL} | sh
-`}</Code>
+					<Install />
 					<p className="small muted">
-						Installs Docker if the machine has none, asks for the keys the proxy will hold, and
-						leaves <code>agent</code> on the PATH. Then it is{" "}
-						<code>ssh -t root@your-vps agent</code> from wherever you are.
+						That is the install; there is no third step. Every key can be skipped and pasted later
+						on the setup screen, so it is never held up by one you have to go and find.
 					</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump">
@@ -100,37 +151,14 @@ $ curl -fsSL ${INSTALL} | sh
 				</div>
 				<div className="wrap-wide">
 					<div className="cards cards-3">
-						<div className="card">
-							<h3>An agent that runs unattended will eventually read something a stranger wrote</h3>
-							<p>
-								A GitHub webhook is authentic and still relays an issue body typed by anyone. So
-								every event carries a trust level, and only <code>operator</code> events are
-								rendered as instructions.
-							</p>
-							<p>
-								Everything else is fenced and introduced as data, in one place, so a new channel
-								adapter cannot forget to do it.
-							</p>
-						</div>
-						<div className="card">
-							<h3>An agent with a credential can spend it anywhere</h3>
-							<p>
-								So it never holds one. Egress goes through a proxy that matches the request against
-								operator-approved grants and attaches the secret afterwards.
-							</p>
-							<p>
-								The model included: an agent that talks itself into exfiltrating its own API key has
-								nothing to send.
-							</p>
-						</div>
-						<div className="card">
-							<h3>An agent that can edit its own definition can grant itself capabilities</h3>
-							<p>
-								The agent repository holds a manifest, but a manifest is a request. Grants live in
-								the control plane's config file, which the agent cannot write.
-							</p>
-							<p>An agent may ask for a capability. Nothing it says can give it one.</p>
-						</div>
+						{PROBLEMS.map((p, i) => (
+							<div className="card problem" key={p.rule}>
+								<span className="problem-n">{String(i + 1).padStart(2, "0")}</span>
+								<h3>{p.problem}</h3>
+								<p>{p.body}</p>
+								<p className="problem-rule">{p.rule}</p>
+							</div>
+						))}
 					</div>
 				</div>
 			</section>
@@ -152,7 +180,7 @@ $ curl -fsSL ${INSTALL} | sh
 					</p>
 				</div>
 				<div className="wrap-wide">
-					<Terminal>{FEED}</Terminal>
+					<Feed rows={FEED} />
 					<p className="caption">
 						<code>agent logs</code> — what every agent runs, answers and spends.
 					</p>

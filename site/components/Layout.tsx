@@ -26,6 +26,11 @@ export function Layout({
 				<meta property="og:title" content={full} />
 				<meta property="og:description" content={description} />
 				<meta property="og:type" content="website" />
+				{/* The consoles arrive a row at a time once they are scrolled to, which is a thing only a
+				    script can know. Without one they are simply there. */}
+				<noscript>
+					<style>{"body .feed-line,body .mock-in{opacity:1;transform:none}"}</style>
+				</noscript>
 			</Head>
 
 			<nav className="nav">
