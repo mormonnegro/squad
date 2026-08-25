@@ -523,6 +523,12 @@ export class ControlPlane {
 				if (result.text.length > 0) {
 					void this.#record(id, { from: "agent", text: result.text });
 				}
+				// Under the agent's name and a word, so it lands in the log rather than in the
+				// conversation: the agent is already told which servers failed and why, and a plane
+				// saying the same thing beside it is the operator reading it twice.
+				for (const trouble of troubledServers(result.stderr)) {
+					this.#reportError(`${id} mcp`, new Error(trouble));
+				}
 				// Said as a failure because that is what it is to anyone who was waiting: an answer
 				// that is not coming. It is also what releases them — a `wake` still holding on for
 				// the rest of it would otherwise wait out its whole timeout for nothing.
@@ -1310,6 +1316,21 @@ export function endpointPath(server: McpServer): string | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * What the MCP extension said would not connect, out of everything a turn wrote to stderr.
+ *
+ * A turn that succeeds throws its stderr away, and a server that never answered does not fail the
+ * turn — so without this the one thing the operator has to go and fix is the one thing nobody is
+ * told, and the only way to find out is a curl inside the container.
+ */
+export function troubledServers(stderr: string): readonly string[] {
+	const mark = "[mcp] ";
+	return stderr
+		.split("\n")
+		.filter((line) => line.startsWith(mark))
+		.map((line) => line.slice(mark.length).trim());
 }
 
 export function proxyTokenOf(proxyUrl: string | undefined, agentId: string): string | undefined {

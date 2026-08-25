@@ -546,15 +546,16 @@ function carried(answered: Answered): Part[] {
 	return content;
 }
 
+/** Registers one tool, and says whether it was this server's to register or another's already. */
 function register(
 	pi: ExtensionAPI,
 	server: string,
 	tool: Listed,
 	connection: Connection,
 	taken: Set<string>,
-): void {
+): boolean {
 	const name = named(server, tool.name);
-	if (taken.has(name)) return;
+	if (taken.has(name)) return false;
 	taken.add(name);
 
 	const description = (tool.description ?? "").trim();
@@ -590,6 +591,7 @@ function register(
 			return { content, details: {} };
 		},
 	});
+	return true;
 }
 
 function read(): readonly Named[] {
@@ -610,6 +612,44 @@ function read(): readonly Named[] {
 	}
 }
 
+/** What a server came to, once the handshake has either landed or not. */
+type Standing =
+	| { readonly name: string; readonly tools: number }
+	| { readonly name: string; readonly trouble: string };
+
+/**
+ * The servers, written into the agent's own system prompt.
+ *
+ * Registering the tools is not the same as saying the server is there, and the difference is a whole
+ * turn wasted. The console's answer to `/mcp login` goes to the operator, because the operator is the
+ * one with the browser it ends in — so an agent that asked for a server is never told it got one. It
+ * has only its tool list to infer from, and what it does instead is remember: the turn before this
+ * one it said the login was pending, so this turn it says so again, while holding a hundred working
+ * tools it will not touch.
+ *
+ * Said every turn rather than once, because the list is the operator's and moves between turns, and
+ * the turn it moves on is exactly the one whose history says otherwise.
+ */
+function saying(standing: readonly Standing[]): string {
+	const lines = standing.map((one) =>
+		"tools" in one
+			? `- \`${one.name}\` — connected. ${one.tools} ${one.tools === 1 ? "tool" : "tools"}, named \`${one.name}_*\`.`
+			: `- \`${one.name}\` — did not answer: ${one.trouble}`,
+	);
+	return [
+		"## The MCP servers you have",
+		"",
+		"Read at the start of this turn. The operator adds and removes these between turns, so this is",
+		"the list that is true now — not whatever was said about them earlier in the conversation.",
+		"",
+		...lines,
+		"",
+		"A server listed as connected is connected: its tools are in your tool list already, there is",
+		"nothing left to authorise and nobody to wait for. Use them. One that did not answer is one you",
+		"do not have this turn — tell the operator what it said, rather than guessing what they must do.",
+	].join("\n");
+}
+
 /**
  * Asynchronous, and pi waits: the tools have to exist before the first request is built, or the
  * model spends the turn it was given not knowing it had them.
@@ -619,6 +659,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	if (wanted.length === 0) return;
 
 	const taken = new Set<string>();
+	const standing = new Map<string, Standing>();
 	// All at once, so the wait is the slowest server rather than the sum of them.
 	await Promise.all(
 		wanted.map(async ({ name, server }) => {
@@ -630,14 +671,29 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 			} catch (failure) {
 				// Said and survived. A server that will not answer is a reason to have fewer tools, not a
 				// reason for the agent to lose the turn — and stderr is where the plane already looks.
-				console.error(`[mcp] ${name}: ${(failure as Error).message}`);
+				const trouble = (failure as Error).message;
+				console.error(`[mcp] ${name}: ${trouble}`);
+				standing.set(name, { name, trouble });
 				return;
 			}
 			if (tools.length === 0) {
 				connection.close();
+				standing.set(name, { name, trouble: "it offered no tools." });
 				return;
 			}
-			for (const tool of tools) register(pi, name, tool, connection, taken);
+			let count = 0;
+			for (const tool of tools) if (register(pi, name, tool, connection, taken)) count += 1;
+			standing.set(name, { name, tools: count });
 		}),
 	);
+
+	// Kept in the order the plane gave them rather than the order they answered in, so the paragraph
+	// does not reshuffle itself every turn for a reason nobody could name.
+	const listed = wanted
+		.map(({ name }) => standing.get(name))
+		.filter((one): one is Standing => one !== undefined);
+	// Appended rather than replacing, and chained by pi with whatever another extension appended.
+	pi.on("before_agent_start", (event) => ({
+		systemPrompt: `${event.systemPrompt}\n\n${saying(listed)}`,
+	}));
 }

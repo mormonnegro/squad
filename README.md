@@ -831,8 +831,30 @@ agent's reach one typo away from the box its messages are typed into is not a co
 
 The list is written into the sandbox before every turn rather than baked into the container, so a
 server added from the console reaches an agent that is already up on its next turn, and one taken
-away stops being offered. A server that will not answer costs the agent that server's tools and
-says so on stderr; it does not cost the turn.
+away stops being offered.
+
+**And the agent is told which ones it is holding**, in its own system prompt, every turn. Having the
+tools is not the same as knowing they arrived. The console's answer to `/mcp login` goes to the
+operator, because the operator is the one with the browser it ends in — so an agent that asked for a
+server is never told it got one. It has only its tool list to infer from, and what it does instead is
+remember: the turn before, it told the operator the login was pending, so this turn it says so again,
+sitting on a hundred working tools it will not touch. The paragraph goes in every turn rather than
+once, because the turn the list moves on is exactly the one whose history says otherwise:
+
+```
+## The MCP servers you have
+
+Read at the start of this turn. The operator adds and removes these between turns, so this is
+the list that is true now — not whatever was said about them earlier in the conversation.
+
+- `ahrefs` — connected. 134 tools, named `ahrefs_*`.
+- `notion` — did not answer: HTTP 401: unauthorized
+```
+
+A server that will not answer costs the agent that server's tools and not the turn, and it is named
+both ways: to the agent, so it can report what the server said instead of guessing what the operator
+still has to do, and to the operator in the log — the one thing they have to go and fix should not be
+the one thing nobody is told.
 
 ## An agent asking for what it needs
 
@@ -860,7 +882,8 @@ the address it lands on back as: /mcp login ahrefs <address>
 The link opens in the operator's browser, and that is the whole of what the agent could not do for
 itself: the console runs on the machine the person is at, and a plane in a container is not. Which is
 also why the answer goes to the console rather than back to the agent — an agent that wants to know
-how it went pairs the request with `wake_me` and finds the server attached on its next turn.
+how it went pairs the request with `wake_me`, and finds the server named on its next turn in the list
+of what it is holding.
 
 It travels on the channel the wakeup uses, a file the plane reads and removes once the turn is over,
 so this opens no route from the sandbox to the plane either. A list rather than one line, because

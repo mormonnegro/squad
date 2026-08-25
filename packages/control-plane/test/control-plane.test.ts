@@ -16,6 +16,7 @@ import {
 	MAX_WAKE_SECONDS,
 	MIN_WAKE_SECONDS,
 	proxyTokenOf,
+	troubledServers,
 	withDefaults,
 } from "../src/control-plane.ts";
 import { ProviderKeys } from "../src/keys.ts";
@@ -540,6 +541,36 @@ describe("carriesEnv", () => {
 	it("adopts an agent that declared no environment at all", () => {
 		expect(carriesEnv({ PATH: "/usr/bin" }, undefined)).toBe(true);
 		expect(carriesEnv({}, {})).toBe(true);
+	});
+});
+
+/**
+ * A server that will not connect does not fail the turn, and a turn that succeeds throws its stderr
+ * away — so this is the whole of how the operator ever hears that the thing they just added is not
+ * answering.
+ */
+describe("troubledServers", () => {
+	it("picks the servers out of everything else a turn complained about", () => {
+		expect(
+			troubledServers(
+				["node:23 experimental type stripping", "[mcp] ahrefs: HTTP 401: unauthorized", ""].join(
+					"\n",
+				),
+			),
+		).toEqual(["ahrefs: HTTP 401: unauthorized"]);
+	});
+
+	it("reports every one of them, not only the last to fail", () => {
+		expect(
+			troubledServers(
+				["[mcp] notion: No answer after 20s.", '[mcp] files: "mcp-files" exited 1'].join("\n"),
+			),
+		).toEqual(["notion: No answer after 20s.", 'files: "mcp-files" exited 1']);
+	});
+
+	it("says nothing about a turn where every server answered", () => {
+		expect(troubledServers("")).toEqual([]);
+		expect(troubledServers("pi: something else entirely")).toEqual([]);
 	});
 });
 
