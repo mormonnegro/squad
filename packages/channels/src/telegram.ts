@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import type { NewAgentEvent, TrustLevel } from "@agent-dive/events";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
 
@@ -87,19 +86,6 @@ const MOST_CHARS = 4096;
 
 const FIRST_RETRY_MS = 1000;
 const LONGEST_RETRY_MS = 60_000;
-
-/** No vowels, so it cannot come out as a word, and none of the letters a digit is mistaken for. */
-const CODE_ALPHABET = "bcdfghjkmnpqrstvwxz23456789";
-
-/**
- * A phrase that binds whoever sends it as the operator of a bot.
- *
- * In the alphabet a `/start` deep link allows, so the console can offer this as a link to tap rather
- * than a code to copy across to a phone — which is where Telegram is, and where a keyboard is not.
- */
-export function pairingPhrase(): string {
-	return Array.from(randomBytes(10), (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join("");
-}
 
 /** The link that opens the chat with the phrase already in the Start button. */
 export function startLink(username: string, phrase: string): string {

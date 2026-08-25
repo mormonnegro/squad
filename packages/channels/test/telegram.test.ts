@@ -1,13 +1,8 @@
 import type { NewAgentEvent } from "@agent-dive/events";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChannelRouter } from "../src/channel.ts";
-import {
-	type Bot,
-	intoMessages,
-	pairingPhrase,
-	startLink,
-	TelegramChannel,
-} from "../src/telegram.ts";
+import { pairingPhrase } from "../src/phrase.ts";
+import { type Bot, intoMessages, startLink, TelegramChannel } from "../src/telegram.ts";
 
 const TOKEN = "1234:abcdef";
 

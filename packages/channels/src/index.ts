@@ -10,22 +10,32 @@ export {
 } from "./autoconfig.ts";
 export { type Channel, ChannelError, ChannelRouter, type Reply } from "./channel.ts";
 export {
+	type Account,
+	addressFor,
+	EmailChannel,
+	type EmailChannelOptions,
+	type EmailPublisher,
+	type ReadMark,
+	type Session,
+} from "./email.ts";
+export {
 	addressesIn,
 	agentFor,
+	authenticated,
 	automated,
 	isOwnAddress,
-	type Mailbox,
 	type MailHeaders,
 	parseAddress,
 	readableText,
+	type Sender,
 	withoutTrail,
 } from "./mail.ts";
+export { pairingPhrase } from "./phrase.ts";
 export { isFresh, SIGNATURE_HEADER, sign, TIMESTAMP_HEADER, verify } from "./signature.ts";
 export {
 	type Bot,
 	type BotIdentity,
 	intoMessages,
-	pairingPhrase,
 	startLink,
 	TelegramChannel,
 	type TelegramChannelOptions,

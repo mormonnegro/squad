@@ -12,6 +12,11 @@
 		"typecheck": "tsc -p tsconfig.json"
 	},
 	"dependencies": {
-		"@agent-dive/events": "workspace:*"
+		"@agent-dive/events": "workspace:*",
+		"imapflow": "^1.0.191",
+		"mailparser": "^3.7.2"
+	},
+	"devDependencies": {
+		"@types/mailparser": "^3.4.5"
 	}
 }
