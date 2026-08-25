@@ -149,6 +149,10 @@ defaults:
   model: deepseek-v4-flash     # /model moves one agent onto another
   limitUsd: 5                  # dollars a day, reset at midnight UTC
   grants:
+    - id: web                  # the road: npm, PyPI, git, anywhere
+      host: "*"
+      injection:
+        kind: none             # and no key of yours goes down it
     - id: search
       host: api.openai.com
       pathPrefix: /v1/responses  # the one endpoint that searches
@@ -157,6 +161,12 @@ defaults:
         kind: bearer
         token: { ref: OPENAI_API_KEY }
 `}</Code>
+					<p className="small">
+						What may be reached and what may be spent are two questions, and only the first is
+						answered "anywhere". A grant on <code>*</code> that carried a credential is refused when
+						the file is read: the road is open, the keys are given to somewhere by name. Delete the{" "}
+						<code>web</code> grant and the plane is deny-by-default again, host by host.
+					</p>
 					<p className="small">
 						No secret is in it. It names environment variables and the process holds the values, so
 						the file describing what an agent can reach is committable and diffable — a grant nobody
