@@ -1,13 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	KEY_PLACEHOLDER,
 	type Model,
 	ModelChoices,
 	modelEnv,
 	modelGrants,
+	offersOf,
 	PROVIDERS,
 	providersOf,
 } from "../src/models.ts";
@@ -152,6 +153,97 @@ describe("modelEnv", () => {
 		expect(modelEnv([{ ...deepseek, keyEnv: "MY_GATEWAY_TOKEN" }])).toMatchObject({
 			MY_GATEWAY_TOKEN: KEY_PLACEHOLDER,
 		});
+	});
+});
+
+describe("offersOf", () => {
+	/** Records what was asked, and answers with whatever the test put in front of it. */
+	function serving(body: unknown, ok = true) {
+		const asked: { url: string; headers: Record<string, string> }[] = [];
+		const fetching = async (url: string, init?: { headers?: Record<string, string> }) => {
+			asked.push({ url, headers: init?.headers ?? {} });
+			return {
+				ok,
+				status: ok ? 200 : 401,
+				json: async () => body,
+			} as Response;
+		};
+		vi.stubGlobal("fetch", fetching);
+		return asked;
+	}
+
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("asks the provider where the table says it lists them, with the key attached", async () => {
+		const asked = serving({ data: [{ id: "gpt-5" }] });
+
+		expect(await offersOf("openai", "sk-live")).toEqual([{ provider: "openai", id: "gpt-5" }]);
+		expect(asked[0]?.url).toBe("https://api.openai.com/v1/models");
+		expect(asked[0]?.headers).toMatchObject({ authorization: "Bearer sk-live" });
+	});
+
+	// The same fact the grants use: a provider that does not take a bearer token takes it in a header
+	// of its own, and the catalog is a request like any other.
+	it("attaches the key the way the provider takes it", async () => {
+		const asked = serving({ data: [{ id: "claude-opus-4-7" }] });
+		await offersOf("anthropic", "sk-ant");
+
+		expect(asked[0]?.headers).toMatchObject({
+			"x-api-key": "sk-ant",
+			"anthropic-version": "2023-06-01",
+		});
+	});
+
+	/** Google answers with the resource path rather than the name the model is asked for by. */
+	it("takes the name out of the path google answers with", async () => {
+		serving({ models: [{ name: "models/gemini-3-pro" }] });
+
+		expect(await offersOf("google", "key")).toEqual([{ provider: "google", id: "gemini-3-pro" }]);
+	});
+
+	// Every one of these lists everything the account can call, and most of it is not something to
+	// think with. Being wrong here only hides a row, which is why it is safe to guess by name.
+	it("leaves out what is not a model to think with", async () => {
+		serving({
+			data: [
+				{ id: "gpt-5" },
+				{ id: "text-embedding-3-small" },
+				{ id: "whisper-1" },
+				{ id: "gpt-image-1" },
+			],
+		});
+
+		expect(await offersOf("openai", "sk")).toEqual([{ provider: "openai", id: "gpt-5" }]);
+	});
+
+	// A catalog in the order it was written is a list whose top is the oldest thing on it.
+	it("puts the newest first where the provider dates them", async () => {
+		serving({
+			data: [
+				{ id: "old", created: 1 },
+				{ id: "new", created: 3 },
+				{ id: "middle", created: 2 },
+			],
+		});
+
+		expect((await offersOf("openai", "sk")).map((offer) => offer.id)).toEqual([
+			"new",
+			"middle",
+			"old",
+		]);
+	});
+
+	it("says what the provider answered when it would not answer with a list", async () => {
+		serving({}, false);
+
+		await expect(offersOf("openai", "wrong")).rejects.toThrow("401");
+	});
+
+	/** A provider written out by hand has a host and a key and no list to ask for. */
+	it("offers nothing for a provider the table has no catalog for", async () => {
+		serving({ data: [{ id: "anything" }] });
+
+		expect(await offersOf("my-gateway", "token")).toEqual([]);
 	});
 });
 

@@ -46,14 +46,17 @@ export {
 } from "./mcp.ts";
 export {
 	AddedModels,
+	type Catalog,
 	KEY_PLACEHOLDER,
 	type Model,
 	type ModelChoice,
 	ModelChoices,
+	type ModelOffer,
 	type ModelSpec,
 	type ModelStanding,
 	modelEnv,
 	modelGrants,
+	offersOf,
 	PROVIDERS,
 	type Provider,
 	type ProviderStanding,

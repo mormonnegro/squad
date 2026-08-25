@@ -37,11 +37,16 @@ import { ProviderKeys } from "./keys.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
 import {
 	AddedModels,
+	type Catalog,
 	type Model,
 	type ModelChoice,
 	ModelChoices,
+	type ModelOffer,
 	type ModelSpec,
+	type ModelStanding,
 	modelGrants,
+	offersOf,
+	PROVIDERS,
 	type ProviderStanding,
 	providersOf,
 	resolveModel,
@@ -675,6 +680,49 @@ export class ControlPlane {
 			});
 		}
 		return standing;
+	}
+
+	/**
+	 * Everything this plane's keys could buy, asked of the providers themselves.
+	 *
+	 * Handing over a key and then being asked for a model name is being asked for the one fact the
+	 * key just made this plane able to look up. So it looks it up: every provider it is holding a key
+	 * for is asked what it answers to, and what comes back is a list to pick from instead of a name
+	 * to remember. Nothing here is added — an offer is a name a screen may show, and it becomes a
+	 * model only when somebody picks it.
+	 *
+	 * Asked of all of them at once, and what fails is reported rather than dropped: an empty list is
+	 * the shape both "this key is wrong" and "this provider has nothing" arrive in, and only one of
+	 * those is worth telling somebody about.
+	 */
+	async offers(): Promise<Catalog> {
+		const configured = await this.models();
+		const asking = providersOf(configured).filter(
+			(provider) => PROVIDERS[provider.id]?.catalog !== undefined,
+		);
+		const asked = await Promise.all(
+			asking.map(async (provider): Promise<Catalog> => {
+				const key = await this.#secrets.resolve({ ref: provider.keyEnv }).catch(() => undefined);
+				if (key === undefined || key.length === 0) return { offers: [], trouble: [] };
+				try {
+					return { offers: await offersOf(provider.id, key), trouble: [] };
+				} catch (error) {
+					const why = error instanceof Error ? error.message : String(error);
+					return { offers: [], trouble: [`${provider.id} ${why}`] };
+				}
+			}),
+		);
+
+		// A model already configured is not on offer: picking it again would be an id collision, and
+		// the point of the list is what is not on the screen behind it yet.
+		const taken = new Set(configured.map((model) => `${model.provider} ${model.model}`));
+		const offers: ModelOffer[] = [];
+		for (const answer of asked) {
+			for (const offer of answer.offers) {
+				if (!taken.has(`${offer.provider} ${offer.id}`)) offers.push(offer);
+			}
+		}
+		return { offers, trouble: asked.flatMap((answer) => answer.trouble) };
 	}
 
 	/**

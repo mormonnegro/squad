@@ -8,7 +8,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
-import type { ModelStanding, ProviderStanding } from "./models.ts";
+import type { ModelOffer, ModelStanding, ProviderStanding } from "./models.ts";
 import { openInBrowser } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import type { Utterance } from "./transcript.ts";
@@ -763,6 +763,25 @@ export function setupRows(
 }
 
 /**
+ * The offers left once what has been typed is taken as a narrowing of them.
+ *
+ * Every word has to appear somewhere in the provider or the name, in any order, so that "openai
+ * mini" is a way of saying it and so is "mini openai". Shared with the keyboard for the same reason
+ * the rows are: the one that gets added is the one that is highlighted, and two filters would
+ * eventually disagree about which that is.
+ */
+export function matching(offers: readonly ModelOffer[], filter: string): readonly ModelOffer[] {
+	const words = filter
+		.toLowerCase()
+		.split(/\s+/)
+		.filter((word) => word.length > 0);
+	return offers.filter((offer) => {
+		const both = `${offer.provider} ${offer.id}`.toLowerCase();
+		return words.every((word) => both.includes(word));
+	});
+}
+
+/**
  * The providers this plane could pay for, and which of them it can.
  *
  * A screen rather than a command, because it is a list to look down: the question it answers is
@@ -778,6 +797,10 @@ export function Setup({
 	secret,
 	/** The model being written out, as far as it has been typed, or nothing when none is. */
 	adding,
+	/** Everything the keys this plane holds could buy, or nothing while the providers are being asked. */
+	offers,
+	/** Which of the offers left after `adding` narrowed them the arrows are standing on. */
+	pick,
 	/** What the plane said instead of answering, when it did that. */
 	unanswered,
 	rows,
@@ -789,6 +812,8 @@ export function Setup({
 	readonly typing: string | undefined;
 	readonly secret: string;
 	readonly adding: string | undefined;
+	readonly offers?: readonly ModelOffer[] | undefined;
+	readonly pick?: number;
 	readonly unanswered: string | undefined;
 	readonly rows: number;
 	readonly columns: number;
@@ -817,6 +842,58 @@ export function Setup({
 	// The prose above ends where the list begins, and without this the two run together into one
 	// paragraph with rows in it.
 	listed.push(h(Text, { key: "before" }, " "));
+	if (adding !== undefined) {
+		const found = offers === undefined ? [] : matching(offers, adding);
+		const on = Math.min(Math.max(0, pick ?? 0), Math.max(0, found.length - 1));
+		const widestOffer = Math.max(0, ...found.map((offer) => offer.id.length));
+		// Written out is the way through whenever the list is not: a provider nothing here has a
+		// catalog for, a key that has not been given yet, a name of your own. So it is said on every
+		// row that has nothing to pick, which are the rows where somebody is about to need it.
+		const byHand = "or write it out, as: name provider [the provider's own name for it]";
+		if (offers === undefined) {
+			listed.push(
+				h(Text, { key: "asking", dimColor: true }, "asking every provider this plane can pay…"),
+			);
+		} else if (offers.length === 0) {
+			listed.push(
+				h(Text, { key: "none", dimColor: true, wrap: "truncate" }, "no key is held here yet —"),
+			);
+			listed.push(h(Text, { key: "byhand", dimColor: true, wrap: "truncate" }, byHand));
+		} else if (found.length === 0) {
+			listed.push(
+				h(
+					Text,
+					{ key: "nomatch", dimColor: true, wrap: "truncate" },
+					"nothing on offer matches that —",
+				),
+			);
+			listed.push(h(Text, { key: "byhand", dimColor: true, wrap: "truncate" }, byHand));
+		} else {
+			listed.push(heading(`${found.length} on offer`));
+			for (const [index, offer] of found.entries()) {
+				if (index === on) at = listed.length;
+				listed.push(
+					h(
+						Text,
+						{ key: `offer-${offer.provider}-${offer.id}`, wrap: "truncate" },
+						h(Text, { color: index === on ? "cyan" : "gray" }, index === on ? "›" : " "),
+						h(Text, pointed(index === on, true), ` ${offer.id.padEnd(widestOffer + 2)}`),
+						h(Text, { dimColor: true }, offer.provider),
+					),
+				);
+			}
+		}
+		return setupScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt: { kind: "typed", mark: "model  ", text: adding, secret: false },
+			boxed,
+			rows,
+			columns,
+		});
+	}
 	listed.push(heading("providers"));
 	// The same marks the agents column uses, and they mean the same thing here: a dot that is filled
 	// in is something this plane can actually use right now.
@@ -887,19 +964,67 @@ export function Setup({
 						: // Short enough to survive a narrow terminal: the line is truncated rather than wrapped,
 							// and the half that gets cut is the half that says what is wrong.
 							`${row.provider.keyEnv}   no key, refused at the proxy`;
+	return setupScreen({
+		listed,
+		at,
+		trouble,
+		said,
+		prompt:
+			typing === undefined
+				? { kind: "dim", text: from }
+				: // Never the characters. A key is read off a screen by whoever is behind the person typing
+					// it, and this is a terminal that keeps its own scrollback.
+					{ kind: "typed", mark: `key for ${typing}  `, text: secret, secret: true },
+		boxed,
+		rows,
+		columns,
+	});
+}
+
+/**
+ * The setup screen's two halves: a list that takes the room it needs, and a prompt under it.
+ *
+ * Both of the things this screen does are a list and a line to type into, and drawing that twice was
+ * how the list of models ended up scrolling differently from the list of keys.
+ */
+function setupScreen({
+	listed,
+	at,
+	trouble,
+	said,
+	prompt,
+	boxed,
+	rows,
+	columns,
+}: {
+	readonly listed: readonly ReactElement[];
+	readonly at: number;
+	readonly trouble: readonly ReactElement[];
+	readonly said: readonly string[];
+	/** Either something being typed, which has the keyboard, or a dim line about the row under it. */
+	readonly prompt:
+		| {
+				readonly kind: "typed";
+				readonly mark: string;
+				readonly text: string;
+				readonly secret: boolean;
+		  }
+		| { readonly kind: "dim"; readonly text: string };
+	readonly boxed: boolean;
+	readonly rows: number;
+	readonly columns: number;
+}): ReactElement {
 	const width = columns - (boxed ? 4 : 0);
-	const mark =
-		typing === undefined ? (adding === undefined ? "" : "model  ") : `key for ${typing}  `;
-	const room = Math.max(0, width - mark.length - 1);
+	const room = Math.max(0, width - (prompt.kind === "typed" ? prompt.mark.length : 0) - 1);
 	const height = chatRows(rows);
 	// The list is what this screen is, so it takes the rows it needs and the prose above it is what
 	// gives way — the other way round and a short terminal shows three paragraphs and no providers.
 	const all = [...trouble, ...listed];
-	const shown =
+	const kept =
 		all.length <= height
 			? all
 			: [...trouble, ...framed(listed, at, Math.max(0, height - trouble.length))];
-	const head = visible(wrapped(said, columns, true), Math.max(0, height - shown.length), undefined);
+	const head = visible(wrapped(said, columns, true), Math.max(0, height - kept.length), undefined);
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -909,7 +1034,7 @@ export function Setup({
 			...head.map((line, index) =>
 				h(Text, { key: `said${index}`, wrap: "truncate" }, line === "" ? " " : line),
 			),
-			...shown,
+			...kept,
 		),
 		h(
 			Box,
@@ -917,31 +1042,21 @@ export function Setup({
 				? {
 						key: "prompt",
 						borderStyle: "round",
-						borderColor: typing === undefined && adding === undefined ? "gray" : "cyan",
+						borderColor: prompt.kind === "typed" ? "cyan" : "gray",
 						paddingX: 1,
 					}
 				: { key: "prompt" },
-			typing !== undefined
-				? h(
+			prompt.kind === "dim"
+				? h(Text, { wrap: "truncate", dimColor: true }, prompt.text)
+				: h(
 						Text,
 						{ wrap: "truncate" },
-						h(Text, { color: "cyan" }, mark),
-						// Never the characters. A key is read off a screen by whoever is behind the person
-						// typing it, and this is a terminal that keeps its own scrollback.
-						"•".repeat(secret.length).slice(Math.max(0, secret.length - room)),
+						h(Text, { color: "cyan" }, prompt.mark),
+						(prompt.secret ? "•".repeat(prompt.text.length) : prompt.text).slice(
+							Math.max(0, prompt.text.length - room),
+						),
 						h(Text, { inverse: true }, " "),
-					)
-				: adding !== undefined
-					? // Shown as it is typed, unlike a key: this is a name and a provider, and getting it
-						// wrong is the ordinary way it goes. Nothing here is worth hiding from the room.
-						h(
-							Text,
-							{ wrap: "truncate" },
-							h(Text, { color: "cyan" }, mark),
-							adding.slice(Math.max(0, adding.length - room)),
-							h(Text, { inverse: true }, " "),
-						)
-					: h(Text, { wrap: "truncate", dimColor: true }, from),
+					),
 		),
 	);
 }
@@ -1034,6 +1149,10 @@ export function App({
 	// The model being written out, kept apart from the draft for the same reason: the chat prompt is
 	// one `tab` away and a half-typed line landing in it would be said to an agent.
 	const [adding, setAdding] = useState<string | undefined>(undefined);
+	// What the providers this plane can pay say they answer to, or nothing while they are being asked.
+	// Fetched when the row that adds a model is entered rather than with the screen, because it is a
+	// round trip to every provider at once and most visits here are about a key.
+	const [offers, setOffers] = useState<readonly ModelOffer[] | undefined>(undefined);
 	// The model a drop was asked about, while the console waits to hear it was meant.
 	const [dropping, setDropping] = useState<string | undefined>(undefined);
 
@@ -1240,6 +1359,30 @@ export function App({
 	);
 
 	/**
+	 * Asks every provider this plane can pay what it will answer to.
+	 *
+	 * The answer is a list to pick from instead of a name to remember, which is the difference between
+	 * handing over a key and being finished, and handing over a key and then being asked the one fact
+	 * the key just bought the ability to look up. What could not be asked is said rather than dropped:
+	 * a wrong key and a provider with nothing both come back as no models.
+	 */
+	const look = useCallback(async (): Promise<void> => {
+		setOffers(undefined);
+		await client
+			.offers()
+			.then((catalog) => {
+				setOffers(catalog.offers);
+				setUnanswered(catalog.trouble.length === 0 ? undefined : catalog.trouble.join(" · "));
+			})
+			.catch((error: unknown) => {
+				// An empty list rather than none at all, so the screen stops saying it is asking and the
+				// line that takes a model typed out by hand is the one left standing.
+				setOffers([]);
+				setUnanswered((error as Error).message);
+			});
+	}, [client]);
+
+	/**
 	 * Says something to an agent, and shows none of it.
 	 *
 	 * Nothing is written here, on purpose. The line typed and the answer to it both come back on the
@@ -1387,29 +1530,56 @@ export function App({
 			entered(secret + first);
 			return;
 		}
-		// A model is being written out, and like the key above it the branch sits here so that none of
-		// the panes below read a character of it as one of their own.
+		// A model is being picked, and like the key above it the branch sits here so that none of the
+		// panes below read a character of what is typed as one of their own. The arrows are the list's
+		// while it is up, which is what they are in every other box that completes.
 		if (adding !== undefined) {
+			const found = offers === undefined ? [] : matching(offers, adding);
+			const on = Math.min(Math.max(0, pick), Math.max(0, found.length - 1));
 			const entered = (value: string): void => {
+				const words = value
+					.trim()
+					.split(/\s+/)
+					.filter((word) => word.length > 0);
 				setAdding(undefined);
-				if (value.trim().length > 0) void write(value);
+				setOffers(undefined);
+				// Three words is somebody naming the model themselves — an id, the provider, and the
+				// provider's own name for it — so it is taken as written even while the list has a row
+				// highlighted. Anything shorter is a narrowing of the list, and what it narrowed to is
+				// what was meant.
+				const picked = words.length >= 3 ? undefined : found[on];
+				if (picked !== undefined) void write(`${picked.id} ${picked.provider}`);
+				else if (words.length > 0) void write(value);
 			};
 			if (key.escape) {
 				setAdding(undefined);
+				setOffers(undefined);
+				return;
+			}
+			if (key.upArrow) {
+				setPick(Math.max(0, on - 1));
+				return;
+			}
+			if (key.downArrow) {
+				setPick(Math.min(Math.max(0, found.length - 1), on + 1));
 				return;
 			}
 			if (key.return) {
 				entered(adding);
 				return;
 			}
+			// Back to the top of whatever the line now narrows to: a row four down in the old list is a
+			// different model in the new one, and it is the one that would have been added.
 			if (key.backspace || key.delete) {
 				setAdding((prev) => (prev ?? "").slice(0, -1));
+				setPick(0);
 				return;
 			}
 			if (input.length === 0 || key.ctrl || key.meta) return;
 			const [first = "", ...rest] = input.split(/\r|\n/);
 			if (rest.length === 0) {
 				setAdding((prev) => (prev ?? "") + first);
+				setPick(0);
 				return;
 			}
 			entered(adding + first);
@@ -1476,8 +1646,13 @@ export function App({
 				}
 				// The row under the models, which is the one that makes one — the same shape as the row
 				// under the agents, because it is the same idea and a second one would be a second thing
-				// to learn.
-				if (setupRow.kind === "add") setAdding("");
+				// to learn. The providers are asked what they offer on the way in, so what opens is a
+				// list to look down rather than a box wanting a name nobody memorises.
+				if (setupRow.kind === "add") {
+					setAdding("");
+					setPick(0);
+					void look();
+				}
 			}
 			// Backspace rather than a letter, because every letter is a character somebody will one day
 			// type into a box on this screen, and this is the key that already means take it away.
@@ -1663,6 +1838,8 @@ export function App({
 								typing,
 								secret,
 								adding,
+								offers,
+								pick,
 								unanswered,
 								rows: inner,
 								columns: width,
@@ -1702,81 +1879,93 @@ export function App({
 			{ flexDirection: "row", key: "hint" },
 			h(Text, null, " "),
 			// The key stands out from what it does, because the key is the part being looked for.
-			...(typing !== undefined || adding !== undefined
-				? // Something is being typed and has the keyboard, so the row is the two ways out of that.
+			...(adding !== undefined
+				? // The list has the arrows while it is up, and return takes what they are standing on.
 					[
-						["⏎", "save"],
+						...(offers !== undefined && matching(offers, adding).length > 0
+							? [
+									["↑↓", "move"],
+									["⏎", "add"],
+								]
+							: [["⏎", "add"]]),
 						["esc", "cancel"],
 						["^C", "quit"],
 					]
-				: dropping !== undefined
-					? [
-							["y", "drop"],
-							["n", "cancel"],
+				: typing !== undefined
+					? // A key is being typed and has the keyboard, so the row is the two ways out of that.
+						[
+							["⏎", "save"],
+							["esc", "cancel"],
 							["^C", "quit"],
 						]
-					: panel === "setup"
-						? // What return does here depends on the row, so the row is what the hint says. A hint
-							// naming a key that does nothing on the row under the cursor is the same lie as a
-							// hint for a key that does nothing at all.
-							[
-								["↑↓", "move"],
-								...(setupRow?.kind === "provider"
-									? [["⏎", "set key"]]
-									: setupRow?.kind === "add"
-										? [["⏎", "add model"]]
-										: setupRow?.model.added === true
-											? [["⌫", "drop model"]]
-											: []),
-								["tab", after(panel)],
+					: dropping !== undefined
+						? [
+								["y", "drop"],
+								["n", "cancel"],
 								["^C", "quit"],
 							]
-						: menu.length > 0
-							? // The keys have been taken by the menu, so the row says what they do now instead of
-								// what they did a keystroke ago. A hint left standing for a key the menu has taken is
-								// the same lie as a hint for a key that does nothing.
+						: panel === "setup"
+							? // What return does here depends on the row, so the row is what the hint says. A hint
+								// naming a key that does nothing on the row under the cursor is the same lie as a
+								// hint for a key that does nothing at all.
 								[
-									["↑↓", "command"],
-									["⏎", "choose"],
+									["↑↓", "move"],
+									...(setupRow?.kind === "provider"
+										? [["⏎", "set key"]]
+										: setupRow?.kind === "add"
+											? [["⏎", "add model"]]
+											: setupRow?.model.added === true
+												? [["⌫", "drop model"]]
+												: []),
+									["tab", after(panel)],
 									["^C", "quit"],
 								]
-							: deleting !== undefined
-								? // A question is open and it has the keyboard, so the row says the two keys that mean
-									// anything. Everything it usually offers would be a way out of answering that does
-									// not exist — and `n` is spelled out rather than left as "any other key", because a
-									// key to press is a thing a hand does and "any other key" is a thing to work out.
+							: menu.length > 0
+								? // The keys have been taken by the menu, so the row says what they do now instead of
+									// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+									// the same lie as a hint for a key that does nothing.
 									[
-										["y", "delete"],
-										["n", "cancel"],
+										["↑↓", "command"],
+										["⏎", "choose"],
 										["^C", "quit"],
 									]
-								: selected === undefined
-									? // Nothing else the row usually offers is true here: there is no conversation to
-										// scroll, no shell to open and no commands, until the name has been given.
+								: deleting !== undefined
+									? // A question is open and it has the keyboard, so the row says the two keys that mean
+										// anything. Everything it usually offers would be a way out of answering that does
+										// not exist — and `n` is spelled out rather than left as "any other key", because a
+										// key to press is a thing a hand does and "any other key" is a thing to work out.
 										[
-											["↑↓", "agent"],
-											["⏎", "create"],
+											["y", "delete"],
+											["n", "cancel"],
 											["^C", "quit"],
 										]
-									: [
-											["↑↓", "agent"],
-											["^U^D", "scroll"],
-											["tab", after(panel)],
-											// A key nobody guesses is pressable. The rest of this row is what to press to move
-											// around; this one is what to press to be told what else there is. In the shell the
-											// two of them say nothing true, and the way back out is worth saying instead.
-											...(shell
-												? [["⌫", "chat"]]
-												: [
-														["/", "commands"],
-														["!", "shell"],
-													]),
-											["^C", "quit"],
-											// Last, so that the rest of the row does not move as it comes and goes, and shown
-											// only while there is something to stop: the key does nothing at any other time,
-											// and offering it then is how a hint becomes a thing that lies.
-											...(busy.size > 0 ? [["esc", "stop"]] : []),
-										]
+									: selected === undefined
+										? // Nothing else the row usually offers is true here: there is no conversation to
+											// scroll, no shell to open and no commands, until the name has been given.
+											[
+												["↑↓", "agent"],
+												["⏎", "create"],
+												["^C", "quit"],
+											]
+										: [
+												["↑↓", "agent"],
+												["^U^D", "scroll"],
+												["tab", after(panel)],
+												// A key nobody guesses is pressable. The rest of this row is what to press to move
+												// around; this one is what to press to be told what else there is. In the shell the
+												// two of them say nothing true, and the way back out is worth saying instead.
+												...(shell
+													? [["⌫", "chat"]]
+													: [
+															["/", "commands"],
+															["!", "shell"],
+														]),
+												["^C", "quit"],
+												// Last, so that the rest of the row does not move as it comes and goes, and shown
+												// only while there is something to stop: the key does nothing at any other time,
+												// and offering it then is how a hint becomes a thing that lies.
+												...(busy.size > 0 ? [["esc", "stop"]] : []),
+											]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

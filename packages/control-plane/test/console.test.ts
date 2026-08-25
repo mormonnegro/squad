@@ -22,6 +22,7 @@ import {
 	visible,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
+import type { ModelOffer } from "../src/models.ts";
 
 /**
  * The transcript is the words; the colour is put on at the last moment.
@@ -890,11 +891,18 @@ describe("Setup", () => {
 			held: true,
 		},
 	];
+	const offers = [
+		{ provider: "openai", id: "gpt-5" },
+		{ provider: "openai", id: "gpt-5-mini" },
+		{ provider: "groq", id: "kimi-k2" },
+	];
 	const pane = (props: {
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
 		adding?: string | undefined;
+		offers?: readonly ModelOffer[] | undefined;
+		pick?: number;
 		unanswered?: string | undefined;
 		rows?: number;
 		columns?: number;
@@ -981,6 +989,54 @@ describe("Setup", () => {
 
 		expect(drawn).toContain("model");
 		expect(drawn).toContain("sonnet anthropic");
+	});
+
+	// What a key buys, offered rather than asked for: the list is the difference between configuring a
+	// provider and remembering what its models are called.
+	it("lists what the providers offer, once the row that adds one is entered", () => {
+		const drawn = pane({ adding: "", offers });
+
+		expect(drawn).toContain("3 on offer");
+		expect(drawn).toContain("gpt-5-mini");
+		expect(drawn).toContain("kimi-k2");
+	});
+
+	it("keeps only the offers every word matches", () => {
+		const drawn = pane({ adding: "openai mini", offers });
+
+		expect(drawn).toContain("gpt-5-mini");
+		expect(drawn).not.toContain("kimi-k2");
+	});
+
+	// Which one return would take, marked without a colour: colour is the first thing a screenshot,
+	// a pipe or a monochrome terminal drops, and this is the row about to be added.
+	it("points at the offer return would take", () => {
+		const rows = pane({ adding: "", offers, pick: 1, columns: 90 }).split("\n");
+
+		expect(rows.find((row) => row.includes("gpt-5-mini"))).toContain("›");
+		expect(rows.find((row) => row.includes("kimi-k2"))).not.toContain("›");
+	});
+
+	// A round trip to every provider at once, which is long enough on a slow one that a blank list
+	// would read as a plane with nothing to offer.
+	it("says it is asking while the providers have not answered", () => {
+		expect(pane({ adding: "", offers: undefined, columns: 90 })).toContain("asking every provider");
+	});
+
+	// The way out when the list has nothing: a provider this console has no catalog for is still a
+	// model somebody can name.
+	it("says how to write one out when nothing is on offer", () => {
+		const drawn = pane({ adding: "", offers: [], columns: 90 });
+
+		expect(drawn).toContain("no key is held here yet");
+		expect(drawn).toContain("name provider");
+	});
+
+	it("says how to write one out when nothing matches what was typed", () => {
+		const drawn = pane({ adding: "zzz", offers, columns: 90 });
+
+		expect(drawn).toContain("nothing on offer matches");
+		expect(drawn).toContain("name provider");
 	});
 
 	/**

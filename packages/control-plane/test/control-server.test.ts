@@ -3,7 +3,8 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { EnvSecretStore } from "@agent-dive/proxy";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ControlClient, ControlError } from "../src/control-client.ts";
 import { ControlPlane, type PlaneEvent } from "../src/control-plane.ts";
 import { ControlServer } from "../src/control-server.ts";
@@ -34,6 +35,9 @@ describe("the control socket", () => {
 		plane = new ControlPlane({
 			agents: [{ id: "scout", grants: [], schedules: [] }, { id: "scribe" }],
 			stateDir,
+			// Whatever this machine exports is not part of the test. A developer with a key in their
+			// shell would otherwise be running a different suite than the one CI runs.
+			secrets: new EnvSecretStore({}),
 		});
 		server = new ControlServer({ plane, waitMs: 5_000 });
 		await server.listen();
@@ -42,11 +46,14 @@ describe("the control socket", () => {
 	});
 
 	afterEach(async () => {
+		vi.unstubAllGlobals();
 		client.close();
 		await server.close();
 		// A wake is answered before the turn is acknowledged, so the store may still be writing.
 		await plane.bus.drain();
-		await rm(stateDir, { recursive: true, force: true });
+		// A transcript line is written after the turn is answered and deliberately not waited on, so a
+		// stopped turn can still be landing a file here. Only a temporary directory is at stake.
+		await rm(stateDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
 	});
 
 	// The key pressed while an agent is thinking. It has to reach a turn being taken in another
@@ -311,6 +318,38 @@ describe("the control socket", () => {
 
 	it("refuses a secret that is not a provider's", async () => {
 		await expect(client.setKey("GITHUB_TOKEN", "ghp-typed")).rejects.toThrow(/not a provider key/);
+	});
+
+	/**
+	 * The other direction over the same socket, and the reason it is this socket: the console asks what
+	 * a key can buy, and the plane is the side holding the key. Asked from the console the key would
+	 * have to leave here to be spent on the question.
+	 */
+	it("says what the key it was just given can buy", async () => {
+		vi.stubGlobal("fetch", async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ data: [{ id: "gpt-5" }] }),
+		}));
+		await client.setKey("OPENAI_API_KEY", "sk-typed");
+
+		expect(await client.offers()).toEqual({
+			offers: [{ provider: "openai", id: "gpt-5" }],
+			trouble: [],
+		});
+	});
+
+	// The providers nothing was typed for are not asked, so an empty answer is an empty answer rather
+	// than eight refusals.
+	it("offers nothing, without asking anybody, while it holds no key at all", async () => {
+		const asked: string[] = [];
+		vi.stubGlobal("fetch", async (url: string) => {
+			asked.push(url);
+			return { ok: true, status: 200, json: async () => ({ data: [] }) };
+		});
+
+		expect(await client.offers()).toEqual({ offers: [], trouble: [] });
+		expect(asked).toEqual([]);
 	});
 
 	/**

@@ -36,20 +36,37 @@ export interface Model extends ModelChoice {
  * Anything not in here is still configurable, by writing out the host and the key's variable.
  */
 export const PROVIDERS: Readonly<
-	Record<string, { host: string; keyEnv: string; header?: string }>
+	Record<
+		string,
+		{
+			host: string;
+			keyEnv: string;
+			header?: string;
+			/** Where it will say what it answers to, asked with the key this plane holds for it. */
+			catalog?: string;
+			catalogHeaders?: Readonly<Record<string, string>>;
+		}
+	>
 > = {
-	anthropic: { host: "api.anthropic.com", keyEnv: "ANTHROPIC_API_KEY", header: "x-api-key" },
-	openai: { host: "api.openai.com", keyEnv: "OPENAI_API_KEY" },
-	deepseek: { host: "api.deepseek.com", keyEnv: "DEEPSEEK_API_KEY" },
+	anthropic: {
+		host: "api.anthropic.com",
+		keyEnv: "ANTHROPIC_API_KEY",
+		header: "x-api-key",
+		catalog: "/v1/models",
+		catalogHeaders: { "anthropic-version": "2023-06-01" },
+	},
+	openai: { host: "api.openai.com", keyEnv: "OPENAI_API_KEY", catalog: "/v1/models" },
+	deepseek: { host: "api.deepseek.com", keyEnv: "DEEPSEEK_API_KEY", catalog: "/v1/models" },
 	google: {
 		host: "generativelanguage.googleapis.com",
 		keyEnv: "GEMINI_API_KEY",
 		header: "x-goog-api-key",
+		catalog: "/v1beta/models?pageSize=200",
 	},
-	groq: { host: "api.groq.com", keyEnv: "GROQ_API_KEY" },
-	mistral: { host: "api.mistral.ai", keyEnv: "MISTRAL_API_KEY" },
-	openrouter: { host: "openrouter.ai", keyEnv: "OPENROUTER_API_KEY" },
-	xai: { host: "api.x.ai", keyEnv: "XAI_API_KEY" },
+	groq: { host: "api.groq.com", keyEnv: "GROQ_API_KEY", catalog: "/openai/v1/models" },
+	mistral: { host: "api.mistral.ai", keyEnv: "MISTRAL_API_KEY", catalog: "/v1/models" },
+	openrouter: { host: "openrouter.ai", keyEnv: "OPENROUTER_API_KEY", catalog: "/api/v1/models" },
+	xai: { host: "api.x.ai", keyEnv: "XAI_API_KEY", catalog: "/v1/models" },
 };
 
 /**
@@ -153,6 +170,100 @@ export function providersOf(models: readonly Model[]): readonly Provider[] {
 		if (!found.has(known.keyEnv)) found.set(known.keyEnv, { id, keyEnv: known.keyEnv, models: [] });
 	}
 	return [...found.values()];
+}
+
+/** One model a provider says it will answer to, offered to be configured under a name. */
+export interface ModelOffer {
+	readonly provider: string;
+	/** The provider's own name for it, which is also the name it gets here unless one is taken. */
+	readonly id: string;
+}
+
+/**
+ * What could be picked, and what could not be asked.
+ *
+ * The second half matters more than it looks: a key that is wrong, or a provider that is down, both
+ * come back as no models, and a list that was empty for a reason nobody said reads as a provider
+ * with nothing to offer.
+ */
+export interface Catalog {
+	readonly offers: readonly ModelOffer[];
+	readonly trouble: readonly string[];
+}
+
+/**
+ * The ones that are not something to think with.
+ *
+ * Every catalog here answers with everything the account can call, which is embeddings and speech
+ * and image generation alongside the models. Matched as substrings, and being wrong only hides a
+ * row — the name can still be written out by hand, which is the fallback this list is safe because
+ * of.
+ */
+const NOT_FOR_THINKING = [
+	"embed",
+	"whisper",
+	"tts",
+	"dall-e",
+	"moderation",
+	"transcrib",
+	"image",
+	"imagen",
+	"audio",
+	"speech",
+	"rerank",
+	"guard",
+	"sora",
+	"veo",
+	"realtime",
+	"aqa",
+];
+
+/** Google answers with the resource path; the part after the slash is the name it takes. */
+function offered(entry: unknown): { id: string; created?: number } | undefined {
+	const named = entry as { id?: unknown; name?: unknown; created?: unknown };
+	const raw =
+		typeof named.id === "string" ? named.id : typeof named.name === "string" ? named.name : "";
+	const id = raw.startsWith("models/") ? raw.slice("models/".length) : raw;
+	if (id.length === 0) return undefined;
+	return typeof named.created === "number" ? { id, created: named.created } : { id };
+}
+
+/**
+ * Asks a provider what it will answer to.
+ *
+ * Because the alternative is knowing the name already. Every one of these serves a list at a path
+ * that is a fact about the provider like the host is, so it goes in the table beside it: an
+ * operator who has just handed over a key should be choosing from what the key buys, not typing a
+ * model name from memory and finding out at the proxy that they got it wrong.
+ *
+ * Asked by the plane and never by an agent — the plane is the side holding the key, and the request
+ * carries it directly rather than through the broker, which exists to keep the key away from the
+ * sandbox and there is no sandbox here.
+ */
+export async function offersOf(provider: string, key: string): Promise<readonly ModelOffer[]> {
+	const known = PROVIDERS[provider];
+	if (known?.catalog === undefined) return [];
+	const headers: Record<string, string> = {
+		...known.catalogHeaders,
+		...(known.header === undefined ? { authorization: `Bearer ${key}` } : { [known.header]: key }),
+	};
+	const response = await fetch(`https://${known.host}${known.catalog}`, {
+		headers,
+		signal: AbortSignal.timeout(10_000),
+	});
+	if (!response.ok) throw new Error(`answered ${response.status}`);
+
+	const body = (await response.json()) as { data?: unknown; models?: unknown };
+	const list = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : [];
+	const all = list.map(offered).filter((entry) => entry !== undefined);
+	// Newest first where the provider dates them, because a catalog in the order it was written is a
+	// list whose top is the oldest thing on it.
+	if (all.length > 0 && all.every((entry) => entry.created !== undefined)) {
+		all.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+	}
+	return all
+		.filter((entry) => !NOT_FOR_THINKING.some((word) => entry.id.toLowerCase().includes(word)))
+		.map((entry) => ({ provider, id: entry.id }));
 }
 
 /**

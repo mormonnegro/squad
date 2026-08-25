@@ -164,12 +164,19 @@ defaults:
 						this file untouched.
 					</p>
 					<p className="small">
-						That screen adds models too, on the row that says <code>+ a model</code>: a name, the
-						provider it thinks on, and the provider&rsquo;s own name for it when it differs. So this
-						file is where a model goes to survive a redeploy, and the console is where one goes when
-						you want it on the next turn. A model added there is kept beside this file rather than
-						written into it, and a model this file declares is one the console will read and refuse
-						to touch.
+						That screen adds models too, on the row that says <code>+ a model</code> — and it asks
+						the providers rather than asking you. Being handed a key and then asked for a model name
+						is being asked for the one fact the key just made the plane able to look up, so every
+						provider it holds a key for is asked what it answers to, and what comes back is a list
+						to arrow through. Typing narrows it against the provider and the id together, so{" "}
+						<code>openai mini</code> gets there without remembering the exact id. Writing one out in
+						full still works, for a provider with no catalog to ask.
+					</p>
+					<p className="small">
+						So this file is where a model goes to survive a redeploy, and the console is where one
+						goes when you want it on the next turn. A model added there is kept beside this file
+						rather than written into it, and a model this file declares is one the console will read
+						and refuse to touch.
 					</p>
 					<p className="small muted">
 						It is read when the plane starts, so an edit takes hold on{" "}

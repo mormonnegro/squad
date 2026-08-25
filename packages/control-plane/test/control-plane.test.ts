@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { NewAgentEvent } from "@agent-dive/events";
 import { EnvSecretStore } from "@agent-dive/proxy";
 import type { ExecResult } from "@agent-dive/sandbox";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type AgentConfig,
 	ControlPlane,
@@ -367,6 +367,54 @@ describe("a model added at the console", () => {
 		});
 
 		expect(await named(plane, "local")).toMatchObject({ host: "models.acme.internal" });
+	});
+
+	/**
+	 * What the key just bought the ability to look up.
+	 *
+	 * Only anthropic has a key in this fixture, so this is also the rule: a provider this plane cannot
+	 * pay is not asked, because the request would be a 401 in exchange for nothing.
+	 */
+	describe("and the list it is picked from", () => {
+		afterEach(() => vi.unstubAllGlobals());
+
+		const answering = (each: (host: string) => { ok: boolean; body: unknown }) => {
+			const asked: string[] = [];
+			vi.stubGlobal("fetch", async (url: string) => {
+				asked.push(new URL(url).host);
+				const { ok, body } = each(new URL(url).host);
+				return { ok, status: ok ? 200 : 401, json: async () => body } as Response;
+			});
+			return asked;
+		};
+
+		it("asks only the providers this plane holds a key for", async () => {
+			const asked = answering(() => ({ ok: true, body: { data: [{ id: "claude-opus-4-7" }] } }));
+
+			const catalog = await planeWith().offers();
+
+			expect(asked).toEqual(["api.anthropic.com"]);
+			expect(catalog.offers).toEqual([{ provider: "anthropic", id: "claude-opus-4-7" }]);
+		});
+
+		// The point of the list is what is not on the screen behind it yet, and picking one already
+		// configured would be an id collision rather than a model.
+		it("leaves out what is configured already", async () => {
+			answering(() => ({ ok: true, body: { data: [{ id: "claude-opus-4-7" }] } }));
+			const plane = planeWith();
+			await plane.addModel({ id: "opus", provider: "anthropic", model: "claude-opus-4-7" });
+
+			expect((await plane.offers()).offers).toEqual([]);
+		});
+
+		it("says which provider would not answer, rather than offering nothing", async () => {
+			answering(() => ({ ok: false, body: {} }));
+
+			const catalog = await planeWith().offers();
+
+			expect(catalog.offers).toEqual([]);
+			expect(catalog.trouble).toEqual(["anthropic answered 401"]);
+		});
 	});
 });
 

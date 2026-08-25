@@ -615,11 +615,41 @@ key pasted here holds on the next turn, with nothing restarted and nothing redep
 takes it back, and the question goes to the plane's own environment again, which is where the row
 under the prompt says each key came from.
 
-The second list is the models themselves, and `+ a model` is where one is written out: a name, the
-provider it thinks on, and the provider's own name for it when that is not the name you gave — so
-`sonnet anthropic claude-sonnet-4-6`, or just `gpt-5 openai` when the id is already the model. The
-plane checks the line the same way it checks the file's, so a provider it has never heard of comes
-back saying which ones it has. `⌫` takes back one that was added here, after a `y`.
+The second list is the models themselves, and `+ a model` asks the providers instead of asking you.
+Being handed a key and then asking for a model name is asking for the one fact the key just made this
+plane able to look up, so it looks it up — every provider it holds a key for is asked what it answers
+to, all at once, and what comes back is a list to arrow through:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ demo   chat · logs · setup                       $0.42 / $5.00 │
+│                      ││                                                                │
+│ ● demo         $0.42 ││                                                                │
+│ ○ scout              ││ 3 on offer                                                     │
+│                      ││ › gpt-5-mini   openai                                          │
+│ + new agent          ││   gpt-4o-mini  openai                                          │
+│                      ││   o4-mini      openai                                          │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ model  openai mini                                         │ │
+│                      ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ move   ⏎ add   esc cancel   ^C quit
+```
+
+Typing narrows it, against the provider and the id together and in any order, so `openai mini` gets
+there without remembering which of `gpt-5-mini` and `gpt-5-nano` was the one. What is on the screen
+behind it already is left off, because picking a configured model would be an id collision rather
+than a model. A provider that would not answer is named under the list instead of being counted as
+having nothing, since an empty list is the shape both a wrong key and an empty catalog arrive in. The
+lists that are not models to think with — embeddings, speech, image — are left out by name; being
+wrong there only hides a row.
+
+Writing one out by hand still works, and has to: a provider with no catalog has nothing to offer, and
+an id of your own is on nobody's list. Three words is that — a name, the provider it thinks on, and
+the provider's own name for it — so `sonnet anthropic claude-sonnet-4-6` is taken as typed even with
+a row under the cursor, while anything shorter is read as narrowing the list. The plane checks the
+line the same way it checks the file's, so a provider it has never heard of comes back saying which
+ones it has. `⌫` takes back one that was added here, after a `y`.
 
 What the file declared is on that list to be read and not to be changed: `from the file` is a row
 this screen will not shadow and will not drop, and it says so rather than refusing after the fact.

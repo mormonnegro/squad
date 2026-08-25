@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { App } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
-import type { ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
+import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
 
 /**
  * The console driven by keystrokes, which is the only way some of it is true at all.
@@ -63,6 +63,8 @@ function plane(
 		pays?: readonly ProviderStanding[];
 		thinks?: readonly ModelStanding[];
 		refusesModel?: string;
+		sells?: readonly ModelOffer[];
+		unreachable?: readonly string[];
 	} = {},
 ) {
 	const asked: string[] = [];
@@ -110,6 +112,10 @@ function plane(
 		dropModel: async (modelId: string) => {
 			dropped.push(modelId);
 		},
+		offers: async () => ({
+			offers: options.sells ?? [],
+			trouble: options.unreachable ?? [],
+		}),
 	} as unknown as ControlClient;
 	return {
 		client,
@@ -539,7 +545,7 @@ describe("the setup screen, pressed at", () => {
 			for (const _ of thinks) await screen.press(DOWN);
 			await screen.press(ENTER);
 
-			expect(screen.screen()).toContain("⏎ save");
+			expect(screen.screen()).toContain("⏎ add");
 
 			await screen.press("sonnet anthropic claude-sonnet-4-6");
 			// Written out rather than hidden: this is a name and a provider, not a secret.
@@ -583,6 +589,85 @@ describe("the setup screen, pressed at", () => {
 			await screen.press(ENTER);
 
 			expect(screen.screen()).toContain("my-gateway");
+		} finally {
+			screen.close();
+		}
+	});
+
+	const sells = [
+		{ provider: "openai", id: "gpt-5" },
+		{ provider: "openai", id: "gpt-5-mini" },
+		{ provider: "anthropic", id: "claude-opus-4-7" },
+	];
+
+	/** Opens the setup screen with the cursor already on the row that adds a model, and enters it. */
+	async function offering(options: Parameters<typeof plane>[0] = { pays, thinks, sells }) {
+		const screen = await setup(options);
+		for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
+		await screen.press(ENTER);
+		return screen;
+	}
+
+	// The point of the whole thing: handing over a key and then being asked for a model name is being
+	// asked the one fact the key just made this plane able to look up.
+	it("offers what the keys it holds can buy, instead of asking for a name", async () => {
+		const screen = await offering();
+		try {
+			expect(screen.screen()).toContain("gpt-5-mini");
+			expect(screen.screen()).toContain("3 on offer");
+			expect(screen.screen()).toContain("↑↓ move");
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("narrows the offers to what has been typed, in any order", async () => {
+		const screen = await offering();
+		try {
+			await screen.press("openai mini");
+
+			expect(screen.screen()).toContain("gpt-5-mini");
+			expect(screen.screen()).not.toContain("claude-opus-4-7");
+			expect(screen.screen()).toContain("1 on offer");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The id is the provider's own name for it, which is what somebody typing it out would have
+	// written anyway — so picking one is the whole of adding it.
+	it("adds the offer the arrows are standing on, under the name the provider gave it", async () => {
+		const screen = await offering();
+		try {
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+
+			expect(screen.written).toEqual([{ id: "gpt-5-mini", provider: "openai" }]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The escape hatch: a name of your own, or a provider this console has no catalog for, is still
+	// three words typed out — and saying the third one is what says the list is not what was meant.
+	it("takes a model written out in full over the offer under the cursor", async () => {
+		const screen = await offering();
+		try {
+			await screen.press("mini openai gpt-5-mini");
+			await screen.press(ENTER);
+
+			expect(screen.written).toEqual([{ id: "mini", provider: "openai", model: "gpt-5-mini" }]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	// An empty list is the shape both "this key is wrong" and "this provider has nothing" arrive in,
+	// and only one of those is worth telling somebody about.
+	it("says which provider could not be asked, rather than offering nothing", async () => {
+		const screen = await offering({ pays, thinks, unreachable: ["openai answered 401"] });
+		try {
+			expect(screen.screen()).toContain("openai answered 401");
 		} finally {
 			screen.close();
 		}

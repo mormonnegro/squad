@@ -4,7 +4,7 @@ import net from "node:net";
 import { join } from "node:path";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
-import type { ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
+import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Utterance } from "./transcript.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
@@ -57,7 +57,9 @@ export type ControlRequest =
 	 * a stranger with a URL giving the agents somewhere new to send their thinking.
 	 */
 	| { readonly id: string; readonly op: "add-model"; readonly spec: ModelSpec }
-	| { readonly id: string; readonly op: "drop-model"; readonly modelId: string };
+	| { readonly id: string; readonly op: "drop-model"; readonly modelId: string }
+	/** What every provider this plane holds a key for says it will answer to. */
+	| { readonly id: string; readonly op: "offers" };
 
 export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agents: readonly AgentSummary[] }
@@ -74,6 +76,7 @@ export type ControlResponse =
 			readonly providers: readonly ProviderStanding[];
 	  }
 	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
+	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
@@ -258,6 +261,8 @@ export class ControlServer {
 			} else if (request.op === "drop-model") {
 				await this.#plane.dropModel(request.modelId);
 				this.#write(socket, { id: request.id, ok: true, text: request.modelId });
+			} else if (request.op === "offers") {
+				this.#write(socket, { id: request.id, ok: true, catalog: await this.#plane.offers() });
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });
@@ -265,10 +270,13 @@ export class ControlServer {
 				// Answered under the id that was asked, so whoever asked is released. Sent back under "?"
 				// this was a request nobody ever heard about again, and a console newer than the plane it
 				// is talking to sat there showing an empty screen until its own timeout.
+				// Narrowed to nothing by the chain above, which is the point: an op reaching here is one
+				// this build has no case for, so it is read back as the loose shape it arrived as.
+				const newer = request as { id?: string; op?: string };
 				this.#write(socket, {
-					id: request.id ?? "?",
+					id: newer.id ?? "?",
 					ok: false,
-					error: `this plane does not know "${String(request.op)}" — it is older than this console`,
+					error: `this plane does not know "${String(newer.op)}" — it is older than this console`,
 				});
 			}
 		} catch (error) {

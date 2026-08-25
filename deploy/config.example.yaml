@@ -16,9 +16,11 @@ stateDir: /var/lib/agent-dive
 # A model this plane holds no key for is listed and refused at the proxy until it does. The setup
 # screen in `agent` says which of these are waiting on one, and takes it without touching this file.
 #
-# That screen adds models too, keeping them beside this file rather than in it. So this list is
-# where a model goes to survive a redeploy, and the console is where one goes to hold on the next
-# turn — and a model written here is one the console will read and refuse to shadow or drop.
+# That screen adds models too, keeping them beside this file rather than in it, and it does not ask
+# for a name: every provider it holds a key for is asked what it answers to, and the answer is a list
+# to pick from. So this list is where a model goes to survive a redeploy, and the console is where
+# one goes to hold on the next turn — and a model written here is one the console will read and
+# refuse to shadow or drop.
 models:
   # The id is the name to pick it by, and doubles as the model when it is already the model's name.
   - id: deepseek-v4-flash
