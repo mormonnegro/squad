@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
+import type { ProviderStanding } from "./models.ts";
 import type { Utterance } from "./transcript.ts";
 
 export class ControlError extends Error {
@@ -104,6 +105,18 @@ export class ControlClient {
 		const response = await this.#once({ op: "create", agentId });
 		if ("agent" in response) return response.agent;
 		throw new ControlError("unexpected answer to create");
+	}
+
+	/** Every provider a key could be given to, and whether this plane already holds one. */
+	async providers(): Promise<readonly ProviderStanding[]> {
+		const response = await this.#once({ op: "providers" });
+		if ("providers" in response) return response.providers;
+		throw new ControlError("unexpected answer to providers");
+	}
+
+	/** Gives the plane a provider's key, or takes back the one it was keeping when `value` is empty. */
+	async setKey(keyEnv: string, value: string): Promise<void> {
+		await this.#once({ op: "key", keyEnv, value });
 	}
 
 	/** Takes one turn. `onText` is called with the answer as it is written, before it is returned. */

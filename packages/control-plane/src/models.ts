@@ -52,6 +52,47 @@ export const PROVIDERS: Readonly<
 	xai: { host: "api.x.ai", keyEnv: "XAI_API_KEY" },
 };
 
+/** A key this plane could be given, named after the provider that spends it. */
+export interface Provider {
+	/** What the provider is called, which is what the configuration names to get the rest. */
+	readonly id: string;
+	readonly keyEnv: string;
+	/** The configured models that think through it, in the order the file declared them. */
+	readonly models: readonly string[];
+}
+
+/** A provider as the configuration screen has it: the key, and whether this plane is holding one. */
+export interface ProviderStanding extends Provider {
+	readonly held: boolean;
+	/** Held because somebody typed it at the console, rather than because the machine exported it. */
+	readonly here: boolean;
+}
+
+/**
+ * Every key this plane could be given: the ones its models need, and then the rest of the ones this
+ * knows how to reach.
+ *
+ * A row is a key rather than a provider name, which is the same thing until an operator writes out a
+ * second `keyEnv` for a provider already in the table. Then it is two keys, and a screen that showed
+ * one row would be a screen where filling it in leaves half the models still refused at the proxy.
+ *
+ * The configured ones come first because they are the ones this plane is actually waiting on. The
+ * others are on the list at all so that setting a provider up is something you can find rather than
+ * something you have to already know the name of.
+ */
+export function providersOf(models: readonly Model[]): readonly Provider[] {
+	const found = new Map<string, { id: string; keyEnv: string; models: string[] }>();
+	for (const model of models) {
+		const at = found.get(model.keyEnv) ?? { id: model.provider, keyEnv: model.keyEnv, models: [] };
+		at.models.push(model.id);
+		found.set(model.keyEnv, at);
+	}
+	for (const [id, known] of Object.entries(PROVIDERS)) {
+		if (!found.has(known.keyEnv)) found.set(known.keyEnv, { id, keyEnv: known.keyEnv, models: [] });
+	}
+	return [...found.values()];
+}
+
 /**
  * What the container is given in place of the key.
  *

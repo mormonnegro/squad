@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { App } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
+import type { ProviderStanding } from "../src/models.ts";
 
 /**
  * The console driven by keystrokes, which is the only way some of it is true at all.
@@ -31,6 +32,8 @@ class Keyboard extends PassThrough {
 const DOWN = "[B";
 const UP = "[A";
 const ENTER = "\r";
+const TAB = "\t";
+const ESCAPE = "\u001B";
 
 const listed = (id: string): AgentSummary => ({
 	id,
@@ -51,9 +54,16 @@ const listed = (id: string): AgentSummary => ({
  * `create` is deliberately not instant: the console has to keep drawing while an agent is built,
  * and a fake that resolved in the same tick would never show whether it does.
  */
-function plane(options: { refuses?: string; has?: readonly AgentSummary[] } = {}) {
+function plane(
+	options: {
+		refuses?: string;
+		has?: readonly AgentSummary[];
+		pays?: readonly ProviderStanding[];
+	} = {},
+) {
 	const asked: string[] = [];
 	const commanded: string[] = [];
+	const given: [string, string][] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
 	let finish: (agent: AgentSummary) => void = () => {};
@@ -80,11 +90,16 @@ function plane(options: { refuses?: string; has?: readonly AgentSummary[] } = {}
 		},
 		shell: async () => ({ text: "", cwd: "/" }),
 		stop: async () => false,
+		providers: async () => options.pays ?? [],
+		setKey: async (keyEnv: string, value: string) => {
+			given.push([keyEnv, value]);
+		},
 	} as unknown as ControlClient;
 	return {
 		client,
 		asked,
 		commanded,
+		given,
 		built: (id: string) => finish(listed(id)),
 		broke: (why: string) => fail(new Error(why)),
 	};
@@ -111,7 +126,7 @@ function open(client: ControlClient, initial: readonly AgentSummary[]) {
 			for (const key of keys) stdin.write(key);
 			// A keystroke is a state change and a state change is a render, neither of which has
 			// happened by the time `write` returns.
-			await new Promise((resolve) => setTimeout(resolve, 20));
+			await new Promise((resolve) => setTimeout(resolve, 40));
 		},
 		close: () => app.unmount(),
 	};
@@ -291,6 +306,171 @@ describe("the console, pressed at", () => {
 			expect(console_.screen()).toContain("! shell");
 		} finally {
 			console_.close();
+		}
+	});
+});
+
+/**
+ * The screen where a key is given, which only exists as keystrokes.
+ *
+ * A provider row is drawn in `console.test.ts`. What cannot be drawn is that the letters of an API
+ * key go into it and nowhere else — every pane behind this one would take some of them for something
+ * it does, and the first that did would leave the rest of a live key in a message to an agent.
+ */
+describe("the setup screen, pressed at", () => {
+	const paying = (
+		id: string,
+		keyEnv: string,
+		models: readonly string[],
+		held = false,
+		here = false,
+	): ProviderStanding => ({ id, keyEnv, models, held, here });
+
+	const pays = [
+		paying("deepseek", "DEEPSEEK_API_KEY", ["flash"]),
+		paying("openai", "OPENAI_API_KEY", ["mini"], true),
+		paying("anthropic", "ANTHROPIC_API_KEY", [], true, true),
+	];
+
+	/** Opens the console and tabs to the setup screen, which is where every one of these starts. */
+	async function setup(options: Parameters<typeof plane>[0] = { pays }) {
+		const it_ = plane(options);
+		const console_ = open(it_.client, [listed("demo")]);
+		// One at a time: two writes in a tick arrive as one chunk, which is one keystroke to a terminal
+		// and would be a tab nobody pressed.
+		await console_.press(TAB);
+		await console_.press(TAB);
+		return { ...it_, ...console_ };
+	}
+
+	it("is where the tab that cycles the panes arrives, with what the plane could pay for on it", async () => {
+		const screen = await setup();
+		try {
+			expect(screen.screen()).toContain("DEEPSEEK_API_KEY");
+			expect(screen.screen()).toContain("flash");
+			expect(screen.screen()).toContain("⏎ set key");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// A row of marks cannot say where a key came from, and that is the difference between changing it
+	// here and going to look for the `.env` the plane was started with.
+	it("says of the row it is standing on where that key came from", async () => {
+		const screen = await setup();
+		try {
+			expect(screen.screen()).toContain("no key, refused at the proxy");
+
+			await screen.press(DOWN);
+			expect(screen.screen()).toContain("from this plane's environment");
+
+			await screen.press(DOWN);
+			expect(screen.screen()).toContain("set here");
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("takes a key without putting it on the screen", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(ENTER);
+			expect(screen.screen()).toContain("key for DEEPSEEK_API_KEY");
+
+			await screen.press("sk-typed");
+
+			expect(screen.screen()).not.toContain("sk-typed");
+			expect(screen.screen()).toContain("••••");
+			expect(screen.screen()).toContain("⏎ save");
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("hands the key to the plane when it is entered", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(ENTER);
+			await screen.press("sk-typed");
+			await screen.press(ENTER);
+
+			expect(screen.given).toEqual([["DEEPSEEK_API_KEY", "sk-typed"]]);
+			expect(screen.screen()).toContain("no key, refused at the proxy");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// A key half typed at the wrong provider is the ordinary mistake here, and escape is where every
+	// hand goes for it. Nothing is sent, which is what makes it safe to press.
+	it("gives up on a key without giving it", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(ENTER);
+			await screen.press("sk-typed");
+			await screen.press(ESCAPE);
+
+			expect(screen.given).toEqual([]);
+			expect(screen.screen()).not.toContain("key for DEEPSEEK_API_KEY");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The way to take back a key given here. Nothing else on this screen can say it, and without it a
+	// key typed at the wrong provider would be one there is no way to undo from the console.
+	it("takes an empty line for taking the key back", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			await screen.press(ENTER);
+
+			expect(screen.given).toEqual([["ANTHROPIC_API_KEY", ""]]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	// A key is pasted rather than typed, and it arrives with the newline of whatever it was copied out
+	// of about as often as not. That newline is the return, not a character of the key.
+	it("enters a key that arrived with its newline still on it", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(ENTER);
+			await screen.press("sk-pasted\n");
+
+			expect(screen.given).toEqual([["DEEPSEEK_API_KEY", "sk-pasted"]]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	/**
+	 * The reason the key prompt is checked before every pane rather than inside one.
+	 *
+	 * An API key holds any character, and a console where a `/` opened the command menu and a `!` was
+	 * the start of a shell would take a pasted key apart into things it does. What lands in the chat
+	 * draft is on its way to an agent, and a secret is the one thing that may never get there.
+	 */
+	it("never lets a character of a key reach the agent behind the screen", async () => {
+		const screen = await setup();
+		try {
+			await screen.press(ENTER);
+			await screen.press("sk-/limit!ls");
+
+			expect(screen.screen()).not.toContain("/limit ");
+			expect(screen.screen()).not.toContain("! shell");
+
+			await screen.press(ESCAPE);
+			await screen.press(TAB);
+
+			expect(screen.screen()).toContain("demo   chat");
+			expect(screen.screen()).not.toContain("sk-");
+			expect(screen.screen()).not.toContain("ls");
+		} finally {
+			screen.close();
 		}
 	});
 });

@@ -4,6 +4,7 @@ import net from "node:net";
 import { join } from "node:path";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { ProviderStanding } from "./models.ts";
 import type { Utterance } from "./transcript.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
@@ -32,7 +33,22 @@ export type ControlRequest =
 	 */
 	| { readonly id: string; readonly op: "shell"; readonly agentId: string; readonly line: string }
 	| { readonly id: string; readonly op: "logs" }
-	| { readonly id: string; readonly op: "transcripts" };
+	| { readonly id: string; readonly op: "transcripts" }
+	/** Which providers this plane could pay for, and which of them it currently can. */
+	| { readonly id: string; readonly op: "providers" }
+	/**
+	 * A provider key, typed at a console. Empty forgets the one this plane was keeping.
+	 *
+	 * It arrives here for the same reason a shell does: this socket is the operator's, so it is the
+	 * only surface where a secret typed by hand is a secret an operator gave. The value is never
+	 * written back out — not in the answer, not in the conversation, not in the feed.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "key";
+			readonly keyEnv: string;
+			readonly value: string;
+	  };
 
 export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agents: readonly AgentSummary[] }
@@ -43,6 +59,11 @@ export type ControlResponse =
 			readonly transcripts: Record<string, readonly Utterance[]>;
 	  }
 	| { readonly id: string; readonly ok: true; readonly text: string }
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly providers: readonly ProviderStanding[];
+	  }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
@@ -208,6 +229,17 @@ export class ControlServer {
 					ok: true,
 					agent: await this.#plane.create(request.agentId),
 				});
+			} else if (request.op === "providers") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					providers: await this.#plane.providers(),
+				});
+			} else if (request.op === "key") {
+				await this.#plane.setKey(request.keyEnv, request.value);
+				// The answer says which key, never the key. Everything on this socket can end up in a
+				// terminal's scrollback, and a screenful of it is a screenful somebody will paste.
+				this.#write(socket, { id: request.id, ok: true, text: request.keyEnv });
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });

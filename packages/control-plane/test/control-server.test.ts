@@ -292,6 +292,25 @@ describe("the control socket", () => {
 		await expect(client.shell("scou", "ls")).rejects.toThrow(/No agent "scou"/);
 	});
 
+	/**
+	 * A key arrives here for the same reason a shell does: this socket is the operator's, so it is the
+	 * only surface where a secret typed by hand is a secret an operator gave.
+	 */
+	it("takes a provider key, and says which key without saying the key", async () => {
+		const before = (await client.providers()).find((one) => one.keyEnv === "OPENAI_API_KEY");
+		expect(before).toMatchObject({ held: false });
+
+		await client.setKey("OPENAI_API_KEY", "sk-typed");
+
+		expect((await client.providers()).find((one) => one.keyEnv === "OPENAI_API_KEY")).toMatchObject(
+			{ held: true, here: true },
+		);
+	});
+
+	it("refuses a secret that is not a provider's", async () => {
+		await expect(client.setKey("GITHUB_TOKEN", "ghp-typed")).rejects.toThrow(/not a provider key/);
+	});
+
 	it("lets only its owner near it, because holding it is the whole authorization", async () => {
 		const mode = (await stat(server.socketPath)).mode & 0o777;
 		expect(mode).toBe(0o600);

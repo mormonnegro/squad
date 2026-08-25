@@ -12,6 +12,7 @@ import {
 	New,
 	pointed,
 	resume,
+	Setup,
 	saidBy,
 	scrolled,
 	standing,
@@ -860,6 +861,83 @@ describe("New", () => {
 		for (const rows of [2, 5, 12]) {
 			expect(pane({ rows, columns: 24 }).split("\n")).toHaveLength(rows);
 		}
+	});
+});
+
+describe("Setup", () => {
+	const providers = [
+		{ id: "deepseek", keyEnv: "DEEPSEEK_API_KEY", models: ["flash"], held: false, here: false },
+		{ id: "openai", keyEnv: "OPENAI_API_KEY", models: ["mini"], held: true, here: false },
+		{ id: "groq", keyEnv: "GROQ_API_KEY", models: [], held: true, here: true },
+	];
+	const pane = (props: {
+		cursor?: number;
+		typing?: string | undefined;
+		secret?: string;
+		rows?: number;
+		columns?: number;
+	}) =>
+		renderToString(
+			h(Setup, {
+				providers,
+				cursor: 0,
+				typing: undefined,
+				secret: "",
+				rows: 20,
+				columns: 60,
+				...props,
+			}),
+			{ columns: props.columns ?? 60 },
+		);
+
+	// The whole question this screen answers, in the column a glance goes down: which of these can
+	// this plane actually pay for right now.
+	it("marks the providers this plane holds a key for", () => {
+		const rows = pane({}).split("\n");
+
+		expect(rows.find((row) => row.includes("deepseek"))).toContain("○");
+		expect(rows.find((row) => row.includes("openai"))).toContain("●");
+	});
+
+	it("says which models are waiting on each key", () => {
+		expect(pane({})).toContain("flash");
+	});
+
+	// A provider with no models is still a row: it is how a second one gets set up at all, and a
+	// screen that only listed what is configured would be a screen you cannot add anything from.
+	it("lists a provider nothing is configured on yet", () => {
+		expect(pane({})).toContain("groq");
+	});
+
+	it("says of the row the cursor is on where its key came from", () => {
+		expect(pane({ cursor: 1 })).toContain("from this plane's environment");
+		expect(pane({ cursor: 2 })).toContain("set here");
+		expect(pane({ cursor: 0 })).toContain("no key, refused at the proxy");
+	});
+
+	/**
+	 * Never the characters. A key is read off a screen by whoever is standing behind the person
+	 * typing it, and this is a terminal that keeps its own scrollback.
+	 */
+	it("shows a key being typed as its length and nothing else", () => {
+		const drawn = pane({ typing: "DEEPSEEK_API_KEY", secret: "sk-typed" });
+
+		expect(drawn).toContain("key for DEEPSEEK_API_KEY");
+		expect(drawn).toContain("••••••••");
+		expect(drawn).not.toContain("sk-typed");
+	});
+
+	/** The one thing a pane may never do: a row drawn past its last one breaks the whole screen. */
+	it("never draws more rows than it was given", () => {
+		for (const rows of [3, 6, 14, 30]) {
+			expect(pane({ rows, columns: 30 }).split("\n").length).toBeLessThanOrEqual(rows);
+		}
+	});
+
+	// The list is what this screen is, so it takes the rows it needs and the prose above it gives
+	// way. The other way round is a short terminal showing three paragraphs and no providers.
+	it("keeps the providers when there is only room for some of it", () => {
+		expect(pane({ rows: 6 })).toContain("deepseek");
 	});
 });
 

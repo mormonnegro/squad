@@ -33,6 +33,7 @@ export {
 	controlSocketPath,
 } from "./control-server.ts";
 export { LogFeed } from "./feed.ts";
+export { ProviderKeys } from "./keys.ts";
 export {
 	hostOf,
 	type McpServer,
@@ -51,6 +52,9 @@ export {
 	modelEnv,
 	modelGrants,
 	PROVIDERS,
+	type Provider,
+	type ProviderStanding,
+	providersOf,
 } from "./models.ts";
 export { type AgentStep, PiOutput, type PiOutputOptions } from "./pi-output.ts";
 export {

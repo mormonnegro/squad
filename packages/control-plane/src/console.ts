@@ -8,6 +8,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
+import type { ProviderStanding } from "./models.ts";
 import { openInBrowser } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import type { Utterance } from "./transcript.ts";
@@ -134,7 +135,12 @@ export function shown(said: Utterance): Said {
 	};
 }
 
-type Panel = "chat" | "logs";
+type Panel = "chat" | "logs" | "setup";
+
+/** What tab takes you to from here. Three panels, so it is a ring rather than a switch. */
+function after(panel: Panel): Panel {
+	return panel === "chat" ? "logs" : panel === "logs" ? "setup" : "chat";
+}
 
 export type Talk = ReadonlyMap<string, readonly Said[]>;
 
@@ -706,6 +712,140 @@ export function Chat({
 	);
 }
 
+/**
+ * The rows of a list that fit, with the one being pointed at among them.
+ *
+ * A list that simply took the first rows would hide the cursor the moment it moved past the bottom
+ * of a short pane, and a cursor you cannot see is a keyboard pressing return at something unknown.
+ */
+export function framed<T>(items: readonly T[], cursor: number, height: number): readonly T[] {
+	if (height <= 0) return [];
+	const from = Math.min(Math.max(0, cursor - height + 1), Math.max(0, items.length - height));
+	return items.slice(from, from + height);
+}
+
+/**
+ * What a key on this screen is, said where one is about to be typed.
+ *
+ * The second line is the one that has to be there. Everything else in this console is careful about
+ * never widening what an agent may reach, and a screen that takes credentials looks exactly like the
+ * place that rule was quietly dropped — so it says what it is instead: the file decided the hosts,
+ * this is the part of a model that was never in the file.
+ */
+const KEYS = [
+	"What the proxy writes onto a request on its way out of an agent, in place of the worthless value the container holds. It is not in the sandbox, not in a transcript, and not shown again once it is here.",
+	"",
+	"Not a grant. Which models exist and which hosts they live on is deploy/config.yaml, and nothing typed here reaches anything that file did not already approve. A key takes hold on the next turn — nothing restarts.",
+];
+
+/**
+ * The providers this plane could pay for, and which of them it can.
+ *
+ * A screen rather than a command, because it is a list to look down: the question it answers is
+ * which keys are missing, and a command that answered it one provider at a time would be a question
+ * you have to already know how to ask.
+ */
+export function Setup({
+	providers,
+	cursor,
+	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
+	typing,
+	secret,
+	rows,
+	columns,
+}: {
+	readonly providers: readonly ProviderStanding[];
+	readonly cursor: number;
+	readonly typing: string | undefined;
+	readonly secret: string;
+	readonly rows: number;
+	readonly columns: number;
+}): ReactElement {
+	const boxed = rows > PROMPT_ROWS;
+	const widest = Math.max(0, ...providers.map((provider) => provider.id.length));
+	const widestKey = Math.max(0, ...providers.map((provider) => provider.keyEnv.length));
+	const said = [
+		...KEYS.map((line) => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`)),
+		"",
+		`${ESC}[2mproviders${ESC}[22m`,
+		"",
+	];
+	const row = providers[cursor];
+	// The same marks the agents column uses, and they mean the same thing here: a dot that is filled
+	// in is something this plane can actually use right now.
+	const listed = providers.map((provider, index) => {
+		const mark = provider.held ? MARKS.running : MARKS.stopped;
+		return h(
+			Text,
+			{ key: provider.keyEnv, wrap: "truncate" },
+			h(Text, { color: mark.color }, mark.glyph),
+			h(Text, pointed(index === cursor, provider.held), ` ${provider.id.padEnd(widest + 2)}`),
+			h(Text, { dimColor: true }, provider.keyEnv.padEnd(widestKey + 2)),
+			// What is waiting on this key, which is the whole reason one row matters more than another.
+			// A provider with no models is still listed: it is how a second one gets set up at all.
+			h(
+				Text,
+				{ dimColor: provider.models.length === 0 },
+				provider.models.length === 0 ? "no models" : provider.models.join(" "),
+			),
+		);
+	});
+	// Where the selected key came from, which is the one thing a column of marks cannot say: a key
+	// this plane was started with is changed by editing `.env`, and one given here is not.
+	const from =
+		row === undefined
+			? ""
+			: row.here
+				? `${row.keyEnv}   set here`
+				: row.held
+					? `${row.keyEnv}   from this plane's environment`
+					: // Short enough to survive a narrow terminal: the line is truncated rather than wrapped,
+						// and the half that gets cut is the half that says what is wrong.
+						`${row.keyEnv}   no key, refused at the proxy`;
+	const width = columns - (boxed ? 4 : 0);
+	const mark = typing === undefined ? "" : `key for ${typing}  `;
+	const room = Math.max(0, width - mark.length - 1);
+	const height = chatRows(rows);
+	// The list is what this screen is, so it takes the rows it needs and the prose above it is what
+	// gives way — the other way round and a short terminal shows three paragraphs and no providers.
+	const shown = listed.length <= height ? listed : framed(listed, cursor, height);
+	const head = visible(wrapped(said, columns, true), Math.max(0, height - shown.length), undefined);
+	return h(
+		Box,
+		{ flexDirection: "column", flexGrow: 1 },
+		h(
+			Box,
+			{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end", key: "list" },
+			...head.map((line, index) =>
+				h(Text, { key: `said${index}`, wrap: "truncate" }, line === "" ? " " : line),
+			),
+			...shown,
+		),
+		h(
+			Box,
+			boxed
+				? {
+						key: "prompt",
+						borderStyle: "round",
+						borderColor: typing === undefined ? "gray" : "cyan",
+						paddingX: 1,
+					}
+				: { key: "prompt" },
+			typing === undefined
+				? h(Text, { wrap: "truncate", dimColor: true }, from)
+				: h(
+						Text,
+						{ wrap: "truncate" },
+						h(Text, { color: "cyan" }, mark),
+						// Never the characters. A key is read off a screen by whoever is behind the person
+						// typing it, and this is a terminal that keeps its own scrollback.
+						"•".repeat(secret.length).slice(Math.max(0, secret.length - room)),
+						h(Text, { inverse: true }, " "),
+					),
+		),
+	);
+}
+
 function Logs({
 	lines,
 	rows,
@@ -778,9 +918,21 @@ export function App({
 	// happen at a keyboard: a plane that answered `/delete <name>` without ever having been asked the
 	// question would let a single line through, and that line is the whole of an agent.
 	const [deleting, setDeleting] = useState<string | undefined>(undefined);
+	// The providers, as the plane last answered. Asked for when the screen is opened rather than kept
+	// up to date: nothing else changes them, and the one thing that does is on this keyboard.
+	const [providers, setProviders] = useState<readonly ProviderStanding[]>([]);
+	const [where, setWhere] = useState(0);
+	// The variable a key is being typed into, and the key itself, which is never in the draft: a
+	// secret that shared the prompt's state would be one keystroke of `tab` away from a chat pane.
+	const [typing, setTyping] = useState<string | undefined>(undefined);
+	const [secret, setSecret] = useState("");
 
 	// Undefined on the row under the agents, which is not an agent but the way to make one.
 	const selected = agents[Math.min(cursor, agents.length)];
+	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
+	// it was, and nothing should have to be reset from inside a keystroke.
+	const onProvider = Math.min(where, providers.length - 1);
+	const provider = providers[onProvider];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
 	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
 	// not over a name, which is not addressed to an agent that exists yet.
@@ -900,6 +1052,34 @@ export function App({
 		return () => clearInterval(timer);
 	}, [client]);
 
+	const readProviders = useCallback(() => {
+		client
+			.providers()
+			.then(setProviders)
+			.catch(() => {});
+	}, [client]);
+
+	// On opening the screen rather than on a timer: what it shows is the plane's environment and a
+	// file only this keyboard writes, and neither of them moves while nobody is looking at it.
+	useEffect(() => {
+		if (panel === "setup") readProviders();
+	}, [panel, readProviders]);
+
+	/**
+	 * Gives the plane a key, and asks again what it now holds.
+	 *
+	 * Asked again rather than assumed, because what a key does is not decided here: it may be shadowed
+	 * by nothing, it may replace one the machine exported, and an empty one hands the question back to
+	 * the environment. The row has to say which of those happened.
+	 */
+	const keep = useCallback(
+		async (keyEnv: string, value: string): Promise<void> => {
+			await client.setKey(keyEnv, value).catch(() => {});
+			readProviders();
+		},
+		[client, readProviders],
+	);
+
 	/**
 	 * Says something to an agent, and shows none of it.
 	 *
@@ -1001,6 +1181,46 @@ export function App({
 			if (input === "y" || input === "Y") void ask(deleting, `/delete ${deleting}`, "say");
 			return;
 		}
+		/**
+		 * A key is being typed, and until it is entered or given up on nothing else has the keyboard.
+		 *
+		 * Above the panes for the same reason the question above is: every branch below would read a
+		 * character of a secret as something else — a `!` as a shell, a `/` as a command, a `d` under
+		 * ctrl as half a page — and the first of those to hit would leave the rest of a live API key
+		 * typed into a chat pane, on its way to an agent.
+		 */
+		if (typing !== undefined) {
+			const entered = (value: string): void => {
+				setTyping(undefined);
+				setSecret("");
+				void keep(typing, value);
+			};
+			if (key.escape) {
+				setTyping(undefined);
+				setSecret("");
+				return;
+			}
+			if (key.return) {
+				// An empty line is not nothing: it is the way to take back a key given here, and hand the
+				// question back to whatever the plane's own environment says.
+				entered(secret);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setSecret((prev) => prev.slice(0, -1));
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			// A key is pasted far more often than it is typed, and it arrives with its newline still on
+			// it about as often as not.
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			if (rest.length === 0) {
+				setSecret((prev) => prev + first);
+				return;
+			}
+			entered(secret + first);
+			return;
+		}
 		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
 		// reaches the agent being watched from whichever one is open. Only while it is thinking: escape
 		// on an agent with nothing to stop is a key pressed at the wrong moment, not a command.
@@ -1034,18 +1254,31 @@ export function App({
 				setPick(0);
 				return;
 			}
-			setPanel((prev) => (prev === "chat" ? "logs" : "chat"));
+			setPanel(after);
 			return;
 		}
 		if (key.upArrow) {
-			if (menu.length > 0) setPick(Math.max(0, at - 1));
+			// On the setup screen the arrows are the list's, not the agents': the pane is not about the
+			// agent behind it, and moving one out from under a key about to be typed would be a surprise.
+			if (panel === "setup") setWhere(Math.max(0, onProvider - 1));
+			else if (menu.length > 0) setPick(Math.max(0, at - 1));
 			else setCursor((prev) => Math.max(0, prev - 1));
 			return;
 		}
 		if (key.downArrow) {
-			if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
+			if (panel === "setup") setWhere(Math.min(providers.length - 1, onProvider + 1));
+			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
 			// One past the last agent, which is the row that makes one.
 			else setCursor((prev) => Math.min(agents.length, prev + 1));
+			return;
+		}
+		if (panel === "setup") {
+			// The only key this screen has of its own. Everything else it does is on the row the arrows
+			// are standing on, which is why there is nothing here to type into until this is pressed.
+			if (key.return && provider !== undefined) {
+				setTyping(provider.keyEnv);
+				setSecret("");
+			}
 			return;
 		}
 		if (panel !== "chat") return;
@@ -1150,7 +1383,7 @@ export function App({
 	const title = selected === undefined ? "new agent" : selected.id;
 	// What the left of the title row has already spent, so that what goes at the right end knows how
 	// much of the row is left for it. Three columns of gap, so the two halves never touch.
-	const tabs = `${title}   chat · logs${top === undefined ? "" : "   ↑ scrolled"}   `;
+	const tabs = `${title}   chat · logs · setup${top === undefined ? "" : "   ↑ scrolled"}   `;
 	const state =
 		selected === undefined ? { model: "", spend: "" } : standing(selected, width - tabs.length);
 	const heat = selected === undefined ? { dimColor: true } : burning(selected);
@@ -1198,6 +1431,8 @@ export function App({
 					h(Text, { bold: panel === "chat", dimColor: panel !== "chat" }, "chat"),
 					h(Text, { dimColor: true }, " · "),
 					h(Text, { bold: panel === "logs", dimColor: panel !== "logs" }, "logs"),
+					h(Text, { dimColor: true }, " · "),
+					h(Text, { bold: panel === "setup", dimColor: panel !== "setup" }, "setup"),
 					// What a pane showing the end of things cannot say for itself: that this one is not.
 					// Without it, an answer arriving out of sight looks like an agent that said nothing.
 					top === undefined ? null : h(Text, { color: "yellow" }, "   ↑ scrolled"),
@@ -1209,35 +1444,45 @@ export function App({
 					state.spend === "" ? null : h(Text, heat, state.spend),
 				),
 				airy ? h(Text, { key: "under" }, " ") : null,
-				panel !== "chat"
+				panel === "logs"
 					? h(Logs, { lines, rows: inner, top, key: "logs" })
-					: selected === undefined
-						? h(New, {
-								draft,
+					: panel === "setup"
+						? h(Setup, {
+								providers,
+								cursor: Math.max(0, onProvider),
+								typing,
+								secret,
 								rows: inner,
 								columns: width,
-								making: building,
-								refused,
-								key: "new",
+								key: "setup",
 							})
-						: h(Chat, {
-								history: said,
-								draft,
-								rows: inner,
-								columns: width,
-								thinking,
-								top,
-								// Standing at the door until a command says otherwise, which is where the plane
-								// starts an agent's shell and what it goes back to when the sandbox is replaced.
-								shell:
-									shell && selected !== undefined
-										? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
-										: undefined,
-								confirm: deleting,
-								menu,
-								pick: at,
-								key: "chat",
-							}),
+						: selected === undefined
+							? h(New, {
+									draft,
+									rows: inner,
+									columns: width,
+									making: building,
+									refused,
+									key: "new",
+								})
+							: h(Chat, {
+									history: said,
+									draft,
+									rows: inner,
+									columns: width,
+									thinking,
+									top,
+									// Standing at the door until a command says otherwise, which is where the plane
+									// starts an agent's shell and what it goes back to when the sandbox is replaced.
+									shell:
+										shell && selected !== undefined
+											? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
+											: undefined,
+									confirm: deleting,
+									menu,
+									pick: at,
+									key: "chat",
+								}),
 			),
 		),
 		h(
@@ -1245,52 +1490,66 @@ export function App({
 			{ flexDirection: "row", key: "hint" },
 			h(Text, null, " "),
 			// The key stands out from what it does, because the key is the part being looked for.
-			...(menu.length > 0
-				? // The keys have been taken by the menu, so the row says what they do now instead of
-					// what they did a keystroke ago. A hint left standing for a key the menu has taken is
-					// the same lie as a hint for a key that does nothing.
+			...(typing !== undefined
+				? // A key is being typed and has the keyboard, so the row is the two ways out of that.
 					[
-						["↑↓", "command"],
-						["⏎", "choose"],
+						["⏎", "save"],
+						["esc", "cancel"],
 						["^C", "quit"],
 					]
-				: deleting !== undefined
-					? // A question is open and it has the keyboard, so the row says the two keys that mean
-						// anything. Everything it usually offers would be a way out of answering that does
-						// not exist — and `n` is spelled out rather than left as "any other key", because a
-						// key to press is a thing a hand does and "any other key" is a thing to work out.
-						[
-							["y", "delete"],
-							["n", "cancel"],
+				: panel === "setup"
+					? [
+							["↑↓", "provider"],
+							["⏎", "set key"],
+							["tab", after(panel)],
 							["^C", "quit"],
 						]
-					: selected === undefined
-						? // Nothing else the row usually offers is true here: there is no conversation to
-							// scroll, no shell to open and no commands, until the name has been given.
+					: menu.length > 0
+						? // The keys have been taken by the menu, so the row says what they do now instead of
+							// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+							// the same lie as a hint for a key that does nothing.
 							[
-								["↑↓", "agent"],
-								["⏎", "create"],
+								["↑↓", "command"],
+								["⏎", "choose"],
 								["^C", "quit"],
 							]
-						: [
-								["↑↓", "agent"],
-								["^U^D", "scroll"],
-								["tab", panel === "chat" ? "logs" : "chat"],
-								// A key nobody guesses is pressable. The rest of this row is what to press to move
-								// around; this one is what to press to be told what else there is. In the shell the
-								// two of them say nothing true, and the way back out is worth saying instead.
-								...(shell
-									? [["⌫", "chat"]]
-									: [
-											["/", "commands"],
-											["!", "shell"],
-										]),
-								["^C", "quit"],
-								// Last, so that the rest of the row does not move as it comes and goes, and shown
-								// only while there is something to stop: the key does nothing at any other time,
-								// and offering it then is how a hint becomes a thing that lies.
-								...(busy.size > 0 ? [["esc", "stop"]] : []),
-							]
+						: deleting !== undefined
+							? // A question is open and it has the keyboard, so the row says the two keys that mean
+								// anything. Everything it usually offers would be a way out of answering that does
+								// not exist — and `n` is spelled out rather than left as "any other key", because a
+								// key to press is a thing a hand does and "any other key" is a thing to work out.
+								[
+									["y", "delete"],
+									["n", "cancel"],
+									["^C", "quit"],
+								]
+							: selected === undefined
+								? // Nothing else the row usually offers is true here: there is no conversation to
+									// scroll, no shell to open and no commands, until the name has been given.
+									[
+										["↑↓", "agent"],
+										["⏎", "create"],
+										["^C", "quit"],
+									]
+								: [
+										["↑↓", "agent"],
+										["^U^D", "scroll"],
+										["tab", after(panel)],
+										// A key nobody guesses is pressable. The rest of this row is what to press to move
+										// around; this one is what to press to be told what else there is. In the shell the
+										// two of them say nothing true, and the way back out is worth saying instead.
+										...(shell
+											? [["⌫", "chat"]]
+											: [
+													["/", "commands"],
+													["!", "shell"],
+												]),
+										["^C", "quit"],
+										// Last, so that the rest of the row does not move as it comes and goes, and shown
+										// only while there is something to stop: the key does nothing at any other time,
+										// and offering it then is how a hint becomes a thing that lies.
+										...(busy.size > 0 ? [["esc", "stop"]] : []),
+									]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

@@ -2,7 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { KEY_PLACEHOLDER, type Model, ModelChoices, modelEnv, modelGrants } from "../src/models.ts";
+import {
+	KEY_PLACEHOLDER,
+	type Model,
+	ModelChoices,
+	modelEnv,
+	modelGrants,
+	PROVIDERS,
+	providersOf,
+} from "../src/models.ts";
 
 const deepseek: Model = {
 	id: "flash",
@@ -60,6 +68,57 @@ describe("modelGrants", () => {
 			"model:flash",
 			"model:sonnet",
 		]);
+	});
+});
+
+describe("providersOf", () => {
+	const listed = (models: readonly Model[]) => providersOf(models).map((provider) => provider.id);
+
+	// The screen is for filling in the keys this plane is waiting on, so those are the rows that
+	// should be reachable without scrolling past every provider anybody ever heard of.
+	it("puts the configured providers before the rest", () => {
+		expect(listed([deepseek, anthropic]).slice(0, 2)).toEqual(["deepseek", "anthropic"]);
+	});
+
+	it("says which models are waiting on each key, so a row explains itself", () => {
+		expect(providersOf([deepseek, anthropic])[0]).toEqual({
+			id: "deepseek",
+			keyEnv: "DEEPSEEK_API_KEY",
+			models: ["flash"],
+		});
+	});
+
+	it("gathers the models of one provider into its one row", () => {
+		const pro: Model = { ...deepseek, id: "pro", model: "deepseek-v4" };
+
+		expect(providersOf([deepseek, pro])[0]?.models).toEqual(["flash", "pro"]);
+	});
+
+	/**
+	 * A row is a key rather than a provider name. An operator who writes a second `keyEnv` out by hand
+	 * has two keys to give, and one row would leave half their models refused at the proxy by a screen
+	 * that said the provider was set up.
+	 */
+	it("makes a second row for a second key on the same provider", () => {
+		const second: Model = { ...deepseek, id: "cheap", keyEnv: "DEEPSEEK_OTHER_KEY" };
+
+		expect(providersOf([deepseek, second]).map((provider) => provider.keyEnv)).toEqual([
+			"DEEPSEEK_API_KEY",
+			"DEEPSEEK_OTHER_KEY",
+			...Object.values(PROVIDERS)
+				.map((known) => known.keyEnv)
+				.filter((keyEnv) => keyEnv !== "DEEPSEEK_API_KEY"),
+		]);
+	});
+
+	// Setting a provider up should be something you can find rather than something you have to
+	// already know the name of, so the known ones are offered before any model names them.
+	it("offers the providers nothing is configured on yet", () => {
+		expect(listed([])).toEqual(Object.keys(PROVIDERS));
+	});
+
+	it("does not offer a configured provider twice", () => {
+		expect(listed([anthropic]).filter((id) => id === "anthropic")).toEqual(["anthropic"]);
 	});
 });
 

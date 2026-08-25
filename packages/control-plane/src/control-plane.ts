@@ -33,8 +33,15 @@ import {
 	shellOutput,
 	shellScript,
 } from "./commands.ts";
+import { ProviderKeys } from "./keys.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
-import { type Model, type ModelChoice, ModelChoices } from "./models.ts";
+import {
+	type Model,
+	type ModelChoice,
+	ModelChoices,
+	type ProviderStanding,
+	providersOf,
+} from "./models.ts";
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { ensureSelfRepo } from "./self.ts";
@@ -265,6 +272,8 @@ export class ControlPlane {
 	 * there at all — never for the value, which belongs on the wire and nowhere else.
 	 */
 	readonly #secrets: SecretStore;
+	/** The half of that store this plane may write: the provider keys given at the console. */
+	readonly #keys: ProviderKeys;
 	readonly #mcp: McpShelf;
 	readonly #logins: OAuthLogins;
 	readonly #desk: LoginDesk;
@@ -308,7 +317,11 @@ export class ControlPlane {
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 		this.#models = options.models ?? [];
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
-		this.#secrets = options.secrets ?? new EnvSecretStore();
+		this.#keys = new ProviderKeys(
+			join(this.#stateDir, "keys.json"),
+			options.secrets ?? new EnvSecretStore(),
+		);
+		this.#secrets = this.#keys;
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
 		this.#desk = new LoginDesk(this.#logins, (url) => this.#emit({ kind: "open", url }));
@@ -577,6 +590,43 @@ export class ControlPlane {
 			if (held === undefined || held.length === 0) missing.push(model.id);
 		}
 		return missing;
+	}
+
+	/**
+	 * Every provider this plane could be given a key for, and whether it is holding one.
+	 *
+	 * What the screen behind this is for: a plane that is running and configured and still refused at
+	 * the proxy, because the half of a model that is not in the file — the key — was never exported.
+	 * Which models exist stays the operator's file. This says only which of them this plane can pay
+	 * for, which is a fact about the machine rather than a decision about an agent.
+	 */
+	async providers(): Promise<readonly ProviderStanding[]> {
+		const here = await this.#keys.here();
+		const standing: ProviderStanding[] = [];
+		for (const provider of providersOf(this.#models)) {
+			const held = await this.#secrets.resolve({ ref: provider.keyEnv }).catch(() => undefined);
+			standing.push({
+				...provider,
+				held: held !== undefined && held.length > 0,
+				here: here.has(provider.keyEnv),
+			});
+		}
+		return standing;
+	}
+
+	/**
+	 * Takes a key for one provider, or forgets it when what was typed is empty.
+	 *
+	 * Refuses any other name, and that is the boundary rather than a formality: every other secret
+	 * this plane resolves is one a grant in the operator's file named — a GitHub token, a hook secret
+	 * — and a console that could fill those in would be a keyboard handing out the credentials that
+	 * file was careful to only name. A provider key fills a grant every agent already holds.
+	 */
+	async setKey(keyEnv: string, value: string): Promise<void> {
+		if (!providersOf(this.#models).some((provider) => provider.keyEnv === keyEnv)) {
+			throw new Error(`${keyEnv} is not a provider key`);
+		}
+		await this.#keys.keep(keyEnv, value.trim());
 	}
 
 	/**

@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NewAgentEvent } from "@agent-dive/events";
+import { EnvSecretStore } from "@agent-dive/proxy";
 import type { ExecResult } from "@agent-dive/sandbox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -17,6 +18,7 @@ import {
 	proxyTokenOf,
 	withDefaults,
 } from "../src/control-plane.ts";
+import { ProviderKeys } from "../src/keys.ts";
 import type { TurnResult, TurnRunner, WakeChange } from "../src/turn.ts";
 
 describe("ControlPlane", () => {
@@ -135,6 +137,94 @@ describe("the model an agent was moved onto", () => {
 		await plane.remove("scout", { purge: true });
 
 		expect((await planeWith().agents())[0]?.model).toBe("flash");
+	});
+});
+
+/**
+ * The keys a console can fill in.
+ *
+ * The plane's half of the setup screen: what it is willing to be told, and what it refuses to be
+ * told at a keyboard no matter who is holding it.
+ */
+describe("provider keys", () => {
+	let stateDir: string;
+	const models = [
+		{
+			id: "flash",
+			provider: "deepseek",
+			model: "deepseek-v4-flash",
+			host: "api.deepseek.com",
+			keyEnv: "DEEPSEEK_API_KEY",
+		},
+	];
+	const planeWith = () =>
+		new ControlPlane({
+			agents: [{ id: "scout", model: "flash" }],
+			stateDir,
+			models,
+			secrets: new EnvSecretStore({ OPENAI_API_KEY: "from-the-machine" }),
+		});
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-keys-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const standing = async (keyEnv: string) =>
+		(await planeWith().providers()).find((provider) => provider.keyEnv === keyEnv);
+
+	it("says a configured provider is waiting on its key", async () => {
+		expect(await standing("DEEPSEEK_API_KEY")).toMatchObject({ models: ["flash"], held: false });
+	});
+
+	it("says a key the machine exported is already there", async () => {
+		expect(await standing("OPENAI_API_KEY")).toMatchObject({ held: true, here: false });
+	});
+
+	it("holds a key it was given, so the next turn is paid for", async () => {
+		const plane = planeWith();
+
+		await plane.setKey("DEEPSEEK_API_KEY", "sk-typed");
+
+		expect(await standing("DEEPSEEK_API_KEY")).toMatchObject({ held: true, here: true });
+	});
+
+	// Whatever a terminal adds to a pasted key is not part of the key, and a trailing newline is the
+	// difference between a working plane and every turn refused with no visible reason.
+	it("takes what was pasted rather than what the terminal added to it", async () => {
+		await planeWith().setKey("DEEPSEEK_API_KEY", "  sk-typed\n");
+
+		const kept = new ProviderKeys(join(stateDir, "keys.json"), new EnvSecretStore());
+		expect(await kept.resolve({ ref: "DEEPSEEK_API_KEY" })).toBe("sk-typed");
+	});
+
+	/**
+	 * The boundary this screen lives inside. Every other secret the plane resolves is one a grant in
+	 * the operator's file named, and filling those in at a keyboard would be handing out exactly the
+	 * credentials that file was careful to only name.
+	 */
+	it("refuses a secret that is not a provider's, however it is spelled", async () => {
+		await expect(planeWith().setKey("GITHUB_TOKEN", "ghp-typed")).rejects.toThrow(
+			/not a provider key/,
+		);
+	});
+
+	it("hands the provider back to the machine when the key is taken away", async () => {
+		const plane = planeWith();
+		await plane.setKey("OPENAI_API_KEY", "sk-typed");
+
+		await plane.setKey("OPENAI_API_KEY", "");
+
+		expect(await standing("OPENAI_API_KEY")).toMatchObject({ held: true, here: false });
+	});
+
+	it("outlives the plane it was typed at", async () => {
+		await planeWith().setKey("DEEPSEEK_API_KEY", "sk-typed");
+
+		expect(await standing("DEEPSEEK_API_KEY")).toMatchObject({ held: true, here: true });
 	});
 });
 
