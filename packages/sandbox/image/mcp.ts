@@ -209,18 +209,22 @@ function post(
 /**
  * Splits curl's output into the headers and the body.
  *
- * A 1xx is a whole response with its own header block, and curl prints those too, so the first block
- * is not reliably the one that carries the answer — taking it would read a 100 Continue as the reply.
+ * The last header block is the answer, and taking any earlier one is how this went wrong: every
+ * request here goes out through the egress proxy, so the first block curl prints is the proxy's own
+ * `200 Connection Established` — a 200, with the real response left sitting in what was read as its
+ * body. Every remote MCP server in this sandbox came back as "nothing that reads as a reply". A 1xx
+ * is the same shape for a different reason, and this handles it for free.
  */
 function readReply(raw: string): Reply {
 	let rest = raw;
+	let reply: Reply = { status: 0, headers: {}, body: raw };
+	// A JSON-RPC body starts with a brace and an event stream with a field name, so a remainder that
+	// begins `HTTP/` is another block rather than the answer having begun.
 	while (rest.startsWith("HTTP/")) {
 		const end = rest.search(/\r?\n\r?\n/);
 		if (end < 0) break;
 		const [line = "", ...fields] = rest.slice(0, end).split(/\r?\n/);
 		rest = rest.slice(end).replace(/^\r?\n\r?\n/, "");
-		const status = Number(line.split(" ")[1]);
-		if (!(status >= 200)) continue;
 		const headers: Record<string, string> = {};
 		for (const field of fields) {
 			const colon = field.indexOf(":");
@@ -228,9 +232,9 @@ function readReply(raw: string): Reply {
 				headers[field.slice(0, colon).trim().toLowerCase()] = field.slice(colon + 1).trim();
 			}
 		}
-		return { status, headers, body: rest };
+		reply = { status: Number(line.split(" ")[1]), headers, body: rest };
 	}
-	return { status: 0, headers: {}, body: rest };
+	return reply;
 }
 
 function readFrame(block: string): { readonly event: string; readonly data: string } | undefined {
