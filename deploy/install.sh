@@ -127,20 +127,29 @@ if [ ! -f "$DIR/deploy/.env" ]; then
 	step "The keys the proxy will hold"
 	note "They go in $DIR/deploy/.env, which only root can read, and the agents never see them:"
 	note "a request leaves a sandbox with no credential and is given one on its way out."
+	note "Every one of these can be skipped and given later on the setup screen in \`agent\`."
 	printf '\n'
 
 	if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
 		note "A DeepSeek key is what the agents think with. Without one everything still runs,"
-		note "and turns fail at the model until you put one in .env."
+		note "and turns fail at the model until a key is given."
 		ask_secret "DeepSeek API key (enter to skip): "
 		DEEPSEEK_API_KEY=$ANSWER
 	fi
 	if [ -z "${OPENAI_API_KEY:-}" ]; then
 		printf '\n'
-		note "An OpenAI key is how an agent searches the web. Optional: without it the tool says so"
-		note "when it is used, which beats an agent inventing the answer."
+		note "An OpenAI key is how an agent searches the web, and what the gpt-5 model costs against."
+		note "Optional: without it the search tool says so when it is used, which beats an agent"
+		note "inventing the answer."
 		ask_secret "OpenAI API key (enter to skip): "
 		OPENAI_API_KEY=$ANSWER
+	fi
+	if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+		printf '\n'
+		note "An Anthropic key is the other model the config starts with. Optional in the same way:"
+		note "\`/model sonnet\` is refused at the proxy until this plane holds one."
+		ask_secret "Anthropic API key (enter to skip): "
+		ANTHROPIC_API_KEY=$ANSWER
 	fi
 
 	# Generated rather than asked. It is not an account anywhere — it is the shared secret a sender
@@ -153,6 +162,7 @@ if [ ! -f "$DIR/deploy/.env" ]; then
 # this process holds them, and the agents are never given either.
 DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 # Verifies the signature on POST /hooks/ping, and signs replies back.
 HOOK_SECRET=$HOOK_SECRET
 ENV
@@ -179,14 +189,19 @@ stateDir: /var/lib/agent-dive
 # the request at the proxy, so no agent ever holds it.
 #
 # Every model on this list is reachable by every agent, which is what makes `/model` in the console
-# a choice rather than a grant. Add one and the key it needs goes in deploy/.env.
+# a choice rather than a grant. A model whose key this plane does not hold is listed and refused at
+# the proxy until it does: the setup screen in `agent` says which of these are waiting on one, and
+# takes it.
 models:
   - id: deepseek-v4-flash
     provider: deepseek
 
-  # - id: sonnet
-  #   provider: anthropic
-  #   model: claude-sonnet-4-6
+  - id: sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+
+  - id: gpt-5
+    provider: openai
 
 # What every agent starts from, and the whole of what an agent made later at the keyboard is.
 defaults:

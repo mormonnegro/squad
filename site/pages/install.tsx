@@ -7,6 +7,7 @@ const ASKS: [string, string][] = [
 	["Docker", "installed from get.docker.com if the machine has none"],
 	["a DeepSeek key", "what the agents think with — skippable, and turns fail until you add one"],
 	["an OpenAI key", "how an agent searches the web — optional, the tool says so without it"],
+	["an Anthropic key", "the other model the config starts with — optional in the same way"],
 ];
 
 export default function Install() {
@@ -54,10 +55,12 @@ $ curl -fsSL ${INSTALL} | sh
 					</table>
 					<p className="small muted">
 						The keys are read from the terminal, not from the pipe, and land in a <code>0600</code>{" "}
-						file the agents cannot reach. Nothing else is asked. Run the same command again any time
-						and it becomes the update: it pulls, rebuilds, swaps the plane in, and leaves{" "}
-						<code>config.yaml</code> and <code>.env</code> alone — the second run is the one that
-						would quietly undo a grant somebody added.
+						file the agents cannot reach. Every one can be skipped and given later on the setup
+						screen in <code>agent</code>, so the install is never held up by a key you have to go
+						and find. Nothing else is asked. Run the same command again any time and it becomes the
+						update: it pulls, rebuilds, swaps the plane in, and leaves <code>config.yaml</code> and{" "}
+						<code>.env</code> alone — the second run is the one that would quietly undo a grant
+						somebody added.
 					</p>
 					<div className="note">
 						<p>
@@ -132,6 +135,8 @@ models:
   - id: sonnet
     provider: anthropic
     model: claude-sonnet-4-6
+  - id: gpt-5
+    provider: openai
 
 defaults:
   model: deepseek-v4-flash     # /model moves one agent onto another
@@ -149,6 +154,14 @@ defaults:
 						No secret is in it. It names environment variables and the process holds the values, so
 						the file describing what an agent can reach is committable and diffable — a grant nobody
 						noticed being added is the failure mode.
+					</p>
+					<p className="small">
+						All three are listed whether or not this plane holds their keys, because listing one is
+						the approval and the key is only what makes it answer. A model missing its key is
+						refused at the proxy until somebody supplies one, and the setup screen in{" "}
+						<code>agent</code> — <code>tab</code> past logs — is the list of which ones are waiting,
+						and where a key is pasted in. It holds from the next turn, with nothing restarted and
+						this file untouched.
 					</p>
 					<p className="small muted">
 						It is read when the plane starts, so an edit takes hold on{" "}

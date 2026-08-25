@@ -12,6 +12,10 @@ stateDir: /var/lib/agent-dive
 # Every model in this list is reachable by every agent, which is what makes `/model` a choice rather
 # than a grant: the console can move an agent between them because putting one here was the approval.
 # What stops one agent thinking expensively is its ceiling, which is per agent and below.
+#
+# A model this plane holds no key for is listed and refused at the proxy until it does. The setup
+# screen in `agent` says which of these are waiting on one, and takes it without touching this file:
+# a key fills a grant that is already here, which is why the keyboard may give one at all.
 models:
   # The id is the name to pick it by, and doubles as the model when it is already the model's name.
   - id: deepseek-v4-flash
@@ -21,6 +25,9 @@ models:
   - id: sonnet
     provider: anthropic
     model: claude-sonnet-4-6
+
+  - id: gpt-5
+    provider: openai
 
   # A provider nothing here knows still works, by writing out the two things that were the table's:
   # where it lives, and what the variable holding its key is called.

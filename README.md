@@ -159,18 +159,18 @@ agent help                               the rest
 asking to see the thing, not to be told a fact about it:
 
 ```
-╭──────────────────────╮╭──────────────────────────────────────────────────────────╮
-│ agents               ││ demo   chat · logs     deepseek-v4-flash   $0.42 / $5.00 │
-│                      ││                                                          │
-│ ● demo         $0.42 ││ > que es un webhook                                      │
-│ ◐ maxi     15m $4.80 ││                                                          │
-│ ○ scout              ││ Un webhook es una forma de comunicación automática entre │
-│                      ││ servicios: cuando ocurre un evento en un sistema, ese    │
-│ + new agent          ││ sistema envía una petición HTTP a una URL configurada.   │
-│                      ││ ╭──────────────────────────────────────────────────────╮ │
-│                      ││ │ >                                                    │ │
-│                      ││ ╰──────────────────────────────────────────────────────╯ │
-╰──────────────────────╯╰──────────────────────────────────────────────────────────╯
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ demo   chat · logs · setup   deepseek-v4-flash   $0.42 / $5.00 │
+│                      ││                                                                │
+│ ● demo         $0.42 ││ > que es un webhook                                            │
+│ ◐ maxi     15m $4.80 ││                                                                │
+│ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
+│                      ││ servicios: cuando ocurre un evento en un sistema, ese          │
+│ + new agent          ││ sistema envía una petición HTTP a una URL configurada.         │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ >                                                          │ │
+│                      ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
  ↑↓ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
 ```
 
@@ -179,9 +179,10 @@ gets a mark of its own because with several agents on screen it is the one thing
 out by asking again in a second. The one the keyboard is on is its name in the colour the panel
 title gives the same name, and not an arrow in a gutter beside the marks: a column whose header
 stands against the border and whose rows all begin two further in reads as a list indented under a
-title it does not belong to. `↑↓` moves between them and `tab` swaps the panel between that
-agent's conversation and the log feed, which is the same feed `agent logs` prints and runs the
-whole time either way. The prompt shows the spinner and the seconds while that agent is thinking,
+title it does not belong to. `↑↓` moves between them and `tab` cycles the panel through that
+agent's conversation, the log feed — the same feed `agent logs` prints, running the whole time
+either way — and the setup screen, which is about the plane rather than about the agent behind
+it. The prompt shows the spinner and the seconds while that agent is thinking,
 because a spinner alone says something is happening and the number rising beside it is what says
 whether it still is.
 
@@ -563,7 +564,54 @@ instant and is not.
 A model whose key this plane does not hold is still listed, marked as having no key behind it. It is
 not a reason to refuse to start: `install.sh` writes the variable through empty when nobody has
 exported one yet, and refusing there would make the first run of this a configuration exercise
-instead of a working plane. `/model` is the place the answer is to paste one in and reload.
+instead of a working plane. The setup screen is where the answer is to paste one in.
+
+## The keys the plane pays with
+
+A model is three lines of configuration and one exported variable, and the variable is the half that
+is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
+is running and configured and refused at the proxy, with turns dying over a host nobody typed. `tab`
+to the setup screen and the missing half is a list:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ demo   chat · logs · setup                               $0.42 │
+│                      ││ A key is written onto the request on its way out of an agent,  │
+│ ● demo         $0.42 ││ in place of the worthless value the container holds. It is not │
+│ ○ scout              ││ in the sandbox, not in a transcript, and not shown again once  │
+│                      ││ it is here.                                                    │
+│ + new agent          ││                                                                │
+│                      ││ providers                                                      │
+│                      ││                                                                │
+│                      ││ ● deepseek   DEEPSEEK_API_KEY   deepseek-v4-flash              │
+│                      ││ ○ anthropic  ANTHROPIC_API_KEY  sonnet                         │
+│                      ││ ○ openai     OPENAI_API_KEY     gpt-5                          │
+│                      ││ ○ groq       GROQ_API_KEY       no models                      │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
+│                      ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ provider   ⏎ set key   tab chat   ^C quit
+```
+
+`●` is a key this plane holds and `○` one it does not, which is the same mark the agents column
+uses and means the same thing: filled in is something that works right now. Beside each is the
+variable it is read from and the models waiting on it, because that is what makes one row matter
+more than another. A provider nothing is configured on is on the list too — setting a second one up
+should be something you can find rather than something you have to already know the name of.
+
+`⏎` takes the key for the row, masked as it is typed and never shown again. It goes to the plane
+over the same socket a shell does, and for the same reason: holding that socket is what makes
+somebody the operator, and a key arriving by webhook would be a stranger paying with your account.
+The plane keeps it beside the rest of its state, readable by nobody else, and resolves it per
+request — so a key pasted here holds on the next turn, with nothing restarted and nothing
+redeployed. An empty line takes it back, and the question goes to the plane's own environment
+again, which is where the row under the prompt says each key came from.
+
+What this screen may do stops exactly there. Which models exist and which hosts they live on is
+`config.yaml` and nothing typed here reaches anything that file did not already approve: a key
+fills a grant that is already there, and any variable that is not a provider's is refused. The
+keyboard may pay for a capability the operator granted; it may never grant one.
 
 ## What an agent may spend
 
