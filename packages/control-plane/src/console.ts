@@ -751,6 +751,8 @@ export function Setup({
 	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
 	typing,
 	secret,
+	/** What the plane said instead of answering, when it did that. */
+	unanswered,
 	rows,
 	columns,
 }: {
@@ -758,6 +760,7 @@ export function Setup({
 	readonly cursor: number;
 	readonly typing: string | undefined;
 	readonly secret: string;
+	readonly unanswered: string | undefined;
 	readonly rows: number;
 	readonly columns: number;
 }): ReactElement {
@@ -771,6 +774,12 @@ export function Setup({
 		"",
 	];
 	const row = providers[cursor];
+	// Above the list, because it is why the list says what it says — and when the plane refused to
+	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
+	const trouble =
+		unanswered === undefined
+			? []
+			: [h(Text, { key: "unanswered", color: "red", wrap: "truncate" }, unanswered)];
 	// The same marks the agents column uses, and they mean the same thing here: a dot that is filled
 	// in is something this plane can actually use right now.
 	const listed = providers.map((provider, index) => {
@@ -808,7 +817,8 @@ export function Setup({
 	const height = chatRows(rows);
 	// The list is what this screen is, so it takes the rows it needs and the prose above it is what
 	// gives way — the other way round and a short terminal shows three paragraphs and no providers.
-	const shown = listed.length <= height ? listed : framed(listed, cursor, height);
+	const all = [...trouble, ...listed];
+	const shown = all.length <= height ? all : [...trouble, ...framed(listed, cursor, height - 1)];
 	const head = visible(wrapped(said, columns, true), Math.max(0, height - shown.length), undefined);
 	return h(
 		Box,
@@ -921,6 +931,10 @@ export function App({
 	// The providers, as the plane last answered. Asked for when the screen is opened rather than kept
 	// up to date: nothing else changes them, and the one thing that does is on this keyboard.
 	const [providers, setProviders] = useState<readonly ProviderStanding[]>([]);
+	// Why the list is empty, when it is empty because the plane would not answer. An empty screen that
+	// swallowed the reason reads as a plane with no providers, and the reason is usually that the
+	// console is newer than the plane it is talking to — which is a sentence, not a mystery.
+	const [unanswered, setUnanswered] = useState<string | undefined>(undefined);
 	const [where, setWhere] = useState(0);
 	// The variable a key is being typed into, and the key itself, which is never in the draft: a
 	// secret that shared the prompt's state would be one keystroke of `tab` away from a chat pane.
@@ -1055,8 +1069,11 @@ export function App({
 	const readProviders = useCallback(() => {
 		client
 			.providers()
-			.then(setProviders)
-			.catch(() => {});
+			.then((rows) => {
+				setProviders(rows);
+				setUnanswered(undefined);
+			})
+			.catch((error: unknown) => setUnanswered((error as Error).message));
 	}, [client]);
 
 	// On opening the screen rather than on a timer: what it shows is the plane's environment and a
@@ -1074,7 +1091,14 @@ export function App({
 	 */
 	const keep = useCallback(
 		async (keyEnv: string, value: string): Promise<void> => {
-			await client.setKey(keyEnv, value).catch(() => {});
+			try {
+				await client.setKey(keyEnv, value);
+				setUnanswered(undefined);
+			} catch (error) {
+				// A key that was refused and said nothing is a key you would paste again. It is the one
+				// thing on this screen you cannot check by looking.
+				setUnanswered((error as Error).message);
+			}
 			readProviders();
 		},
 		[client, readProviders],
@@ -1452,6 +1476,7 @@ export function App({
 								cursor: Math.max(0, onProvider),
 								typing,
 								secret,
+								unanswered,
 								rows: inner,
 								columns: width,
 								key: "setup",

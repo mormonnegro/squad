@@ -874,6 +874,7 @@ describe("Setup", () => {
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
+		unanswered?: string | undefined;
 		rows?: number;
 		columns?: number;
 	}) =>
@@ -883,6 +884,7 @@ describe("Setup", () => {
 				cursor: 0,
 				typing: undefined,
 				secret: "",
+				unanswered: undefined,
 				rows: 20,
 				columns: 60,
 				...props,
@@ -927,10 +929,31 @@ describe("Setup", () => {
 		expect(drawn).not.toContain("sk-typed");
 	});
 
+	/**
+	 * The screen a console reaching an older plane gets. Without the reason on it, an empty list is a
+	 * plane that has no providers — which is a conclusion, and the wrong one.
+	 */
+	it("says why the list is empty, rather than showing an empty list", () => {
+		expect(pane({ unanswered: 'this plane does not know "providers"' })).toContain(
+			'does not know "providers"',
+		);
+	});
+
+	it("keeps the reason on screen while the list is there too", () => {
+		const drawn = pane({ unanswered: "GITHUB_TOKEN is not a provider key" });
+
+		expect(drawn).toContain("not a provider key");
+		expect(drawn).toContain("deepseek");
+	});
+
 	/** The one thing a pane may never do: a row drawn past its last one breaks the whole screen. */
 	it("never draws more rows than it was given", () => {
 		for (const rows of [3, 6, 14, 30]) {
 			expect(pane({ rows, columns: 30 }).split("\n").length).toBeLessThanOrEqual(rows);
+			expect(
+				pane({ rows, columns: 30, unanswered: "this plane is older than this console" }).split("\n")
+					.length,
+			).toBeLessThanOrEqual(rows);
 		}
 	});
 

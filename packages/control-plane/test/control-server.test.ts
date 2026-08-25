@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { mkdtemp, rm, stat } from "node:fs/promises";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -309,6 +311,27 @@ describe("the control socket", () => {
 
 	it("refuses a secret that is not a provider's", async () => {
 		await expect(client.setKey("GITHUB_TOKEN", "ghp-typed")).rejects.toThrow(/not a provider key/);
+	});
+
+	/**
+	 * A console can be newer than the plane it reaches, because one is on the PATH and the other is an
+	 * image somebody has to rebuild. Answered under "?" this was a request nobody was ever told about:
+	 * the caller waited out its own timeout and drew an empty screen, which reads as a plane that has
+	 * nothing rather than one that was never asked.
+	 */
+	it("answers an operation it does not have, under the id that asked", async () => {
+		const socket = connect(server.socketPath);
+		await once(socket, "connect");
+		const answer = new Promise<string>((resolve) => {
+			socket.once("data", (chunk: Buffer) => resolve(chunk.toString("utf8")));
+		});
+
+		socket.write(`${JSON.stringify({ id: "7", op: "providers-of-tomorrow" })}\n`);
+
+		const response = JSON.parse(await answer) as { id: string; ok: boolean; error: string };
+		socket.end();
+		expect(response).toMatchObject({ id: "7", ok: false });
+		expect(response.error).toContain("older than this console");
 	});
 
 	it("lets only its owner near it, because holding it is the whole authorization", async () => {

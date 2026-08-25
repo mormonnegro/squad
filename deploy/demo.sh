@@ -168,8 +168,8 @@ reload() {
   write_config
 
   # Read back off the running container, so a reload never asks for the keys again. A key in the
-  # environment wins, which is how one gets added without going through `up` and losing the agent:
-  # export it, reload, and `/model` stops saying this plane holds nothing for that model.
+  # environment wins, which is how one gets added without going through `up` and losing the agent —
+  # though the setup screen in `agent` is the shorter way, and does not cost a reload.
   local env key search anthropic
   env=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}')
   key=$(printf '%s\n' "$env" | sed -n 's/^DEEPSEEK_API_KEY=//p')
@@ -177,8 +177,7 @@ reload() {
   anthropic=$(printf '%s\n' "$env" | sed -n 's/^ANTHROPIC_API_KEY=//p')
 
   docker rm -f "$PLANE" >/dev/null
-  start_plane "${DEEPSEEK_API_KEY:-${key:-no-key-configured}}" \
-    "${OPENAI_API_KEY:-${search:-no-key-configured}}" \
+  start_plane "${DEEPSEEK_API_KEY:-$key}" "${OPENAI_API_KEY:-$search}" \
     "${ANTHROPIC_API_KEY:-$anthropic}"
 
   # Before listing them, so the list is what settled rather than what was mid-flight: an agent whose
@@ -216,7 +215,7 @@ up() {
   if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
     say "no DEEPSEEK_API_KEY"
     echo "Everything will run, but the turn itself will fail at the model and the wakeup will stay"
-    echo "queued for a retry."
+    echo "queued for a retry. Type \`agent\`, tab to setup, and paste one in when you have it."
   fi
 
   # The one the agent searches the web with, and the only reason it can: without it the tool is still
@@ -248,10 +247,11 @@ up() {
   docker network create "$UPLINK" >/dev/null
 
   say "starting the control plane"
-  # The third is passed through empty when there is none, on purpose: `/model` then says this plane
-  # holds no key for sonnet, which is the truth and the place the answer is to export one and reload.
-  start_plane "${DEEPSEEK_API_KEY:-no-key-configured}" "${OPENAI_API_KEY:-no-key-configured}" \
-    "${ANTHROPIC_API_KEY:-}"
+  # Empty when there is none, never a stand-in string. A plane holding "no-key-configured" reports a
+  # key it has, spends a turn getting a 401 out of the provider, and sends whoever reads it looking
+  # for the wrong thing. Empty is the truth, the setup screen in `agent` says which are missing, and
+  # a key pasted there holds on the next turn.
+  start_plane "${DEEPSEEK_API_KEY:-}" "${OPENAI_API_KEY:-}" "${ANTHROPIC_API_KEY:-}"
 
   for _ in $(seq 60); do
     [ "$(docker inspect -f '{{.State.Running}}' "$SANDBOX" 2>/dev/null)" = "true" ] && break

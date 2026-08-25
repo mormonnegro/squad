@@ -244,7 +244,14 @@ export class ControlServer {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else {
-				this.#write(socket, { id: "?", ok: false, error: "unknown operation" });
+				// Answered under the id that was asked, so whoever asked is released. Sent back under "?"
+				// this was a request nobody ever heard about again, and a console newer than the plane it
+				// is talking to sat there showing an empty screen until its own timeout.
+				this.#write(socket, {
+					id: request.id ?? "?",
+					ok: false,
+					error: `this plane does not know "${String(request.op)}" — it is older than this console`,
+				});
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
