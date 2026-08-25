@@ -94,20 +94,28 @@ export class LocalDoors {
 	async #bind(id: string, door: Door): Promise<void> {
 		const bound: Server[] = [];
 		const refused: string[] = [];
+		// The plane hands out a number nothing else on the plane has, which is all it can know: the
+		// machine this is running on is somebody's laptop, with its own idea of what 3000 is for.
+		let contested = false;
 		for (const host of LOOPBACK) {
 			const server = net.createServer((socket) => void this.#join(id, door, socket));
 			try {
 				await listen(server, host, door.served.at);
 				bound.push(server);
 			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code === "EADDRINUSE") contested = true;
 				server.close();
-				refused.push(
-					`${host} ${(error as NodeJS.ErrnoException).code ?? (error as Error).message}`,
-				);
+				refused.push(`${host} ${code ?? (error as Error).message}`);
 			}
 		}
 
-		if (bound.length === 0) {
+		// Half a door is worse than none. A number one family refuses is a number something on this
+		// machine already answers on, and a link that works in a browser preferring `::1` and not in
+		// whatever the operator reaches for next is a worse afternoon than being told the number is
+		// taken. A machine with no IPv6 at all refuses differently, and that half is kept.
+		if (bound.length === 0 || contested) {
+			for (const server of bound) server.close();
 			this.#say(
 				door.agentId,
 				`could not open ${door.served.at} here — ${refused.join(", ")}`,
@@ -116,8 +124,6 @@ export class LocalDoors {
 			return;
 		}
 		this.#open.set(id, bound);
-		// A machine with no IPv6 refuses `::1` and nothing is wrong, so the half that worked is the news
-		// and the half that did not is a parenthesis on the same line rather than a failure of its own.
 		const half = refused.length > 0 ? ` (${refused.join(", ")})` : "";
 		this.#say(door.agentId, `${servedAt(door.agentId, door.served)} → :${door.served.port}${half}`);
 	}

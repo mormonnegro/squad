@@ -3,6 +3,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type Duplex, Transform } from "node:stream";
 import { EnvSecretStore } from "@agent-dive/proxy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ControlClient, ControlError } from "../src/control-client.ts";
@@ -376,6 +377,61 @@ describe("the control socket", () => {
 	it("lets only its owner near it, because holding it is the whole authorization", async () => {
 		const mode = (await stat(server.socketPath)).mode & 0o777;
 		expect(mode).toBe(0o600);
+	});
+
+	/**
+	 * The one request that stops being JSON halfway through.
+	 *
+	 * Everything else here is lines over one multiplexed socket, and what comes back from a forwarded
+	 * port is neither lines nor JSON. So a forward takes a connection of its own: the request goes,
+	 * one answer comes back, and every byte after it is the stream. Which also means a browser opening
+	 * six connections to a page costs six sockets and blocks none of the others.
+	 */
+	describe("a forwarded port", () => {
+		/** Stands in for the relay into a sandbox: answers what it was sent, in capitals. */
+		const shouting = (): Duplex =>
+			new Transform({
+				transform(chunk: Buffer, _encoding, done) {
+					done(null, Buffer.from(chunk.toString("utf8").toUpperCase()));
+				},
+			});
+
+		it("carries bytes both ways once the answer is past", async () => {
+			vi.spyOn(plane, "forward").mockResolvedValue(shouting());
+			const stream = await client.forward("scout", 3000);
+
+			const heard = new Promise<string>((resolve) =>
+				stream.once("data", (chunk: Buffer) => resolve(chunk.toString("utf8"))),
+			);
+			// It arrives paused, holding whatever came in behind the answer. Piping it is what a caller
+			// does with one of these, and piping resumes it; a listener on its own does not.
+			stream.resume();
+			stream.write("hola");
+			expect(await heard).toBe("HOLA");
+			stream.destroy();
+		});
+
+		// A connection of its own is the point. If the forward went down the socket the rest of this
+		// class multiplexes over, the first byte of a page would be the last answer anybody got.
+		it("leaves the socket everything else is asked over alone", async () => {
+			vi.spyOn(plane, "forward").mockResolvedValue(shouting());
+			const stream = await client.forward("scout", 3000);
+			stream.write("hola");
+
+			expect((await client.agents()).map((agent) => agent.id)).toEqual(["scout", "scribe"]);
+			stream.destroy();
+		});
+
+		// Not a boundary — whoever holds this socket can run anything they like in that sandbox — but
+		// the list is what the console binds and what the conversation says, and a way in that answered
+		// for ports on neither would make both of them fiction.
+		it("refuses a port nobody asked to serve", async () => {
+			await expect(client.forward("scout", 3000)).rejects.toThrow("scout is not serving 3000");
+		});
+
+		it("refuses an agent this plane does not have", async () => {
+			await expect(client.forward("nobody", 3000)).rejects.toThrow('No agent "nobody"');
+		});
 	});
 });
 

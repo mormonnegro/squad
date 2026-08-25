@@ -218,6 +218,9 @@ export class ControlClient {
 	 * comes down a forwarded port is neither lines nor JSON. So the request is written, the one
 	 * answer is read, and everything after it on that connection is the stream — which also means a
 	 * browser opening six connections at once costs six sockets and blocks none of the others.
+	 *
+	 * It comes back paused, holding anything that arrived behind the answer. Piping it is what
+	 * resumes it, and piping is what a caller does with one of these.
 	 */
 	async forward(agentId: string, port: number): Promise<Duplex> {
 		const socket = await this.#open();

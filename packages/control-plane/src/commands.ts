@@ -454,8 +454,11 @@ async function serve(words: readonly string[], context: CommandContext): Promise
 	if (first === "" || first === "list") return serving(context);
 
 	if (first === "stop" || first === "close") {
-		const port = Number(rest[0] ?? "");
-		if (!Number.isInteger(port)) return `Which port? /serve stop 3000 closes that one.`;
+		// Zero rather than a complaint is what `Number("")` answers, and a bare `/serve stop` that read
+		// as port 0 would be told it was not serving one, which is true and not what was asked.
+		const port = Number((rest[0] ?? "").replace(/^:/, ""));
+		if (!Number.isInteger(port) || port <= 0)
+			return "Which port? /serve stop 3000 closes that one.";
 		if (!(await context.unserve(port))) return `${id} was not serving ${port}.`;
 		// Said because the two halves are in different places and only one of them just changed: the
 		// server inside the box is the agent's and is still running, and an operator who read this as

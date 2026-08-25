@@ -426,6 +426,131 @@ describe("/delete", () => {
 });
 
 /**
+ * The one command that opens something rather than describing it, and the only one whose two halves
+ * are on different machines: the plane keeps the record, and a console somewhere else is what turns
+ * it into a listener. So what the answer says is mostly about where a link works and what it needs
+ * before it does — an operator who reads this as "published" has been told the wrong thing.
+ */
+describe("/serve", () => {
+	it("opens a port and gives back the address it comes out at", async () => {
+		const plane = context({ agentId: "scout" });
+		const said = await runCommand("/serve 3000", plane.context);
+
+		expect(said).toContain("scout is serving 3000");
+		expect(said).toContain("http://scout.localhost:3000");
+		expect(plane.serving).toEqual([{ port: 3000, at: 3000 }]);
+	});
+
+	// Two agents both land on 3000 without either of them having chosen it, and the machine at the
+	// other end has one 3000. The answer has to name both numbers, or the operator opens the wrong one.
+	it("says whose the number was when it had to give way", async () => {
+		const plane = context({ agentId: "scribe", takenBy: new Map([[3000, "scout"]]) });
+		const said = await runCommand("/serve 3000", plane.context);
+
+		expect(said).toContain("3000 is scout's here, so this one is on 3001");
+		expect(said).toContain("http://scribe.localhost:3001");
+	});
+
+	// The link is opened whether or not anything is behind it, because the agent that asks for one is
+	// usually about to start the server. Saying which of the two it is turns a dead link into a step.
+	it("says nothing is listening in there yet, and that the link waits", async () => {
+		const said = await runCommand("/serve 3000", context().context);
+
+		expect(said).toContain("Nothing is listening on 3000 inside the sandbox yet");
+		expect(said).toContain("starts working the moment something binds that port");
+	});
+
+	it("says the link has something behind it when something is bound in there", async () => {
+		const said = await runCommand("/serve 3000", context({ bound: [3000] }).context);
+
+		expect(said).toContain("Something is listening on 3000 in there");
+	});
+
+	// Nothing is published off the server and the sandbox network is as unrouted as it was. An answer
+	// that left that out would read as a port on the internet, which is the opposite of what this is.
+	it("says where the link works, every time it prints one", async () => {
+		const opened = await runCommand("/serve 3000", context().context);
+		const listed = await runCommand(
+			"/serve",
+			context({ serving: [{ port: 3000, at: 3000 }] }).context,
+		);
+
+		for (const said of [opened, listed]) expect(said).toContain("and from nowhere else");
+	});
+
+	it("takes a port written with the colon a person would type", async () => {
+		const plane = context();
+		await runCommand("/serve :8080", plane.context);
+		expect(plane.serving).toEqual([{ port: 8080, at: 8080 }]);
+	});
+
+	// Refused where the sentence can explain itself, rather than at a console on somebody else's
+	// machine where it would be a bind error nobody was looking at.
+	it("refuses a port the console would need root for, and one that is not a port", async () => {
+		const plane = context();
+		expect(await runCommand("/serve 80", plane.context)).toContain("under 1024");
+		expect(await runCommand("/serve nine", plane.context)).toContain("not a port");
+		expect(plane.serving).toEqual([]);
+	});
+
+	// The agent that restarts its server has no way of knowing whether the last turn already asked.
+	it("does not move a port that was already open", async () => {
+		const plane = context({ serving: [{ port: 3000, at: 3001 }] });
+		const said = await runCommand("/serve 3000", plane.context);
+
+		expect(said).toContain("http://scout.localhost:3001");
+		expect(plane.serving).toEqual([{ port: 3000, at: 3001 }]);
+	});
+
+	it("lists what is open, and how to close one", async () => {
+		const plane = context({
+			serving: [
+				{ port: 3000, at: 3000 },
+				{ port: 8080, at: 8081 },
+			],
+			takenBy: new Map([[8080, "scribe"]]),
+		});
+		const said = await runCommand("/serve", plane.context);
+
+		expect(said).toContain("http://scout.localhost:3000");
+		expect(said).toContain("http://scout.localhost:8081");
+		expect(said).toContain("(8080 is scribe's here)");
+		expect(said).toContain("/serve stop 3000");
+	});
+
+	it("says what it would open when nothing is open yet", async () => {
+		expect(await runCommand("/serve", context().context)).toContain("scout is serving nothing");
+	});
+
+	it("closes one", async () => {
+		const plane = context({ serving: [{ port: 3000, at: 3000 }] });
+		const said = await runCommand("/serve stop 3000", plane.context);
+
+		expect(said).toContain("scout is not serving 3000 any more");
+		expect(plane.serving).toEqual([]);
+	});
+
+	// The two halves are in different places and only one of them just changed. An operator who read
+	// this as "stopped" would go looking for a process that is exactly where they left it.
+	it("says closing the way in did not stop the server behind it", async () => {
+		const plane = context({ serving: [{ port: 3000, at: 3000 }] });
+		const said = await runCommand("/serve stop 3000", plane.context);
+
+		expect(said).toContain("is still listening");
+	});
+
+	it("says there was nothing to close", async () => {
+		expect(await runCommand("/serve stop 3000", context().context)).toBe(
+			"scout was not serving 3000.",
+		);
+	});
+
+	it("asks which port when the close has none", async () => {
+		expect(await runCommand("/serve stop", context().context)).toContain("Which port?");
+	});
+});
+
+/**
  * A command that chooses and never grants. Every model it can name was already reachable by every
  * agent before it was typed, because configuring one is what granted it — so every test here that
  * ends in `moved` being empty is a way somebody could have thought they had switched and had not.
@@ -1033,6 +1158,15 @@ describe("agentMayNot", () => {
 		expect(agentMayNot("/model sonnet", scout)).toBeUndefined();
 		expect(agentMayNot("/mcp drop ahrefs", scout)).toBeUndefined();
 		expect(agentMayNot("/help", scout)).toBeUndefined();
+	});
+
+	// Every other command guarded here is about what an agent can reach outwards. This is the
+	// opposite direction — a way in, from the console the operator is sitting at, to loopback inside
+	// a box whoever typed it could already have run anything they liked in.
+	it("lets it put a port of its own in front of its operator", () => {
+		expect(agentMayNot("/serve 3000", scout)).toBeUndefined();
+		expect(agentMayNot("/serve stop 3000", scout)).toBeUndefined();
+		expect(agentMayNot("/serve", scout)).toBeUndefined();
 	});
 
 	it("lets it ask to be held to less than it is", () => {
