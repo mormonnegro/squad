@@ -814,6 +814,9 @@ export function Setup({
 	let at = 0;
 	const heading = (label: string): ReactElement =>
 		h(Text, { key: `heading-${label}`, dimColor: true, wrap: "truncate" }, label);
+	// The prose above ends where the list begins, and without this the two run together into one
+	// paragraph with rows in it.
+	listed.push(h(Text, { key: "before" }, " "));
 	listed.push(heading("providers"));
 	// The same marks the agents column uses, and they mean the same thing here: a dot that is filled
 	// in is something this plane can actually use right now.

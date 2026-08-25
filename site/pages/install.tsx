@@ -163,6 +163,14 @@ defaults:
 						and where a key is pasted in. It holds from the next turn, with nothing restarted and
 						this file untouched.
 					</p>
+					<p className="small">
+						That screen adds models too, on the row that says <code>+ a model</code>: a name, the
+						provider it thinks on, and the provider&rsquo;s own name for it when it differs. So this
+						file is where a model goes to survive a redeploy, and the console is where one goes when
+						you want it on the next turn. A model added there is kept beside this file rather than
+						written into it, and a model this file declares is one the console will read and refuse
+						to touch.
+					</p>
 					<p className="small muted">
 						It is read when the plane starts, so an edit takes hold on{" "}
 						<code>docker compose restart control-plane</code> from{" "}

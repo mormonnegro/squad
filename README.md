@@ -191,9 +191,9 @@ row rather than a command because that is where somebody who wants an agent is a
 with none at all it is the only row there is, and the console opens on it. The panel behind it takes
 a name and `⏎` builds it: a container, a repository of its own, nothing in its memory, and exactly
 what `defaults` in the config allows it to reach. The name is the whole of what the keyboard decides
-here, which is why the pane says so — a keyboard may name an agent and may never grant one. A name
-that is taken, or that is not a name, is refused in the pane with the name still in the prompt to
-be fixed. What is built appears where the `+` was, which is where the cursor already is.
+here, which is why the pane says so — it may name an agent and may not grant it a thing. A name that
+is taken, or that is not a name, is refused in the pane with the name still in the prompt to be
+fixed. What is built appears where the `+` was, which is where the cursor already is.
 
 What each agent has spent today is on its row, because "which of these is burning through its day"
 is a question about all of them at once and the header can only ever answer it about the one you
@@ -549,17 +549,20 @@ This agent thinks with deepseek-v4-flash. There are:
 /model sonnet moves it onto that one, from its next turn.
 ```
 
-This is a choice among the configured and never a way to add one, which is what makes it a command
+This is a choice among what exists and never a way to add one, which is what makes it a command
 rather than an edit and a restart. Every model on that list is already reachable by every agent —
 configuring one is what granted it — so moving between them changes what a turn costs and how good
-it is, and changes nothing at all about what the agent can get to. The keyboard may never grant, and
-this does not.
+it is, and changes nothing at all about what the agent can get to. Adding one is the setup screen's,
+two panes away and never addressed to an agent, so it stays something an operator does rather than
+something an agent can talk one into.
 
 Which is also why nothing is recreated to do it. The container was started holding a placeholder for
-every configured model, not just the one it was on, and the runner asks what to think with at the
+every provider this knows, not just the one it was on, and the runner asks what to think with at the
 start of every turn — so a switch lands on the next turn, and a turn already running finishes on the
 model it was handed when it started. That last part is said out loud, because the change looks
-instant and is not.
+instant and is not. The placeholders are worthless by design, which is why there can be one for a
+provider nothing is configured on: what a container holds decides nothing, and the grant list — the
+part that does — is rebuilt the moment a model is added.
 
 A model whose key this plane does not hold is still listed, marked as having no key behind it. It is
 not a reason to refuse to start: `install.sh` writes the variable through empty when nobody has
@@ -571,47 +574,65 @@ instead of a working plane. The setup screen is where the answer is to paste one
 A model is three lines of configuration and one exported variable, and the variable is the half that
 is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
 is running and configured and refused at the proxy, with turns dying over a host nobody typed. `tab`
-to the setup screen and the missing half is a list:
+to the setup screen and both halves are a list:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ agents               ││ demo   chat · logs · setup                               $0.42 │
-│                      ││ A key is written onto the request on its way out of an agent,  │
-│ ● demo         $0.42 ││ in place of the worthless value the container holds. It is not │
-│ ○ scout              ││ in the sandbox, not in a transcript, and not shown again once  │
-│                      ││ it is here.                                                    │
-│ + new agent          ││                                                                │
-│                      ││ providers                                                      │
+│ agents               ││ demo   chat · logs · setup                       $0.42 / $5.00 │
 │                      ││                                                                │
-│                      ││ ● deepseek   DEEPSEEK_API_KEY   deepseek-v4-flash              │
+│ ● demo         $0.42 ││                                                                │
+│ ○ scout              ││ holds from the next turn — nothing restarts.                   │
+│                      ││                                                                │
+│ + new agent          ││ providers                                                      │
+│                      ││ ● deepseek   DEEPSEEK_API_KEY   flash                          │
 │                      ││ ○ anthropic  ANTHROPIC_API_KEY  sonnet                         │
 │                      ││ ○ openai     OPENAI_API_KEY     gpt-5                          │
 │                      ││ ○ groq       GROQ_API_KEY       no models                      │
+│                      ││                                                                │
+│                      ││ models                                                         │
+│                      ││ ● flash   deepseek   from the file                             │
+│                      ││ ○ sonnet  anthropic  from the file                             │
+│                      ││ ○ gpt-5   openai     added here                                │
+│                      ││ + a model                                                      │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ provider   ⏎ set key   tab chat   ^C quit
+ ↑↓ move   ⏎ set key   tab chat   ^C quit
 ```
 
-`●` is a key this plane holds and `○` one it does not, which is the same mark the agents column
-uses and means the same thing: filled in is something that works right now. Beside each is the
-variable it is read from and the models waiting on it, because that is what makes one row matter
-more than another. A provider nothing is configured on is on the list too — setting a second one up
-should be something you can find rather than something you have to already know the name of.
+`●` is something this plane can use right now and `○` one it cannot, which is the same mark the
+agents column uses and means the same thing. Beside each key is the variable it is read from and the
+models waiting on it, because that is what makes one row matter more than another. A provider
+nothing is configured on is on the list too — setting a second one up should be something you can
+find rather than something you have to already know the name of.
 
-`⏎` takes the key for the row, masked as it is typed and never shown again. It goes to the plane
-over the same socket a shell does, and for the same reason: holding that socket is what makes
-somebody the operator, and a key arriving by webhook would be a stranger paying with your account.
-The plane keeps it beside the rest of its state, readable by nobody else, and resolves it per
-request — so a key pasted here holds on the next turn, with nothing restarted and nothing
-redeployed. An empty line takes it back, and the question goes to the plane's own environment
-again, which is where the row under the prompt says each key came from.
+`⏎` on a key takes it, masked as it is typed and never shown again. It goes to the plane over the
+same socket a shell does, and for the same reason: holding that socket is what makes somebody the
+operator, and a key arriving by webhook would be a stranger paying with your account. The plane
+keeps it beside the rest of its state, readable by nobody else, and resolves it per request — so a
+key pasted here holds on the next turn, with nothing restarted and nothing redeployed. An empty line
+takes it back, and the question goes to the plane's own environment again, which is where the row
+under the prompt says each key came from.
 
-What this screen may do stops exactly there. Which models exist and which hosts they live on is
-`config.yaml` and nothing typed here reaches anything that file did not already approve: a key
-fills a grant that is already there, and any variable that is not a provider's is refused. The
-keyboard may pay for a capability the operator granted; it may never grant one.
+The second list is the models themselves, and `+ a model` is where one is written out: a name, the
+provider it thinks on, and the provider's own name for it when that is not the name you gave — so
+`sonnet anthropic claude-sonnet-4-6`, or just `gpt-5 openai` when the id is already the model. The
+plane checks the line the same way it checks the file's, so a provider it has never heard of comes
+back saying which ones it has. `⌫` takes back one that was added here, after a `y`.
+
+What the file declared is on that list to be read and not to be changed: `from the file` is a row
+this screen will not shadow and will not drop, and it says so rather than refusing after the fact.
+Everything given here lives in a store beside `config.yaml` and never in it, so the operator's file
+stays the operator's — what a redeploy brings back is what was written there, and what was typed
+here survives the redeploy on its own.
+
+This is the one screen where the keyboard grants rather than pays, and that is deliberate rather
+than an oversight in the rule. Reaching it means holding the plane's control socket, which is the
+whole of being the operator here; nothing on it is addressed to an agent, and no agent can reach it.
+An agent still gets what the grant list says and not a byte more — a model added here widens that
+list because somebody with the socket said so, which is the same authority `config.yaml` has and the
+same one a `docker compose up` has.
 
 ## What an agent may spend
 

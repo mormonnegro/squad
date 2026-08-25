@@ -129,7 +129,7 @@ $ curl -fsSL ${INSTALL} | sh
 								The agent repository holds a manifest, but a manifest is a request. Grants live in
 								the control plane's config file, which the agent cannot write.
 							</p>
-							<p>A keyboard may name an agent. A keyboard may never grant one.</p>
+							<p>An agent may ask for a capability. Nothing it says can give it one.</p>
 						</div>
 					</div>
 				</div>

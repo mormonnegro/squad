@@ -14,8 +14,11 @@ stateDir: /var/lib/agent-dive
 # What stops one agent thinking expensively is its ceiling, which is per agent and below.
 #
 # A model this plane holds no key for is listed and refused at the proxy until it does. The setup
-# screen in `agent` says which of these are waiting on one, and takes it without touching this file:
-# a key fills a grant that is already here, which is why the keyboard may give one at all.
+# screen in `agent` says which of these are waiting on one, and takes it without touching this file.
+#
+# That screen adds models too, keeping them beside this file rather than in it. So this list is
+# where a model goes to survive a redeploy, and the console is where one goes to hold on the next
+# turn — and a model written here is one the console will read and refuse to shadow or drop.
 models:
   # The id is the name to pick it by, and doubles as the model when it is already the model's name.
   - id: deepseek-v4-flash
@@ -40,7 +43,7 @@ models:
 
 # What every agent starts from, and the whole of what an agent made later is. `agent chat <name>`
 # offers to create a name no agent answers to, and this is the operator's answer, given in advance,
-# to what that agent may reach — because the one thing the keyboard may never do is grant.
+# to what that agent may reach — because nothing said to an agent in a chat pane may widen it.
 #
 # An agent's own block adds to these rather than replacing them; a grant it declares with the same
 # id wins, which is how one agent is narrowed without narrowing the rest.
