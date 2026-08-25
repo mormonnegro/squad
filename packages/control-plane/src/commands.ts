@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { LoginStatus, Reachability } from "@agent-dive/proxy";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
+import { type Served, servedAt, unservable } from "./ports.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -48,6 +49,24 @@ export interface CommandContext {
 	setModel(id: string): Promise<void>;
 	/** Every server the plane knows of, and which of them this agent has been given. */
 	mcp(): Promise<{ readonly shelf: readonly NamedServer[]; readonly held: readonly NamedServer[] }>;
+	/** The ports this agent has open, and the ones another agent's port had to make way for. */
+	served(): Promise<{
+		readonly mine: readonly Served[];
+		readonly theirs: ReadonlyMap<number, string>;
+	}>;
+	/**
+	 * Opens one of its ports where the operator is, and answers with where that turned out to be.
+	 *
+	 * Allowed for the reason a model is: it widens nothing. Every other command guarded here is about
+	 * what the agent can reach outwards, and this is the opposite direction — a door from the
+	 * operator's own machine into the sandbox, opened by the console they are sitting at, reaching
+	 * only loopback inside the box. Whoever can ask for this could already run `!` in there.
+	 */
+	serve(port: number): Promise<Served>;
+	/** Closes one. Answers whether there was one to close. */
+	unserve(port: number): Promise<boolean>;
+	/** Whether anything is listening on that port inside the sandbox, asked of the sandbox. */
+	listening(port: number): Promise<boolean>;
 	/**
 	 * Whether this agent may reach a host at all. Asked, never set.
 	 *
@@ -118,6 +137,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/mcp",
 		takes: "[<name>|add …|login …]",
 		does: "the MCP servers it has, and the shelf to add from",
+	},
+	{
+		name: "/serve",
+		takes: "[<port>|stop <port>]",
+		does: "open a port inside it on the machine you are sitting at",
 	},
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{ name: "/help", takes: "", does: "every command there is" },
@@ -407,6 +431,92 @@ async function models(words: readonly string[], context: CommandContext): Promis
 	return `${moved}\n\nNothing here holds ${found.keyEnv} yet, so turns on it will be refused at the proxy until this plane has it.`;
 }
 
+/** Where a served port is reachable from, said once wherever the links are. */
+const ONLY_HERE = [
+	"A console is what opens these, on the machine it is running on. They are reachable from",
+	"there and from nowhere else: nothing is published off the server, and the sandbox network",
+	"is still as unrouted as it was.",
+].join("\n");
+
+/**
+ * What an agent is serving, and where each of it comes out on the operator's own machine.
+ *
+ * The one command here that opens something rather than describing it, and the direction is what
+ * makes it safe to be one: everything else guarded in this file is about what an agent can reach
+ * outwards, and this reaches inwards, from the keyboard to the box, over a socket whoever typed it
+ * was already holding. What it saves is the alternative — publishing a port off the sandbox, which
+ * would need a routable network and would hand the agent back the internet route it exists without.
+ */
+async function serve(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", ...rest] = words;
+
+	if (first === "" || first === "list") return serving(context);
+
+	if (first === "stop" || first === "close") {
+		const port = Number(rest[0] ?? "");
+		if (!Number.isInteger(port)) return `Which port? /serve stop 3000 closes that one.`;
+		if (!(await context.unserve(port))) return `${id} was not serving ${port}.`;
+		// Said because the two halves are in different places and only one of them just changed: the
+		// server inside the box is the agent's and is still running, and an operator who read this as
+		// "stopped" would go looking for a process that is exactly where they left it.
+		return `${id} is not serving ${port} any more, so nothing opens it here. Whatever is listening on ${port} inside the sandbox is still listening — this was only the way in to it.`;
+	}
+
+	const port = Number(first.replace(/^:/, ""));
+	const complaint = unservable(port);
+	if (complaint !== undefined) return complaint;
+
+	const { theirs } = await context.served();
+	const opened = await context.serve(port);
+	const moved =
+		opened.at === port
+			? ""
+			: ` — ${port} is ${theirs.get(port) ?? "another agent"}'s here, so this one is on ${opened.at}.`;
+
+	return [
+		`${id} is serving ${port}${moved}`,
+		"",
+		`  ${servedAt(id, opened)}`,
+		"",
+		(await context.listening(port))
+			? `Something is listening on ${port} in there, so that link has something behind it.`
+			: `Nothing is listening on ${port} inside the sandbox yet. The link waits: it starts working the moment something binds that port in there, with nothing to type here.`,
+		"",
+		ONLY_HERE,
+	].join("\n");
+}
+
+async function serving(context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const { mine, theirs } = await context.served();
+	if (mine.length === 0) {
+		return [
+			`${id} is serving nothing. /serve 3000 opens a port inside it on the machine you are`,
+			"sitting at, whether or not anything is listening on it in there yet.",
+			"",
+			ONLY_HERE,
+		].join("\n");
+	}
+	return [
+		`${id} is serving:`,
+		"",
+		laidOut(
+			mine.map(
+				(one) =>
+					[
+						`  ${one.port}`,
+						`${servedAt(id, one)}${one.at === one.port ? "" : `   (${one.port} is ${theirs.get(one.port) ?? "another agent"}'s here)`}`,
+					] as const,
+			),
+		),
+		"",
+		ONLY_HERE,
+		"",
+		`/serve stop ${mine[0]?.port} closes one.`,
+	].join("\n");
+}
+
 /** The words `/mcp` reads as instructions, and therefore not names a server may be given. */
 const VERBS = ["add", "drop", "forget", "login", "logout"];
 
@@ -672,6 +782,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	// joining those back into one string only to split them again would lose where each of them ended.
 	if (name === "mcp") return mcp(rest, context);
 	if (name === "model") return models(rest, context);
+	if (name === "serve") return serve(rest, context);
 	if (name === "delete") return remove(rest, context);
 
 	if (name === "limit") {
@@ -712,7 +823,9 @@ export interface AgentAsking {
  * data and is never operator trust, but an agent reading it is still an agent that can be argued
  * with — so nothing here may widen what it can reach or what it can spend. Connecting a server
  * widens nothing, which is the whole point of a shelf that grants nothing; a login widens exactly as
- * much as a person at a consent screen decides it does, with the host name in front of them.
+ * much as a person at a consent screen decides it does, with the host name in front of them. Serving
+ * a port is the same test read the other way round: it opens a way in rather than a way out, from a
+ * console whose operator could already have run anything they liked inside that sandbox.
  *
  * A refusal is not a dead end, which is the other half of why this is a list and not a ban. It
  * prints the line the operator would type, in their console, under the reason the agent wanted it —

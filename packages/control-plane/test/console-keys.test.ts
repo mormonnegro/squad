@@ -48,6 +48,7 @@ const listed = (id: string): AgentSummary => ({
 	spentUsd: 0,
 	limitUsd: undefined,
 	model: undefined,
+	served: [],
 });
 
 /**

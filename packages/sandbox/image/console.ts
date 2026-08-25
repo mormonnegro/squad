@@ -56,6 +56,12 @@ export default function (pi: ExtensionAPI): void {
 			"  /mcp drop <name>          give one up",
 			"  /model [<name>]           what you think with, and what else you could",
 			"  /limit <amount>           lower what you may spend in a day",
+			"  /serve <port>             put a port of yours on your operator's own machine",
+			"  /serve stop <port>        take it back down",
+			"  /serve                    what of yours is open, and at which addresses",
+			"",
+			"Nothing you run is reachable from outside this sandbox unless you ask for /serve. Bind your",
+			"server to 127.0.0.1 and then ask, and your operator gets a link they can open in a browser.",
 			"",
 			"What you cannot: anything that widens what you may reach or spend, and anything that",
 			"destroys. Those stay with your operator, and asking for one prints the exact line they",
@@ -70,6 +76,7 @@ export default function (pi: ExtensionAPI): void {
 			"To connect to a server that needs an account, ask for /mcp add and /mcp login in the same turn: the second is what puts a consent screen in front of the operator.",
 			"The answer arrives at the operator's console rather than in your turn, so pair it with wake_me when you need to act on what it said.",
 			"A command that widens your reach or your spending will be refused, and the refusal tells the operator what to type. That is the end of it: do not ask again.",
+			"When you build something with a page — a server, a frontend, a dashboard — bind it to 127.0.0.1, leave it running, and ask for /serve on its port. A link is worth more than a description of what the operator would see.",
 		],
 		parameters: Type.Object({
 			line: Type.String({

@@ -13,6 +13,7 @@ const summary = (id: string): AgentSummary => ({
 	spentUsd: 0,
 	limitUsd: undefined,
 	model: undefined,
+	served: [],
 });
 
 const plane = (...ids: string[]) => ({ agents: async () => ids.map(summary) });

@@ -1,6 +1,7 @@
-import { Duplex } from "node:stream";
-import { DockerEngine, FrameSplitter, type HijackedStream, STDERR } from "@agent-dive/sandbox";
+import type { Duplex } from "node:stream";
+import { DockerEngine } from "@agent-dive/sandbox";
 import { controlSocketPath } from "./control-server.ts";
+import { ExecStream } from "./exec-stream.ts";
 
 /**
  * Marks the container running a control plane, and says which state directory it serves.
@@ -72,7 +73,7 @@ export async function relayToPlane(stateDir: string, engine = new DockerEngine()
 		Detach: false,
 		Tty: false,
 	});
-	return new RelayStream(stream);
+	return new ExecStream(stream);
 }
 
 async function findPlaneContainer(stateDir: string, engine: DockerEngine): Promise<string> {
@@ -96,67 +97,4 @@ async function findPlaneContainer(stateDir: string, engine: DockerEngine): Promi
 
 function label(stateDir: string): string {
 	return `${CONTROL_PLANE_LABEL}=${stateDir}`;
-}
-
-/** The exec stream, with the daemon's framing removed in the reading direction only. */
-class RelayStream extends Duplex {
-	readonly #stream: HijackedStream;
-	readonly #splitter = new FrameSplitter();
-
-	#done = false;
-
-	constructor(stream: HijackedStream) {
-		super();
-		this.#stream = stream;
-
-		stream.socket.on("data", (chunk: Buffer) => this.#consume(chunk));
-		stream.socket.once("error", (error: Error) => this.#fail(error));
-		stream.socket.once("close", () => this.#finish());
-		if (stream.head.byteLength > 0) this.#consume(stream.head);
-	}
-
-	override _read(): void {}
-
-	/** Ends the relay's stdin, so it exits and the daemon lets go of the connection. */
-	override _final(callback: (error?: Error | null) => void): void {
-		this.#stream.socket.end(() => callback());
-	}
-
-	override _write(
-		chunk: Buffer,
-		_encoding: string,
-		callback: (error?: Error | null) => void,
-	): void {
-		// Only the reply direction is multiplexed; the relay reads its stdin unframed.
-		this.#stream.socket.write(chunk, callback);
-	}
-
-	override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
-		this.#stream.socket.destroy();
-		callback(error);
-	}
-
-	#consume(chunk: Buffer): void {
-		if (this.#done) return;
-		for (const frame of this.#splitter.push(chunk)) {
-			if (frame.stream === STDERR) this.#fail(new Error(frame.payload.toString("utf8")));
-			else if (frame.payload.byteLength > 0) this.push(frame.payload);
-		}
-	}
-
-	#fail(error: Error): void {
-		if (this.#done) return;
-		this.#done = true;
-		this.destroy(error);
-	}
-
-	/**
-	 * The relay exits when its socket closes, and the exec stream closes behind it. Whoever hung up
-	 * first, an ended conversation is not a failure — the caller already has its answer.
-	 */
-	#finish(): void {
-		if (this.#done) return;
-		this.#done = true;
-		this.push(null);
-	}
 }

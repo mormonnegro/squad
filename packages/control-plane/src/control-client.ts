@@ -14,6 +14,41 @@ export class ControlError extends Error {
 }
 
 /**
+ * Everything read off a stream up to and including its first newline, leaving it paused.
+ *
+ * Paused, and not one byte further: what follows the newline is somebody else's, and a reader still
+ * flowing would deliver it to a listener that has already gone.
+ */
+function firstLine(stream: Duplex): Promise<Buffer> {
+	return new Promise<Buffer>((resolve, reject) => {
+		let buffer = Buffer.alloc(0);
+		const done = (): void => {
+			stream.off("data", onData);
+			stream.off("error", onError);
+			stream.off("end", onEnd);
+		};
+		const onData = (chunk: Buffer): void => {
+			buffer = Buffer.concat([buffer, chunk]);
+			if (buffer.indexOf(0x0a) === -1) return;
+			done();
+			stream.pause();
+			resolve(buffer);
+		};
+		const onError = (error: Error): void => {
+			done();
+			reject(error);
+		};
+		const onEnd = (): void => {
+			done();
+			reject(new Error("the plane closed the connection without answering"));
+		};
+		stream.on("data", onData);
+		stream.once("error", onError);
+		stream.once("end", onEnd);
+	});
+}
+
+/**
  * Talks to a running control plane over its unix socket.
  *
  * Requests are numbered because `logs` streams: responses for it keep arriving while another
@@ -174,6 +209,38 @@ export class ControlClient {
 
 	async remove(agentId: string, purge: boolean): Promise<void> {
 		await this.#once({ op: "remove", agentId, purge });
+	}
+
+	/**
+	 * A byte channel to a port inside an agent's sandbox, on a connection of its own.
+	 *
+	 * Its own because the rest of this class multiplexes lines of JSON over one socket, and what
+	 * comes down a forwarded port is neither lines nor JSON. So the request is written, the one
+	 * answer is read, and everything after it on that connection is the stream — which also means a
+	 * browser opening six connections at once costs six sockets and blocks none of the others.
+	 */
+	async forward(agentId: string, port: number): Promise<Duplex> {
+		const socket = await this.#open();
+		let answered: Buffer;
+		try {
+			socket.write(`${JSON.stringify({ id: "forward", op: "forward", agentId, port })}\n`);
+			answered = await firstLine(socket);
+		} catch (error) {
+			socket.destroy();
+			throw new ControlError((error as Error).message);
+		}
+
+		const newline = answered.indexOf(0x0a);
+		const response = JSON.parse(answered.subarray(0, newline).toString("utf8")) as ControlResponse;
+		if ("ok" in response && !response.ok) {
+			socket.destroy();
+			throw new ControlError(response.error);
+		}
+		// Anything that came in behind the answer is already the stream, and is put back so that the
+		// first thing read off this is the first byte the port sent rather than the second.
+		const rest = answered.subarray(newline + 1);
+		if (rest.byteLength > 0) socket.unshift(rest);
+		return socket;
 	}
 
 	/** Streams until the connection is closed. */

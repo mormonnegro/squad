@@ -6,6 +6,7 @@ import wrapAnsi from "wrap-ansi";
 import { type Command, completions, isCommand, isShell, money } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
+import { LocalDoors, wanted } from "./doors.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
 import type { ModelOffer, ModelStanding, ProviderStanding } from "./models.ts";
@@ -1111,6 +1112,15 @@ export function App({
 	const [cursor, setCursor] = useState(0);
 	const [panel, setPanel] = useState<Panel>("chat");
 	const [lines, setLines] = useState<readonly string[]>([]);
+	// One for the life of the console, because both the plane's stream and the ports this console
+	// opens write into it and the folding it does is per agent across everything it has been told.
+	const [feed] = useState(
+		() =>
+			new LogFeed(
+				(line) => setLines((prev) => [...prev, line.replace(/\n$/, "")].slice(-REMEMBERED_LINES)),
+				{ color: true },
+			),
+	);
 	const [talk, setTalk] = useState<Talk>(conversations);
 	// An answer being written, which is not in the transcript yet because it is not finished. Kept
 	// apart from the conversation so that when it is finished it replaces itself rather than repeats.
@@ -1222,10 +1232,6 @@ export function App({
 	// record of this console's own questions: a turn a schedule or a webhook started arrives here
 	// exactly like one typed in, because nothing about it went through the prompt.
 	useEffect(() => {
-		const feed = new LogFeed(
-			(line) => setLines((prev) => [...prev, line.replace(/\n$/, "")].slice(-REMEMBERED_LINES)),
-			{ color: true },
-		);
 		// One per agent, held open for the length of an answer: markdown cannot be rendered a delta at
 		// a time without somewhere to keep the half-finished line.
 		const writers = new Map<string, MarkdownStream>();
@@ -1276,7 +1282,7 @@ export function App({
 				openInBrowser(event.url);
 			}
 		});
-	}, [client]);
+	}, [client, feed]);
 
 	// Only while something is thinking, or while an agent is being built. A console redrawing ten
 	// times a second at rest is one that keeps a laptop awake for nothing.
@@ -1297,6 +1303,25 @@ export function App({
 		}, 2000);
 		return () => clearInterval(timer);
 	}, [client]);
+
+	// The operator's end of `/serve`. The plane records which ports should be reachable and this opens
+	// them, here, because this is the machine with the browser on it — an agent running on a server
+	// somewhere gets a link that works on a laptop without a single port being opened on the server.
+	const [doors] = useState(
+		() =>
+			new LocalDoors(
+				(agentId, port) => client.forward(agentId, port),
+				(agentId, detail, failed) => feed.note(agentId, "serve", detail, failed),
+			),
+	);
+	// On every answer to `agents` rather than on a change, because the answer is the only notice this
+	// gets: `/serve` can be typed by an agent mid-turn, with nobody at the keyboard. Settling is a set
+	// difference against what is already bound, so the ninety-nine times out of a hundred it has
+	// nothing to do it does nothing.
+	useEffect(() => {
+		void doors.reconcile(wanted(agents));
+	}, [doors, agents]);
+	useEffect(() => () => doors.close(), [doors]);
 
 	const readSetup = useCallback(async (): Promise<void> => {
 		await Promise.all([client.providers(), client.models()])

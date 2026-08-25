@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Duplex } from "node:stream";
 import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
 import { type Channel, ChannelRouter, type Hook, WebhookChannel } from "@agent-dive/channels";
 import { EventBus, FileEventStore, isOwnNote } from "@agent-dive/events";
@@ -33,6 +34,7 @@ import {
 	shellOutput,
 	shellScript,
 } from "./commands.ts";
+import { ExecStream } from "./exec-stream.ts";
 import { ProviderKeys } from "./keys.ts";
 import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
 import {
@@ -53,6 +55,8 @@ import {
 } from "./models.ts";
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
+import { RELAY_PATH } from "./pi-session.ts";
+import { type Served, ServedPorts } from "./ports.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
 import { overheard, Transcript, type Utterance } from "./transcript.ts";
@@ -207,6 +211,15 @@ export interface AgentSummary {
 	 * also the wrong answer, since a console can move an agent onto another one.
 	 */
 	readonly model: string | undefined;
+	/**
+	 * The ports inside its sandbox that are open where the operator is, and where each comes out.
+	 *
+	 * On the summary rather than asked for separately because the console is what makes them true: it
+	 * reads this list, binds what is on it and lets go of what is not, so a port opened at another
+	 * console — or by the agent itself, at the end of a turn — is open here within the same two
+	 * seconds as everything else on this row.
+	 */
+	readonly served: readonly Served[];
 }
 
 /**
@@ -229,6 +242,14 @@ class SelfChannel implements Channel {
 
 	async send(): Promise<void> {}
 }
+
+/**
+ * How long a forwarded connection waits for something to be listening on the port it was opened for.
+ *
+ * Long enough to ride out a dev server restarting under a page being reloaded, short enough that a
+ * link to a port with nothing behind it fails while the person who clicked it is still looking.
+ */
+const FORWARD_CONNECT_MS = 3000;
 
 const DEFAULT_IMAGE = "agent-dive/sandbox:dev";
 const DEFAULT_NETWORK = "agent-dive-egress";
@@ -274,6 +295,14 @@ export class ControlPlane {
 	readonly #transcript: Transcript;
 	readonly #runners = new Map<string, TurnRunner>();
 	readonly #spend: SpendLedger;
+	/**
+	 * Which ports each agent has open on whatever machine a console is running on.
+	 *
+	 * Kept by the plane rather than by the console because the console is not the only thing that asks
+	 * for one — an agent that has just started a dev server asks too, at the end of a turn nobody was
+	 * watching — and because two consoles looking into the same plane should find the same links.
+	 */
+	readonly #served: ServedPorts;
 	/** The ones the operator's file declared. The console adds to these; it never rewrites them. */
 	readonly #declaredModels: readonly Model[];
 	readonly #addedModels: AddedModels;
@@ -326,6 +355,7 @@ export class ControlPlane {
 		this.#deleted = new AgentNameStore(join(this.#stateDir, "deleted.json"), "deletedAt");
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
+		this.#served = new ServedPorts(join(this.#stateDir, "served.json"));
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
@@ -425,6 +455,7 @@ export class ControlPlane {
 			wakeAt: schedules.find((schedule) => schedule.createdBy === "agent")?.nextRunAt,
 			created: this.#createdIds.has(agent.id),
 			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
+			served: await this.#served.of(agent.id),
 		};
 	}
 
@@ -494,6 +525,9 @@ export class ControlPlane {
 			else await this.#deleted.add(agentId);
 			await this.#spend.forget(agentId);
 			await this.#choices.forget(agentId);
+			// The ports go with the container they pointed into. Left behind, the next agent to take
+			// this name would inherit links to servers it never started.
+			await this.#served.forget(agentId);
 			// The conversation goes with the name. What was said to this agent is about the repository
 			// that just went, and keeping it would hand a conversation to whoever gets the name next.
 			await this.#transcript.forget(agentId);
@@ -926,6 +960,20 @@ export class ControlPlane {
 				shelf: await this.#mcp.servers(),
 				held: await this.#mcp.attached(agentId),
 			}),
+			served: async () => {
+				const all = await this.#served.all();
+				// Every port another agent is already coming out on, so an answer about a number that
+				// moved can say whose it was rather than that it was somebody's.
+				const theirs = new Map<number, string>();
+				for (const [id, ports] of Object.entries(all)) {
+					if (id === agentId) continue;
+					for (const one of ports) theirs.set(one.at, id);
+				}
+				return { mine: all[agentId] ?? [], theirs };
+			},
+			serve: (port) => this.#served.open(agentId, port),
+			unserve: (port) => this.#served.close(agentId, port),
+			listening: (port) => this.#listening(agentId, port),
 			// Asked of the same set the proxy will ask, so what the operator is told here is what the
 			// agent will actually meet — rather than a second opinion that can be right while the wire
 			// says otherwise.
@@ -1054,6 +1102,60 @@ export class ControlPlane {
 			// what was typed: a stopped sandbox and a command that exits 1 are the same kind of news.
 			return (error as Error).message;
 		}
+	}
+
+	/**
+	 * Whether anything is listening on a port inside the sandbox, asked from inside the sandbox.
+	 *
+	 * The port is handed over as an argument rather than written into the script, so that nothing
+	 * about a number becomes a line of the program that dials it.
+	 */
+	async #listening(agentId: string, port: number): Promise<boolean> {
+		const probe = [
+			'const s = require("node:net").connect({ port: Number(process.argv[1]), host: "127.0.0.1" });',
+			"s.setTimeout(1000);",
+			's.on("connect", () => { s.destroy(); process.exit(0); });',
+			's.on("error", () => process.exit(1));',
+			's.on("timeout", () => process.exit(1));',
+		].join("\n");
+		const probed = await this.sandboxes
+			.exec(agentId, ["node", "-e", probe, String(port)])
+			.catch(() => undefined);
+		return probed?.exitCode === 0;
+	}
+
+	/**
+	 * Opens a byte channel to a port inside an agent's sandbox, for the console to put a link on.
+	 *
+	 * An exec stream rather than a dial, for the same reason the pi session is one: the sandbox
+	 * network is internal and a plane on the host cannot reach it over TCP, and giving it a routable
+	 * one would hand the agent back the way out the sandbox exists to remove. This needs no port
+	 * published anywhere and behaves the same whether the plane runs in a container or beside one.
+	 *
+	 * It goes to loopback inside the box, which is the part worth having: sandboxes share a network
+	 * and can dial each other, so a server on 0.0.0.0 is one every other agent can reach — and a
+	 * server on 127.0.0.1 is one only this reaches. The operator gets the link either way.
+	 *
+	 * Refused for a port nobody asked to serve. Not a boundary — whoever holds this socket can run
+	 * anything they like in there — but the list is what the console binds and what the conversation
+	 * says, and a way in that answered for ports on neither would make both of them fiction.
+	 */
+	async forward(agentId: string, port: number): Promise<Duplex> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		if (!(await this.#served.of(agentId)).some((one) => one.port === port)) {
+			throw new Error(`${agentId} is not serving ${port}. /serve ${port} opens it.`);
+		}
+		// Long enough to ride out a dev server restarting under a page that is being reloaded, short
+		// enough that a port with nothing behind it fails while the person is still looking at it.
+		const stream = await this.sandboxes.attach(agentId, [
+			"node",
+			RELAY_PATH,
+			String(port),
+			String(FORWARD_CONNECT_MS),
+		]);
+		return new ExecStream(stream);
 	}
 
 	/**

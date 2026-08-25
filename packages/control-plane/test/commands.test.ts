@@ -14,6 +14,7 @@ import {
 } from "../src/commands.ts";
 import type { McpServer } from "../src/mcp.ts";
 import type { Model } from "../src/models.ts";
+import type { Served } from "../src/ports.ts";
 
 /** Where a started login says it is listening, which is the address a paste has to come back to. */
 const WAITING_AT = "http://localhost:54321/callback";
@@ -41,6 +42,12 @@ function context(
 		using?: string;
 		/** Models the plane holds no key for: configured, and still not something to think with. */
 		keyless?: readonly string[];
+		/** Ports this agent already has open, as an earlier `/serve` would have left them. */
+		serving?: readonly Served[];
+		/** Where another agent already comes out, which is what makes a number give way. */
+		takenBy?: ReadonlyMap<number, string>;
+		/** Ports something is actually listening on inside the sandbox. */
+		bound?: readonly number[];
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -55,6 +62,8 @@ function context(
 	const pasted: { name: string; redirected: string }[] = [];
 	/** Every deletion that got as far as the plane, which is the half no answer can show. */
 	const removed: string[] = [];
+	const serving = [...(start.serving ?? [])];
+	const takenBy = start.takenBy ?? new Map<number, string>();
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
@@ -70,6 +79,7 @@ function context(
 		started,
 		pasted,
 		removed,
+		serving,
 		context: {
 			agent: { id: start.agentId ?? "scout", created: start.created ?? true },
 			remove: async () => {
@@ -93,6 +103,24 @@ function context(
 				shelf: [...shelf.keys()].flatMap(named),
 				held: [...held].flatMap(named),
 			}),
+			served: async () => ({ mine: [...serving], theirs: takenBy }),
+			serve: async (port: number) => {
+				const already = serving.find((one) => one.port === port);
+				if (already !== undefined) return already;
+				// The same rule the store follows: a number another agent already came out on gives way.
+				let at = port;
+				while (takenBy.has(at) || serving.some((one) => one.at === at)) at += 1;
+				const opened = { port, at };
+				serving.push(opened);
+				return opened;
+			},
+			unserve: async (port: number) => {
+				const at = serving.findIndex((one) => one.port === port);
+				if (at === -1) return false;
+				serving.splice(at, 1);
+				return true;
+			},
+			listening: async (port: number) => (start.bound ?? []).includes(port),
 			granted: async (host: string) => (start.grants ?? []).includes(host),
 			addServer: async (name: string, server: McpServer) => {
 				shelf.set(name, server);

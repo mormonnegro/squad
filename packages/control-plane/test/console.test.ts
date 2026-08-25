@@ -295,6 +295,7 @@ describe("Agents", () => {
 		spentUsd: 0,
 		limitUsd: undefined,
 		model: undefined,
+		served: [],
 	});
 	const three = [listed("scout", true), listed("scribe", true), listed("sleeper", false)];
 
@@ -544,6 +545,7 @@ describe("standing", () => {
 		spentUsd: 0.42,
 		limitUsd: 5,
 		model: "deepseek-v4-flash",
+		served: [],
 	};
 
 	it("says what it thinks with and what it has spent against its ceiling", () => {

@@ -65,6 +65,18 @@ export class LogFeed {
 		else this.#turn(event.agentId, event.result);
 	}
 
+	/**
+	 * Something the console itself did, in the columns everything the plane did is already in.
+	 *
+	 * The ports a console opens are the one part of this the plane never sees: it records what should
+	 * be reachable, and whether a listener came up on somebody's laptop is news that only exists on
+	 * that laptop. It still belongs in the same feed — an operator looking for why a link will not
+	 * open should not have to know which half of the system to look in.
+	 */
+	note(who: string, action: string, detail: string, failed = false): void {
+		this.#line(now(), who, action, failed ? FAILED : "", detail);
+	}
+
 	/** How long it ran leads, because what it printed can be three hundred characters of build log. */
 	#step(agentId: string, step: AgentStep): void {
 		if (step.failed !== true) {

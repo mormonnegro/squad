@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, unlink } from "node:fs/promises";
 import net from "node:net";
 import { join } from "node:path";
+import type { Duplex } from "node:stream";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
@@ -59,7 +60,21 @@ export type ControlRequest =
 	| { readonly id: string; readonly op: "add-model"; readonly spec: ModelSpec }
 	| { readonly id: string; readonly op: "drop-model"; readonly modelId: string }
 	/** What every provider this plane holds a key for says it will answer to. */
-	| { readonly id: string; readonly op: "offers" };
+	| { readonly id: string; readonly op: "offers" }
+	/**
+	 * Takes this connection over and turns the rest of it into bytes to a port inside a sandbox.
+	 *
+	 * The one request that does not answer and go back to waiting. Everything else here is a line of
+	 * JSON, and what a browser sends down a forwarded port is not lines and not JSON — so after the
+	 * `ok` this connection stops being a control socket and becomes the wire. A console opens a fresh
+	 * one for each connection it is forwarding, which is what keeps the control socket itself free.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "forward";
+			readonly agentId: string;
+			readonly port: number;
+	  };
 
 export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly agents: readonly AgentSummary[] }
@@ -173,27 +188,77 @@ export class ControlServer {
 		socket.once("close", () => this.#sockets.delete(socket));
 
 		let buffer = "";
-		socket.on("data", (chunk) => {
+		const onData = (chunk: Buffer): void => {
 			buffer += chunk.toString("utf8");
 			for (;;) {
 				const newline = buffer.indexOf("\n");
 				if (newline === -1) break;
 				const line = buffer.slice(0, newline);
 				buffer = buffer.slice(newline + 1);
-				if (line.trim().length > 0) void this.#dispatch(socket, line);
+				if (line.trim().length === 0) continue;
+
+				let request: ControlRequest;
+				try {
+					request = JSON.parse(line) as ControlRequest;
+				} catch {
+					this.#write(socket, { id: "?", ok: false, error: "malformed request" });
+					continue;
+				}
+
+				if (request.op === "forward") {
+					// This connection stops being a control socket here. The line reader comes off it
+					// first, and whatever is already in the buffer goes with it: those bytes arrived after
+					// the request and belong to the stream, and reading them as a request would lose them.
+					socket.off("data", onData);
+					const head = Buffer.from(buffer, "utf8");
+					buffer = "";
+					void this.#forward(socket, request, head);
+					return;
+				}
+				void this.#dispatch(socket, request);
 			}
-		});
+		};
+		socket.on("data", onData);
 	}
 
-	async #dispatch(socket: net.Socket, line: string): Promise<void> {
-		let request: ControlRequest;
+	/**
+	 * Hands the rest of this connection to a port inside a sandbox.
+	 *
+	 * The `ok` goes out only once the exec is attached, so a console that has been told the forward is
+	 * open is one whose next byte has somewhere to land. A failure is answered as a failure and the
+	 * connection ends: there is nothing to fall back to, and a socket left open would be a browser
+	 * waiting on a tab that is never going to load.
+	 */
+	async #forward(
+		socket: net.Socket,
+		request: Extract<ControlRequest, { op: "forward" }>,
+		head: Buffer,
+	): Promise<void> {
+		let stream: Duplex;
 		try {
-			request = JSON.parse(line) as ControlRequest;
-		} catch {
-			this.#write(socket, { id: "?", ok: false, error: "malformed request" });
+			stream = await this.#plane.forward(request.agentId, request.port);
+		} catch (error) {
+			this.#write(socket, {
+				id: request.id,
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			socket.end();
 			return;
 		}
 
+		this.#write(socket, { id: request.id, ok: true, text: String(request.port) });
+		if (head.byteLength > 0) stream.write(head);
+		socket.pipe(stream);
+		stream.pipe(socket);
+		// Either end going is the end of both. A half-open forward is a browser holding a connection
+		// to a server that has already gone, and a relay left running in a sandbox nobody is reading.
+		stream.on("error", () => socket.destroy());
+		socket.on("error", () => stream.destroy());
+		socket.once("close", () => stream.destroy());
+	}
+
+	async #dispatch(socket: net.Socket, request: ControlRequest): Promise<void> {
 		try {
 			if (request.op === "agents") {
 				this.#write(socket, { id: request.id, ok: true, agents: await this.#plane.agents() });
