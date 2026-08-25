@@ -719,13 +719,57 @@ capability away. `/limit off` means no ceiling and not "forget I said anything" 
 does not come back, since reinstating the ceiling somebody was in the act of removing is a surprise
 they would find out about by hitting it.
 
+## What an agent may reach
+
+Two questions get asked about every request, and the mistake is answering them together. *What may
+this agent reach* and *whose credential goes with it* have very different blast radii, and the whole
+of what this proxy is for lives in the second one.
+
+The reach is open by default:
+
+```yaml
+defaults:
+  grants:
+    - id: web
+      host: "*"
+      injection:
+        kind: none
+```
+
+Because an agent asked for a hello-world page needs `npm install` before it needs anything else, and
+a registry is never one host — npm is a registry and a CDN, PyPI is an index and a file server, a
+`git clone` is three names before it is a checkout. A list of them is a list that is wrong by one,
+and wrong by one is worse than either end: it looks like it works until the afternoon it doesn't, and
+what the agent does then is not raise its hand. It reads the deny as the internet being down and
+writes the page it was asked for as a paragraph about not being able to write it.
+
+`kind: none` is the whole of why that line is safe to have written. Nothing of yours is attached to
+anything reached through it, and a grant on `*` that carried a credential is refused where the config
+is read rather than discovered later:
+
+```
+Invalid configuration:
+  - defaults.grants[0] is host "*" with a bearer credential, which would put that secret on
+    every server the agent reaches. Name the host, or use injection: { kind: none }
+```
+
+The road may be open. The keys are given to somewhere by name — and a named host always wins the
+request over the open grant, so the model's key goes to the model and nowhere else. Every request
+still crosses the proxy, is still matched, and still lands in the audit log with the host and path it
+went to. Delete the `web` grant and the plane is deny-by-default again, host by host, exactly as it
+was.
+
+What this does not claim: an agent that can run code in a sandbox and reach the internet can send
+what it read to somewhere you did not choose. That was already true of any grant broad enough to be
+useful, and it is why the boundary that carries weight here is the one around the secrets rather than
+the one around the addresses.
+
 ## An agent searching the web
 
-Searching is something the agent asks for rather than something it does, and that is the sandbox
-showing through rather than a preference. Every host an agent reaches is a grant somebody wrote, and
-"the pages a search will turn up" is not a list anybody can write in advance — so an agent that
-fetched what it found would need the whole internet granted, which is the same as granting nothing
-at all and meaning it.
+Searching is still something the agent asks for rather than something it does, and reaching the web
+is not what makes the difference. "The pages a search will turn up" is a job — fetch ten results,
+read them, decide which answered the question — and an agent doing it by hand spends its whole
+context on the reading before it gets to the thinking.
 
 So the searching and the reading happen on the far side of one granted host. The `web_search` tool
 is a pi extension shipped in the sandbox image, like `wake_me`, and it posts the question to a

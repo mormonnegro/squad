@@ -12,6 +12,7 @@ export {
 } from "./ca.ts";
 export { type AgentRegistration, StaticAgentDirectory } from "./directory.ts";
 export {
+	ANY_HOST,
 	type DenyReason,
 	type Grant,
 	type GrantDecision,

@@ -164,3 +164,39 @@ describe("GrantSet specificity", () => {
 		expect(decision.allow && decision.grant.id).toBe("broad");
 	});
 });
+
+describe("a grant on every host", () => {
+	const web: Grant = { id: "web", host: "*", injection: { kind: "none" } };
+	const model: Grant = { id: "model", host: "api.deepseek.com", injection: bearer("KEY") };
+
+	it("is a way to anywhere that was not named", () => {
+		const grants = new GrantSet([web]);
+		expect(grants.allowsHost("registry.npmjs.org")).toBe(true);
+		const decision = grants.resolve({ host: "registry.npmjs.org", method: "GET", path: "/next" });
+		expect(decision.allow && decision.grant.id).toBe("web");
+	});
+
+	/**
+	 * The failure the host had to enter specificity for. Both of these sit at `/`, and the open one is
+	 * written first because an operator's own grants come before the generated ones — so a tie decided
+	 * by position hands every model call to the grant carrying no key. The agent stops being able to
+	 * think, and every line of the audit log says the request was allowed.
+	 */
+	it("never takes a request off a host that was named", () => {
+		for (const grants of [new GrantSet([web, model]), new GrantSet([model, web])]) {
+			const decision = grants.resolve({
+				host: "api.deepseek.com",
+				method: "POST",
+				path: "/chat/completions",
+			});
+			expect(decision.allow && decision.grant.id).toBe("model");
+		}
+	});
+
+	it("gives way to a wildcard label too, which is nearer than anywhere", () => {
+		const docs: Grant = { id: "docs", host: "*.acme.com", injection: bearer("DOCS") };
+		const grants = new GrantSet([web, docs]);
+		const decision = grants.resolve({ host: "help.acme.com", method: "GET", path: "/" });
+		expect(decision.allow && decision.grant.id).toBe("docs");
+	});
+});

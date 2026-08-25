@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
 import type { Hook } from "@agent-dive/channels";
+import { ANY_HOST } from "@agent-dive/proxy";
 import { parse as parseYaml } from "yaml";
 import type { AgentConfig, AgentDefaults, ControlPlaneOptions } from "./control-plane.ts";
 import { type Model, modelEnv, modelGrants, PROVIDERS, resolveModel } from "./models.ts";
@@ -120,6 +121,28 @@ function checkLimit(raw: unknown, label: string, issues: string[]): void {
 }
 
 /**
+ * The one thing a grant on `*` may not do, checked because the alternative finds out by happening.
+ *
+ * A grant is a host and a credential to reach it with, and those two halves have very different
+ * blast radii when the host is "anywhere": the reach is the internet, and the credential is the
+ * operator's key handed to every server the agent is talked into touching. The road may be open. The
+ * keys are given to somewhere by name.
+ */
+function checkGrants(raw: unknown, label: string, issues: string[]): void {
+	if (!Array.isArray(raw)) return;
+	raw.forEach((grant, index) => {
+		if (!isRecord(grant)) return;
+		if (grant.host !== ANY_HOST) return;
+		const injection = grant.injection;
+		if (isRecord(injection) && injection.kind !== "none") {
+			issues.push(
+				`${label}.grants[${index}] is host "*" with a ${String(injection.kind)} credential, which would put that secret on every server the agent reaches. Name the host, or use injection: { kind: none }`,
+			);
+		}
+	});
+}
+
+/**
  * Reads one model off the list of the ones this plane may think with.
  *
  * Most of it is not written down: naming a provider the table knows says where it lives, what its
@@ -227,6 +250,7 @@ function parseAgent(
 		...parseEnvFrom(envFrom, label, env, issues),
 	};
 	checkLimit(raw.limitUsd, label, issues);
+	checkGrants(raw.grants, label, issues);
 
 	// Grants and schedules are handed to the proxy and scheduler as written; both validate their
 	// own shape and report better errors than a second copy of their rules would.
@@ -263,6 +287,7 @@ function parseDefaults(
 		...parseEnvFrom(envFrom, "defaults", env, issues),
 	};
 	checkLimit(raw.limitUsd, "defaults", issues);
+	checkGrants(raw.grants, "defaults", issues);
 
 	return {
 		...rest,

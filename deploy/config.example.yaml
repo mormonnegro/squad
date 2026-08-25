@@ -63,10 +63,25 @@ defaults:
   limitUsd: 5
 
   grants:
-    # How an agent reaches the web at all. Both the searching and the reading of what it finds happen
-    # on the far side of this one host, which is the only reason "let it search" is a grant somebody
-    # can write: an agent that fetched pages itself would need every domain a result might live on
-    # named in advance. Drop this and the tool says so when used, rather than guessing an answer.
+    # The web, reached under nobody's name. An agent asked for a hello-world page needs `npm install`
+    # before it needs anything else, and a registry is never one host: npm is a registry and a CDN, a
+    # `git clone` is three names before it is a checkout. A list of them is a list that is wrong by
+    # one, which is the worst of the three options — it looks like it works until the afternoon it
+    # doesn't, and what the agent does then is report the internet as down and write the page it was
+    # asked for as a paragraph about not being able to write it.
+    #
+    # `kind: none` is the whole of why this is safe to write down: nothing of yours is attached to
+    # anything reached through it. What an agent may reach and what it may spend are two questions,
+    # and only the first is answered "anywhere" — every request still crosses the proxy and still
+    # lands in the audit log. Delete this and the plane is deny-by-default again, host by host.
+    - id: web
+      host: "*"
+      injection:
+        kind: none
+
+    # How an agent reaches a *search engine*, which is a different thing and stays scoped. Both the
+    # searching and the reading of what it finds happen on the far side of this one host, so the tool
+    # works without the key ever being somewhere the agent could take it.
     #
     # Scoped to the endpoint that searches, because the same key against the rest of that API is a
     # second model to think with — bought by whoever takes the agent over.

@@ -244,3 +244,82 @@ describe("EgressBroker", () => {
 		expect(audit.some((entry) => entry.reason === "unauthenticated")).toBe(true);
 	});
 });
+
+/**
+ * The whole road, walked: CONNECT to a host nobody named, TLS terminated and reissued, and an answer
+ * back — which is what an agent doing `npm install` is doing, and what it could not do before.
+ */
+describe("EgressBroker with the web granted", () => {
+	const upstreamCa = createCertificateAuthority();
+	const brokerCa = createCertificateAuthority();
+	const audit: AuditEntry[] = [];
+
+	let upstream: https.Server;
+	let upstreamPort: number;
+	let broker: EgressBroker;
+	let proxyPort: number;
+	let sent: Record<string, string | string[] | undefined> = {};
+
+	// The open grant is written first, the way an operator's own grants come before the generated
+	// ones — so a tie decided by position would answer the model's request with the keyless grant.
+	const grants: Grant[] = [
+		{ id: "web", host: "*", injection: { kind: "none" } },
+		{
+			id: "model",
+			host: "localhost",
+			pathPrefix: "/v1",
+			injection: { kind: "bearer", token: { ref: "GH" } },
+		},
+	];
+
+	beforeAll(async () => {
+		const leaf = upstreamCa.issue("localhost");
+		upstream = https.createServer({ cert: leaf.certPem, key: leaf.keyPem }, (req, res) => {
+			sent = req.headers;
+			res.writeHead(200, { "content-type": "application/json" });
+			res.end("{}");
+		});
+		upstream.listen(0, "127.0.0.1");
+		await once(upstream, "listening");
+		upstreamPort = (upstream.address() as AddressInfo).port;
+
+		broker = new EgressBroker({
+			ca: brokerCa,
+			secrets: new MemorySecretStore({ GH: SECRET }),
+			directory: new StaticAgentDirectory([{ agentId: AGENT_ID, proxyToken: PROXY_TOKEN, grants }]),
+			onAudit: (entry) => audit.push(entry),
+			upstreamAgent: new https.Agent({ ca: upstreamCa.caCertPem }),
+		});
+		proxyPort = (await broker.listen(0)).port;
+	});
+
+	afterAll(async () => {
+		await broker.close();
+		upstream.close();
+	});
+
+	const reach = (path: string) =>
+		requestThroughTunnel({
+			proxyPort,
+			authority: `localhost:${upstreamPort}`,
+			credentials: `${AGENT_ID}:${PROXY_TOKEN}`,
+			caCertPem: brokerCa.caCertPem,
+			path,
+		});
+
+	it("carries a request to a path nobody named, under nobody's name", async () => {
+		const response = await reach("/next/-/next-16.0.8.tgz");
+
+		expect(response.status).toBe(200);
+		expect(sent.authorization).toBeUndefined();
+		expect(audit.at(-1)).toMatchObject({ outcome: "allowed", grantId: "web" });
+	});
+
+	it("still gives the named host its key, rather than the open grant taking the request", async () => {
+		const response = await reach("/v1/chat/completions");
+
+		expect(response.status).toBe(200);
+		expect(sent.authorization).toBe(`Bearer ${SECRET}`);
+		expect(audit.at(-1)).toMatchObject({ outcome: "allowed", grantId: "model" });
+	});
+});

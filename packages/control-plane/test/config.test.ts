@@ -124,6 +124,53 @@ agents:
 		}
 	});
 
+	/**
+	 * The road may be open; the keys are given to somewhere by name. A grant on every host carrying a
+	 * credential would put that secret on every server the agent is ever talked into touching, which
+	 * is the one thing this whole proxy exists so that a leaked transcript cannot do.
+	 */
+	it("refuses a grant on every host that carries a credential", () => {
+		expect(() =>
+			parseConfig(
+				`
+stateDir: /state
+defaults:
+  grants:
+    - id: everything
+      host: "*"
+      injection:
+        kind: bearer
+        token: { ref: OPENAI_API_KEY }
+agents:
+  - id: scout
+`,
+				{},
+			),
+		).toThrow(/host "\*" with a bearer credential/);
+	});
+
+	it("takes a grant on every host that carries nothing", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+defaults:
+  grants:
+    - id: web
+      host: "*"
+      injection: { kind: none }
+agents:
+  - id: scout
+`,
+			{},
+		);
+
+		expect(config.defaults?.grants?.[0]).toEqual({
+			id: "web",
+			host: "*",
+			injection: { kind: "none" },
+		});
+	});
+
 	it("refuses anything that is not a mapping", () => {
 		expect(() => parseConfig("- scout\n", {})).toThrow(/must be a YAML mapping/);
 	});

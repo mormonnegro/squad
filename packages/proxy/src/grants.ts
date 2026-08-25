@@ -23,7 +23,7 @@ export type Injection =
 
 export interface Grant {
 	readonly id: string;
-	/** Exact host ("api.github.com") or single-label wildcard ("*.slack.com"). */
+	/** Exact ("api.github.com"), single-label wildcard ("*.slack.com"), or {@link ANY_HOST}. */
 	readonly host: string;
 	/** Only requests whose normalized path is at or below this prefix match. Defaults to "/". */
 	readonly pathPrefix?: string;
@@ -46,6 +46,21 @@ export interface RequestDescriptor {
 
 const WILDCARD_PREFIX = "*.";
 
+/**
+ * Anywhere — the road rather than the keys to it.
+ *
+ * What an agent needs to build software is a package registry, and a registry is never one host: npm
+ * is a registry and a CDN, PyPI is an index and a file server, a `git clone` is three names before it
+ * is a checkout. A list of them is a list that is wrong by one, and being wrong by one looks exactly
+ * like the agent in that transcript — reading the deny as "the internet is down", then writing the
+ * page it was asked to build as a paragraph about not being able to build it.
+ *
+ * This widens what an agent can *reach*, and nothing at all about what it can *spend*: a grant on
+ * this host may inject no credential, which is checked where the config is read. The boundary that
+ * was ever load-bearing is the one around the secrets, and it is exactly where it was.
+ */
+export const ANY_HOST = "*";
+
 export function normalizeHost(host: string): string {
 	const withoutPort = host.replace(/:\d+$/, "");
 	const withoutBrackets = withoutPort.replace(/^\[|\]$/g, "");
@@ -54,6 +69,7 @@ export function normalizeHost(host: string): string {
 
 function hostMatches(pattern: string, host: string): boolean {
 	const normalizedPattern = pattern.trim().toLowerCase();
+	if (normalizedPattern === ANY_HOST) return true;
 	if (!normalizedPattern.startsWith(WILDCARD_PREFIX)) {
 		return normalizedPattern === host;
 	}
@@ -101,6 +117,28 @@ function pathMatches(prefix: string, path: string): boolean {
 	return path.startsWith(`${normalizedPrefix}/`);
 }
 
+/**
+ * A named host beats a wildcard beats anywhere, before path length is looked at.
+ *
+ * The failure this is here for: an open grant and the model's grant both sit at `/`, the open one is
+ * written first because the operator's own grants come before the generated ones, and a tie decided
+ * by position would hand every request to the one carrying no key — the agent would stop being able
+ * to think, and the audit log would show each call allowed. Specificity has to include the host, or
+ * "most specific wins" is only true of paths.
+ */
+function specificity(grant: Grant): readonly [number, number] {
+	const host = grant.host.trim().toLowerCase();
+	const rank = host === ANY_HOST ? 0 : host.startsWith(WILDCARD_PREFIX) ? 1 : 2;
+	return [rank, normalizePath(grant.pathPrefix ?? "/").length];
+}
+
+function beats(candidate: Grant, best: Grant): boolean {
+	const [candidateHost, candidatePath] = specificity(candidate);
+	const [bestHost, bestPath] = specificity(best);
+	if (candidateHost !== bestHost) return candidateHost > bestHost;
+	return candidatePath > bestPath;
+}
+
 /** Deny-by-default set of grants for a single agent. */
 export class GrantSet {
 	private readonly grants: readonly Grant[];
@@ -133,10 +171,7 @@ export class GrantSet {
 
 		// Most specific grant wins, so a narrow grant can override a broad one on the same host.
 		const chosen = methodMatched.reduce((best, candidate) =>
-			normalizePath(candidate.pathPrefix ?? "/").length >
-			normalizePath(best.pathPrefix ?? "/").length
-				? candidate
-				: best,
+			beats(candidate, best) ? candidate : best,
 		);
 		return { allow: true, grant: chosen };
 	}

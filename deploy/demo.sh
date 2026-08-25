@@ -116,10 +116,15 @@ defaults:
   # also covers the ones made later at the keyboard. Move it from the console with \`/limit\`.
   limitUsd: 2
   grants:
-    # The one host the agent reaches the web through, and the searching and page-reading both happen
-    # on the far side of it — which is why this is a grant anyone can write and "let it browse" is
-    # not. Scoped to the one endpoint that searches: the same key on the rest of that API would be a
-    # second model to think with, bought by whoever takes the agent over.
+    # The web, under nobody's name. An agent that cannot \`npm install\` cannot build the thing it was
+    # asked for, and a registry is never one host. \`kind: none\` means no credential of yours goes
+    # anywhere through it; every request still crosses the proxy and still lands in the audit log.
+    - id: web
+      host: "*"
+      injection:
+        kind: none
+    # The search key, which stays scoped to the one endpoint that searches: the same key on the rest
+    # of that API would be a second model to think with, bought by whoever takes the agent over.
     - id: search
       host: api.openai.com
       pathPrefix: /v1/responses
