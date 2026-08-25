@@ -39,7 +39,7 @@ function Step({
 	return (
 		<div className="install-step">
 			<div className="install-head">
-				<span className="install-n">{n}</span>
+				<span className="install-n">{String(n).padStart(2, "0")}</span>
 				<span className="install-where">{where}</span>
 				<button type="button" className="copy" data-done={done} onClick={copy}>
 					{done ? "copied" : "copy"}
