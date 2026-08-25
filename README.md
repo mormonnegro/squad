@@ -907,6 +907,23 @@ scout is serving:
 Which is why the answer names both numbers. The port inside the sandbox is the one the agent knows
 about and the one it should keep using; the port in the link is the one to open.
 
+Giving way settles the agents against each other, which is all the plane can know: the machine the
+console runs on is somebody's laptop, with its own idea of what 3000 is for. So before a door is
+opened the number is knocked on, and anything that answers is enough to refuse the whole door:
+
+```
+✗ scout serve  could not open 3000 here — 127.0.0.1 in use. Something on this machine
+               already answers there: free it, or have the agent bind another port
+               inside and /serve that one.
+```
+
+Knocked on rather than bound, because a bind does not reliably refuse. On BSD a server holding `*:3000`
+and a door on `127.0.0.1:3000` are two sockets to the kernel and both binds succeed — the more
+specific one then wins every connection, so the door would open, the operator's own dev server would
+quietly stop answering, and the reason would be an agent they were not thinking about at the time.
+This was found the way you would expect: by taking 3000 from the `next dev` running this project's
+own site.
+
 The diagnosis is in the answer rather than in the log, because a browser opens six connections to a
 page and a feed with six identical failures in it is a feed nobody reads. Asking for `/serve` probes
 the port inside the sandbox at that moment and says whether anything is listening — so "the link is
