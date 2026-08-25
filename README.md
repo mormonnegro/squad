@@ -56,7 +56,7 @@ operator answers them in the config file the agent cannot reach.
 | `proxy` | The egress broker: a CONNECT-terminating MITM proxy with a local CA, grant matching and credential injection |
 | `sandbox` | The Docker driver: container per agent, named volume for its repository, exec streams demultiplexed from the daemon's framing |
 | `scheduler` | Cron and one-shot wakeups, persisted, with Vixie cron semantics and DST-correct wall-clock matching |
-| `channels` | Where events come from and replies go. Ships a signed webhook channel and a Telegram bot |
+| `channels` | Where events come from and replies go. Ships a signed webhook channel, a Telegram bot and an IMAP mailbox |
 | `agent-repo` | The agent's own git repository: manifest, soul, skills, memory, tools |
 | `control-plane` | Wires it together, takes turns by running pi in the sandbox, and reads a YAML config |
 
@@ -75,6 +75,9 @@ authority into the system:
   that a human meant what is inside it.
 - A Telegram message may, and only from the one account that pressed the pairing link. Everyone
   else in the chat is a participant, however the message is worded and whoever it claims to be from.
+- Mail may, and only from an address that paired, and only when the receiving provider's own
+  `Authentication-Results` says DKIM and DMARC passed aligned with the domain it claims. A `From:`
+  line on its own is a claim anyone can type.
 - An agent may schedule itself, but not with operator trust. Otherwise one successful injection is
   permanent: the injected turn schedules a wakeup that instructs, and the agent goes on instructing
   itself with no attacker present to notice or revoke.
@@ -246,13 +249,14 @@ the plane without waking anything — a turn spent reading a settings change is 
 slash opens the list of what there is, over the prompt, filtered by whatever is typed after it:
 
 ```
- ▸ /limit [<amount>|off]        what it has spent today, and the ceiling for it
-   /model [<name>]              what it thinks with, and what else there is
-   /mcp [<name>|add …|login …]  the MCP servers it has, and the shelf to add from
-   /serve [<port>|stop <port>]  open a port inside it on the machine you are sitting at
-   /telegram [<token>|off]      the Telegram bot it answers on, and how to pair one
-   /delete                      delete this agent, after asking whether you meant it
-   /help                        every command there is
+ ▸ /limit [<amount>|off]              what it has spent today, and the ceiling for it
+   /model [<name>]                    what it thinks with, and what else there is
+   /mcp [<name>|add …|login …]        the MCP servers it has, and the shelf to add from
+   /serve [<port>|stop <port>]        open a port inside it on the machine you are sitting at
+   /telegram [<token>|off]            the Telegram bot it answers on, and how to pair one
+   /email [<address>|<password>|off]  the address it is reached at, and how to connect a mailbox
+   /delete                            delete this agent, after asking whether you meant it
+   /help                              every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
 ╰──────────────────────────────────────────────────────────────────────╯
@@ -547,6 +551,121 @@ down — the token is still yours at @BotFather, and connecting it again starts 
 An agent may not run `/telegram` at all, in either direction. It is the one command where asking is
 already the attack: an agent that could connect a bot it found and hand out the pairing phrase would
 have appointed itself an operator.
+
+## Writing to an agent by email
+
+Telegram is a bot per agent. Email is one mailbox for the whole plane, connected once: every agent
+you have — and every agent you make after this — is reached at the same address with its own name
+tagged on. It is a mailbox you already read, so there is nothing to buy, no domain to own, no DNS to
+wait on and no port to open. The plane logs in and reads it the way a mail client does.
+
+Type the address. Only the address:
+
+```
+/email agents@fastmail.com
+
+imap.fastmail.com:993 reads agents@fastmail.com.
+
+Now make an app password. Your ordinary password will not work, and is not the kind of
+thing to paste into a console:
+
+    https://app.fastmail.com/settings/security/apppasswords
+
+Then paste it back:
+
+    /email <the app password>
+```
+
+The link is the point. Every provider buries that screen somewhere different and none of them call
+it the same thing, so "make an app password" is an instruction that ends in a search box — which is
+the longest part of connecting a mailbox and the part people give up in. Where the mailbox lives is
+worked out from the address through autoconfig, `.well-known`, the ISPDB and SRV before falling back
+to the conventional guess, and when it is a guess the answer says so rather than stating it.
+
+A provider that will not take a password at all is named at the moment the address is typed, rather
+than after a login fails with a message about credentials that sends you back to check a password
+that was never the problem. Microsoft retired password logins for IMAP outright. Google closed
+Workspace to app passwords in May 2025 while personal `@gmail.com` still takes one — and nothing in
+the address says which of the two a company domain is, so the MX is checked. Proton is the third:
+its autoconfig honestly advertises `127.0.0.1:1143`, because the mail is only reachable through a
+bridge on your own desktop, which is nothing a plane on a VPS can dial.
+
+Paste the password on the second line and the mailbox is connected:
+
+```
+/email abcd efgh ijkl mnop
+
+scout is reached at agents+scout@fastmail.com.
+
+Nobody may instruct scout by mail yet. Write to that address from wherever you read your own
+mail, with this phrase anywhere in the message:
+
+    kqm3nvbh27
+
+Whoever sends it is the one scout takes instructions from, and for now the only one: an
+address strangers already have is one where every message read would spend a turn, so
+everyone else's mail is left unread until this can write back.
+```
+
+Pairing is the same phrase in the same place it is on Telegram, sent by mail this time. What makes
+it mean anything is that a `From:` line is forgeable and the plane does not read one on its own: it
+reads the `Authentication-Results` header your own provider wrote at delivery time, when it checked
+DKIM and DMARC against the sending domain with that domain's keys as they were then. RFC 8601 has
+the receiving provider strip any foreign copy of that header on the way in, so the one left is the
+one it wrote. Mail that is not signed and aligned pairs nothing and instructs nothing, whatever it
+says it is.
+
+Telegram fences strangers and publishes them as participants. Mail does not, yet: only the paired
+operator's is read, and everyone else's is dropped. A chat is a room someone let you into, while a
+mailbox is an address that leaks — every message read spends a turn, so publishing whatever arrived
+would put the plane's bill in the hands of whoever found it.
+
+Once paired, `/email` says where things stand:
+
+```
+scout is reached at agents+scout@fastmail.com. Write to it and scout takes a turn.
+
+That is agents@fastmail.com on imap.fastmail.com:993, and it serves every agent on this plane:
+each one is reached at its own name tagged onto the address, and mail arriving with no tag on
+it comes here, to scout.
+
+Mail from you@example.com is read as instructions, and nobody else's is read at all
+yet — an address strangers already have is one where every message read would spend a turn.
+
+/email off puts the mailbox down, for every agent.
+```
+
+Plus-addressing is the whole design: `agents+scout@` and `agents+clerk@` are one account to the
+provider and two agents here, so an agent made tomorrow has an address without anybody going back to
+a settings page. Mail arriving with no tag goes to the agent the mailbox was connected at. Messages
+fold into a turn the way a webhook's do.
+
+Nothing goes out yet: this reads mail and does not send it, and a turn woken by mail answers in the
+console rather than by reply. That is said plainly at the point of sending rather than left to fail
+somewhere further in, because an agent answering into the dark looks, to the person who wrote in,
+exactly like an agent ignoring them. It is also why nothing is lost by holding strangers back — one
+heard now would be one heard and never answered.
+
+An inbox is mostly not for you, so most of what arrives is dropped: anyone who is not the operator,
+anything auto-submitted, a tag that names no agent, and the mailbox's own mail — without that last
+one an agent Cc'd on its own answer would wake itself, read its own words as somebody's, and do it
+again. Drops are counted by reason rather than listed, because a mailbox declining two hundred
+newsletters is worth one line in the feed and is not worth two hundred:
+
+```
+09:14:02  email     dropped     not the operator ×212
+09:14:02  email     dropped     no agent "billing" ×3
+```
+
+The app password is a live credential and is treated like the bot token. It is never written into
+`config.yaml` and never left in the transcript: what the console records is `/email … … … …`,
+redacted by which command it was rather than by what it looked like, because an app password is
+sixteen ordinary letters and no pattern that catches one leaves a sentence alone. `/email off` puts
+the mailbox down for every agent; the password is still yours to revoke wherever you made it.
+
+An agent may not run `/email`, for the reason it may not run `/telegram`. Connecting a mailbox is
+choosing who may instruct it, and the refusal does not echo the line back — printing it would be the
+attack.
 
 ## An agent waking itself
 
@@ -1090,10 +1209,11 @@ be held to less, never to more: /limit $50.00, if you meant it.
 That is the point rather than the consolation. The operator finds out the command exists by being
 handed it, at the moment it is the answer, in the pane they were already looking at.
 
-With one exception, and it is the exception that shows the rule. `/telegram` is refused without the
-line, because the line *is* the attack: an agent that connected a bot it read somewhere and handed
-out the pairing phrase would have chosen who gets to instruct it. Everywhere else, printing the
-command is the helpful half; there, it would be leaving the token one paste away.
+With two exceptions, and they are the exceptions that show the rule. `/telegram` and `/email` are
+refused without the line, because the line *is* the attack: an agent that connected a bot or a
+mailbox it read somewhere and handed out the pairing phrase would have chosen who gets to instruct
+it. Everywhere else, printing the command is the helpful half; there, it would be leaving the
+credential one paste away.
 
 ## Development
 

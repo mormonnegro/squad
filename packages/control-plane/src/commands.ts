@@ -1011,8 +1011,9 @@ function pairingByMail(id: string, said: EmailStanding): string {
 		"",
 		`    ${said.phrase}`,
 		"",
-		`Whoever sends it is the one ${id} takes instructions from. Anyone else who writes to it is`,
-		"heard, and what they write arrives as something to consider rather than something to do.",
+		`Whoever sends it is the one ${id} takes instructions from, and for now the only one: an`,
+		"address strangers already have is one where every message read would spend a turn, so",
+		"everyone else's mail is left unread until this can write back.",
 	].join("\n");
 }
 
@@ -1038,7 +1039,8 @@ function reachedAt(id: string, said: EmailStanding): string {
 		`That is ${said.mailbox} on ${said.host}:${said.port}, and it serves every agent on this plane:`,
 		`each one is reached at its own name tagged onto the address, ${untagged}`,
 		"",
-		`Mail from ${said.operators.join(", ")} is read as instructions. Everyone else is heard.`,
+		`Mail from ${said.operators.join(", ")} is read as instructions, and nobody else's is read at all`,
+		"yet — an address strangers already have is one where every message read would spend a turn.",
 		"",
 		"/email off puts the mailbox down, for every agent.",
 	].join("\n");
