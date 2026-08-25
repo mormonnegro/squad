@@ -56,7 +56,7 @@ operator answers them in the config file the agent cannot reach.
 | `proxy` | The egress broker: a CONNECT-terminating MITM proxy with a local CA, grant matching and credential injection |
 | `sandbox` | The Docker driver: container per agent, named volume for its repository, exec streams demultiplexed from the daemon's framing |
 | `scheduler` | Cron and one-shot wakeups, persisted, with Vixie cron semantics and DST-correct wall-clock matching |
-| `channels` | Where events come from and replies go. Ships a signed webhook channel |
+| `channels` | Where events come from and replies go. Ships a signed webhook channel and a Telegram bot |
 | `agent-repo` | The agent's own git repository: manifest, soul, skills, memory, tools |
 | `control-plane` | Wires it together, takes turns by running pi in the sandbox, and reads a YAML config |
 
@@ -73,6 +73,8 @@ authority into the system:
 
 - A webhook may not carry operator trust. The secret proves which system sent the request, never
   that a human meant what is inside it.
+- A Telegram message may, and only from the one account that pressed the pairing link. Everyone
+  else in the chat is a participant, however the message is worded and whoever it claims to be from.
 - An agent may schedule itself, but not with operator trust. Otherwise one successful injection is
   permanent: the injected turn schedules a wakeup that instructs, and the agent goes on instructing
   itself with no attacker present to notice or revoke.
@@ -248,6 +250,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
    /model [<name>]              what it thinks with, and what else there is
    /mcp [<name>|add …|login …]  the MCP servers it has, and the shelf to add from
    /serve [<port>|stop <port>]  open a port inside it on the machine you are sitting at
+   /telegram [<token>|off]      the Telegram bot it answers on, and how to pair one
    /delete                      delete this agent, after asking whether you meant it
    /help                        every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
@@ -496,6 +499,44 @@ read, so the endpoint does not enumerate.
 Events queue per agent and are folded into a single turn, so an agent woken twenty times while busy
 takes one turn about twenty things. A turn that fails leaves its events queued rather than
 acknowledging them, so a bad API key costs a retry instead of the message.
+
+## Writing to an agent from Telegram
+
+A webhook wakes an agent. Telegram lets you talk to one — from a phone, without a public address,
+a certificate or a port, because the bot reaches out to Telegram rather than the other way round.
+
+Send `/newbot` to [@BotFather](https://t.me/BotFather), and paste back what it gives you:
+
+```
+/telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw
+
+@nightly_scout_bot is scout's bot.
+
+Nobody is paired to it yet. Open this and press Start, and it is yours:
+https://t.me/nightly_scout_bot?start=kqm3nvbh27
+
+Whoever does that is the one scout takes instructions from. Anyone else who writes to it is
+heard, and what they write arrives as something to consider rather than something to do.
+```
+
+Pairing is a link rather than a number you have to find out about yourself, and it is spent the
+moment it is pressed. That is what makes Telegram the first channel that can carry operator trust:
+a webhook's secret proves which system sent a request, while Telegram authenticates the account
+behind every message — so the plane can know that the person writing is the person who paired.
+
+The bot answers in the chat you paired in, and in any chat you later speak to it in; anywhere else
+is dropped unread. Everyone else in those chats is a participant, fenced like any other stranger.
+Messages fold into a turn the same way a webhook's do, and the agent's reply goes back to the chat
+it was woken from.
+
+The token is the whole account, so it is never written into `config.yaml` and never left in the
+transcript: what the console records is `/telegram 8123456789:…`, keeping the public half that says
+which bot it was. `/telegram` on its own says where things stand, and `/telegram off` puts the bot
+down — the token is still yours at @BotFather, and connecting it again starts pairing over.
+
+An agent may not run `/telegram` at all, in either direction. It is the one command where asking is
+already the attack: an agent that could connect a bot it found and hand out the pairing phrase would
+have appointed itself an operator.
 
 ## An agent waking itself
 
@@ -1038,6 +1079,11 @@ be held to less, never to more: /limit $50.00, if you meant it.
 
 That is the point rather than the consolation. The operator finds out the command exists by being
 handed it, at the moment it is the answer, in the pane they were already looking at.
+
+With one exception, and it is the exception that shows the rule. `/telegram` is refused without the
+line, because the line *is* the attack: an agent that connected a bot it read somewhere and handed
+out the pairing phrase would have chosen who gets to instruct it. Everywhere else, printing the
+command is the helpful half; there, it would be leaving the token one paste away.
 
 ## Development
 
