@@ -264,6 +264,7 @@ function standingOf(bot: Bot): TelegramStanding {
 			bot.pairing !== undefined && bot.username !== undefined
 				? startLink(bot.username, bot.pairing)
 				: undefined,
+		phrase: bot.pairing,
 	};
 }
 

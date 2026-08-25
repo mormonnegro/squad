@@ -179,6 +179,21 @@ describe("pairing", () => {
 		expect(publisher.published).toHaveLength(0);
 	});
 
+	/**
+	 * The link is not always enough. Telegram Web opens the chat without handing the bot what is
+	 * behind `?start=`, so the way through there is typing the phrase — and a phone puts a capital on
+	 * the front of a message on the way. Pairing that a keyboard can defeat is pairing that fails for
+	 * the person who needed the fallback in the first place.
+	 */
+	it("takes the phrase typed out, however the keyboard cased it", async () => {
+		const { channel, telegram } = running({ pairing: "openthedoor" });
+
+		telegram.deliver(message(1, 7, 7, "Openthedoor"));
+		await until(() => telegram.sent.length > 0, "the paired reply");
+
+		expect(channel.bot("a1")).toMatchObject({ operators: [7], chats: [7] });
+	});
+
 	it("ignores anyone who does not have the phrase", async () => {
 		const { channel, telegram, publisher } = running({ pairing: "openthedoor" });
 

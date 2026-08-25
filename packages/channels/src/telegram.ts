@@ -372,7 +372,10 @@ export class TelegramChannel implements Channel {
 	 * win — winning, in that case, the right to instruct somebody else's agent.
 	 */
 	async #pair(bot: Bot, from: TelegramUser, chat: TelegramChat, text: string): Promise<void> {
-		if (!text.includes(bot.pairing ?? "")) return;
+		// Folded, because the phrase does not always arrive by the link that carries it: Telegram Web
+		// drops the `?start=` payload often enough that typing the phrase out is the way through, and a
+		// phone capitalises the first letter of a message on the way. The alphabet has no case to lose.
+		if (!text.toLowerCase().includes(bot.pairing?.toLowerCase() ?? "")) return;
 
 		this.#change(bot.agentId, (held) => {
 			// The phrase is spent by being used. Left on the record it is a second key to the same door,

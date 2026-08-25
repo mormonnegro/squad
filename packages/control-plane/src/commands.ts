@@ -19,6 +19,14 @@ export interface TelegramStanding {
 	readonly chats: number;
 	/** The link that would pair it, while it is unpaired. */
 	readonly link: string | undefined;
+	/**
+	 * The phrase the link carries, while it is unpaired.
+	 *
+	 * Given on its own as well as inside the link because the link is not always enough: Telegram Web
+	 * does not reliably hand the `?start=` payload to the bot, and a person there presses the link,
+	 * lands in an empty chat and has nothing to type. The phrase in any message does the same work.
+	 */
+	readonly phrase: string | undefined;
 }
 
 /**
@@ -777,7 +785,15 @@ function pairing(id: string, standing: TelegramStanding): string {
 		"Nobody is paired to it yet. Open this and press Start, and it is yours:",
 		standing.link,
 		"",
-		`Whoever does that is the one ${id} takes instructions from. Anyone else who writes to it is`,
+		// Telegram Web opens the chat without handing the bot the payload behind `?start=`, so the
+		// Start button there pairs nothing and the person is left in an empty chat with no way on.
+		// The phrase does the same work in any message, which is the way through that always exists.
+		`If pressing Start does nothing — which happens on Telegram Web — write to @${standing.username}`,
+		"and send it this phrase instead:",
+		"",
+		`    ${standing.phrase}`,
+		"",
+		`Whoever does either is the one ${id} takes instructions from. Anyone else who writes to it is`,
 		"heard, and what they write arrives as something to consider rather than something to do.",
 	].join("\n");
 }

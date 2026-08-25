@@ -173,6 +173,7 @@ function context(
 					paired: false,
 					chats: 0,
 					link: "https://t.me/scout_test_bot?start=kqm3nvbh27",
+					phrase: "kqm3nvbh27",
 				};
 				bot.held = standing;
 				return standing;
@@ -1033,18 +1034,40 @@ describe("/telegram", () => {
 				paired: false,
 				chats: 0,
 				link: "https://t.me/scout_bot?start=x",
+				phrase: "x",
 			},
 		});
 
 		expect(await runCommand("/telegram", ctx)).toContain("Nobody is paired to it yet");
 	});
 
+	// Telegram Web opens the chat without handing the bot what is behind `?start=`, so the link alone
+	// strands whoever is on a desktop: they press Start, nothing pairs, and there is nothing to type.
+	it("gives the phrase on its own, for where the link does not carry it", async () => {
+		const { context: ctx } = context({
+			bot: {
+				username: "scout_bot",
+				paired: false,
+				chats: 0,
+				link: "https://t.me/scout_bot?start=kqm3nvbh27",
+				phrase: "kqm3nvbh27",
+			},
+		});
+
+		const answer = await runCommand("/telegram", ctx);
+
+		expect(answer).toContain("@scout_bot");
+		expect(answer).toContain("Telegram Web");
+		// On a line of its own, rather than only inside the URL where it cannot be copied out.
+		expect(answer).toMatch(/^\s+kqm3nvbh27$/m);
+	});
+
 	it("says where a paired bot answers, in the plural or not", async () => {
 		const one = context({
-			bot: { username: "scout_bot", paired: true, chats: 1, link: undefined },
+			bot: { username: "scout_bot", paired: true, chats: 1, link: undefined, phrase: undefined },
 		});
 		const three = context({
-			bot: { username: "scout_bot", paired: true, chats: 3, link: undefined },
+			bot: { username: "scout_bot", paired: true, chats: 3, link: undefined, phrase: undefined },
 		});
 
 		expect(await runCommand("/telegram", one.context)).toContain("the chat you paired in");
@@ -1054,7 +1077,7 @@ describe("/telegram", () => {
 	// A bot BotFather never gave a @name to: there is no link to build, and a broken one would be worse.
 	it("says a nameless bot needs a name before it can be paired", async () => {
 		const { context: ctx } = context({
-			bot: { username: undefined, paired: false, chats: 0, link: undefined },
+			bot: { username: undefined, paired: false, chats: 0, link: undefined, phrase: undefined },
 		});
 
 		const answer = await runCommand("/telegram", ctx);
@@ -1082,7 +1105,7 @@ describe("/telegram", () => {
 	// operator who presses the new link and one who waits for messages that never come.
 	it("says a replacement starts pairing again", async () => {
 		const { context: ctx } = context({
-			bot: { username: "old_bot", paired: true, chats: 2, link: undefined },
+			bot: { username: "old_bot", paired: true, chats: 2, link: undefined, phrase: undefined },
 		});
 
 		const answer = await runCommand(`/telegram ${TOKEN}`, ctx);
@@ -1093,7 +1116,7 @@ describe("/telegram", () => {
 
 	it("puts a bot down, and does not claim to have put down nothing", async () => {
 		const { context: ctx, bot } = context({
-			bot: { username: "scout_bot", paired: true, chats: 1, link: undefined },
+			bot: { username: "scout_bot", paired: true, chats: 1, link: undefined, phrase: undefined },
 		});
 
 		expect(await runCommand("/telegram off", ctx)).toContain("no longer has a bot");

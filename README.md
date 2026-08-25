@@ -515,14 +515,24 @@ Send `/newbot` to [@BotFather](https://t.me/BotFather), and paste back what it g
 Nobody is paired to it yet. Open this and press Start, and it is yours:
 https://t.me/nightly_scout_bot?start=kqm3nvbh27
 
-Whoever does that is the one scout takes instructions from. Anyone else who writes to it is
+If pressing Start does nothing — which happens on Telegram Web — write to @nightly_scout_bot
+and send it this phrase instead:
+
+    kqm3nvbh27
+
+Whoever does either is the one scout takes instructions from. Anyone else who writes to it is
 heard, and what they write arrives as something to consider rather than something to do.
 ```
 
-Pairing is a link rather than a number you have to find out about yourself, and it is spent the
-moment it is pressed. That is what makes Telegram the first channel that can carry operator trust:
+Pairing is a phrase rather than a number you have to find out about yourself, and it is spent the
+moment it is used. That is what makes Telegram the first channel that can carry operator trust:
 a webhook's secret proves which system sent a request, while Telegram authenticates the account
 behind every message — so the plane can know that the person writing is the person who paired.
+
+The link is the short way and not the only one, because Telegram Web opens the chat without handing
+the bot what is behind `?start=` — pressing Start there pairs nothing and leaves you in an empty
+chat with nothing to type. So the phrase is given on its own too, and it pairs in any message,
+in whatever case the keyboard decided to send it.
 
 The bot answers in the chat you paired in, and in any chat you later speak to it in; anywhere else
 is dropped unread. Everyone else in those chats is a participant, fenced like any other stranger.
