@@ -1017,6 +1017,23 @@ describe("Setup", () => {
 		expect(rows.find((row) => row.includes("kimi-k2"))).not.toContain("›");
 	});
 
+	/**
+	 * A catalog is the provider's length, not the pane's — openai alone answers with dozens. Arrowing
+	 * onto a row below the fold has to bring the fold with it, or the cursor walks off the screen and
+	 * return adds a model nobody can see.
+	 */
+	it("keeps the offer under the cursor on the screen, however long the catalog is", () => {
+		const many = Array.from({ length: 80 }, (_, index) => ({
+			provider: "openai",
+			id: `gpt-5-${index}`,
+		}));
+
+		const drawn = pane({ adding: "", offers: many, pick: 60, columns: 90 });
+
+		expect(drawn).toContain("gpt-5-60");
+		expect(drawn.split("\n").find((row) => row.includes("gpt-5-60"))).toContain("›");
+	});
+
 	// A round trip to every provider at once, which is long enough on a slow one that a blank list
 	// would read as a plane with nothing to offer.
 	it("says it is asking while the providers have not answered", () => {
