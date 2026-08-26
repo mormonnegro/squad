@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { App, bare, type Talk } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
+import type { McpServer, ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
 import { resolveSearch, type Search, type SearchSpec } from "../src/search.ts";
 import type { Utterance } from "../src/transcript.ts";
@@ -74,6 +75,7 @@ function plane(
 		unreachable?: readonly string[];
 		completes?: readonly string[];
 		paysSearch?: boolean;
+		shelf?: readonly ServerStanding[];
 	} = {},
 ) {
 	const asked: string[] = [];
@@ -85,6 +87,9 @@ function plane(
 	const written: ModelSpec[] = [];
 	const dropped: string[] = [];
 	const aimed: SearchSpec[] = [];
+	const shelved: [string, McpServer][] = [];
+	const handed: [string, string, boolean][] = [];
+	const unshelved: string[] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
 	// Where the search is pointed. Answered back the way the plane answers it — read again after
@@ -157,6 +162,16 @@ function plane(
 			pointed = spec;
 			aimed.push(spec);
 		},
+		servers: async () => options.shelf ?? [],
+		addServer: async (name: string, server: McpServer) => {
+			shelved.push([name, server]);
+		},
+		holdServer: async (agentId: string, name: string, held: boolean) => {
+			handed.push([agentId, name, held]);
+		},
+		forgetServer: async (name: string) => {
+			unshelved.push(name);
+		},
 	} as unknown as ControlClient;
 	return {
 		client,
@@ -169,6 +184,9 @@ function plane(
 		written,
 		dropped,
 		aimed,
+		shelved,
+		handed,
+		unshelved,
 		built: (id: string) => finish(listed(id)),
 		/** The plane is what says an agent is thinking, so the console is told the way it tells it. */
 		thinking: (id: string) => feed({ kind: "thinking", agentId: id }),
@@ -1424,6 +1442,147 @@ describe("the config screen, pressed at", () => {
 
 				await screen.press(ENTER);
 				expect(screen.given).toEqual([["OPENAI_API_KEY", "sk-searching"]]);
+			} finally {
+				screen.close();
+			}
+		});
+	});
+
+	/**
+	 * The shelf, which is the plane's and not any one agent's.
+	 *
+	 * What cannot be drawn is that a URL typed here lands on the shelf and nowhere else: the pane one
+	 * `tab` away is a chat, and a half-written server falling into it would be said to an agent.
+	 */
+	describe("the mcp section", () => {
+		const shelf = [
+			{
+				name: "linear",
+				server: { transport: "http" as const, url: "https://mcp.linear.app/mcp" },
+				agents: ["demo"],
+				loggedIn: false,
+			},
+		];
+
+		/** Opens the config screen with the shelf already open, which is the third row. */
+		async function shelved(options: Parameters<typeof plane>[0] = { pays, thinks, shelf }) {
+			const screen = await config(options);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			return screen;
+		}
+
+		it("lists the shelf, and the row that puts something on it", async () => {
+			const screen = await shelved();
+			try {
+				expect(screen.screen()).toContain("linear");
+				expect(screen.screen()).toContain("+ a server");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The same grammar `/mcp add` takes, because a second way of writing down a server would be a
+		// second thing that is nearly right.
+		it("takes a server written out as a name and a URL", async () => {
+			const screen = await shelved({ pays, thinks, shelf: [] });
+			try {
+				await screen.press(ENTER);
+				await screen.press("linear https://mcp.linear.app/mcp");
+				expect(screen.screen()).toContain("mcp.linear.app");
+
+				await screen.press(ENTER);
+				expect(screen.shelved).toEqual([
+					["linear", { transport: "http", url: "https://mcp.linear.app/mcp" }],
+				]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Anything that is not a URL is the command to start it with, which is the whole of how the two
+		// are told apart — there is no keyword to remember and no field to put it in.
+		it("reads a line that is not a URL as the command an agent runs", async () => {
+			const screen = await shelved({ pays, thinks, shelf: [] });
+			try {
+				await screen.press(ENTER);
+				await screen.press("files mcp-files /home/agent");
+				await screen.press(ENTER);
+
+				expect(screen.shelved).toEqual([
+					["files", { transport: "stdio", command: "mcp-files", args: ["/home/agent"] }],
+				]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("says what was wrong with a line rather than putting it on the shelf", async () => {
+			const screen = await shelved({ pays, thinks, shelf: [] });
+			try {
+				await screen.press(ENTER);
+				await screen.press("Linear https://mcp.linear.app/mcp");
+				await screen.press(ENTER);
+
+				expect(screen.shelved).toEqual([]);
+				expect(screen.screen()).toContain("is not a name");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("gives up on a server without putting it anywhere", async () => {
+			const screen = await shelved({ pays, thinks, shelf: [] });
+			try {
+				await screen.press(ENTER);
+				await screen.press("linear https://mcp.linear.app/mcp");
+				await screen.press(ESCAPE);
+
+				expect(screen.shelved).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Toggling, because the same row means both: an agent that already has it says so, and return
+		// on that row is how it stops having it.
+		it("gives one off the shelf to an agent, and takes it back", async () => {
+			const screen = await shelved();
+			try {
+				await screen.press(ENTER);
+				expect(screen.screen()).toContain("has it");
+
+				await screen.press(ENTER);
+				expect(screen.handed).toEqual([["demo", "linear", false]]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Wider than the row it is pressed on, so it is asked before it happens — and answered by one
+		// key, the way every other question on this screen is.
+		it("asks before forgetting a server, and forgets it when the answer is yes", async () => {
+			const screen = await shelved();
+			try {
+				await screen.press(BACKSPACE);
+				expect(screen.screen()).toContain("y forget");
+				expect(screen.unshelved).toEqual([]);
+
+				await screen.press("y");
+				expect(screen.unshelved).toEqual(["linear"]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("keeps a server when the answer is anything else", async () => {
+			const screen = await shelved();
+			try {
+				await screen.press(BACKSPACE);
+				await screen.press(ENTER);
+
+				expect(screen.unshelved).toEqual([]);
 			} finally {
 				screen.close();
 			}

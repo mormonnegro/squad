@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
+import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
@@ -180,6 +181,28 @@ export class ControlClient {
 	/** Points the search tool at another provider, or at another of that provider's models. */
 	async setSearch(spec: SearchSpec): Promise<void> {
 		await this.#once({ op: "set-search", spec });
+	}
+
+	/** Every server on the shelf, what it is, and which agents were given it. */
+	async servers(): Promise<readonly ServerStanding[]> {
+		const response = await this.#once({ op: "servers" });
+		if ("servers" in response) return response.servers;
+		throw new ControlError("unexpected answer to servers");
+	}
+
+	/** Puts a server on the shelf, which gives it to nobody until an agent is told to hold it. */
+	async addServer(name: string, server: McpServer): Promise<void> {
+		await this.#once({ op: "add-server", name, server });
+	}
+
+	/** Gives an agent one off the shelf, or takes it back. */
+	async holdServer(agentId: string, name: string, held: boolean): Promise<void> {
+		await this.#once({ op: "hold-server", agentId, name, held });
+	}
+
+	/** Takes one off the shelf, and off every agent holding it. */
+	async forgetServer(name: string): Promise<void> {
+		await this.#once({ op: "forget-server", name });
 	}
 
 	/** What the providers this plane can pay say they answer to, minus what is configured already. */

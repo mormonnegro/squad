@@ -26,6 +26,7 @@ import type { AgentSummary } from "./control-plane.ts";
 import { LocalDoors, wanted } from "./doors.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
+import { readName, readServer, type ServerStanding, written } from "./mcp.ts";
 import type { ModelOffer, ModelStanding, ProviderStanding } from "./models.ts";
 import { openInBrowser } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
@@ -1258,17 +1259,30 @@ const PLACES = [
 	"All of it is kept beside deploy/config.yaml rather than in it — what that file declares is read here and changed only there — and all of it holds from the next turn, with nothing restarted.",
 ];
 
+/**
+ * What the shelf is, above the list of what is on it.
+ *
+ * Two things, and the second is the one people arrive expecting to be false: a server on this list is
+ * reached like everything else an agent reaches, so there is nowhere here to put a token.
+ */
+const SERVERS = [
+	"A server is something somebody went and found — a URL, a command, the reading of a README — so the plane keeps it once and every agent after the first is a name off this list.",
+	"",
+	"None of them holds a key. A remote one is reached through the proxy like every other host, and one that wants an account is logged into from an agent that has it, with /mcp login.",
+];
+
 /** A part of this plane with something to set, which is one row of the list this screen opens on. */
-export type Section = "models" | "search";
+export type Section = "models" | "search" | "mcp";
 
 /** In the order they are walked, which is the order they are usually needed in. */
-const SECTION_ORDER: readonly Section[] = ["models", "search"];
+const SECTION_ORDER: readonly Section[] = ["models", "search", "mcp"];
 
 const SECTIONS: Readonly<
 	Record<Section, { readonly does: string; readonly said: readonly string[] }>
 > = {
 	models: { does: "the providers this plane can pay, and what its agents think with", said: KEYS },
 	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
+	mcp: { does: "the servers on the shelf, and which agents hold them", said: SERVERS },
 };
 
 /** The three facts about searching, in the order a hand fills them in. */
@@ -1280,7 +1294,9 @@ export type ConfigRow =
 	| { readonly kind: "provider"; readonly provider: ProviderStanding }
 	| { readonly kind: "model"; readonly model: ModelStanding }
 	| { readonly kind: "add" }
-	| { readonly kind: "search"; readonly field: (typeof SEARCH_FIELDS)[number] };
+	| { readonly kind: "search"; readonly field: (typeof SEARCH_FIELDS)[number] }
+	| { readonly kind: "server"; readonly server: ServerStanding }
+	| { readonly kind: "add-server" };
 
 /**
  * The screen's rows in the order the arrows walk them, headers and blank lines left out.
@@ -1298,12 +1314,19 @@ export function configRows(
 	section: Section | undefined,
 	providers: readonly ProviderStanding[],
 	models: readonly ModelStanding[],
+	servers: readonly ServerStanding[],
 ): readonly ConfigRow[] {
 	if (section === undefined) {
 		return SECTION_ORDER.map((one) => ({ kind: "section", section: one }) as const);
 	}
 	if (section === "search") {
 		return SEARCH_FIELDS.map((field) => ({ kind: "search", field }) as const);
+	}
+	if (section === "mcp") {
+		return [
+			...servers.map((server) => ({ kind: "server", server }) as const),
+			{ kind: "add-server" } as const,
+		];
 	}
 	return [
 		...providers.map((provider) => ({ kind: "provider", provider }) as const),
@@ -1345,12 +1368,18 @@ export function Config({
 	models,
 	/** Where searching goes, or nothing while the plane is still being asked. */
 	search,
+	/** Every server on the shelf, with who holds each. */
+	servers,
 	cursor,
 	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
 	typing,
 	secret,
 	/** The model being written out, as far as it has been typed, or nothing when none is. */
 	adding,
+	/** The server being shelved, as far as it has been typed, or nothing when none is. */
+	shelving,
+	/** The server a forget was asked about, while the answer is still being waited for. */
+	forgetting,
 	/** Everything the keys this plane holds could buy, or nothing while the providers are being asked. */
 	offers,
 	/** One of a short list being picked off it — a search provider, or one of its models. */
@@ -1366,10 +1395,13 @@ export function Config({
 	readonly providers: readonly ProviderStanding[];
 	readonly models: readonly ModelStanding[];
 	readonly search: SearchStanding | undefined;
+	readonly servers: readonly ServerStanding[];
 	readonly cursor: number;
 	readonly typing: string | undefined;
 	readonly secret: string;
 	readonly adding: string | undefined;
+	readonly shelving?: string | undefined;
+	readonly forgetting?: string | undefined;
 	readonly offers?: readonly ModelOffer[] | undefined;
 	readonly choosing?: { readonly what: string; readonly among: readonly string[] } | undefined;
 	readonly pick?: number;
@@ -1384,7 +1416,7 @@ export function Config({
 	const widestProvider = Math.max(0, ...models.map((model) => model.provider.length));
 	const dim = (line: string): string => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`);
 	const said = (section === undefined ? PLACES : SECTIONS[section].said).map(dim);
-	const walked = configRows(section, providers, models);
+	const walked = configRows(section, providers, models, servers);
 	const row = walked[Math.min(cursor, walked.length - 1)];
 	// Above the list, because it is why the list says what it says — and when the plane refused to
 	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
@@ -1489,8 +1521,14 @@ export function Config({
 		const paid = providers.filter((provider) => provider.held).length;
 		for (const [index, one] of SECTION_ORDER.entries()) {
 			// Filled in when that section is something this plane could actually use right now: a model
-			// it holds the key for, a search it can pay for. It is the same dot the agents column uses.
-			const ready = one === "models" ? models.some((model) => model.held) : search?.held === true;
+			// it holds the key for, a search it can pay for, a server some agent was given. It is the
+			// same dot the agents column uses.
+			const ready =
+				one === "models"
+					? models.some((model) => model.held)
+					: one === "search"
+						? search?.held === true
+						: servers.some((server) => server.agents.length > 0);
 			const mark = ready ? MARKS.running : MARKS.stopped;
 			if (index === cursor) at = listed.length;
 			listed.push(
@@ -1517,11 +1555,15 @@ export function Config({
 				text:
 					which === "models"
 						? `${models.length} to think with, ${paid} of ${providers.length} providers paid for`
-						: search === undefined
-							? "asking the plane…"
-							: search.held
-								? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
-								: `${search.keyEnv}   no key, refused at the proxy`,
+						: which === "mcp"
+							? servers.length === 0
+								? "nothing on the shelf yet"
+								: `${servers.length} on the shelf, ${servers.filter((server) => server.agents.length > 0).length} of them given to somebody`
+							: search === undefined
+								? "asking the plane…"
+								: search.held
+									? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
+									: `${search.keyEnv}   no key, refused at the proxy`,
 			},
 			boxed,
 			rows,
@@ -1578,6 +1620,65 @@ export function Config({
 													? `${search.keyEnv}   from this plane's environment`
 													: `${search.keyEnv}   no key, refused at the proxy`,
 						},
+			boxed,
+			rows,
+			columns,
+		});
+	}
+	if (section === "mcp") {
+		const widestName = Math.max(0, ...servers.map((server) => server.name.length));
+		for (const [index, server] of servers.entries()) {
+			// Filled in when somebody has it, because a server on the shelf that no agent was given is
+			// a URL written down: nothing is reaching it and nothing will until it is handed out.
+			const has = server.agents.length > 0;
+			const mark = has ? MARKS.running : MARKS.stopped;
+			if (index === cursor) at = listed.length;
+			listed.push(
+				h(
+					Text,
+					{ key: `server-${server.name}`, wrap: "truncate" },
+					h(Text, { color: mark.color }, mark.glyph),
+					h(Text, pointed(index === cursor, has), ` ${server.name.padEnd(widestName + 2)}`),
+					h(Text, { dimColor: true }, written(server.server)),
+				),
+			);
+		}
+		if (servers.length === cursor) at = listed.length;
+		listed.push(
+			h(
+				Text,
+				{ key: "add-server", wrap: "truncate" },
+				h(Text, { color: "gray" }, " "),
+				h(Text, pointed(servers.length === cursor, false), " + a server"),
+			),
+		);
+		const standing = row?.kind === "server" ? row.server : undefined;
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt:
+				shelving !== undefined
+					? { kind: "typed", mark: "server  ", text: shelving, secret: false }
+					: forgetting !== undefined
+						? // What it takes away rather than what it is called: this one comes off every agent that
+							// had it, and the row under the cursor shows only one of them.
+							{
+								kind: "dim",
+								text: `forget "${forgetting}"? it comes off every agent holding it — y or n`,
+							}
+						: {
+								kind: "dim",
+								// Who has it, which is the fact the row itself cannot carry and the one that decides
+								// whether the row is doing anything at all.
+								text:
+									standing === undefined
+										? "a name, then a URL to reach it at or a command to start it with"
+										: standing.agents.length === 0
+											? "nobody has it yet — ⏎ gives it to an agent"
+											: `${standing.agents.join(", ")}${standing.loggedIn ? "   (logged in)" : ""}`,
+							},
 			boxed,
 			rows,
 			columns,
@@ -1869,6 +1970,7 @@ export function App({
 	const [providers, setProviders] = useState<readonly ProviderStanding[]>([]);
 	const [models, setModels] = useState<readonly ModelStanding[]>([]);
 	const [search, setSearch] = useState<SearchStanding | undefined>(undefined);
+	const [servers, setServers] = useState<readonly ServerStanding[]>([]);
 	// Which section of the config screen is open, or nothing while the list of them is. One at a time,
 	// because what these have in common is where they are kept and nothing else — and the cursor is
 	// theirs, so it starts at the top of whichever list was just opened.
@@ -1890,6 +1992,11 @@ export function App({
 	// The model being written out, kept apart from the draft for the same reason: the chat prompt is
 	// one `tab` away and a half-typed line landing in it would be said to an agent.
 	const [adding, setAdding] = useState<string | undefined>(undefined);
+	// The server being written out, kept apart from the draft for the same reason as the model above.
+	const [shelving, setShelving] = useState<string | undefined>(undefined);
+	// The server a forget was asked about, while the console waits to hear it was meant. Its own
+	// question rather than the model's, because what it takes away is every agent's and not one row's.
+	const [forgetting, setForgetting] = useState<string | undefined>(undefined);
 	// What the providers this plane can pay say they answer to, or nothing while they are being asked.
 	// Fetched when the row that adds a model is entered rather than with the screen, because it is a
 	// round trip to every provider at once and most visits here are about a key.
@@ -1913,7 +2020,7 @@ export function App({
 	const selected = agents[spot];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
-	const walk = configRows(section, providers, models);
+	const walk = configRows(section, providers, models, servers);
 	const onRow = Math.min(where, walk.length - 1);
 	const configRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
@@ -2117,11 +2224,12 @@ export function App({
 	useEffect(() => () => doors.close(), [doors]);
 
 	const readConfig = useCallback(async (): Promise<void> => {
-		await Promise.all([client.providers(), client.models(), client.search()])
-			.then(([keys, thinking, searching]) => {
+		await Promise.all([client.providers(), client.models(), client.search(), client.servers()])
+			.then(([keys, thinking, searching, shelf]) => {
 				setProviders(keys);
 				setModels(thinking);
 				setSearch(searching);
+				setServers(shelf);
 				setUnanswered(undefined);
 			})
 			.catch((error: unknown) => setUnanswered((error as Error).message));
@@ -2204,6 +2312,44 @@ export function App({
 	 */
 	const point = useCallback(
 		async (spec: SearchSpec): Promise<void> => say(() => client.setSearch(spec)),
+		[client, say],
+	);
+
+	/**
+	 * Puts a server on the shelf from the line that was typed, the way `/mcp add` does.
+	 *
+	 * The same grammar and the same reading of it, because a second way of writing down a server would
+	 * be a second thing that is nearly right: a URL is a URL wherever it appears, and anything that is
+	 * not one is the command to start it with. Refused here rather than at the plane only for what a
+	 * line cannot mean at all — the plane still checks its own.
+	 */
+	const shelve = useCallback(
+		async (line: string): Promise<void> => {
+			const [name = "", ...rest] = line.trim().split(/\s+/);
+			const wrong = readName(name);
+			if (wrong !== undefined) {
+				setUnanswered(wrong);
+				return;
+			}
+			const read = readServer(rest);
+			if ("refused" in read) {
+				setUnanswered(read.refused);
+				return;
+			}
+			await say(() => client.addServer(name, read.server));
+		},
+		[client, say],
+	);
+
+	/** Gives an agent one off the shelf, or takes it back — the toggle the picker's rows stand for. */
+	const hold = useCallback(
+		async (agentId: string, name: string, held: boolean): Promise<void> =>
+			say(() => client.holdServer(agentId, name, held)),
+		[client, say],
+	);
+
+	const unshelve = useCallback(
+		async (name: string): Promise<void> => say(() => client.forgetServer(name)),
 		[client, say],
 	);
 
@@ -2462,6 +2608,13 @@ export function App({
 			if (input === "y" || input === "Y") void forget(dropping);
 			return;
 		}
+		// And about a server, which is asked apart from the model's because what it takes away is wider:
+		// forgetting one takes it off every agent that had it, not off the row the cursor is on.
+		if (forgetting !== undefined) {
+			setForgetting(undefined);
+			if (input === "y" || input === "Y") void unshelve(forgetting);
+			return;
+		}
 		/**
 		 * A key is being typed, and until it is entered or given up on nothing else has the keyboard.
 		 *
@@ -2584,6 +2737,40 @@ export function App({
 				return;
 			}
 			entered(adding + first);
+			return;
+		}
+		/**
+		 * A server is being written out, and until it is entered or given up on nothing else has this.
+		 *
+		 * A line rather than a list, and it has to be: what is being typed is a URL somebody went and
+		 * found or a command with its arguments, and neither is a thing this plane could offer to pick
+		 * from. Here for the same reason the other boxes are — a `/` in a URL is a `/`, not a command.
+		 */
+		if (shelving !== undefined) {
+			const entered = (value: string): void => {
+				setShelving(undefined);
+				if (value.trim().length > 0) void shelve(value);
+			};
+			if (key.escape) {
+				setShelving(undefined);
+				return;
+			}
+			if (key.return) {
+				entered(shelving);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setShelving((prev) => (prev ?? "").slice(0, -1));
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			// A URL is pasted rather than typed about as often as a key is, newline and all.
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			if (rest.length === 0) {
+				setShelving((prev) => (prev ?? "") + first);
+				return;
+			}
+			entered(shelving + first);
 			return;
 		}
 		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
@@ -2737,6 +2924,29 @@ export function App({
 					setPick(0);
 					void look();
 				}
+				if (configRow.kind === "add-server") setShelving("");
+				// Which agent has it, which is the only thing about a server there is to decide here: what
+				// it is was decided when it was found, and the list of who could have it is the column on
+				// the left. Toggling, because the same row means both — a name on the list that already has
+				// it says so, and pressing return on it is how it stops.
+				if (configRow.kind === "server" && agents.length > 0) {
+					const { name, agents: has } = configRow.server;
+					const among = agents.map(
+						(agent) => `${agent.id}${has.includes(agent.id) ? "   has it" : ""}`,
+					);
+					setChoosing({
+						what: `${name} goes to`,
+						among,
+						take: (one) => {
+							const id = agents[among.indexOf(one)]?.id;
+							if (id !== undefined) void hold(id, name, !has.includes(id));
+						},
+					});
+					setPick(0);
+				}
+			}
+			if ((key.backspace || key.delete) && configRow?.kind === "server") {
+				setForgetting(configRow.server.name);
 			}
 			// Backspace rather than a letter, because every letter is a character somebody will one day
 			// type into a box on this screen, and this is the key that already means take it away.
@@ -2933,10 +3143,13 @@ export function App({
 								providers,
 								models,
 								search,
+								servers,
 								cursor: Math.max(0, onRow),
 								typing,
 								secret,
 								adding,
+								shelving,
+								forgetting,
 								offers,
 								choosing,
 								pick,
@@ -3001,101 +3214,121 @@ export function App({
 							["esc", "cancel"],
 							["^C", "quit"],
 						]
-					: typing !== undefined
-						? // A key is being typed and has the keyboard, so the row is the two ways out of that.
+					: shelving !== undefined
+						? // A line with nothing to pick off, so the arrows are not named: there is no list here.
 							[
-								["⏎", "save"],
+								["⏎", "add"],
 								["esc", "cancel"],
 								["^C", "quit"],
 							]
-						: dropping !== undefined
-							? [
-									["y", "drop"],
-									["n", "cancel"],
+						: typing !== undefined
+							? // A key is being typed and has the keyboard, so the row is the two ways out of that.
+								[
+									["⏎", "save"],
+									["esc", "cancel"],
 									["^C", "quit"],
 								]
-							: panel === "logs"
-								? // The arrows walk the column here as they do over a conversation, so the feed is
-									// moved with the same chords a conversation is moved with rather than with the two
-									// keys that mean somewhere else on every other row of this screen. Nothing else
-									// this row usually offers exists here.
-									[
-										["↑↓", "move"],
-										["^U^D", "scroll"],
+							: dropping !== undefined
+								? [
+										["y", "drop"],
+										["n", "cancel"],
 										["^C", "quit"],
 									]
-								: panel === "config"
-									? // What return does here depends on the row, so the row is what the hint says. A hint
-										// naming a key that does nothing on the row under the cursor is the same lie as a
-										// hint for a key that does nothing at all.
-										[
-											["↑↓", "move"],
-											...(configRow?.kind === "section"
-												? [["⏎", "open"]]
-												: configRow?.kind === "provider"
-													? [["⏎", "set key"]]
-													: configRow?.kind === "add"
-														? [["⏎", "add model"]]
-														: configRow?.kind === "search"
-															? [["⏎", configRow.field === "key" ? "set key" : "change"]]
-															: configRow?.model.added === true
-																? [["⌫", "drop model"]]
-																: []),
-											// Only where there is one to leave, because a key named on a row it does nothing
-											// on is the same lie as a key named for nothing at all.
-											...(section === undefined ? [] : [["esc", "back"]]),
-											["tab", nextRow(spot, agents)],
+								: forgetting !== undefined
+									? [
+											["y", "forget"],
+											["n", "cancel"],
 											["^C", "quit"],
 										]
-									: menu.length > 0
-										? // The keys have been taken by the menu, so the row says what they do now instead of
-											// what they did a keystroke ago. A hint left standing for a key the menu has taken is
-											// the same lie as a hint for a key that does nothing.
+									: panel === "logs"
+										? // The arrows walk the column here as they do over a conversation, so the feed is
+											// moved with the same chords a conversation is moved with rather than with the two
+											// keys that mean somewhere else on every other row of this screen. Nothing else
+											// this row usually offers exists here.
 											[
-												["↑↓", among],
-												["⏎", "choose"],
+												["↑↓", "move"],
+												["^U^D", "scroll"],
 												["^C", "quit"],
 											]
-										: deleting !== undefined
-											? // A question is open and it has the keyboard, so the row says the two keys that mean
-												// anything. Everything it usually offers would be a way out of answering that does
-												// not exist — and `n` is spelled out rather than left as "any other key", because a
-												// key to press is a thing a hand does and "any other key" is a thing to work out.
+										: panel === "config"
+											? // What return does here depends on the row, so the row is what the hint says. A hint
+												// naming a key that does nothing on the row under the cursor is the same lie as a
+												// hint for a key that does nothing at all.
 												[
-													["y", "delete"],
-													["n", "cancel"],
+													["↑↓", "move"],
+													...(configRow?.kind === "section"
+														? [["⏎", "open"]]
+														: configRow?.kind === "provider"
+															? [["⏎", "set key"]]
+															: configRow?.kind === "add"
+																? [["⏎", "add model"]]
+																: configRow?.kind === "search"
+																	? [["⏎", configRow.field === "key" ? "set key" : "change"]]
+																	: configRow?.kind === "add-server"
+																		? [["⏎", "add server"]]
+																		: configRow?.kind === "server"
+																			? [
+																					["⏎", "give"],
+																					["⌫", "forget"],
+																				]
+																			: configRow?.model.added === true
+																				? [["⌫", "drop model"]]
+																				: []),
+													// Only where there is one to leave, because a key named on a row it does nothing
+													// on is the same lie as a key named for nothing at all.
+													...(section === undefined ? [] : [["esc", "back"]]),
+													["tab", nextRow(spot, agents)],
 													["^C", "quit"],
 												]
-											: selected === undefined
-												? // Nothing else the row usually offers is true here: there is no conversation to
-													// scroll, no shell to open and no commands, until the name has been given.
+											: menu.length > 0
+												? // The keys have been taken by the menu, so the row says what they do now instead of
+													// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+													// the same lie as a hint for a key that does nothing.
 													[
-														["↑↓", "agents"],
-														["⏎", "create"],
+														["↑↓", among],
+														["⏎", "choose"],
 														["^C", "quit"],
 													]
-												: [
-														["↑↓", "agents"],
-														// Only while there is a line to walk back to: left and right do nothing in a
-														// conversation nobody has typed into yet, and a hint for a key that does nothing
-														// is the same lie as a hint for a key the menu has taken.
-														...(typed(said).length > 0 ? [["←→", "history"]] : []),
-														["^U^D", "scroll"],
-														// A key nobody guesses is pressable. The rest of this row is what to press to move
-														// around; this one is what to press to be told what else there is. In the shell the
-														// two of them say nothing true, and the way back out is worth saying instead.
-														...(shell
-															? [["⌫", "chat"]]
-															: [
-																	["/", "commands"],
-																	["!", "shell"],
-																]),
-														["^C", "quit"],
-														// Last, so that the rest of the row does not move as it comes and goes, and shown
-														// only while there is something to stop: the key does nothing at any other time,
-														// and offering it then is how a hint becomes a thing that lies.
-														...(busy.size > 0 ? [["esc", "stop"]] : []),
-													]
+												: deleting !== undefined
+													? // A question is open and it has the keyboard, so the row says the two keys that mean
+														// anything. Everything it usually offers would be a way out of answering that does
+														// not exist — and `n` is spelled out rather than left as "any other key", because a
+														// key to press is a thing a hand does and "any other key" is a thing to work out.
+														[
+															["y", "delete"],
+															["n", "cancel"],
+															["^C", "quit"],
+														]
+													: selected === undefined
+														? // Nothing else the row usually offers is true here: there is no conversation to
+															// scroll, no shell to open and no commands, until the name has been given.
+															[
+																["↑↓", "agents"],
+																["⏎", "create"],
+																["^C", "quit"],
+															]
+														: [
+																["↑↓", "agents"],
+																// Only while there is a line to walk back to: left and right do nothing in a
+																// conversation nobody has typed into yet, and a hint for a key that does nothing
+																// is the same lie as a hint for a key the menu has taken.
+																...(typed(said).length > 0 ? [["←→", "history"]] : []),
+																["^U^D", "scroll"],
+																// A key nobody guesses is pressable. The rest of this row is what to press to move
+																// around; this one is what to press to be told what else there is. In the shell the
+																// two of them say nothing true, and the way back out is worth saying instead.
+																...(shell
+																	? [["⌫", "chat"]]
+																	: [
+																			["/", "commands"],
+																			["!", "shell"],
+																		]),
+																["^C", "quit"],
+																// Last, so that the rest of the row does not move as it comes and goes, and shown
+																// only while there is something to stop: the key does nothing at any other time,
+																// and offering it then is how a hint becomes a thing that lies.
+																...(busy.size > 0 ? [["esc", "stop"]] : []),
+															]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

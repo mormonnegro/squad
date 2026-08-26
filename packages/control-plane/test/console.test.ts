@@ -42,6 +42,7 @@ import {
 	walked,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
+import type { ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer } from "../src/models.ts";
 import type { SearchStanding } from "../src/search.ts";
 
@@ -1546,14 +1547,31 @@ describe("Config", () => {
 		held: true,
 		here: false,
 	};
+	const shelf = [
+		{
+			name: "linear",
+			server: { transport: "http" as const, url: "https://mcp.linear.app/mcp" },
+			agents: ["scout"],
+			loggedIn: true,
+		},
+		{
+			name: "files",
+			server: { transport: "stdio" as const, command: "mcp-files", args: ["/home/agent"] },
+			agents: [],
+			loggedIn: false,
+		},
+	];
 	/** Every one of these is about the models section, which is where this screen's lists are. */
 	const pane = (props: {
 		section?: Section | undefined;
 		search?: SearchStanding | undefined;
+		servers?: readonly ServerStanding[];
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
 		adding?: string | undefined;
+		shelving?: string | undefined;
+		forgetting?: string | undefined;
 		offers?: readonly ModelOffer[] | undefined;
 		choosing?: { what: string; among: readonly string[] } | undefined;
 		pick?: number;
@@ -1567,6 +1585,7 @@ describe("Config", () => {
 				providers,
 				models,
 				search: searching,
+				servers: shelf,
 				cursor: 0,
 				typing: undefined,
 				secret: "",
@@ -1775,6 +1794,7 @@ describe("Config", () => {
 			expect(drawn).toContain("search");
 			expect(drawn).toContain("what its agents think with");
 			expect(drawn).toContain("where web_search goes");
+			expect(drawn).toContain("which agents hold them");
 		});
 
 		// The same dot the agents column uses, meaning the same thing: something this plane could
@@ -1800,6 +1820,13 @@ describe("Config", () => {
 			expect(list({ cursor: 1, search: { ...searching, held: false } })).toContain(
 				"no key, refused at the proxy",
 			);
+		});
+
+		// A shelf nobody was given anything off is a shelf doing nothing, which is the count worth
+		// having: how many are on it says less than how many are reaching anything.
+		it("counts the shelf, and how much of it anybody has", () => {
+			expect(list({ cursor: 2 })).toContain("2 on the shelf, 1 of them given to somebody");
+			expect(list({ cursor: 2, servers: [] })).toContain("nothing on the shelf yet");
 		});
 	});
 
@@ -1855,6 +1882,65 @@ describe("Config", () => {
 
 			expect(drawn).toContain("searches");
 			expect(drawn.split("\n").find((row) => row.includes("perplexity"))).toContain("›");
+		});
+	});
+
+	/**
+	 * The shelf, which is the plane's rather than an agent's.
+	 *
+	 * `/mcp` in a chat answers what this agent has. The question left over is what has anybody got,
+	 * and is any of it going unused — which you would otherwise open every agent in turn to ask.
+	 */
+	describe("the mcp section", () => {
+		const shelved = (props: Parameters<typeof pane>[0] = {}) =>
+			pane({ section: "mcp", columns: 90, ...props });
+
+		it("says what each server is, in the shape it was written in", () => {
+			const drawn = shelved();
+
+			expect(drawn).toContain("https://mcp.linear.app/mcp");
+			expect(drawn).toContain("mcp-files /home/agent");
+		});
+
+		// A server nobody has is a URL written down: nothing is reaching it and nothing will until it
+		// is handed out, which is the difference this dot is for.
+		it("marks the ones some agent was actually given", () => {
+			const rows = shelved().split("\n");
+
+			expect(rows.find((row) => row.includes("linear"))).toContain("●");
+			expect(rows.find((row) => row.includes("files"))).toContain("○");
+		});
+
+		it("says who holds the one it is standing on", () => {
+			expect(shelved({ cursor: 0 })).toContain("scout");
+			expect(shelved({ cursor: 1 })).toContain("nobody has it yet");
+		});
+
+		it("says when a server has an account here", () => {
+			expect(shelved({ cursor: 0 })).toContain("logged in");
+		});
+
+		// The row under the list, the same shape as the one that adds a model, because it is the same
+		// idea: the list ends in the way to put something new on it.
+		it("ends in the row that adds one, and says what a line there may be", () => {
+			const drawn = shelved({ cursor: 2 });
+
+			expect(drawn).toContain("+ a server");
+			expect(drawn).toContain("a URL to reach it at or a command to start it with");
+		});
+
+		it("shows the line being written out", () => {
+			expect(shelved({ cursor: 2, shelving: "linear https://mcp.linear.app/mcp" })).toContain(
+				"linear https://mcp.linear.app/mcp",
+			);
+		});
+
+		// Forgetting is wider than the row it is pressed on, so the question says so rather than
+		// naming the server and leaving the rest to be found out afterwards.
+		it("asks before forgetting, and says it comes off every agent", () => {
+			expect(shelved({ cursor: 0, forgetting: "linear" })).toContain(
+				"comes off every agent holding it",
+			);
 		});
 	});
 });

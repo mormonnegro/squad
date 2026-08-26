@@ -59,7 +59,7 @@ import {
 import { ExecStream } from "./exec-stream.ts";
 import { ProviderKeys } from "./keys.ts";
 import { MailboxStore } from "./mailbox.ts";
-import { hostOf, type McpServer, McpShelf } from "./mcp.ts";
+import { hostOf, type McpServer, McpShelf, readName, type ServerStanding } from "./mcp.ts";
 import {
 	AddedModels,
 	type Catalog,
@@ -1086,6 +1086,55 @@ export class ControlPlane {
 	async #reach(server: McpServer): Promise<Reachability> {
 		if (server.transport === "stdio") return { kind: "open" };
 		return reachability(server.url);
+	}
+
+	/**
+	 * Every server on the shelf, with who holds it and whether it has an account here.
+	 *
+	 * The shelf is the plane's rather than an agent's, so there is a screen it belongs on: `/mcp` in a
+	 * chat answers what this agent has, and the question left over — what has anybody got, and is any
+	 * of it going unused — is one you would otherwise have to open every agent to ask.
+	 */
+	async servers(): Promise<readonly ServerStanding[]> {
+		const standing: ServerStanding[] = [];
+		for (const one of await this.#mcp.holding()) {
+			standing.push({ ...one, loggedIn: (await this.#logins.status(one.name)) !== undefined });
+		}
+		return standing;
+	}
+
+	/**
+	 * Puts a server on the shelf from the console, which attaches it to nobody.
+	 *
+	 * Adding widens nothing on its own: the grant for a remote one is derived from the agents holding
+	 * it, so a shelf entry no agent was given is a URL written down and not a capability.
+	 */
+	async addServer(name: string, server: McpServer): Promise<void> {
+		const refused = readName(name);
+		if (refused !== undefined) throw new Error(refused);
+		await this.#mcp.add(name, server);
+	}
+
+	/** Gives an agent one off the shelf, or takes it back. Its grant follows on the next turn. */
+	async holdServer(agentId: string, name: string, held: boolean): Promise<void> {
+		if (!(await this.#mcp.servers()).some((one) => one.name === name)) {
+			throw new Error(`There is no server called "${name}"`);
+		}
+		if (!(await this.agents()).some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		if (held) await this.#mcp.attach(agentId, name);
+		else await this.#mcp.detach(agentId, name);
+		await this.#reregister(agentId);
+	}
+
+	/** Takes one off the shelf, and off every agent that had it — the two are one act. */
+	async forgetServer(name: string): Promise<void> {
+		if (!(await this.#mcp.servers()).some((one) => one.name === name)) {
+			throw new Error(`There is no server called "${name}"`);
+		}
+		await this.#mcp.forget(name);
+		await this.#reregisterAll();
 	}
 
 	/**

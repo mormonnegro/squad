@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
@@ -79,6 +80,29 @@ export type ControlRequest =
 	 * same reason: it derives a grant every agent gets, so only the operator's socket may say it.
 	 */
 	| { readonly id: string; readonly op: "set-search"; readonly spec: SearchSpec }
+	/** Every server on the shelf, with who holds it — the plane's list rather than an agent's. */
+	| { readonly id: string; readonly op: "servers" }
+	/**
+	 * A server put on the shelf, given to an agent, or taken off it.
+	 *
+	 * The same three `/mcp` does in a chat, said to the plane instead of to an agent, because the
+	 * shelf is the plane's: adding one there is answering a question about this machine rather than
+	 * about whoever happens to be selected.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "add-server";
+			readonly name: string;
+			readonly server: McpServer;
+	  }
+	| {
+			readonly id: string;
+			readonly op: "hold-server";
+			readonly agentId: string;
+			readonly name: string;
+			readonly held: boolean;
+	  }
+	| { readonly id: string; readonly op: "forget-server"; readonly name: string }
 	/**
 	 * Takes this connection over and turns the rest of it into bytes to a port inside a sandbox.
 	 *
@@ -111,6 +135,7 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
+	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
@@ -360,6 +385,17 @@ export class ControlServer {
 			} else if (request.op === "set-search") {
 				await this.#plane.chooseSearch(request.spec);
 				this.#write(socket, { id: request.id, ok: true, text: request.spec.provider });
+			} else if (request.op === "servers") {
+				this.#write(socket, { id: request.id, ok: true, servers: await this.#plane.servers() });
+			} else if (request.op === "add-server") {
+				await this.#plane.addServer(request.name, request.server);
+				this.#write(socket, { id: request.id, ok: true, text: request.name });
+			} else if (request.op === "hold-server") {
+				await this.#plane.holdServer(request.agentId, request.name, request.held);
+				this.#write(socket, { id: request.id, ok: true, text: request.name });
+			} else if (request.op === "forget-server") {
+				await this.#plane.forgetServer(request.name);
+				this.#write(socket, { id: request.id, ok: true, text: request.name });
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });

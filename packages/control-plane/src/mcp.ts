@@ -23,6 +23,19 @@ export interface NamedServer {
 }
 
 /**
+ * A server on the shelf as a screen showing all of them needs it: what it is, and who has it.
+ *
+ * The second half is the one a list of servers is otherwise missing. A server nobody was given does
+ * nothing at all, and that is not visible from the URL — so it is said here rather than left to be
+ * worked out by opening every agent in turn and reading its `/mcp`.
+ */
+export interface ServerStanding extends NamedServer {
+	readonly agents: readonly string[];
+	/** Whether an account was opened for it, for the servers that answer nothing without one. */
+	readonly loggedIn: boolean;
+}
+
+/**
  * A name the model can spell, which is narrower than a name the operator can type.
  *
  * Every tool a server brings is offered as `<name>_<tool>`, so the name lands in the middle of an
@@ -120,6 +133,21 @@ export class McpShelf {
 		const shelf = await this.#serialize(() => this.#read());
 		return Object.entries(shelf.servers)
 			.map(([name, server]) => ({ name, server }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+
+	/** Everything on the shelf with the agents holding each, which is one read rather than one per. */
+	async holding(): Promise<readonly (NamedServer & { readonly agents: readonly string[] })[]> {
+		const shelf = await this.#serialize(() => this.#read());
+		return Object.entries(shelf.servers)
+			.map(([name, server]) => ({
+				name,
+				server,
+				agents: Object.entries(shelf.attached)
+					.filter(([, names]) => names.includes(name))
+					.map(([agentId]) => agentId)
+					.sort((a, b) => a.localeCompare(b)),
+			}))
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
