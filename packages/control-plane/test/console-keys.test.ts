@@ -2,10 +2,11 @@ import { PassThrough } from "node:stream";
 import { render } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
-import { App } from "../src/console.ts";
+import { App, type Talk } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
 import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
+import type { Utterance } from "../src/transcript.ts";
 
 /**
  * The console driven by keystrokes, which is the only way some of it is true at all.
@@ -31,6 +32,8 @@ class Keyboard extends PassThrough {
 
 const DOWN = "[B";
 const UP = "[A";
+const RIGHT = "\u001b[C";
+const LEFT = "\u001b[D";
 const ENTER = "\r";
 const TAB = "\t";
 /** What the key marked backspace actually sends, which is what the delete key sends too. */
@@ -66,21 +69,28 @@ function plane(
 		refusesModel?: string;
 		sells?: readonly ModelOffer[];
 		unreachable?: readonly string[];
+		completes?: readonly string[];
 	} = {},
 ) {
 	const asked: string[] = [];
 	const commanded: string[] = [];
+	const shelled: string[] = [];
+	const asking: string[] = [];
+	const stopped: string[] = [];
 	const given: [string, string][] = [];
 	const written: ModelSpec[] = [];
 	const dropped: string[] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
 	let finish: (agent: AgentSummary) => void = () => {};
+	let feed: (event: PlaneEvent) => void = () => {};
 	let fail: (error: Error) => void = () => {};
 	const client = {
 		agents: async () => roster,
 		transcripts: async () => ({}),
-		logs: (_onEvent: (event: PlaneEvent) => void) => {},
+		logs: (onEvent: (event: PlaneEvent) => void) => {
+			feed = onEvent;
+		},
 		create: async (agentId: string) => {
 			asked.push(agentId);
 			if (options.refuses !== undefined) throw new Error(options.refuses);
@@ -97,8 +107,18 @@ function plane(
 			if (line.startsWith("/delete ")) roster = roster.filter((one) => one.id !== agentId);
 			return "";
 		},
-		shell: async () => ({ text: "", cwd: "/" }),
-		stop: async () => false,
+		shell: async (_agentId: string, line: string) => {
+			shelled.push(line);
+			return { text: "", cwd: "/" };
+		},
+		complete: async (_agentId: string, word: string) => {
+			asking.push(word);
+			return (options.completes ?? []).filter((option) => option.startsWith(word));
+		},
+		stop: async (agentId: string) => {
+			stopped.push(agentId);
+			return true;
+		},
 		providers: async () => options.pays ?? [],
 		setKey: async (keyEnv: string, value: string) => {
 			given.push([keyEnv, value]);
@@ -122,23 +142,33 @@ function plane(
 		client,
 		asked,
 		commanded,
+		shelled,
+		asking,
+		stopped,
 		given,
 		written,
 		dropped,
 		built: (id: string) => finish(listed(id)),
+		/** The plane is what says an agent is thinking, so the console is told the way it tells it. */
+		thinking: (id: string) => feed({ kind: "thinking", agentId: id }),
+		said: (id: string, said: Utterance) => feed({ kind: "said", agentId: id, said }),
 		broke: (why: string) => fail(new Error(why)),
 	};
 }
 
 /** Renders the console over a keyboard nothing is attached to, and hands back what it drew. */
-function open(client: ControlClient, initial: readonly AgentSummary[]) {
+function open(
+	client: ControlClient,
+	initial: readonly AgentSummary[],
+	conversations: Talk = new Map(),
+) {
 	const stdin = new Keyboard();
 	const stdout = new PassThrough();
 	let drawn = "";
 	stdout.on("data", (chunk: Buffer) => {
 		drawn = chunk.toString("utf8");
 	});
-	const app = render(h(App, { client, initial, conversations: new Map() }), {
+	const app = render(h(App, { client, initial, conversations }), {
 		stdin: stdin as unknown as NodeJS.ReadStream,
 		stdout: stdout as unknown as NodeJS.WriteStream,
 		debug: true,
@@ -177,7 +207,7 @@ describe("the console, pressed at", () => {
 		const { client, asked } = plane();
 		const console_ = open(client, [listed("demo"), listed("maxi")]);
 		try {
-			await console_.press(DOWN, DOWN);
+			await console_.press(RIGHT, RIGHT);
 			expect(console_.screen()).toContain("new agent   chat");
 
 			await console_.press("scout", ENTER);
@@ -229,7 +259,7 @@ describe("the console, pressed at", () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(DOWN);
+			await console_.press(RIGHT);
 			await console_.press("!ls");
 			expect(console_.screen()).toContain("+ !ls");
 
@@ -322,13 +352,223 @@ describe("the console, pressed at", () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(DOWN);
+			await console_.press(RIGHT);
 			expect(console_.screen()).toContain("new agent   chat");
 
-			await console_.press(UP);
+			await console_.press(LEFT);
 
 			expect(console_.screen()).toContain("demo   chat");
 			expect(console_.screen()).toContain("! shell");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
+/**
+ * The prompt, walked back through and taken back from.
+ *
+ * All three of these are keys a hand already knows from somewhere else — a shell, a browser, every
+ * other prompt — and a console that took them for something of its own would be a console where
+ * that knowledge is worth nothing.
+ */
+describe("the prompt, walked back through", () => {
+	const spoke = (agentId: string, ...lines: string[]): Talk =>
+		new Map([[agentId, lines.map((text) => ({ from: "operator" as const, text }))]]);
+
+	it("puts the last line back in the prompt on an up arrow", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")], spoke("demo", "hola", "que hora es"));
+		try {
+			await console_.press(UP);
+
+			expect(console_.screen()).toContain("> que hora es");
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("keeps going back, and stops on the oldest", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")], spoke("demo", "hola", "que hora es"));
+		try {
+			await console_.press(UP, UP, UP);
+
+			expect(console_.screen()).toContain("> hola");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** The half-written line survives the walk, which is the whole reason the walk is safe to press. */
+	it("gives back what was being typed when the walk ends", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")], spoke("demo", "hola"));
+		try {
+			await console_.press("medio escr");
+			await console_.press(UP);
+			expect(console_.screen()).toContain("> hola");
+
+			await console_.press(DOWN);
+
+			expect(console_.screen()).toContain("> medio escr");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
+/**
+ * Escape, which stops a turn and gives the question back.
+ *
+ * A turn is stopped because it was asked the wrong thing, nearly every time. Leaving the question
+ * standing alone in the conversation and the prompt empty makes asking it again a retyping job,
+ * which is work the console can do and the hand should not have to.
+ */
+describe("a turn stopped with escape", () => {
+	it("does nothing at an agent with nothing to stop", async () => {
+		const { client, stopped } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(ESCAPE);
+
+			expect(stopped).toEqual([]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("stops the turn, and puts the question back where it was typed", async () => {
+		const { client, stopped, thinking, said } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("que hora es", ENTER);
+			said("demo", { from: "operator", text: "que hora es" });
+			thinking("demo");
+			await console_.press();
+
+			await console_.press(ESCAPE);
+
+			expect(stopped).toEqual(["demo"]);
+			expect(console_.screen()).toContain("> que hora es");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** A prompt with something in it is a hand mid-sentence, and nothing gets to overwrite that. */
+	it("leaves a half-written line alone", async () => {
+		const { client, stopped, thinking, said } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("que hora es", ENTER);
+			said("demo", { from: "operator", text: "que hora es" });
+			thinking("demo");
+			await console_.press("y donde");
+
+			await console_.press(ESCAPE);
+
+			expect(stopped).toEqual(["demo"]);
+			expect(console_.screen()).toContain("> y donde");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
+/**
+ * The tab at a shell prompt, which is the shell's.
+ *
+ * A hand that opened a box to walk around it will press tab looking for a directory, because that
+ * is what tab is at every prompt that takes a path. Swapping the pane out from under that is wrong
+ * twice: the completion did not happen, and the pane went somewhere nobody asked for.
+ */
+describe("the shell prompt, tabbed at", () => {
+	it("types out the one path that matches, instead of changing panes", async () => {
+		const { client, asking } = plane({ has: [listed("demo")], completes: ["README.md"] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("!");
+			await console_.press("cat READ");
+			await console_.press(TAB);
+
+			expect(asking).toEqual(["READ"]);
+			expect(console_.screen()).toContain("cat README.md");
+			expect(console_.screen()).toContain("demo   chat");
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("leaves the hand inside a directory rather than past it", async () => {
+		const { client, shelled } = plane({ has: [listed("demo")], completes: ["packages/"] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("!");
+			await console_.press("cd pack");
+			await console_.press(TAB);
+			expect(console_.screen()).toContain("cd packages/");
+
+			await console_.press(ENTER);
+
+			// No space between the directory and the return, which is what a next tab goes into.
+			expect(shelled).toEqual(["cd packages/"]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("types as far as they agree and offers the rest, the way a slash offers commands", async () => {
+		const { client } = plane({
+			has: [listed("demo")],
+			completes: ["control-plane/", "control-server/"],
+		});
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("!");
+			await console_.press("cd co");
+			await console_.press(TAB);
+
+			expect(console_.screen()).toContain("cd control-");
+			expect(console_.screen()).toContain("control-plane/");
+			expect(console_.screen()).toContain("control-server/");
+			expect(console_.screen()).toContain("↑↓ path");
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("takes the row the arrows are standing on, and sends it on the return after", async () => {
+		const { client, shelled } = plane({
+			has: [listed("demo")],
+			completes: ["control-plane/", "control-server/"],
+		});
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("!");
+			await console_.press("cd co");
+			await console_.press(TAB);
+			await console_.press(DOWN);
+			await console_.press(ENTER);
+			expect(console_.screen()).toContain("cd control-server/");
+
+			await console_.press(ENTER);
+
+			expect(shelled).toEqual(["cd control-server/"]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** The way to the other panes is still there, over a line with nothing on it to complete. */
+	it("still changes panes over an empty prompt", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press("!");
+			await console_.press(TAB);
+
+			expect(console_.screen()).toContain("logs");
 		} finally {
 			console_.close();
 		}

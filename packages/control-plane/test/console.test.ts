@@ -5,18 +5,25 @@ import { COMMANDS, type Command } from "../src/commands.ts";
 import {
 	Agents,
 	type At,
+	agreed,
 	bare,
 	between,
 	Chat,
+	completing,
 	doing,
+	filled,
 	here,
 	holding,
 	inverted,
 	laid,
 	mouse,
 	New,
+	plain,
 	pointed,
+	quoted,
+	recalled,
 	resume,
+	type Said,
 	Setup,
 	type Span,
 	saidBy,
@@ -24,8 +31,10 @@ import {
 	standing,
 	type Thinking,
 	transcript,
+	typed,
 	until,
 	visible,
+	type Walk,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 import type { ModelOffer } from "../src/models.ts";
@@ -386,6 +395,186 @@ describe("between", () => {
 describe("bare", () => {
 	it("strips what was only ever for the screen", () => {
 		expect(bare("\u001b[36mdara\u001b[39m: hola   ")).toBe("dara: hola");
+	});
+});
+
+describe("typed", () => {
+	const said = (from: Said["from"], text: string): Said => ({ from, text });
+
+	it("keeps what this operator typed, oldest first", () => {
+		expect(
+			typed([
+				said("operator", "hola"),
+				said("agent", "hola a vos"),
+				said("operator", "/model"),
+				said("other", "a push landed"),
+			]),
+		).toEqual(["hola", "/model"]);
+	});
+
+	/** A blank line is not a line anybody wants back: walking onto one reads as the walk breaking. */
+	it("leaves out what was blank", () => {
+		expect(typed([said("operator", "hola"), said("operator", "   ")])).toEqual(["hola"]);
+	});
+
+	/** Asking the same thing twice is one thing to walk back to, the way it is in a shell. */
+	it("collapses a line said twice running", () => {
+		expect(
+			typed([said("operator", "/model"), said("operator", "/model"), said("operator", "hola")]),
+		).toEqual(["/model", "hola"]);
+	});
+
+	it("keeps a line that comes round again later", () => {
+		expect(
+			typed([said("operator", "/model"), said("operator", "hola"), said("operator", "/model")]),
+		).toEqual(["/model", "hola", "/model"]);
+	});
+});
+
+describe("completing", () => {
+	it("takes the last word, and says where it starts", () => {
+		expect(completing("cd worktrees")).toEqual({ from: 3, word: "worktrees" });
+	});
+
+	it("is the whole line when there is one word", () => {
+		expect(completing("packages/")).toEqual({ from: 0, word: "packages/" });
+	});
+
+	it("is empty at a space, which is a word not begun", () => {
+		expect(completing("cd ")).toEqual({ from: 3, word: "" });
+	});
+
+	/** An escaped space is a character of a name, so a tab after it is still on the same word. */
+	it("walks through a space that was escaped", () => {
+		expect(completing("cat mis\\ not")).toEqual({ from: 4, word: "mis\\ not" });
+	});
+});
+
+describe("plain and quoted", () => {
+	it("takes the escapes off what was typed, to ask about the name itself", () => {
+		expect(plain("mis\\ notas/dia\\ 1")).toBe("mis notas/dia 1");
+	});
+
+	/** What goes back in has to survive the shell that will read it a keystroke later. */
+	it("puts them back on everything the shell would otherwise act on", () => {
+		expect(quoted("mis notas/")).toBe("mis\\ notas/");
+		expect(quoted("$HOME.txt")).toBe("\\$HOME.txt");
+		expect(quoted("what?.md")).toBe("what\\?.md");
+	});
+
+	it("leaves the separators alone, since a path is what is being written", () => {
+		expect(quoted("packages/control-plane/")).toBe("packages/control-plane/");
+	});
+
+	it("comes back to itself", () => {
+		expect(plain(quoted("mi carpeta (vieja)/"))).toBe("mi carpeta (vieja)/");
+	});
+});
+
+describe("agreed", () => {
+	it("is as far as every candidate is the same", () => {
+		expect(agreed(["control-plane/", "control-server/"])).toBe("control-");
+	});
+
+	it("is the whole of it when there is only one", () => {
+		expect(agreed(["packages/"])).toBe("packages/");
+	});
+
+	it("is nothing when they part at the first letter", () => {
+		expect(agreed(["deploy/", "site/"])).toBe("");
+	});
+
+	it("is nothing at all when there is nothing", () => {
+		expect(agreed([])).toBe("");
+	});
+});
+
+describe("filled", () => {
+	it("types a lone candidate out in full, and moves on to the next word", () => {
+		expect(filled("cat READ", ["README.md"])).toEqual({ draft: "cat README.md ", options: [] });
+	});
+
+	/** A directory is not the end of a path, so the next tab goes into it rather than past it. */
+	it("leaves the hand inside a directory it completed", () => {
+		expect(filled("cd pack", ["packages/"])).toEqual({ draft: "cd packages/", options: [] });
+	});
+
+	it("types as far as the candidates agree, and offers the rest", () => {
+		expect(
+			filled("cd packages/co", ["packages/control-plane/", "packages/control-server/"]),
+		).toEqual({
+			draft: "cd packages/control-",
+			options: ["packages/control-plane/", "packages/control-server/"],
+		});
+	});
+
+	it("leaves the line alone when nothing matches", () => {
+		expect(filled("cd nada", [])).toEqual({ draft: "cd nada", options: [] });
+	});
+
+	it("replaces the word it was standing on and nothing before it", () => {
+		expect(filled("cp -r src/ pack", ["packages/"])).toEqual({
+			draft: "cp -r src/ packages/",
+			options: [],
+		});
+	});
+
+	it("escapes what it types, so a name with a space in it goes in as one word", () => {
+		expect(filled("cd mis", ["mis notas/"])).toEqual({ draft: "cd mis\\ notas/", options: [] });
+	});
+});
+
+describe("recalled", () => {
+	const past = ["primero", "segundo", "tercero"];
+
+	it("hands back the newest line first, and holds on to what was half typed", () => {
+		expect(recalled(past, undefined, 1, "medio escr")).toEqual({
+			walk: { back: 1, typing: "medio escr" },
+			draft: "tercero",
+		});
+	});
+
+	it("goes further back a step at a time", () => {
+		const one = recalled(past, undefined, 1, "");
+		const two = recalled(past, one.walk, 1, one.draft);
+
+		expect(two).toEqual({ walk: { back: 2, typing: "" }, draft: "segundo" });
+	});
+
+	/** Stopping on the oldest rather than emptying the prompt, which is what every shell does. */
+	it("stays on the oldest once there is nothing further back", () => {
+		const deep: Walk = { back: 3, typing: "" };
+
+		expect(recalled(past, deep, 1, "primero")).toEqual({ walk: deep, draft: "primero" });
+	});
+
+	it("comes back down through the lines it walked up", () => {
+		expect(recalled(past, { back: 3, typing: "" }, -1, "primero")).toEqual({
+			walk: { back: 2, typing: "" },
+			draft: "segundo",
+		});
+	});
+
+	/**
+	 * The line that was being written when the walk began comes back whole. A stray arrow that ate it
+	 * would leave nothing to do but remember it and type it again.
+	 */
+	it("gives back the half-written line at the end of the walk", () => {
+		expect(recalled(past, { back: 1, typing: "medio escr" }, -1, "tercero")).toEqual({
+			walk: undefined,
+			draft: "medio escr",
+		});
+	});
+
+	it("leaves the prompt alone when there is nothing to walk", () => {
+		expect(recalled([], undefined, 1, "medio escr")).toEqual({
+			walk: undefined,
+			draft: "medio escr",
+		});
+		expect(recalled(past, undefined, -1, "medio escr")).toEqual({
+			walk: undefined,
+			draft: "medio escr",
+		});
 	});
 });
 
@@ -783,6 +972,7 @@ describe("Chat", () => {
 		rows?: number;
 		columns?: number;
 		thinking?: Thinking | undefined;
+		queued?: readonly Said[];
 		top?: number | undefined;
 		shell?: string | undefined;
 		confirm?: string | undefined;
@@ -796,6 +986,7 @@ describe("Chat", () => {
 				rows: 4,
 				columns: 40,
 				thinking: undefined,
+				queued: [],
 				top: undefined,
 				shell: undefined,
 				confirm: undefined,
@@ -893,6 +1084,70 @@ describe("Chat", () => {
 	});
 
 	/**
+	 * A message typed at a busy agent is answered minutes later, and put straight into the conversation
+	 * it lands above the answer still being written — so that answer reads as a reply to it.
+	 */
+	it("holds a message the agent has not been told yet above the prompt", () => {
+		const drawn = chat({
+			history: [{ from: "agent", text: "un webhook es" }],
+			columns: 60,
+			rows: 8,
+			thinking: { frame: "⠙", seconds: 9 },
+			queued: [{ from: "operator", text: "puede ser cada 10 minutos?" }],
+		});
+
+		expect(bare(drawn)).toContain("⋯ puede ser cada 10 minutos?");
+		// Its own mark rather than the transcript's, which is the whole of saying it is still waiting.
+		expect(bare(drawn)).not.toContain("> puede ser");
+	});
+
+	// Two questions asked while one answer is being written are two rows, in the order they were
+	// typed: they are answered in that order, and a queue drawn out of order is not a queue.
+	it("keeps the ones waiting in the order they were typed", () => {
+		const drawn = chat({
+			history: [],
+			columns: 60,
+			rows: 8,
+			queued: [
+				{ from: "operator", text: "primera" },
+				{ from: "operator", text: "segunda" },
+			],
+		}).split("\n");
+		const first = drawn.findIndex((line) => line.includes("primera"));
+
+		expect(first).toBeGreaterThanOrEqual(0);
+		expect(drawn[first + 1]).toContain("segunda");
+	});
+
+	// Who is waiting to be heard is worth as much above the prompt as it is down in the pane: a
+	// message that arrived by mail and one somebody typed are both text addressed to the agent.
+	it("says where a queued message came from, when it came from somewhere else", () => {
+		const drawn = chat({
+			history: [],
+			columns: 60,
+			rows: 8,
+			queued: [{ from: "other", via: "telegram", text: "hola" }],
+		});
+
+		expect(drawn).toContain("⋯ ");
+		expect(drawn).toContain("‹telegram›");
+	});
+
+	// The seconds are a comfort and can be gone without. A line somebody typed that nobody has
+	// answered yet is the thing on this pane they are still owed.
+	it("gives up the clock before it gives up a message still waiting", () => {
+		const drawn = chat({
+			history: [{ from: "agent", text: "hola" }],
+			rows: 4,
+			thinking: { frame: "⠙", seconds: 9, step: "bash pnpm test" },
+			queued: [{ from: "operator", text: "y de paso" }],
+		});
+
+		expect(bare(drawn)).toContain("⋯ y de paso");
+		expect(drawn).not.toContain("bash pnpm test");
+	});
+
+	/**
 	 * The one thing a pane may never do. Anything it draws past its last row lands on the border, on
 	 * the column beside it, and below the bottom of the terminal — the screen does not scroll, it
 	 * breaks, and the only way back is to quit.
@@ -902,14 +1157,18 @@ describe("Chat", () => {
 
 		for (const rows of [1, 2, 5, 12]) {
 			expect(chat({ history: [paragraph], rows }).split("\n")).toHaveLength(rows);
-			// The working row is one more thing standing between the talk and the prompt, and a pane
-			// with no room for it has to go without rather than draw off its own bottom edge.
+			// The working row and the queue are more things standing between the talk and the prompt,
+			// and a pane with no room for them goes without rather than drawing off its own bottom edge.
 			expect(
 				chat({
 					history: [paragraph],
 					rows,
 					menu: [{ name: "/model", takes: "<name>", does: "answer with" }],
 					thinking: { frame: "⠙", seconds: 4, step: "bash pnpm test" },
+					queued: Array.from({ length: 6 }, (_, index) => ({
+						from: "operator" as const,
+						text: `pregunta ${index}`,
+					})),
 				}).split("\n"),
 			).toHaveLength(rows);
 		}

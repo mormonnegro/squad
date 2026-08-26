@@ -42,6 +42,7 @@ import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/sche
 import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
+	COMPLETE_SCRIPT,
 	type CommandContext,
 	type EmailOffer,
 	type EmailStanding,
@@ -189,8 +190,21 @@ export type PlaneEvent =
 	| { readonly kind: "error"; readonly context: string; readonly message: string }
 	/** A piece of an answer being written. The whole of it arrives again as a turn. */
 	| { readonly kind: "say"; readonly agentId: string; readonly text: string }
-	/** A line of the conversation, as it goes into the transcript that outlives the console. */
-	| { readonly kind: "said"; readonly agentId: string; readonly said: Utterance }
+	/**
+	 * A line of the conversation, as it goes into the transcript that outlives the console.
+	 *
+	 * `queued` says it arrived at an agent that was already mid-turn, so nobody has heard it yet. It is
+	 * not part of the transcript and is deliberately not written down: it is true for a few minutes and
+	 * false forever after, and a console opened tomorrow would be reading it as news. Said out loud
+	 * because only the plane knows — the words are the same either way, and a console left to guess
+	 * from them would guess.
+	 */
+	| {
+			readonly kind: "said";
+			readonly agentId: string;
+			readonly said: Utterance;
+			readonly queued?: boolean;
+	  }
 	/**
 	 * The conversation thrown away, so that whoever is showing it stops showing it.
 	 *
@@ -472,7 +486,9 @@ export class ControlPlane {
 			// once: a turn that fails is retried, and one that recorded what it was asked would write
 			// the same question into the conversation again on every attempt.
 			onAccepted: (event) => {
-				void this.#record(event.agentId, overheard(event));
+				// Asked here rather than worked out later, because this is the only moment the question has
+				// an answer: a turn in flight now is the one this message is going to wait behind.
+				void this.#record(event.agentId, overheard(event), this.bus.busy(event.agentId));
 			},
 		});
 		this.scheduler = new Scheduler({
@@ -1389,6 +1405,29 @@ export class ControlPlane {
 		return { text, cwd: this.#cwd.get(agentId) ?? SANDBOX_REPO_PATH };
 	}
 
+	/**
+	 * What a half-typed path inside the sandbox could still become.
+	 *
+	 * Nothing about this is recorded. A tab is not a thing that was said: a conversation with a row
+	 * in it for every key pressed while finding a directory is one nobody can read back through, and
+	 * the transcript is what an agent's turn is reconstructed from.
+	 *
+	 * The word goes in as an argument to `node` rather than into a shell line, so that a directory
+	 * called `; rm -rf ~` is a directory and never a command. Reading is all it does — the same
+	 * reason it does not go through the shell at all, where a completion could have side effects.
+	 */
+	async complete(agentId: string, word: string): Promise<readonly string[]> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		const cwd = this.#cwd.get(agentId) ?? SANDBOX_REPO_PATH;
+		const found = await this.sandboxes
+			.exec(agentId, ["node", "-e", COMPLETE_SCRIPT, cwd, word])
+			.catch(() => undefined);
+		if (found === undefined || found.exitCode !== 0) return [];
+		return found.stdout.split("\n").filter((option) => option.length > 0);
+	}
+
 	async #runShell(agentId: string, line: string): Promise<string> {
 		const cwd = this.#cwd.get(agentId) ?? SANDBOX_REPO_PATH;
 		const { script, mark } = shellScript(line, cwd);
@@ -1574,8 +1613,8 @@ export class ControlPlane {
 	 * Said before it is written, and the write is not what the caller waits on. A transcript is a
 	 * courtesy to the reader, and a disk that cannot take it is not a reason to hold up the turn.
 	 */
-	async #record(agentId: string, said: Utterance): Promise<void> {
-		this.#emit({ kind: "said", agentId, said });
+	async #record(agentId: string, said: Utterance, queued = false): Promise<void> {
+		this.#emit({ kind: "said", agentId, said, ...(queued ? { queued: true } : {}) });
 		// Said to whoever is watching, but not written down for an agent the plane no longer has: the
 		// last thing anyone says about an agent is that it is gone, and writing that line would put
 		// back the file the removal just took away.

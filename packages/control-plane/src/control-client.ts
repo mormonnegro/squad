@@ -200,6 +200,19 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to shell");
 	}
 
+	/**
+	 * What a half-typed path inside the agent's sandbox could still become.
+	 *
+	 * Its own request rather than a `shell` that lists a directory, because a shell writes both
+	 * halves of itself into the conversation: a tab pressed four times looking for a directory would
+	 * leave four `ls` and four listings in the record of what the operator said to this agent.
+	 */
+	async complete(agentId: string, word: string): Promise<readonly string[]> {
+		const response = await this.#once({ op: "complete", agentId, word });
+		if ("options" in response) return response.options;
+		throw new ControlError("unexpected answer to complete");
+	}
+
 	/** Stops the turn an agent is taking. Answers whether there was one to stop. */
 	async stop(agentId: string): Promise<boolean> {
 		const response = await this.#once({ op: "stop", agentId });

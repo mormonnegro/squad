@@ -433,6 +433,46 @@ export function shellScript(line: string, cwd: string): { script: string; mark: 
 	};
 }
 
+/**
+ * What a half-typed path inside a sandbox could still become, listed from inside it.
+ *
+ * Node rather than a shell, and the word handed over as an argument rather than written into a
+ * line, because the names being completed are names the agent chose: a directory called
+ * `; rm -rf ~` has to stay a directory. Reading a listing is the whole of what this does, which is
+ * the other half of the same rule — a tab is not a thing anybody expects to have effects.
+ */
+export const COMPLETE_SCRIPT = [
+	'const { readdirSync } = require("node:fs");',
+	'const { resolve } = require("node:path");',
+	'const [, cwd = "/", typed = ""] = process.argv;',
+	// `~` belongs to the shell rather than to the filesystem, so it is spelled out here or the path
+	// resolves to a directory with that literal name, which is nobody's.
+	'const home = process.env.HOME ?? "/home/agent";',
+	'const word = typed === "~" ? home : typed.startsWith("~/") ? home + typed.slice(1) : typed;',
+	// Up to the last slash is the directory to list; what follows is how much of a name in it is typed.
+	'const cut = word.lastIndexOf("/") + 1;',
+	"const dir = word.slice(0, cut);",
+	"const partial = word.slice(cut);",
+	"let entries = [];",
+	"try {",
+	'\tentries = readdirSync(resolve(cwd, dir === "" ? "." : dir), { withFileTypes: true });',
+	"} catch {",
+	// A directory that is not there is not an error worth a row in anything: it is a word that
+	// completes to nothing, which is what an empty answer already says.
+	"\tprocess.exit(0);",
+	"}",
+	"const found = entries",
+	"\t.filter((entry) => entry.name.startsWith(partial))",
+	// A dotfile once a dot has been typed and not before, which is what every shell does.
+	'\t.filter((entry) => partial.startsWith(".") || !entry.name.startsWith("."))',
+	'\t.map((entry) => dir + entry.name + (entry.isDirectory() ? "/" : ""))',
+	"\t.sort()",
+	// Enough to choose from and never enough to be a wall: no list this long was going to be read,
+	// and the way out of one is to type another letter.
+	"\t.slice(0, 200);",
+	'process.stdout.write(found.join("\\n"));',
+].join("\n");
+
 /** Splits the directory a shell ended in off what it printed, leaving the mark in neither. */
 export function endedIn(printed: string, mark: string): { text: string; cwd: string | undefined } {
 	const at = printed.lastIndexOf(mark);

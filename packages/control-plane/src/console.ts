@@ -184,8 +184,120 @@ export function saidBy(talk: Talk, agentId: string): readonly Said[] {
 	return talk.get(agentId) ?? [];
 }
 
-export function append(talk: Talk, agentId: string, said: Said): Talk {
-	return new Map(talk).set(agentId, [...saidBy(talk, agentId), said]);
+export function append(talk: Talk, agentId: string, ...said: readonly Said[]): Talk {
+	if (said.length === 0) return talk;
+	return new Map(talk).set(agentId, [...saidBy(talk, agentId), ...said]);
+}
+
+/**
+ * What the operator typed to this agent, oldest last: the list an up arrow walks back through.
+ *
+ * Taken from the conversation rather than kept alongside it, so that a console reopened tomorrow has
+ * the history the pane is already showing. The same line twice running counts once, because a
+ * history that keeps every `ls` is one you have to press your way through.
+ */
+export function typed(said: readonly Said[]): readonly string[] {
+	const lines = said
+		.filter((one) => one.from === "operator")
+		.map((one) => one.text)
+		.filter((line) => line.trim().length > 0);
+	return lines.filter((line, index) => line !== lines[index - 1]);
+}
+
+/** How far back through what was already said the prompt has been walked, and what it left behind. */
+export interface Walk {
+	/** How many lines back, counting the last one said as one. */
+	readonly back: number;
+	/** What was in the prompt when the walk began, to be given back at the end of it. */
+	readonly typing: string;
+}
+
+/**
+ * Where a step back or forward through what was already said lands.
+ *
+ * Walking down past the newest line gives back whatever was being typed when the walk began, rather
+ * than an empty prompt: a half-written line that a stray arrow eats is a line you have to remember
+ * and type again. Walking up past the oldest stays on the oldest, which is what every shell does.
+ */
+export function recalled(
+	past: readonly string[],
+	walk: Walk | undefined,
+	by: 1 | -1,
+	draft: string,
+): { readonly walk: Walk | undefined; readonly draft: string } {
+	const typing = walk?.typing ?? draft;
+	const back = Math.min(Math.max((walk?.back ?? 0) + by, 0), past.length);
+	if (back === 0) return { walk: undefined, draft: typing };
+	return { walk: { back, typing }, draft: past[past.length - back] ?? "" };
+}
+
+/**
+ * The word a tab is standing on: back to the last space that was not escaped, and no further.
+ *
+ * There is no cursor at this prompt — what is typed goes on the end — so the word being completed
+ * is always the last one. A space with a backslash in front of it is part of a name and not a
+ * boundary, which is the whole reason this is not a `split`.
+ */
+export function completing(line: string): { readonly from: number; readonly word: string } {
+	let from = 0;
+	for (let index = 0; index < line.length; index += 1) {
+		if (line[index] === "\\") {
+			index += 1;
+			continue;
+		}
+		if (line[index] === " ") from = index + 1;
+	}
+	return { from, word: line.slice(from) };
+}
+
+/** As it was typed becomes as it is meant: `mis\ notas` is one directory, not two words. */
+export function plain(word: string): string {
+	return word.replace(/\\(.)/g, "$1");
+}
+
+/**
+ * And back again, so that what a completion puts in the prompt is a word the shell reads as one.
+ *
+ * Everything the shell would otherwise act on is escaped, not only the space: a file called `$HOME`
+ * that came back unescaped would be a completion that quietly typed a different path than the one
+ * on the row that was chosen.
+ */
+export function quoted(word: string): string {
+	return word.replace(/([\s\\"'$`!*?()[\]{}<>|&;#~])/g, "\\$1");
+}
+
+/** The most of a name every candidate agrees on, which is how far one tab can safely type. */
+export function agreed(options: readonly string[]): string {
+	const [first = ""] = options;
+	let length = first.length;
+	for (const option of options) {
+		while (length > 0 && option.slice(0, length) !== first.slice(0, length)) length -= 1;
+	}
+	return first.slice(0, length);
+}
+
+/** A prompt after a tab: the line as it now stands, and what is still ambiguous about it. */
+export interface Filled {
+	readonly draft: string;
+	/** Empty when the tab settled it. Otherwise the rows to offer, the way a `/` offers commands. */
+	readonly options: readonly string[];
+}
+
+/**
+ * What one tab does to the line.
+ *
+ * The same two things every shell does: one candidate is typed out in full, and several are typed
+ * as far as they agree, leaving the hand at the first letter that would tell them apart. A
+ * directory takes no space after it, because a directory is not the end of a path.
+ */
+export function filled(line: string, options: readonly string[]): Filled {
+	const [only] = options;
+	if (only === undefined) return { draft: line, options: [] };
+	const head = line.slice(0, completing(line).from);
+	if (options.length === 1) {
+		return { draft: `${head}${quoted(only)}${only.endsWith("/") ? "" : " "}`, options: [] };
+	}
+	return { draft: `${head}${quoted(agreed(options))}`, options };
 }
 
 function without<T>(map: ReadonlyMap<string, T>, key: string): ReadonlyMap<string, T> {
@@ -201,8 +313,11 @@ function without<T>(map: ReadonlyMap<string, T>, key: string): ReadonlyMap<strin
  * and that naming is the point: a webhook body and the person at the keyboard both arrive as text
  * addressed to the agent, and a pane that drew them alike is one you cannot read back through to
  * find out who asked for what. The agent's own text is already ANSI by here, so it passes through.
+ *
+ * `mark` is what stands off the operator's own line, and the only caller that gives it is the queue
+ * above the prompt, which carries a mark of its own and does not want two.
  */
-function spoken(said: Said): string {
+function spoken(said: Said, mark = "> "): string {
 	// The operator's line, but not one addressed to the agent: it keeps the mark it was typed under,
 	// the bang it starts with, in the colour the prompt had while it was typed. Read back later, a
 	// `> !ls` looks like the agent was asked to run something, and the agent was never told at all.
@@ -226,7 +341,7 @@ function spoken(said: Said): string {
 	// of answers, and dim is how a terminal says this may be skipped. Yellow is what the agents column
 	// already paints a booked wakeup in, so the mark here and the clock in the list are one thing.
 	if (said.via !== undefined) return `\u001b[33m‹${said.via}›\u001b[39m ${said.text}`;
-	if (said.from === "operator") return `\u001b[36m> ${said.text}\u001b[39m`;
+	if (said.from === "operator") return `\u001b[36m${mark}${said.text}\u001b[39m`;
 	return said.text;
 }
 
@@ -797,16 +912,28 @@ export function offering(
 
 /**
  * The rows a chat pane sets aside above its prompt: the command menu while a slash is being typed,
- * and the line saying what the turn is doing while one is running. Both come out of the conversation.
+ * the messages queued at a busy agent, and the line saying what the turn is doing while one is
+ * running. All of them come out of the conversation.
  *
  * Worked out here rather than twice, because a drag arrives as a row of the terminal and this number
  * is half of turning it back into a line of text: a pane counting one thing while the mouse counts
- * another selects the wrong words.
+ * another selects the wrong words. It says which rows it granted as well as how many, so the pane
+ * draws exactly what was budgeted instead of arriving at the same answer a second way.
  */
-export function aside(listed: number, working: boolean, rows: number): number {
+export function aside(
+	listed: number,
+	working: boolean,
+	queued: number,
+	rows: number,
+): { readonly taken: number; readonly queued: number; readonly working: boolean } {
+	const room = chatRows(rows);
+	// Messages waiting to be taken outrank the clock. The seconds are a comfort; a line somebody typed
+	// and nobody has answered yet is the thing on this pane they are still owed.
+	const waiting = Math.max(0, Math.min(queued, room - listed));
 	// The working row gives way before the last row of conversation does. A pane squeezed to nothing
 	// is still a conversation with a prompt under it, and a clock is not worth the last line of talk.
-	return listed + (working && chatRows(rows) - listed > 0 ? 1 : 0);
+	const clock = working && room - listed - waiting > 0;
+	return { taken: listed + waiting + (clock ? 1 : 0), queued: waiting, working: clock };
 }
 
 /** The conversation as the rows a pane of this size is showing of it, which is what a drag copies. */
@@ -826,6 +953,7 @@ export function Chat({
 	rows,
 	columns,
 	thinking,
+	queued,
 	top,
 	shell,
 	confirm,
@@ -838,6 +966,8 @@ export function Chat({
 	readonly rows: number;
 	readonly columns: number;
 	readonly thinking: Thinking | undefined;
+	/** What has been said to this agent that it has not been told yet, oldest first. */
+	readonly queued: readonly Said[];
 	/** The first row of conversation to show, or the end of it when nothing has been scrolled back to. */
 	readonly top: number | undefined;
 	/** The directory the next `!` runs in, or nothing at all while the prompt is the agent's. */
@@ -856,11 +986,14 @@ export function Chat({
 	const { from, listed } = offering(menu, pick, rows);
 	const named = listed.map((command) => `${command.name} ${command.takes}`.trimEnd());
 	const widest = Math.max(0, ...named.map((name) => name.length));
-	const taken = aside(listed.length, thinking !== undefined, rows);
+	const budget = aside(listed.length, thinking !== undefined, queued.length, rows);
 	// Nothing when the pane had no row to spare for it, which is what `aside` decides for both of us.
-	const working = taken > listed.length ? thinking : undefined;
+	const working = budget.working ? thinking : undefined;
+	// The end of the queue rather than the start of it, when only some of it fits: this pane is read
+	// from the bottom, and the ones nearest the prompt are the ones just typed into it.
+	const holding = queued.slice(queued.length - budget.queued);
 	const clock = working === undefined ? "" : `${working.frame} ${working.seconds}s `;
-	const lines = reading(history, columns, rows, taken, top);
+	const lines = reading(history, columns, rows, budget.taken, top);
 	// A question waiting for an answer is drawn over the shell's prompt, and it carries its own
 	// answer: the keys are in the prompt because that is where the eye already is, and a prompt that
 	// only asked left an empty red box with nothing to say what would close it. It names the agent out
@@ -919,6 +1052,26 @@ export function Chat({
 					// inside it, so it has the columns the border and the padding would have taken.
 					h(Text, { dimColor: true }, clipped(working.step ?? THINKING, columns - clock.length)),
 				),
+		// Under the clock and above the prompt: said, but not yet heard. A message typed at a busy agent
+		// is queued for minutes, and put into the conversation at once it reads as one that has already
+		// been taken — the answer still being written above it then looks like a reply to it. Waiting
+		// here instead, it stays where the hand left it and joins the conversation when the agent does.
+		//
+		// One row each and the first line only, whatever was pasted: this is a queue, and a queue whose
+		// rows are paragraphs eats the conversation it is waiting to be part of. The whole of it is in
+		// the pane a moment later. Not dimmed — dim is how a terminal says this may be skipped, and this
+		// is the opposite: it is the one thing here that has not happened yet.
+		...holding.map((said, index) =>
+			h(
+				Text,
+				{ key: `queued-${index}`, wrap: "truncate" },
+				// Where the transcript will put `> `, which is why the line asks for none of its own: the
+				// same row, one step short of having been said. A channel keeps its `‹telegram›` though —
+				// who is waiting to be heard is exactly as worth knowing here as it is down in the pane.
+				h(Text, { color: "cyan" }, "⋯ "),
+				spoken(said, "").split("\n")[0] ?? "",
+			),
+		),
 		// Outside the prompt's box and resting on it, the way the list of what a word could become
 		// sits above the word in every other box that completes. Inside it, the box would grow and
 		// shrink under the hand as the list filtered, which is the one thing a prompt must not do.
@@ -1364,10 +1517,30 @@ export function App({
 			),
 	);
 	const [talk, setTalk] = useState<Talk>(conversations);
+	// What has been said to each agent that the agent has not been told yet, because it was mid-turn
+	// when it arrived. Held apart from the conversation until the turn that takes it starts, and then
+	// moved into it whole — the plane has already written it down, so this is only about where it is
+	// drawn. Empty when a console opens: what is queued now is a fact about this minute, and a
+	// transcript replayed tomorrow is not being waited on by anybody.
+	// Kept in a ref with the state beside it only for drawing. Two of the plane's events can arrive in
+	// one chunk and both be answered before a single render happens between them, and the second of
+	// them is the one that empties this: read back off a render that has not happened yet, it would
+	// empty it of nothing and the message somebody typed would be gone.
+	const queue = useRef<Talk>(new Map());
+	const [waiting, setWaiting] = useState<Talk>(queue.current);
 	// An answer being written, which is not in the transcript yet because it is not finished. Kept
 	// apart from the conversation so that when it is finished it replaces itself rather than repeats.
 	const [live, setLive] = useState<ReadonlyMap<string, string>>(new Map());
 	const [draft, setDraft] = useState("");
+	// How far back through what was already said the prompt has been walked, or nothing while it is
+	// standing on the line being typed. Dropped whenever the prompt is about something else.
+	const [recalling, setRecalling] = useState<Walk | undefined>(undefined);
+	// What the last tab found and could not settle, kept against the line it was found for: a draft
+	// that has moved on since is a list about a word nobody is typing any more, so the menu below
+	// simply stops matching and the rows go. Nothing has to remember to clear it.
+	const [finding, setFinding] = useState<{ line: string; options: readonly string[] } | undefined>(
+		undefined,
+	);
 	// Whether the prompt is the sandbox's. A mode rather than a prefix, because looking around inside
 	// a box is a handful of commands in a row and not one: `!ls`, `!cd`, `!ls` again.
 	const [shell, setShell] = useState(false);
@@ -1439,16 +1612,25 @@ export function App({
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
 	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
 	// not over a name, which is not addressed to an agent that exists yet.
-	const menu =
-		panel === "chat" && !shell && selected !== undefined
-			? completions(draft, models, selected.model)
-			: [];
+	const menu: readonly Command[] =
+		panel !== "chat" || selected === undefined
+			? []
+			: shell
+				? // Paths, and only ones a tab has already been pressed for: what a word could become is a
+					// question for the sandbox, and asking it on every keystroke would be a round trip per
+					// letter. The name is the candidate alone rather than the whole line, because the row is
+					// read against the word above it and not against the command in front of that.
+					finding?.line === draft
+					? finding.options.map((option) => ({ name: option, takes: "", does: "" }))
+					: []
+				: completions(draft, models, selected.model);
 	const at = Math.min(pick, menu.length - 1);
 	const chosen = menu[at];
 	// What the arrows are moving through, for the row that says so: a command until one has been
 	// chosen, and after that whatever the chosen one takes.
-	const among = /\s/.test(draft) ? "model" : "command";
+	const among = shell ? "path" : /\s/.test(draft) ? "model" : "command";
 	const writing = selected === undefined ? undefined : live.get(selected.id);
+	const queued = selected === undefined ? [] : saidBy(waiting, selected.id);
 	const said =
 		selected === undefined
 			? []
@@ -1480,7 +1662,7 @@ export function App({
 	const listed = panel === "chat" && selected !== undefined ? offering(menu, at, inner).listed : [];
 	const taken =
 		panel === "chat" && selected !== undefined
-			? aside(listed.length, busy.has(selected.id), inner)
+			? aside(listed.length, busy.has(selected.id), queued.length, inner).taken
 			: 0;
 	const onScreen =
 		panel === "logs"
@@ -1488,9 +1670,9 @@ export function App({
 			: panel === "chat" && selected !== undefined
 				? reading(said, width, inner, taken, top)
 				: [];
-	// The feed has no prompt under it. The chat has one, the command menu when a slash is being typed
-	// and the working row while a turn runs, and all of them stand between the last line of talk and
-	// the bottom border.
+	// The feed has no prompt under it. The chat has one, the command menu when a slash is being typed,
+	// whatever is queued at a busy agent and the working row while a turn runs, and all of them stand
+	// between the last line of talk and the bottom border.
 	const below = panel === "logs" ? 0 : taken + (boxed ? PROMPT_ROWS : 1);
 
 	// Scrolled back is a place in one conversation or one feed, and it does not survive being pointed
@@ -1502,6 +1684,8 @@ export function App({
 	if (drawn !== showing) {
 		setDrawn(showing);
 		setTop(undefined);
+		// A walk back through one agent's history has nothing to say about the next one's.
+		setRecalling(undefined);
 	}
 
 	// Once, for the life of the console: the plane streams until the socket closes, and asking twice
@@ -1520,20 +1704,36 @@ export function App({
 			setBusy((prev) => without(prev, agentId));
 			setStep((prev) => without(prev, agentId));
 		};
+		const hold = (next: Talk): void => {
+			queue.current = next;
+			setWaiting(next);
+		};
 
 		client.logs((event) => {
 			feed.push(event);
 			if (event.kind === "said") {
-				setTalk((prev) => append(prev, event.agentId, shown(event.said, room.current)));
+				const line = shown(event.said, room.current);
+				// A line the agent was too busy to be told waits above the prompt instead of going into the
+				// conversation, because in the conversation it would sit above an answer to the question
+				// before it and read as the thing that answer is answering.
+				if (event.queued === true) hold(append(queue.current, event.agentId, line));
+				else setTalk((prev) => append(prev, event.agentId, line));
 			} else if (event.kind === "cleared") {
 				// Including the half-written answer and the turn it belonged to. The turn was stopped to
 				// make the clearing stick, so a pane left holding its last paragraph would be showing the
 				// one part of the conversation that outlived it.
 				setTalk((prev) => without(prev, event.agentId));
+				hold(without(queue.current, event.agentId));
 				finished(event.agentId);
 			} else if (event.kind === "thinking") {
 				// The only notice the console gets of a turn it did not ask for, and the only thing that
 				// separates an agent working from an agent that was spoken to and has not started yet.
+				//
+				// It is also the moment whatever was queued stops waiting: this turn is the one taking it.
+				// It joins the conversation here, after the answer the agent was busy writing, which is
+				// where it belongs — said while that was being written, heard once it was done.
+				setTalk((prev) => append(prev, event.agentId, ...saidBy(queue.current, event.agentId)));
+				hold(without(queue.current, event.agentId));
 				setBusy((prev) => new Map(prev).set(event.agentId, Date.now()));
 				setStep((prev) => without(prev, event.agentId));
 			} else if (event.kind === "step") {
@@ -1816,6 +2016,46 @@ export function App({
 			setCopy({ rows: span.to - span.from + 1, sure });
 		};
 
+		/**
+		 * Walks the lines this operator has typed to this agent, one key at a time.
+		 *
+		 * The half-written line is carried along in the walk rather than overwritten, so that coming
+		 * back down past the newest one hands it back exactly as it was left.
+		 */
+		const step = (by: 1 | -1): void => {
+			const next = recalled(typed(said), recalling, by, draft);
+			setRecalling(next.walk);
+			setDraft(next.draft);
+		};
+
+		/** Puts a candidate in the prompt in place of the word the tab was standing on. */
+		const put = (option: string): void => {
+			const head = draft.slice(0, completing(draft).from);
+			// No space after a directory: it is not the end of a path, and the next tab goes into it.
+			setDraft(`${head}${quoted(option)}${option.endsWith("/") ? "" : " "}`);
+			setFinding(undefined);
+			setPick(0);
+		};
+
+		/**
+		 * One tab at a shell prompt: as much of the word as the sandbox can settle, and the rest offered.
+		 *
+		 * The answer comes back from another machine, so the line may have moved on while it was in
+		 * flight. It is applied only if it did not — and the offer carries the line it belongs to, which
+		 * is what makes a stale one draw nothing rather than have to be cancelled.
+		 */
+		const complete = async (): Promise<void> => {
+			if (selected === undefined) return;
+			const asked = draft;
+			const options = await client
+				.complete(selected.id, plain(completing(asked).word))
+				.catch(() => [] as readonly string[]);
+			const next = filled(asked, options);
+			setDraft((prev) => (prev === asked ? next.draft : prev));
+			setPick(0);
+			setFinding(next.options.length > 0 ? { line: next.draft, options: next.options } : undefined);
+		};
+
 		// First, and before anything looks at the key: a mouse report is an escape sequence, and every
 		// branch below this one would take it for either a keystroke or something to type.
 		const moves = mouse(input);
@@ -1985,6 +2225,13 @@ export function App({
 		if (key.escape) {
 			if (selected !== undefined && busy.has(selected.id)) {
 				void client.stop(selected.id).catch(() => {});
+				// A turn stopped before it said anything leaves the question standing alone in the
+				// conversation, so the question goes back into the prompt: what a hand stops a turn for is
+				// usually that it asked the wrong thing, and retyping it is the work of asking it again.
+				// Only over an empty prompt, and only while nothing has come back — an answer half written
+				// is an answer, and the line that asked for it is history by then.
+				const last = said.at(-1);
+				if (draft === "" && last?.from === "operator") setDraft(last.text);
 			}
 			return;
 		}
@@ -2007,6 +2254,16 @@ export function App({
 		// that completes. Swapping the panel or the agent out from under a half-typed command loses the
 		// command, and the arrows are the only way to reach the entry that is not the first.
 		if (key.tab) {
+			// At a shell prompt the tab is the shell's, which is what it is at every shell: a hand that
+			// borrowed this prompt to walk around a box is a hand that will press it looking for a
+			// directory, and swapping the pane out from under that is the wrong answer twice over. The
+			// way to the other panes is still there, over an empty line, where there is nothing to
+			// complete.
+			if (shell && draft !== "") {
+				if (chosen !== undefined) put(chosen.name);
+				else void complete();
+				return;
+			}
 			if (chosen !== undefined) {
 				setDraft(`${chosen.name} `);
 				setPick(0);
@@ -2015,19 +2272,28 @@ export function App({
 			setPanel(after);
 			return;
 		}
+		// Back through what was already typed, which is what these two keys mean at every other prompt
+		// a hand has ever been at. The agents moved off them and onto left and right, which were doing
+		// nothing: this prompt takes no cursor, so there was no line to walk along with them.
 		if (key.upArrow) {
-			// On the setup screen the arrows are the list's, not the agents': the pane is not about the
-			// agent behind it, and moving one out from under a key about to be typed would be a surprise.
+			// On the setup screen the arrows are the list's, not the prompt's: there is no prompt behind
+			// it, and moving a row out from under a key about to be typed would be a surprise.
 			if (panel === "setup") setWhere(Math.max(0, onRow - 1));
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
-			else setCursor((prev) => Math.max(0, prev - 1));
+			else step(1);
 			return;
 		}
 		if (key.downArrow) {
 			if (panel === "setup") setWhere(Math.min(walk.length - 1, onRow + 1));
 			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
+			else step(-1);
+			return;
+		}
+		if (key.leftArrow || key.rightArrow) {
+			if (panel === "setup") return;
 			// One past the last agent, which is the row that makes one.
-			else setCursor((prev) => Math.min(agents.length, prev + 1));
+			if (key.rightArrow) setCursor((prev) => Math.min(agents.length, prev + 1));
+			else setCursor((prev) => Math.max(0, prev - 1));
 			return;
 		}
 		if (panel === "setup") {
@@ -2092,6 +2358,8 @@ export function App({
 		const send = (line: string): void => {
 			const text = line.trim();
 			setDraft("");
+			// The walk ends where the line was sent: the next up arrow starts again from the newest.
+			setRecalling(undefined);
 			// Asking something is asking to see the answer, so a conversation being read back through
 			// returns to its end rather than leaving the answer to arrive out of sight.
 			setTop(undefined);
@@ -2114,6 +2382,10 @@ export function App({
 			// can be given an argument, so a return that sent the moment a name was highlighted would
 			// make `/limit 5` the one thing the menu could not be used to type. A name already typed in
 			// full is not completed onto itself — at that point the menu is agreeing, not offering.
+			if (chosen !== undefined && shell) {
+				put(chosen.name);
+				return;
+			}
 			if (chosen !== undefined && chosen.name !== draft) {
 				setDraft(`${chosen.name} `);
 				setPick(0);
@@ -2265,6 +2537,7 @@ export function App({
 									rows: inner,
 									columns: width,
 									thinking,
+									queued,
 									top,
 									// Standing at the door until a command says otherwise, which is where the plane
 									// starts an agent's shell and what it goes back to when the sandbox is replaced.
@@ -2349,13 +2622,17 @@ export function App({
 										? // Nothing else the row usually offers is true here: there is no conversation to
 											// scroll, no shell to open and no commands, until the name has been given.
 											[
-												["↑↓", "agent"],
+												["←→", "agent"],
 												["⏎", "create"],
 												["^C", "quit"],
 											]
 										: [
-												["↑↓", "agent"],
+												["←→", "agent"],
 												["^U^D", "scroll"],
+												// Only while there is a line to walk back to: up and down do nothing in a
+												// conversation nobody has typed into yet, and a hint for a key that does nothing
+												// is the same lie as a hint for a key the menu has taken.
+												...(typed(said).length > 0 ? [["↑↓", "history"]] : []),
 												["tab", after(panel)],
 												// A key nobody guesses is pressable. The rest of this row is what to press to move
 												// around; this one is what to press to be told what else there is. In the shell the

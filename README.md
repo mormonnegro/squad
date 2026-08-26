@@ -199,13 +199,13 @@ asking to see the thing, not to be told a fact about it:
 │ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
 │                      ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
 │ + new agent          ││ envía una petición HTTP a una URL configurada.                 │
-│                      ││                                                                │
 │                      ││ ⠹ 9s search webhook retry semantics                            │
+│                      ││ ⋯ y cada cuanto reintenta?                                     │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ >                                                          │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
+ ←→ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
@@ -213,7 +213,7 @@ gets a mark of its own because with several agents on screen it is the one thing
 out by asking again in a second. The one the keyboard is on is its name in the colour the panel
 title gives the same name, and not an arrow in a gutter beside the marks: a column whose header
 stands against the border and whose rows all begin two further in reads as a list indented under a
-title it does not belong to. `↑↓` moves between them and `tab` cycles the panel through that
+title it does not belong to. `←→` moves between them and `tab` cycles the panel through that
 agent's conversation, the log feed — the same feed `agent logs` prints, running the whole time
 either way — and the setup screen, which is about the plane rather than about the agent behind it.
 While that agent is thinking, the row under the conversation carries the spinner, the seconds and
@@ -223,7 +223,14 @@ stuck on a test suite. It is there rather than in the prompt because the prompt 
 hand is on — a turn takes minutes, the next question is thought of during them, and a box wearing a
 spinner reads as a box that has stopped taking keys.
 
-Under the last agent is the row that makes one, reached with the same `↑↓` as any of them. It is a
+That next question is where the `⋯` row comes from. A turn is one turn: a message sent to an agent
+that is already answering waits behind it, and the wait is however long that answer takes. So it
+waits where it was typed, on its own row above the prompt, until the agent is free to take it —
+then it drops into the conversation under the answer it was waiting on, and the turn that takes it
+begins. Put into the conversation the moment it was sent, it would have sat above an answer written
+before it existed, and the pane would read as if that answer were the reply to it.
+
+Under the last agent is the row that makes one, reached with the same `←→` as any of them. It is a
 row rather than a command because that is where somebody who wants an agent is already looking —
 with none at all it is the only row there is, and the console opens on it. The panel behind it takes
 a name and `⏎` builds it: a container, a repository of its own, nothing in its memory, and exactly
@@ -245,13 +252,24 @@ that the way to find out which model an agent was answering badly with was to go
 operator's config file. As the terminal narrows the model goes first, then the ceiling, then the
 money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fact half said.
 
+`↑` and `↓` walk back through the lines you have typed at this agent, which is what those two keys
+do at every other prompt there has ever been. That is what moved the agents onto `←` and `→`: this
+prompt takes no cursor, so there was no line to walk along sideways and the arrows were doing
+nothing there. The half-written line you were on when the walk began comes back whole at the end of
+it, so a stray arrow costs you nothing. Each agent's history is its own, and it survives the console
+being closed, because the lines are read out of the conversation the plane kept.
+
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
 to stop, since a hint for a key that does nothing is a hint that lies. What stops is the process
 inside the container, killed rather than disconnected from: letting go of the pipe takes the output
 away from us and leaves a model thinking on the other side of it, going on being paid for after
 somebody has been told it stopped. What it had already written stays in the conversation with
 `stopped` under it, it is not taken again — an interrupted turn comes back, which is what whoever
-pressed the key was preventing — and it does not get to book the turn after it either.
+pressed the key was preventing — and it does not get to book the turn after it either. The question
+that started it goes back into the prompt, since a turn is nearly always stopped because it was
+asked the wrong thing and asking it again should not be a retyping job — over an empty prompt only,
+and only while nothing has come back, because a half-written line is a hand mid-sentence and an
+answer half written is an answer.
 
 The console takes the whole window and gives it back on the way out, the way `less` and `vim` do.
 Nothing it printed is left behind in the shell it was opened from, and the wheel has somewhere to
@@ -437,6 +455,17 @@ You stay in until you backspace off the empty line, because nobody looks around 
 command at a time, and `cd` moves you the way it does anywhere else — every command is its own `sh`,
 so the plane carries the directory from one to the next. A `cd` prints nothing, so what it shows is
 where it landed.
+
+`tab` completes a path, which is what `tab` is at a shell prompt everywhere else — so in this mode
+it stops changing panes and starts finding directories, and the way to the other panes is where
+there is nothing to complete, over an empty line. One match is typed out in full, several are typed
+as far as they agree and the rest are offered over the prompt the way `/` offers commands, and a
+directory takes no space after it because a directory is not the end of a path. It is a request of
+its own rather than a `ls` run for you: a shell writes both halves of itself into the conversation,
+and a tab pressed four times looking for a directory would leave four listings in the record of what
+you said to this agent. Nothing about it is recorded, and nothing about it runs — the sandbox is
+asked to read a directory, with the half-typed word handed over as an argument, so that a directory
+the agent called `; rm -rf ~` stays a directory.
 
 It runs where the agent runs, as the agent — the same directory, the same environment, the same
 proxy — so what comes back is about the agent's world rather than about a shell that happens to be

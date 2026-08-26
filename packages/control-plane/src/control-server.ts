@@ -33,6 +33,16 @@ export type ControlRequest =
 	 * with a URL holding a shell inside the box.
 	 */
 	| { readonly id: string; readonly op: "shell"; readonly agentId: string; readonly line: string }
+	/**
+	 * A half-typed path, asked about rather than run. Nothing it answers is recorded: a tab is not a
+	 * thing that was said, and a transcript with a row per keystroke is one nobody reads back.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "complete";
+			readonly agentId: string;
+			readonly word: string;
+	  }
 	| { readonly id: string; readonly op: "logs" }
 	| { readonly id: string; readonly op: "transcripts" }
 	/** Which providers this plane could pay for, and which of them it currently can. */
@@ -94,6 +104,8 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
+	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
+	| { readonly id: string; readonly ok: true; readonly options: readonly string[] }
 	| { readonly id: string; readonly ok: false; readonly error: string }
 	| { readonly id: string; readonly event: PlaneEvent }
 	/** Part of an answer to a wake still being written. The request is unfinished until `ok`. */
@@ -301,6 +313,12 @@ export class ControlServer {
 			} else if (request.op === "shell") {
 				const ran = await this.#plane.shell(request.agentId, request.line);
 				this.#write(socket, { id: request.id, ok: true, text: ran.text, cwd: ran.cwd });
+			} else if (request.op === "complete") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					options: await this.#plane.complete(request.agentId, request.word),
+				});
 			} else if (request.op === "create") {
 				this.#write(socket, {
 					id: request.id,
