@@ -30,6 +30,7 @@ export {
 	type Sender,
 	withoutTrail,
 } from "./mail.ts";
+export { asHtml } from "./markup.ts";
 export { pairingPhrase } from "./phrase.ts";
 export { isFresh, SIGNATURE_HEADER, sign, TIMESTAMP_HEADER, verify } from "./signature.ts";
 export {

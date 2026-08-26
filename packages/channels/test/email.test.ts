@@ -482,6 +482,25 @@ describe("writing back", () => {
 		});
 	});
 
+	// What an agent writes is markdown, and a mail client is not a terminal: sent as it stands, an
+	// answer arrives reading `**Chiste #1:**` with a row of dashes under it. Both parts go, so a
+	// client that draws neither is still left with the text the agent actually wrote.
+	it("sends the answer drawn as well as written", async () => {
+		const where = await running();
+		await asked(where);
+
+		await where.channel.send({
+			agentId: "clerk",
+			channel: "email:nico@example.com",
+			body: "**listo:**\n\n- uno\n- dos",
+			replyTo: "nico@example.com",
+		});
+
+		expect(where.submission.sent[0]?.text).toBe("**listo:**\n\n- uno\n- dos");
+		expect(where.submission.sent[0]?.html).toContain("<strong>listo:</strong>");
+		expect(where.submission.sent[0]?.html).toContain("<li>uno</li>");
+	});
+
 	// An answer that arrives as a new message somewhere down an inbox is one the person who asked has
 	// to match up themselves, and mail is the channel where they were never going to be watching.
 	it("lands under the question, by subject and by message id", async () => {

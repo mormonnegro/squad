@@ -14,6 +14,7 @@ import {
 	readableText,
 	withoutTrail,
 } from "./mail.ts";
+import { asHtml } from "./markup.ts";
 
 /** How far the mailbox has been read, which is two numbers that only mean anything together. */
 export interface ReadMark {
@@ -133,6 +134,8 @@ export interface Letter {
 	readonly replyTo: string;
 	readonly subject: string;
 	readonly text: string;
+	/** The same message drawn, for a client that can. The text part is what it falls back to. */
+	readonly html: string;
 	readonly inReplyTo?: string;
 	readonly references?: string;
 }
@@ -324,7 +327,11 @@ export class EmailChannel implements Channel {
 				to,
 				replyTo: from,
 				subject: answering(thread?.subject),
+				// Both parts, and the markdown kept in the plain one. What an agent writes is markdown,
+				// and a client that draws it reads far better for it; a client that does not is better
+				// off with the asterisks than with a paragraph they were silently taken out of.
 				text: reply.body,
+				html: asHtml(reply.body),
 				// Both, because clients disagree about which one threads: `In-Reply-To` is the answer to
 				// what, and `References` is the conversation it belongs to. With one message known they
 				// are the same id, and a thread of two is where a mail client stops calling it a thread.
