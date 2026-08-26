@@ -6,10 +6,12 @@ import {
 	Agents,
 	type At,
 	bare,
+	between,
 	Chat,
 	doing,
 	here,
 	holding,
+	inverted,
 	laid,
 	mouse,
 	New,
@@ -234,15 +236,20 @@ describe("mouse", () => {
 describe("holding", () => {
 	const pane = { x: 24, y: 0, width: 76, height: 29 };
 	const shape = { lines: 21, below: 3 };
+	/** The pane's own edge and the two columns of border and padding it draws before any text. */
+	const TEXT = 27;
 	const drag = (from: number, to: number): { from: At; to: At } => ({
 		from: { column: 40, row: from },
 		to: { column: 40, row: to },
 	});
+	/** Which rows, for the tests that are about rows. */
+	const rows = (span: Span | undefined): { from: number; to: number } | undefined =>
+		span === undefined ? undefined : { from: span.from, to: span.to };
 
 	it("counts from the first row the pane is showing", () => {
 		// Rows 5 and 25 of the terminal are the first and the last of the conversation.
-		expect(holding(drag(5, 25), pane, shape)).toEqual({ from: 0, to: 20 });
-		expect(holding(drag(10, 12), pane, shape)).toEqual({ from: 5, to: 7 });
+		expect(rows(holding(drag(5, 25), pane, shape))).toEqual({ from: 0, to: 20 });
+		expect(rows(holding(drag(10, 12), pane, shape))).toEqual({ from: 5, to: 7 });
 	});
 
 	// A hand drags upwards as often as down, and a selection that only worked one way would look
@@ -255,8 +262,8 @@ describe("holding", () => {
 	// on the prompt or in the list of agents is not a selection, and answering for it would put the
 	// last line of somebody else's conversation on the clipboard.
 	it("clamps where the drag ends and refuses where it began", () => {
-		expect(holding(drag(10, 99), pane, shape)).toEqual({ from: 5, to: 20 });
-		expect(holding(drag(10, -5), pane, shape)).toEqual({ from: 0, to: 5 });
+		expect(rows(holding(drag(10, 99), pane, shape))).toEqual({ from: 5, to: 20 });
+		expect(rows(holding(drag(10, -5), pane, shape))).toEqual({ from: 0, to: 5 });
 		expect(holding(drag(27, 27), pane, shape)).toBeUndefined();
 		expect(holding(drag(2, 10), pane, shape)).toBeUndefined();
 		expect(
@@ -266,11 +273,112 @@ describe("holding", () => {
 
 	// The feed has no prompt under it, so its last line is one row higher than the chat's.
 	it("takes the rows a pane drew below the text as the pane reports them", () => {
-		expect(holding(drag(28, 28), pane, { lines: 24, below: 0 })).toEqual({ from: 23, to: 23 });
+		expect(rows(holding(drag(28, 28), pane, { lines: 24, below: 0 }))).toEqual({
+			from: 23,
+			to: 23,
+		});
 	});
 
 	it("holds nothing in a pane that is showing nothing", () => {
 		expect(holding(drag(10, 12), pane, { lines: 0, below: 3 })).toBeUndefined();
+	});
+
+	/**
+	 * The whole of the complaint that started this: a hand asking for four words of a line was given
+	 * the line, its indentation and the space at its end. What the columns are counted from is the
+	 * first character of the text and not the edge of the terminal, since the paste has to slice a
+	 * string that knows nothing of the border the pane is drawn with.
+	 */
+	it("holds the columns the hand went over, not the whole row", () => {
+		const along = (from: number, to: number): { from: At; to: At } => ({
+			from: { column: from, row: 10 },
+			to: { column: to, row: 10 },
+		});
+
+		expect(holding(along(TEXT, TEXT + 3), pane, shape)).toEqual({
+			from: 5,
+			to: 5,
+			head: 0,
+			tail: 4,
+		});
+		// The cell the button came up on is held: a hand catching the last character of a word should
+		// not have to overshoot it by one.
+		expect(holding(along(TEXT + 5, TEXT + 5), pane, shape)?.tail).toBe(6);
+	});
+
+	it("holds the same columns dragged either way along a row", () => {
+		const rightwards = { from: { column: 30, row: 10 }, to: { column: 44, row: 10 } };
+		const leftwards = { from: { column: 44, row: 10 }, to: { column: 30, row: 10 } };
+
+		expect(holding(leftwards, pane, shape)).toEqual(holding(rightwards, pane, shape));
+		expect(holding(rightwards, pane, shape)).toEqual({ from: 5, to: 5, head: 3, tail: 18 });
+	});
+
+	/** Across rows the head belongs to the first row and the tail to the last, whichever way the
+	 * hand travelled: what is held is everything between them, the way it reads. */
+	it("gives the head to the first row and the tail to the last", () => {
+		const down = { from: { column: 40, row: 10 }, to: { column: 30, row: 12 } };
+		const up = { from: { column: 30, row: 12 }, to: { column: 40, row: 10 } };
+
+		expect(holding(down, pane, shape)).toEqual({ from: 5, to: 7, head: 13, tail: 4 });
+		expect(holding(up, pane, shape)).toEqual(holding(down, pane, shape));
+	});
+
+	// A press on the border or the padding is inside the pane and before the text, which is the same
+	// as the start of the line: it is where a hand goes to take a whole line from the beginning.
+	it("takes a press before the first character as the start of the line", () => {
+		const edge = { from: { column: 25, row: 10 }, to: { column: 40, row: 10 } };
+
+		expect(holding(edge, pane, shape)?.head).toBe(0);
+	});
+});
+
+/** What is held is drawn inverted, and the colours already in the row have to survive it. */
+describe("inverted", () => {
+	const held = { from: 1, to: 3, head: 5, tail: 4 };
+
+	it("leaves a row nothing is holding exactly as it was", () => {
+		expect(inverted("hola mundo", held, 0)).toBe("hola mundo");
+		expect(inverted("hola mundo", undefined, 2)).toBe("hola mundo");
+	});
+
+	it("holds a row in the middle from end to end", () => {
+		expect(inverted("hola mundo", held, 2)).toBe("\u001b[7mhola mundo\u001b[27m");
+	});
+
+	it("opens on the first row where the hand pressed, and closes on the last where it let go", () => {
+		expect(inverted("hola mundo", held, 1)).toBe("hola \u001b[7mmundo\u001b[27m");
+		expect(inverted("hola mundo", held, 3)).toBe("\u001b[7mhola\u001b[27m mundo");
+	});
+
+	// The columns are what is on the screen, and the colours are not on the screen: counting them
+	// would put the highlight several characters short of where the hand is.
+	it("counts past the colours the row is written with", () => {
+		expect(
+			inverted("\u001b[36mdara\u001b[39m: hola", { from: 0, to: 0, head: 6, tail: 10 }, 0),
+		).toBe("\u001b[36mdara\u001b[39m: \u001b[7mhola\u001b[27m");
+	});
+
+	it("holds nothing when the hand did not move off the character it pressed on", () => {
+		expect(inverted("hola mundo", { from: 0, to: 0, head: 4, tail: 4 }, 0)).toBe("hola mundo");
+	});
+});
+
+/** And what is pasted is what was drawn held, or the highlight was telling the hand a story. */
+describe("between", () => {
+	const line = "\u001b[36mdara\u001b[39m: hola mundo   ";
+
+	it("takes the words between the columns, without the colours", () => {
+		expect(between(line, 6, 10)).toBe("hola");
+		expect(between(line, 0, 4)).toBe("dara");
+	});
+
+	it("takes the rest of the row when the columns run past its end", () => {
+		expect(between(line, 6, 999)).toBe("hola mundo");
+	});
+
+	it("takes nothing at all from a row held between one column and itself", () => {
+		expect(between(line, 6, 6)).toBe("");
 	});
 });
 
@@ -727,7 +835,16 @@ describe("Chat", () => {
 		const drawn = chat({ history: [], thinking: { frame: "⠙", seconds: 42 } });
 
 		expect(drawn).toContain("⠙ 42s");
-		expect(drawn).not.toContain("> ");
+	});
+
+	/**
+	 * The whole of why it is not in the box. A turn takes minutes and the next question is thought of
+	 * during them; a prompt wearing a spinner is a box that looks like it is not taking keys.
+	 */
+	it("leaves the prompt free to type into while the turn runs", () => {
+		const drawn = chat({ history: [], draft: "y de paso", thinking: { frame: "⠙", seconds: 42 } });
+
+		expect(drawn).toContain("> y de paso");
 	});
 
 	// Forty seconds is the same forty seconds whether the agent is stuck on the model or running a
@@ -743,30 +860,36 @@ describe("Chat", () => {
 		expect(drawn).toContain("bash pnpm test");
 	});
 
-	// The prompt is what a hand is on, so it is the step that gives way rather than the line being
-	// typed — and a step that was cut says so, rather than merely stopping.
-	it("gives the room to the line being typed, and cuts the step to what is left", () => {
+	// A turn that has not reached its first tool is still doing something, and a clock with nothing
+	// beside it is a number floating under the conversation.
+	it("says it is thinking before there is a step to name", () => {
+		expect(chat({ history: [], thinking: { frame: "⠙", seconds: 3 } })).toContain("⠙ 3s thinking");
+	});
+
+	// The row is one row wherever it is: a step's detail is a whole shell command, and one drawn to
+	// its full length would wrap and cost the conversation a line on every tool call.
+	it("cuts a long step to the width of the pane, and says it was cut", () => {
 		const drawn = chat({
 			history: [],
 			columns: 40,
-			draft: "segui",
 			thinking: { frame: "⠙", seconds: 4, step: `bash ${"x".repeat(200)}` },
 		}).split("\n");
 
-		expect(drawn).toHaveLength(3);
-		expect(drawn[1]).toContain("segui");
-		expect(drawn[1]).toContain("…");
+		expect(drawn[0]).toHaveLength(40);
+		expect(drawn[0]).toContain("…");
 	});
 
-	// The shell prompt has to say which directory the next command runs in, and that is this row.
-	it("says nothing about a step while the prompt is the sandbox's", () => {
+	// Both are true at once and neither answers for the other: one says where the next line will run,
+	// the other says the last one is still running. They stopped sharing a row, so they stopped queueing.
+	it("says what the turn is doing while the prompt is the sandbox's", () => {
 		const drawn = chat({
 			history: [],
 			shell: "/work",
 			thinking: { frame: "⠙", seconds: 4, step: "bash pnpm test" },
 		});
 
-		expect(drawn).not.toContain("pnpm test");
+		expect(drawn).toContain("bash pnpm test");
+		expect(drawn).toContain("! /work");
 	});
 
 	/**
@@ -777,8 +900,18 @@ describe("Chat", () => {
 	it("never draws more rows than it was given", () => {
 		const paragraph = { from: "agent" as const, text: "palabra ".repeat(200).trim() };
 
-		for (const rows of [2, 5, 12]) {
+		for (const rows of [1, 2, 5, 12]) {
 			expect(chat({ history: [paragraph], rows }).split("\n")).toHaveLength(rows);
+			// The working row is one more thing standing between the talk and the prompt, and a pane
+			// with no room for it has to go without rather than draw off its own bottom edge.
+			expect(
+				chat({
+					history: [paragraph],
+					rows,
+					menu: [{ name: "/model", takes: "<name>", does: "answer with" }],
+					thinking: { frame: "⠙", seconds: 4, step: "bash pnpm test" },
+				}).split("\n"),
+			).toHaveLength(rows);
 		}
 	});
 
@@ -813,8 +946,8 @@ describe("Chat", () => {
 	});
 
 	/**
-	 * Over the spinner, not under it. `!` reaches the box whether or not the agent is thinking, and a
-	 * line typed at what looked like the agent's prompt would have run in the sandbox instead.
+	 * `!` reaches the box whether or not the agent is thinking, and a line typed at what looked like
+	 * the agent's prompt would have run in the sandbox instead.
 	 */
 	it("keeps saying it is the shell while the agent thinks", () => {
 		const drawn = chat({
@@ -824,7 +957,6 @@ describe("Chat", () => {
 		});
 
 		expect(drawn).toContain("! ~/.self");
-		expect(drawn).not.toContain("42s");
 	});
 
 	// Where it breaks matters as much as that it breaks: a path has no space in it, and text that

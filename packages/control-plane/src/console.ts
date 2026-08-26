@@ -103,18 +103,18 @@ const MARKS = {
 export interface Thinking {
 	readonly frame: string;
 	readonly seconds: number;
-	/** The last thing the agent did, for the one line beside the clock. */
+	/** The last thing the agent did, for the one line under the conversation. */
 	readonly step?: string;
 }
 
-/** The least a prompt may be narrowed to before what is beside it starts giving way instead. */
-const DRAFT_ROOM = 20;
+/** What the working row says of a turn that has not reached its first tool yet. */
+const THINKING = "thinking";
 
 /**
- * A step as the one line beside the clock says it: what it is, and what it is on.
+ * A step as the row under the conversation says it: what it is, and what it is on.
  *
- * Only the first line, because a step's detail is a whole shell command or a diff and the prompt row
- * is one row. The rest of it is in the feed, which is where a thing is read after it has happened.
+ * Only the first line, because a step's detail is a whole shell command or a diff and that row is
+ * one row. The rest of it is in the feed, which is where a thing is read after it has happened.
  */
 export function doing(step: AgentStep): string {
 	const first = step.detail.split("\n")[0]?.replace(/\s+/g, " ").trim() ?? "";
@@ -384,11 +384,25 @@ export function mouse(input: string): readonly Moved[] | undefined {
 	return reported ? moves : undefined;
 }
 
-/** The rows a drag is holding, counted from the first row the pane is showing. */
+/**
+ * What a drag is holding: the rows, counted from the first row the pane is showing, and where in the
+ * first and the last of them it opened and closed.
+ *
+ * The columns are counted from the first column of text rather than from the edge of the terminal,
+ * because that is the only origin both the paste and the highlight can agree on: one is slicing a
+ * string and the other is drawing into a box whose border and padding are not part of it.
+ */
 export interface Span {
 	readonly from: number;
 	readonly to: number;
+	/** The column the hold opens at, on its first row. */
+	readonly head: number;
+	/** The column it closes before, on its last row. Past the end of a row means all of it. */
+	readonly tail: number;
 }
+
+/** The border and the padding a panel draws before the first column of anything it says. */
+const TEXT_INSET = 2;
 
 /**
  * Which rows of a conversation a drag has hold of, or nothing when it began outside it.
@@ -401,6 +415,10 @@ export interface Span {
  *
  * Where the drag ends is clamped and where it began is not: a hand that pulls past the last row
  * means the last row, but a press on the prompt or on the agent list is not a selection at all.
+ *
+ * The cell the button came up on is held along with the rest, rather than being the first one let go
+ * of: a hand that has to overshoot by one to catch the last character of a word is a hand that has
+ * been told the wrong thing about where the selection ends.
  */
 export function holding(
 	drag: { readonly from: At; readonly to: At },
@@ -417,7 +435,66 @@ export function holding(
 	if (began < first || began > last) return undefined;
 	if (column < pane.x || column >= pane.x + pane.width) return undefined;
 	const ended = Math.min(Math.max(drag.to.row - 1, first), last);
-	return { from: Math.min(began, ended) - first, to: Math.max(began, ended) - first };
+	// Which end of the drag is the head depends on which way the hand went, and on the same row that
+	// is a question about columns rather than rows: a drag leftwards holds what it dragged over.
+	const back = ended < began || (ended === began && drag.to.column < drag.from.column);
+	const opened = back ? drag.to.column : drag.from.column;
+	const closed = back ? drag.from.column : drag.to.column;
+	const text = pane.x + TEXT_INSET;
+	return {
+		from: Math.min(began, ended) - first,
+		to: Math.max(began, ended) - first,
+		head: Math.max(0, opened - 1 - text),
+		tail: Math.max(0, closed - text),
+	};
+}
+
+/**
+ * Where a visible column falls in a row as it was drawn, which is somewhere further along than the
+ * column says: the colours are written into the row and take up no room on the screen.
+ *
+ * Counted in code points rather than in cells, so that a character made of two of them is never cut
+ * in half. A character drawn two cells wide is still counted as one, which is a paste off by a column
+ * for whoever selects across one — worth less than the crash the other way round would be.
+ */
+function at(line: string, column: number): number {
+	let index = 0;
+	let seen = 0;
+	while (index < line.length && seen < column) {
+		COLOUR.lastIndex = index;
+		if (COLOUR.exec(line) !== null) {
+			index = COLOUR.lastIndex;
+			continue;
+		}
+		// A character written as two units of a string is one character on the screen, and cutting
+		// between its halves would put half of it on the clipboard.
+		const code = line.codePointAt(index);
+		index += code !== undefined && code > 0xffff ? 2 : 1;
+		seen += 1;
+	}
+	return index;
+}
+
+/** Sticky, because what is asked at every step is whether a colour begins exactly here. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: stepping over the escape is the point.
+const COLOUR = /\u001b\[[0-9;]*m/y;
+
+/** A row as the screen shows it, with whatever part of it a drag is holding drawn inverted. */
+export function inverted(line: string, held: Span | undefined, row: number): string {
+	if (held === undefined || row < held.from || row > held.to) return line;
+	// A row in the middle of a hold is held end to end; only the first and the last have a column the
+	// hand actually chose.
+	const opens = at(line, row === held.from ? held.head : 0);
+	const closes = at(line, row === held.to ? held.tail : line.length);
+	if (closes <= opens) return line;
+	// `27` is the only code that undoes `7`, and nothing drawn into these rows uses it, so the colours
+	// already in the line cannot cancel the highlight halfway through a word.
+	return `${line.slice(0, opens)}${ESC}[7m${line.slice(opens, closes)}${ESC}[27m${line.slice(closes)}`;
+}
+
+/** The words of a held row, as they would be pasted: what is between the columns, and no colours. */
+export function between(line: string, head: number, tail: number): string {
+	return bare(line.slice(at(line, head), at(line, tail)));
 }
 
 /** A row as it would be pasted: without the colours it was drawn in, and without the space at its end. */
@@ -718,6 +795,20 @@ export function offering(
 	return { from, listed: menu.slice(from, from + height) };
 }
 
+/**
+ * The rows a chat pane sets aside above its prompt: the command menu while a slash is being typed,
+ * and the line saying what the turn is doing while one is running. Both come out of the conversation.
+ *
+ * Worked out here rather than twice, because a drag arrives as a row of the terminal and this number
+ * is half of turning it back into a line of text: a pane counting one thing while the mouse counts
+ * another selects the wrong words.
+ */
+export function aside(listed: number, working: boolean, rows: number): number {
+	// The working row gives way before the last row of conversation does. A pane squeezed to nothing
+	// is still a conversation with a prompt under it, and a clock is not worth the last line of talk.
+	return listed + (working && chatRows(rows) - listed > 0 ? 1 : 0);
+}
+
 /** The conversation as the rows a pane of this size is showing of it, which is what a drag copies. */
 export function reading(
 	history: readonly Said[],
@@ -765,49 +856,30 @@ export function Chat({
 	const { from, listed } = offering(menu, pick, rows);
 	const named = listed.map((command) => `${command.name} ${command.takes}`.trimEnd());
 	const widest = Math.max(0, ...named.map((name) => name.length));
-	const lines = reading(history, columns, rows, listed.length, top);
-	// A spinner alone says something is happening; the number rising beside it is what separates slow
-	// from stuck, and twice now the thing that looked slow was a hang. The shell prompt is drawn over
-	// it rather than under it, because a mode has to be visible while it is on: `!` reaches the box
-	// whether or not the agent is thinking, and a line typed at what looked like the agent's prompt
-	// would run in the sandbox instead. What is lost is only the spinner — the column on the left
-	// says the same thing with `◐`.
-	// A question waiting for an answer is drawn over both of those, and it carries its own answer: the
-	// keys are in the prompt because that is where the eye already is, and a prompt that only asked
-	// left an empty red box with nothing to say what would close it. It names the agent out loud too,
-	// since `delete?` on a pane you may have scrolled or arrowed to is a question about nothing.
+	const taken = aside(listed.length, thinking !== undefined, rows);
+	// Nothing when the pane had no row to spare for it, which is what `aside` decides for both of us.
+	const working = taken > listed.length ? thinking : undefined;
+	const clock = working === undefined ? "" : `${working.frame} ${working.seconds}s `;
+	const lines = reading(history, columns, rows, taken, top);
+	// A question waiting for an answer is drawn over the shell's prompt, and it carries its own
+	// answer: the keys are in the prompt because that is where the eye already is, and a prompt that
+	// only asked left an empty red box with nothing to say what would close it. It names the agent out
+	// loud too, since `delete?` on a pane you may have scrolled or arrowed to is a question about
+	// nothing.
 	const mark =
 		confirm !== undefined
 			? `delete ${confirm}?  y / n `
 			: shell !== undefined
 				? `! ${here(shell)} `
-				: thinking !== undefined
-					? `${thinking.frame} ${thinking.seconds}s `
-					: "> ";
+				: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
-	// Beside the clock rather than in the conversation: what a turn is doing right now is worth a
-	// glance while it is happening and nothing at all afterwards, and the feed already keeps the
-	// record. `27s` alone was the difference between slow and stuck; this is the difference between
-	// stuck on the model and stuck on a test suite. It gives way to the line being typed rather than
-	// the other way round, because the prompt is what a hand is on.
-	const doing =
-		shell === undefined && confirm === undefined && thinking?.step !== undefined
-			? clipped(thinking.step, width - mark.length - DRAFT_ROOM)
-			: "";
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
 	// its end, where the cursor is.
-	const room = Math.max(0, width - mark.length - (doing === "" ? 0 : doing.length + 1) - 1);
+	const room = Math.max(0, width - mark.length - 1);
 	// Red is the whole warning, and the border carries it too: the box the hand is in changes colour
 	// under a line already half typed, which is what stops the answer from being reflex.
-	const hue =
-		confirm !== undefined
-			? "red"
-			: shell !== undefined
-				? "magenta"
-				: thinking !== undefined
-					? "yellow"
-					: "cyan";
+	const hue = confirm !== undefined ? "red" : shell !== undefined ? "magenta" : "cyan";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -819,22 +891,34 @@ export function Chat({
 			// Already the width of the pane, so Ink is told not to measure them again — a row it
 			// decided to wrap is a row this one did not budget for.
 			//
-			// A held row is drawn inverted, which is what a selection looks like everywhere else and is
-			// the one thing the terminal stopped doing for us the moment the mouse was asked for. The
-			// whole row goes, colours and all: `27` is the only code that undoes `7`, so the markdown
-			// already in the line cannot cancel the highlight halfway through a word.
+			// What is held is drawn inverted, which is what a selection looks like everywhere else and is
+			// the one thing the terminal stopped doing for us the moment the mouse was asked for. Drawn
+			// into the row rather than laid over it: the highlight has to begin between two characters
+			// of a line, and only the line knows where its own colours are written into it.
 			...lines.map((line, index) =>
 				h(
 					Text,
-					{
-						key: `${index}`,
-						wrap: "truncate",
-						inverse: held !== undefined && index >= held.from && index <= held.to,
-					},
-					line === "" ? " " : line,
+					{ key: `${index}`, wrap: "truncate" },
+					inverted(line === "" ? " " : line, held, index),
 				),
 			),
 		),
+		// Under the conversation and outside the prompt, where the answer being waited for is going to
+		// appear — not in the box, which is a hand's own row and has to stay clear enough to type a
+		// second question into while the first one is still being answered. A spinner alone says
+		// something is happening; the number rising beside it is what separates slow from stuck, and
+		// twice now the thing that looked slow was a hang. What the turn is on separates stuck on the
+		// model from stuck on a test suite. It says nothing afterwards, because the feed keeps the record.
+		working === undefined
+			? null
+			: h(
+					Text,
+					{ key: "working", wrap: "truncate" },
+					h(Text, { color: "yellow" }, clock),
+					// Cut to the pane's own width rather than the prompt's: this row rests on the box, not
+					// inside it, so it has the columns the border and the padding would have taken.
+					h(Text, { dimColor: true }, clipped(working.step ?? THINKING, columns - clock.length)),
+				),
 		// Outside the prompt's box and resting on it, the way the list of what a word could become
 		// sits above the word in every other box that completes. Inside it, the box would grow and
 		// shrink under the hand as the list filtered, which is the one thing a prompt must not do.
@@ -859,7 +943,6 @@ export function Chat({
 				Text,
 				{ wrap: "truncate" },
 				h(Text, { color: hue }, mark),
-				doing === "" ? null : h(Text, { dimColor: true }, `${doing} `),
 				draft.slice(Math.max(0, draft.length - room)),
 				// No cursor while a question is up. There is nothing to type into it, and a block blinking
 				// at the end is what made the first version of this look like it was waiting for a word.
@@ -1243,12 +1326,8 @@ function Logs({
 		...visible(lines, rows, top).map((line, index) =>
 			h(
 				Text,
-				{
-					key: `${index}`,
-					wrap: "truncate",
-					inverse: held !== undefined && index >= held.from && index <= held.to,
-				},
-				line === "" ? " " : line,
+				{ key: `${index}`, wrap: "truncate" },
+				inverted(line === "" ? " " : line, held, index),
 			),
 		),
 	);
@@ -1399,15 +1478,20 @@ export function App({
 	// takes: they have no lines anybody would want in a paste.
 	const boxed = inner > PROMPT_ROWS;
 	const listed = panel === "chat" && selected !== undefined ? offering(menu, at, inner).listed : [];
+	const taken =
+		panel === "chat" && selected !== undefined
+			? aside(listed.length, busy.has(selected.id), inner)
+			: 0;
 	const onScreen =
 		panel === "logs"
 			? visible(lines, inner, top)
 			: panel === "chat" && selected !== undefined
-				? reading(said, width, inner, listed.length, top)
+				? reading(said, width, inner, taken, top)
 				: [];
-	// The feed has no prompt under it. The chat has one, and the command menu when a slash is being
-	// typed, and both of them stand between the last line of talk and the bottom border.
-	const below = panel === "logs" ? 0 : listed.length + (boxed ? PROMPT_ROWS : 1);
+	// The feed has no prompt under it. The chat has one, the command menu when a slash is being typed
+	// and the working row while a turn runs, and all of them stand between the last line of talk and
+	// the bottom border.
+	const below = panel === "logs" ? 0 : taken + (boxed ? PROMPT_ROWS : 1);
 
 	// Scrolled back is a place in one conversation or one feed, and it does not survive being pointed
 	// at another: arriving in the middle of something nobody asked for is disorienting. Dropped during
@@ -1707,11 +1791,19 @@ export function App({
 			setTop((prev) => scrolled(prev, by + Math.round(pages * height), { total, height }));
 		};
 
-		/** Puts the rows a drag was holding on the clipboard, by whatever means this machine has. */
+		/** Puts what a drag was holding on the clipboard, by whatever means this machine has. */
 		const take = async (span: Span): Promise<void> => {
-			const text = onScreen
-				.slice(span.from, span.to + 1)
-				.map(bare)
+			const rows = onScreen.slice(span.from, span.to + 1);
+			// Cut exactly where the highlight was drawn, so that what is pasted is what was seen held.
+			// The rows between the first and the last are held end to end, having no column of their own.
+			const text = rows
+				.map((line, index) =>
+					between(
+						line,
+						index === 0 ? span.head : 0,
+						index === rows.length - 1 ? span.tail : line.length,
+					),
+				)
 				.join("\n");
 			if (text === "") return;
 			const sure = await copied(text);
