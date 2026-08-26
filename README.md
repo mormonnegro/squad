@@ -116,6 +116,11 @@ never touches `config.yaml` or `.env`.
 It asks for no keys, because down a pipe the installer has no terminal to read one from; they are
 given later on the setup screen in `agent`. The npm name is not settled yet.
 
+The machine at the far end needs a Linux with SSH on it and nothing else — the installer brings
+Docker. One vCPU, a gigabyte of memory and ten gigabytes of disk runs a few agents, which is the
+bottom of every provider's list at around five dollars a month, and an old laptop under the desk
+does just as well.
+
 Nothing of that package stays on either machine. It pipes the two shell scripts below to the two
 ends of an SSH connection, and each of them stands alone:
 

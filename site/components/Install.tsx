@@ -25,9 +25,10 @@ export function Install() {
 				</button>
 			</div>
 			<p className="start-then">
-				Asks one thing — which machine your agents should live on — and does the rest over the SSH
-				you already have to it. Nothing to open on the VPS, no session to paste into. It ends on the
-				console.
+				<strong>You run it on your own computer.</strong> It asks which machine the agents should
+				live on — any machine you have SSH to — installs itself there over that same connection, and
+				leaves <code>agent</code> here as the console for it. Two machines, one command, and nothing
+				to open on the far one.
 			</p>
 		</div>
 	);

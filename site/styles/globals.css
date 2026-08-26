@@ -93,6 +93,11 @@ strong {
 	padding: 0 1.5rem;
 }
 
+/* The nav is sticky, so a section jumped to would otherwise arrive underneath it. */
+section[id] {
+	scroll-margin-top: 4rem;
+}
+
 .nav {
 	position: sticky;
 	top: 0;
@@ -942,6 +947,12 @@ footer {
 .jump:hover {
 	border-color: var(--green);
 	color: var(--green);
+}
+
+/* Of the two doors in the hero, the one most people are already standing at. */
+.jump-lead {
+	color: var(--green);
+	border-color: color-mix(in srgb, var(--green) 40%, var(--line));
 }
 
 .jump-row {

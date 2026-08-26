@@ -163,16 +163,15 @@ export default function Home() {
 					<p className="small muted">
 						It asks for no keys. Every one of them is given later on the setup screen, so the
 						install is never held up by a key you have to go and find. Nothing is published and
-						there is nothing to log into: after this, <code>agent</code> on your own computer is the
-						console on that machine.
+						there is nothing to log into.
 					</p>
 					<div className="jump-row">
-						<Link href="/install" className="jump">
-							the whole install →
+						<Link href="/install" className="jump jump-lead">
+							self-host it →
 						</Link>
-						<a href={REPO} className="jump">
-							read the source
-						</a>
+						<Link href="/install#a-machine" className="jump">
+							no machine? one is $5 a month
+						</Link>
 					</div>
 					<div className="hero-meta">
 						<span>Docker and Node 22</span>
@@ -395,6 +394,9 @@ export default function Home() {
 						<Link href="/install" className="jump">
 							put it on a VPS →
 						</Link>
+						<a href={REPO} className="jump">
+							read the source
+						</a>
 					</div>
 				</div>
 			</section>

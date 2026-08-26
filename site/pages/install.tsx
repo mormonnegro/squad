@@ -10,6 +10,24 @@ const ASKS: [string, string][] = [
 	["an Anthropic key", "the other model the config starts with — optional in the same way"],
 ];
 
+const MACHINES: [string, string, string][] = [
+	[
+		"Hetzner",
+		"https://www.hetzner.com/cloud",
+		"the most machine for the money — around €4.50 buys two cores and 4 GB, if a European or US region suits you",
+	],
+	[
+		"Vultr",
+		"https://www.vultr.com/pricing/",
+		"from about $5, and in more places than the other two put together",
+	],
+	[
+		"DigitalOcean",
+		"https://www.digitalocean.com/pricing/droplets",
+		"a few dollars more, and the most written about — worth it if this is your first server",
+	],
+];
+
 export default function Install() {
 	return (
 		<Layout
@@ -63,6 +81,38 @@ $ npx ${PACKAGE}
 							this page.
 						</p>
 					</div>
+				</div>
+			</section>
+
+			<section id="a-machine">
+				<div className="wrap">
+					<span className="eyebrow">If you do not have one yet</span>
+					<h2>The machine is five dollars a month</h2>
+					<p>
+						One vCPU, a gigabyte of memory and ten gigabytes of disk is enough for a few agents, and
+						that is the bottom of every provider's list. It needs a Linux with SSH on it and nothing
+						else — the installer brings Docker. Any of these work, and so does an old laptop under
+						the desk or a machine at work you can reach.
+					</p>
+					<table className="table">
+						<tbody>
+							{MACHINES.map(([who, href, what]) => (
+								<tr key={who}>
+									<td>
+										<a href={href}>{who}</a>
+									</td>
+									<td>{what}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+					<p className="small muted">
+						Prices move, so treat those as the shape rather than the quote. What does not move is
+						the shape of the bill: the machine is a flat monthly number, and the only other cost is
+						what the agents think with, which is metered by whichever model provider you give a key
+						to and capped by <code>limitUsd</code> at five dollars a day per agent until you say
+						otherwise. There is nothing to pay for agent-dive itself.
+					</p>
 				</div>
 			</section>
 
