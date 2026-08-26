@@ -244,6 +244,10 @@ code {
 	color: var(--line);
 }
 
+.hero-console {
+	margin-top: 2.8rem;
+}
+
 /* ---------- code blocks ---------- */
 
 .code {
@@ -437,6 +441,39 @@ code {
 	line-height: 1.6;
 }
 
+/* The four ways a turn starts, above the console rather than inside it: the row inside the title bar
+   is the console's own, and two rows of tabs that mean different things is one too many. */
+.uses {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin-bottom: 0.85rem;
+}
+
+.use {
+	padding: 0.3rem 0.75rem;
+	font: inherit;
+	font-size: 0.76rem;
+	color: var(--muted);
+	background: transparent;
+	border: 1px solid var(--line-soft);
+	border-radius: 999px;
+	cursor: pointer;
+	transition:
+		color 0.15s ease,
+		border-color 0.15s ease;
+}
+
+.use:hover {
+	color: var(--text-strong);
+	border-color: var(--line);
+}
+
+.use[data-on="true"] {
+	color: var(--green);
+	border-color: color-mix(in srgb, var(--green) 40%, var(--line));
+}
+
 .mock-frame {
 	display: grid;
 	grid-template-columns: 1fr;
@@ -469,12 +506,22 @@ code {
 	color: var(--muted);
 }
 
+/* Each agent is one of the examples, so its row picks it — the same thing ↑↓ does in the console. */
 .mock-agent {
 	display: flex;
+	width: 100%;
 	align-items: baseline;
 	gap: 0.55rem;
 	padding: 0.12rem 0.9rem;
+	font: inherit;
+	text-align: left;
 	color: var(--text);
+	background: transparent;
+	border: 0;
+}
+
+button.mock-agent {
+	cursor: pointer;
 }
 
 .mock-dot {
@@ -525,6 +572,14 @@ code {
 	font-weight: 600;
 }
 
+button.mock-agent:hover .mock-name {
+	color: var(--text-strong);
+}
+
+button.mock-agent[data-here="true"]:hover .mock-name {
+	color: var(--cyan);
+}
+
 .mock-wait {
 	color: var(--amber);
 	opacity: 0.65;
@@ -550,10 +605,12 @@ code {
 	text-align: center;
 }
 
+/* Tall enough that the longest case does not push the prompt down and the shortest does not leave
+   the frame looking half empty — the prompt sits on the same line whichever one is picked. */
 .mock-main {
 	display: flex;
 	flex-direction: column;
-	min-height: 15rem;
+	min-height: 24rem;
 	padding: 0.75rem 0;
 }
 
@@ -601,6 +658,47 @@ code {
 
 .mock-said {
 	color: var(--text-strong);
+}
+
+/* What carried the turn in, when it was not typed here. */
+.mock-via {
+	color: var(--muted);
+}
+
+/* The text a line has not printed yet: hidden, not absent, so the pane never reflows while it
+   arrives. Without scripts nothing is printing and the stylesheet in <noscript> shows it all. */
+.mock-off {
+	visibility: hidden;
+}
+
+/* What it reached for on the way to the answer. Dim and tight, because it is there to be read past
+   unless something in it went wrong. */
+.mock-did {
+	margin-bottom: 0.8rem;
+}
+
+.mock-did p {
+	margin: 0;
+	color: var(--muted);
+	line-height: 1.5;
+}
+
+/* One column for the verb, so the four lines read as a log rather than as sentences. */
+.mock-verb {
+	display: inline-block;
+	width: 4.6rem;
+	color: var(--green);
+	opacity: 0.7;
+}
+
+.mock-verb[data-woke="true"] {
+	color: var(--amber);
+	opacity: 0.8;
+}
+
+.mock-cost {
+	color: var(--muted);
+	opacity: 0.75;
 }
 
 /* Green, as the console draws it when it is ready to be typed into. */

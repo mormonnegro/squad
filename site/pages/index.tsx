@@ -168,6 +168,9 @@ export default function Home() {
 						<span>MIT</span>
 					</div>
 				</div>
+				<div className="wrap-wide hero-console">
+					<Console />
+				</div>
 			</section>
 
 			<section>
@@ -222,19 +225,14 @@ export default function Home() {
 						<code>agent</code> on its own opens the console, because someone typing the command with
 						nothing after it is asking to see the thing, not to be told a fact about it.
 					</p>
-				</div>
-				<div className="wrap-wide">
-					<Console />
-				</div>
-				<div className="wrap">
 					<p className="small muted">
-						The column on the left is every agent the plane has, up, stopped or mid-turn — thinking
-						gets a mark of its own because with several agents on screen it is the one thing you
-						cannot find out by asking again in a second. What each has spent today is on its row,
-						yellow at four fifths of its ceiling and red at it. Under the last agent is the row that
-						makes one. <code>tab</code> swaps the panel for the log feed, <code>/</code> opens the
-						commands, and <code>!</code> is the door into the box the agent lives in — the same
-						directory, the same environment, the same proxy.
+						It is the one at the top of this page. The column on the left is every agent the plane
+						has, up, stopped or mid-turn — thinking gets a mark of its own because with several
+						agents on screen it is the one thing you cannot find out by asking again in a second.
+						What each has spent today is on its row, yellow at four fifths of its ceiling and red at
+						it. Under the last agent is the row that makes one. <code>tab</code> swaps the panel for
+						the log feed, <code>/</code> opens the commands, and <code>!</code> is the door into the
+						box the agent lives in — the same directory, the same environment, the same proxy.
 					</p>
 					<table className="table table-cmd">
 						<tbody>

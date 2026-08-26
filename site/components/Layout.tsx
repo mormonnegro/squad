@@ -26,10 +26,14 @@ export function Layout({
 				<meta property="og:title" content={full} />
 				<meta property="og:description" content={description} />
 				<meta property="og:type" content="website" />
-				{/* The consoles arrive a row at a time once they are scrolled to, which is a thing only a
-				    script can know. Without one they are simply there. */}
+				{/* The consoles arrive a row at a time once they are scrolled to, and the chat pane prints
+				    itself out, which are things only a script can do. Without one they are simply there. */}
 				<noscript>
-					<style>{"body .feed-line,body .mock-in{opacity:1;transform:none}"}</style>
+					<style>
+						{
+							"body .feed-line,body .mock-in{opacity:1;transform:none}body .mock-off{visibility:visible}"
+						}
+					</style>
 				</noscript>
 			</Head>
 
