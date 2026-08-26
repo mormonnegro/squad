@@ -3,12 +3,12 @@ import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
 import { COMMANDS, type Command } from "../src/commands.ts";
 import {
-	Agents,
 	type At,
 	agreed,
 	bare,
 	between,
 	Chat,
+	Column,
 	completing,
 	doing,
 	filled,
@@ -18,7 +18,9 @@ import {
 	laid,
 	mouse,
 	New,
-	nudge,
+	nextRow,
+	PLANE_ROWS,
+	panelAt,
 	picked,
 	plain,
 	pointed,
@@ -37,6 +39,7 @@ import {
 	until,
 	visible,
 	type Walk,
+	walked,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 import type { ModelOffer } from "../src/models.ts";
@@ -443,46 +446,92 @@ describe("typed", () => {
 describe("picked", () => {
 	const shape = { agents: 2, rows: 20 };
 
-	it("gives the agent whose row was pressed", () => {
-		expect(picked({ row: 4, column: 4 }, shape)).toBe(0);
-		expect(picked({ row: 5, column: 4 }, shape)).toBe(1);
+	it("gives the plane's own rows, which stand above the list", () => {
+		expect(picked({ row: 2, column: 4 }, shape)).toBe(0);
+		expect(picked({ row: 3, column: 4 }, shape)).toBe(1);
 	});
 
-	it("gives the row that makes one, which is the number past the last", () => {
+	it("gives the agent whose row was pressed, counted past the plane's two", () => {
 		expect(picked({ row: 7, column: 4 }, shape)).toBe(2);
+		expect(picked({ row: 8, column: 4 }, shape)).toBe(3);
 	});
 
-	it("gives nothing for the title, the air, or a row with nothing on it", () => {
-		expect(picked({ row: 2, column: 4 }, shape)).toBeUndefined();
-		expect(picked({ row: 3, column: 4 }, shape)).toBeUndefined();
+	it("gives the row that makes one, which is the number past the last agent", () => {
+		expect(picked({ row: 10, column: 4 }, shape)).toBe(4);
+	});
+
+	it("gives nothing for the header, the air, or a row with nothing on it", () => {
+		expect(picked({ row: 4, column: 4 }, shape)).toBeUndefined();
+		expect(picked({ row: 5, column: 4 }, shape)).toBeUndefined();
 		expect(picked({ row: 6, column: 4 }, shape)).toBeUndefined();
-		expect(picked({ row: 12, column: 4 }, shape)).toBeUndefined();
+		expect(picked({ row: 15, column: 4 }, shape)).toBeUndefined();
 	});
 
 	it("gives nothing for a press in the panel beside it", () => {
-		expect(picked({ row: 4, column: 40 }, shape)).toBeUndefined();
+		expect(picked({ row: 7, column: 40 }, shape)).toBeUndefined();
 	});
 
 	/** The column gives up its air before it gives up an agent, and the rows move up with it. */
 	it("follows the list when the column is too short for air", () => {
-		const tight = { agents: 3, rows: 5 };
+		const tight = { agents: 3, rows: 7 };
 
-		expect(picked({ row: 3, column: 4 }, tight)).toBe(0);
+		expect(picked({ row: 2, column: 4 }, tight)).toBe(0);
 		expect(picked({ row: 5, column: 4 }, tight)).toBe(2);
-		expect(picked({ row: 6, column: 4 }, tight)).toBe(3);
+		expect(picked({ row: 7, column: 4 }, tight)).toBe(4);
+		expect(picked({ row: 8, column: 4 }, tight)).toBe(5);
 	});
 });
 
-describe("nudge", () => {
-	it("moves one row, and stops at the top", () => {
-		expect(nudge(1, -1, 3)).toBe(0);
-		expect(nudge(0, -1, 3)).toBe(0);
+/**
+ * One key down the whole column, wrapping, which is what makes it one list rather than three lists.
+ *
+ * Wrapping is the point rather than a detail: without it the plane's two rows would be unreachable
+ * from the bottom of a long fleet without walking back up through every agent.
+ */
+describe("walked", () => {
+	it("moves one row down the column", () => {
+		expect(walked(0, 1, 3)).toBe(1);
+		expect(walked(1, 1, 3)).toBe(2);
 	});
 
-	/** One past the last agent is the row that makes one, so it is where down stops rather than past. */
-	it("stops on the row that makes an agent", () => {
-		expect(nudge(2, 1, 3)).toBe(3);
-		expect(nudge(3, 1, 3)).toBe(3);
+	it("comes back to the top from the row that makes an agent", () => {
+		expect(walked(5, 1, 3)).toBe(0);
+	});
+
+	it("reaches that row from the top, going up", () => {
+		expect(walked(0, -1, 3)).toBe(5);
+	});
+
+	/** With no agents at all the column is three rows, and tab still walks all three. */
+	it("walks a plane with nothing on it", () => {
+		expect(walked(0, 1, 0)).toBe(1);
+		expect(walked(2, 1, 0)).toBe(0);
+	});
+});
+
+describe("panelAt", () => {
+	it("opens the plane's screens from the plane's rows, and a conversation from the rest", () => {
+		expect(panelAt(0)).toBe("logs");
+		expect(panelAt(1)).toBe("setup");
+		expect(panelAt(2)).toBe("chat");
+		expect(panelAt(9)).toBe("chat");
+	});
+});
+
+/** What tab is about to open, which is what the row under the screen promises it will. */
+describe("nextRow", () => {
+	const agents = [{ id: "demo" }, { id: "maxi" }];
+
+	it("names the row one tab away", () => {
+		expect(nextRow(0, agents)).toBe("setup");
+		expect(nextRow(1, agents)).toBe("demo");
+		expect(nextRow(2, agents)).toBe("maxi");
+		expect(nextRow(3, agents)).toBe("new agent");
+		expect(nextRow(4, agents)).toBe("logs");
+	});
+
+	it("cuts a name too long to promise in a footer", () => {
+		expect(nextRow(1, [{ id: "an-agent-with-a-very-long-name" }])).toBe("an-agent-wi…");
 	});
 });
 
@@ -720,7 +769,7 @@ describe("pointed", () => {
  * The column exists to answer one question at a glance: which of these is doing something. Merely
  * being up is the answer you could have got by asking again in a second; thinking is not.
  */
-describe("Agents", () => {
+describe("Column", () => {
 	const listed = (id: string, running: boolean): AgentSummary => ({
 		id,
 		running,
@@ -744,7 +793,7 @@ describe("Agents", () => {
 			wakeAt: new Date(Date.now() + 900_000).toISOString(),
 		};
 		const drawn = renderToString(
-			h(Agents, { agents: [waiting], cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+			h(Column, { agents: [waiting], spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 10 }),
 		);
 
 		expect(drawn).toContain("15m");
@@ -752,7 +801,12 @@ describe("Agents", () => {
 
 	it("marks a thinking agent apart from one that is only up", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map([["scribe", Date.now()]]), rows: 10 }),
+			h(Column, {
+				agents: three,
+				spot: PLANE_ROWS,
+				busy: new Map([["scribe", Date.now()]]),
+				rows: 10,
+			}),
 		);
 
 		expect(drawn).toContain("● scout");
@@ -767,7 +821,7 @@ describe("Agents", () => {
 			h(
 				Box,
 				{ flexDirection: "row" },
-				h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+				h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 10 }),
 				h(Box, { flexGrow: 1 }, h(Text, null, "unbreakable".repeat(20))),
 			),
 			{ columns: 80 },
@@ -779,7 +833,7 @@ describe("Agents", () => {
 	// One of the rows is the one that makes an agent, so three rows hold two agents and it.
 	it("shows only what the pane has room for", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 3 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 6 }),
 		);
 
 		expect(drawn).toContain("scribe");
@@ -790,9 +844,9 @@ describe("Agents", () => {
 	// header can only ever answer it about the one being looked at.
 	it("says what each agent has spent", () => {
 		const drawn = renderToString(
-			h(Agents, {
+			h(Column, {
 				agents: [{ ...listed("scout", true), spentUsd: 0.42 }],
-				cursor: 0,
+				spot: PLANE_ROWS,
 				busy: new Map<string, number>(),
 				rows: 10,
 			}),
@@ -805,7 +859,7 @@ describe("Agents", () => {
 	// that is not like the others.
 	it("says nothing about an agent that has spent nothing", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 10 }),
 		);
 
 		expect(drawn).not.toContain("$0.00");
@@ -815,18 +869,21 @@ describe("Agents", () => {
 	// already looking. Behind a command it is a thing only whoever wrote the command ever finds.
 	it("offers a row that makes one, under the agents", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 10 }),
 		);
 
 		expect(drawn).toContain("+ new agent");
-		expect(drawn.trimEnd().split("\n").at(-2)).toContain("+ new agent");
+		const rows = drawn.split("\n");
+		expect(rows.findIndex((row) => row.includes("+ new agent"))).toBeGreaterThan(
+			rows.findIndex((row) => row.includes("sleeper")),
+		);
 	});
 
 	// The first thing a plane with nothing in it can do, on the row the cursor opens on: an empty
 	// column that only said "no agents" left nowhere to go but out of the console.
 	it("is the only row there is when there are no agents", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: [], cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+			h(Column, { agents: [], spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 10 }),
 		);
 
 		expect(drawn).toContain("+ new agent");
@@ -837,7 +894,7 @@ describe("Agents", () => {
 	// one column and every row under it against another, and the gutter was empty on all but one row.
 	it("keeps every row in the column its header starts in", () => {
 		const rows = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 10 }),
 		).split("\n");
 		const at = (text: string): number =>
 			rows.find((row) => row.includes(text))?.indexOf(text) ?? -1;
@@ -851,7 +908,7 @@ describe("Agents", () => {
 	// last is a fifth. The blanks are what say which of these rows are the list.
 	it("sets the list off from its header and from the row that makes one", () => {
 		const rows = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 10 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 11 }),
 		).split("\n");
 		const blank = (row: string | undefined): boolean => /^│\s+│$/.test(row ?? "");
 
@@ -863,7 +920,7 @@ describe("Agents", () => {
 	// should be spending a row on.
 	it("gives the blanks up rather than an agent, when it is short", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 4 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 7 }),
 		);
 
 		expect(drawn).toContain("sleeper");
@@ -876,7 +933,7 @@ describe("Agents", () => {
 	// you have too many to see.
 	it("keeps the row when there is not room for every agent", () => {
 		const drawn = renderToString(
-			h(Agents, { agents: three, cursor: 0, busy: new Map<string, number>(), rows: 2 }),
+			h(Column, { agents: three, spot: PLANE_ROWS, busy: new Map<string, number>(), rows: 5 }),
 		);
 
 		expect(drawn).toContain("+ new agent");
@@ -888,7 +945,7 @@ describe("Agents", () => {
 	// agent whose spending went unsaid was the one about to spend again while nobody was watching.
 	it("says what an agent has spent even when it has a turn booked", () => {
 		const drawn = renderToString(
-			h(Agents, {
+			h(Column, {
 				agents: [
 					{
 						...listed("scribe", true),
@@ -896,7 +953,7 @@ describe("Agents", () => {
 						wakeAt: new Date(Date.now() + 900_000).toISOString(),
 					},
 				],
-				cursor: 0,
+				spot: PLANE_ROWS,
 				busy: new Map<string, number>(),
 				rows: 10,
 			}),
@@ -927,12 +984,12 @@ describe("Agents", () => {
 	// at six different columns are read one at a time.
 	it("lines the numbers up against the right edge, whatever the name", () => {
 		const drawn = renderToString(
-			h(Agents, {
+			h(Column, {
 				agents: [
 					{ ...listed("ana", true), spentUsd: 1.5 },
 					{ ...listed("bernardo", true), spentUsd: 12 },
 				],
-				cursor: 0,
+				spot: PLANE_ROWS,
 				busy: new Map<string, number>(),
 				rows: 10,
 			}),
@@ -952,9 +1009,9 @@ describe("Agents", () => {
 	// apart by an amount neither of them has, in the one place a number is scanned rather than read.
 	it("says a spend under a cent short, and leaves the room to the ones that are not", () => {
 		const drawn = renderToString(
-			h(Agents, {
+			h(Column, {
 				agents: [{ ...listed("scout", true), spentUsd: 0.0004 }],
-				cursor: 0,
+				spot: PLANE_ROWS,
 				busy: new Map<string, number>(),
 				rows: 10,
 			}),

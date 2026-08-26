@@ -495,10 +495,19 @@ code {
 }
 
 .mock-side {
+	display: flex;
+	flex-direction: column;
 	padding: 0.75rem 0;
 }
 
+/* The plane's own screens are rows of this list like any other, so they are drawn like the agents and
+   not like the header over them: what you press at wears the shape of a thing you press at. */
+.mock-plane {
+	padding: 0.12rem 0.9rem;
+}
+
 .mock-side-head {
+	margin-top: 0.6rem;
 	padding: 0 0.9rem 0.5rem;
 	color: var(--muted);
 }
@@ -595,6 +604,19 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 	text-align: center;
 }
 
+/* On the column's own footing rather than under the last row, so it reads as this column's caption
+   and not as one more thing in the list. */
+.mock-how {
+	margin-top: auto;
+	padding: 1rem 0.9rem 0;
+	color: var(--muted);
+}
+
+.mock-how b {
+	color: var(--cyan);
+	font-weight: 400;
+}
+
 /* Tall enough that the longest case does not push the prompt down and the shortest does not leave
    the frame looking half empty — the prompt sits on the same line whichever one is picked. */
 .mock-main {
@@ -616,19 +638,6 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 .mock-title b {
 	color: var(--cyan);
 	font-weight: 600;
-}
-
-.mock-tabs {
-	margin-left: 1.4rem;
-}
-
-.mock-tabs [data-on="true"] {
-	color: var(--text-strong);
-	font-weight: 600;
-}
-
-.mock-sep {
-	opacity: 0.5;
 }
 
 .mock-title-right {

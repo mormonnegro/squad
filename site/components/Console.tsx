@@ -269,7 +269,6 @@ export function Console() {
 			};
 
 	const keys: [string, string][] = [
-		["^N^P", "agent"],
 		["^U^D", "scroll"],
 		["↑↓", "history"],
 		["tab", "logs"],
@@ -300,6 +299,10 @@ export function Console() {
 
 			<div className="mock-frame">
 				<div className="mock-side">
+					{/* The plane's own screens, over the agents because neither is about an agent: one feed
+					    with every agent in it, and one set of keys and models. */}
+					<div className="mock-plane">logs</div>
+					<div className="mock-plane">setup</div>
 					<div className="mock-side-head">agents</div>
 					{USES.map((u, i) => {
 						const due = wake(u.next, now);
@@ -329,19 +332,18 @@ export function Console() {
 						<span className="mock-plus">+</span>
 						<span className="mock-name">new agent</span>
 					</div>
+					{/* A list nothing points at does not say how to walk it, so the column says so itself. */}
+					<div className="mock-how">
+						<b>tab</b> moves
+					</div>
 				</div>
 
 				<div className="mock-main">
 					<div className="mock-title">
+						{/* The title says which row of the column it belongs to, and nothing else: the
+						    breadcrumb that stood here was a second copy of a selection the column draws. */}
 						<span>
 							<b>{use.name}</b>
-							<span className="mock-tabs">
-								<span data-on="true">chat</span>
-								<span className="mock-sep"> · </span>
-								<span>logs</span>
-								<span className="mock-sep"> · </span>
-								<span>setup</span>
-							</span>
 						</span>
 						<span className="mock-title-right">
 							{use.model}{" "}

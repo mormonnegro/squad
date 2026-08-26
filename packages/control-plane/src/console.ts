@@ -173,9 +173,35 @@ export function shown(said: Utterance, width: number): Said {
 
 type Panel = "chat" | "logs" | "setup";
 
-/** What tab takes you to from here. Three panels, so it is a ring rather than a switch. */
-function after(panel: Panel): Panel {
-	return panel === "chat" ? "logs" : panel === "logs" ? "setup" : "chat";
+/**
+ * The two rows the column holds before the agents: the log feed and the setup screen.
+ *
+ * They were panels of an agent, reached by tabbing inside one, and neither is about an agent. The
+ * feed is the plane's — one stream, every agent in it — and the setup screen is the plane's keys and
+ * the plane's models. Sitting behind `demo` they read as `demo`'s, and to get at them you had to
+ * pick an agent first and then ignore which one you had picked.
+ *
+ * So the column is the whole of what this console can show, top to bottom, and one key walks it.
+ */
+export const PLANE_ROWS = 2;
+
+/** Which panel the column's row opens. Everything from the agents down is a conversation. */
+export function panelAt(spot: number): Panel {
+	return spot === 0 ? "logs" : spot === 1 ? "setup" : "chat";
+}
+
+/** The next row down, or up. It wraps, so the plane's two rows are one key past the last agent. */
+export function walked(spot: number, by: 1 | -1, agents: number): number {
+	const rows = agents + PLANE_ROWS + 1;
+	return (((spot + by) % rows) + rows) % rows;
+}
+
+/** What tab is about to open, for the row that says what tab does. */
+export function nextRow(spot: number, agents: readonly { readonly id: string }[]): string {
+	const next = walked(spot, 1, agents.length);
+	if (next === 0) return "logs";
+	if (next === 1) return "setup";
+	return clipped(agents[next - PLANE_ROWS]?.id ?? "new agent", 12);
 }
 
 export type Talk = ReadonlyMap<string, readonly Said[]>;
@@ -301,27 +327,24 @@ export function filled(line: string, options: readonly string[]): Filled {
 }
 
 /**
- * Which agent a press in the column landed on, or nothing when it landed on no row at all.
+ * Which row of the column a press landed on, or nothing when it landed between them.
  *
  * The column stands in the top left corner of the screen and keeps its width, so where its rows are
- * is arithmetic and not a measurement: a row of border, the title, the air over the list when there
- * is room for it, then the agents, then the row that makes one. One past the last agent is that row,
- * which is the same number the arrows reach it by.
+ * is arithmetic and not a measurement: a row of border, the plane's two, the air over the list when
+ * there is room for it, the header, the agents, then the row that makes one. The number this answers
+ * with is the number tab reaches the same row by.
  */
 export function picked(at: At, shape: { agents: number; rows: number }): number | undefined {
-	if (at.column < 1 || at.column > AGENTS_WIDTH) return undefined;
-	// Read off `Agents`, which gives up the air the moment the column is too short to spare it.
-	const spaced = shape.agents + 3 <= shape.rows;
-	const shown = spaced ? shape.agents : Math.max(0, shape.rows - 1);
-	const row = at.row - 1 - (spaced ? 3 : 2);
-	if (row >= 0 && row < shown) return row;
-	if (shape.rows > 0 && row === shown + (spaced ? 1 : 0)) return shape.agents;
+	if (at.column < 1 || at.column > AGENTS_WIDTH || shape.rows <= 0) return undefined;
+	// Read off `Column`, which gives up the air the moment it is too short to spare it.
+	const spaced = shape.agents + 8 <= shape.rows;
+	const row = at.row - 2;
+	if (row === 0 || row === 1) return row;
+	const shown = spaced ? shape.agents : Math.max(0, shape.rows - 4);
+	const index = row - (spaced ? 5 : 3);
+	if (index >= 0 && index < shown) return index + PLANE_ROWS;
+	if (index === shown + (spaced ? 1 : 0)) return shape.agents + PLANE_ROWS;
 	return undefined;
-}
-
-/** One row along the agents, stopping at the ends. One past the last is the row that makes one. */
-export function nudge(cursor: number, by: 1 | -1, agents: number): number {
-	return Math.min(Math.max(0, cursor + by), agents);
 }
 
 function without<T>(map: ReadonlyMap<string, T>, key: string): ReadonlyMap<string, T> {
@@ -765,26 +788,28 @@ export function pointed(
 	return { bold: false, dimColor: !running };
 }
 
-export function Agents({
+export function Column({
 	agents,
-	cursor,
+	spot,
 	busy,
 	rows,
 }: {
 	readonly agents: readonly AgentSummary[];
-	readonly cursor: number;
+	/** Which row of the whole column the keyboard is on, the plane's two counted first. */
+	readonly spot: number;
 	/** Each agent mid-turn, against when its turn started. The column only asks whether. */
 	readonly busy: ReadonlyMap<string, number>;
 	readonly rows: number;
 }): ReactElement {
-	// The row under the last agent, which the cursor reaches with the same arrow as any other.
-	const making = cursor >= agents.length;
+	const cursor = spot - PLANE_ROWS;
+	// The row under the last agent, which tab reaches with the same press as any other.
+	const making = cursor === agents.length;
 	// A blank over the list and another under it, which is what makes the header a header and the
 	// last row a thing of its own rather than a fourth agent. Given up the moment the column is short
 	// enough that a gap would cost it an agent: air is what a list has when it has room for it.
-	const spaced = agents.length + 3 <= rows;
+	const spaced = agents.length + 8 <= rows;
 	const listed = agents
-		.slice(0, spaced ? agents.length : Math.max(0, rows - 1))
+		.slice(0, spaced ? agents.length : Math.max(0, rows - 4))
 		.map((agent, index) => {
 			// Thinking is worth a different mark from merely being up: with several agents on screen it
 			// is the one thing you cannot find out by asking again in a second.
@@ -818,6 +843,12 @@ export function Agents({
 			borderColor: "gray",
 			paddingX: 1,
 		},
+		// The plane's own rows, first because they are what this console is before it is any one
+		// agent, and drawn like the agents rather than like a title: they are pressed at, and a row
+		// that is pressed at wears the colour that says the keyboard is on it.
+		h(Text, { key: "logs", ...pointed(spot === 0, true) }, "logs"),
+		h(Text, { key: "setup", ...pointed(spot === 1, true) }, "setup"),
+		spaced ? h(Text, { key: "gap" }, " ") : undefined,
 		h(Text, { dimColor: true, key: "title" }, "agents"),
 		spaced ? h(Text, { key: "over" }, " ") : undefined,
 		...listed,
@@ -835,6 +866,20 @@ export function Agents({
 					h(Text, { color: "green" }, "+"),
 					h(Text, pointed(making, false), " new agent"),
 				),
+		// A list nothing points at does not say how to walk it. The row at the bottom of the screen
+		// says where tab goes next, which only answers the question of somebody who already knows to
+		// press it; this says what to press, inside the thing it is about. On the bottom border rather
+		// than after the last row, so it reads as this column's own footing and not as one more thing
+		// in the list — and given up first, when the column is too short to spare a row.
+		spaced ? h(Box, { flexGrow: 1, key: "rest" }) : undefined,
+		spaced
+			? h(
+					Text,
+					{ key: "how", wrap: "truncate" },
+					h(Text, { color: "cyan", dimColor: true }, "tab"),
+					h(Text, { dimColor: true }, " moves"),
+				)
+			: undefined,
 	);
 }
 
@@ -1528,8 +1573,12 @@ export function App({
 	const { exit } = useApp();
 	const { rows, columns } = useWindowSize();
 	const [agents, setAgents] = useState<readonly AgentSummary[]>(initial);
-	const [cursor, setCursor] = useState(0);
-	const [panel, setPanel] = useState<Panel>("chat");
+	// One place in one list, which is the whole of where this console is pointed. The panel and the
+	// agent used to be two selections crossed with each other, and half of the pairs meant nothing:
+	// the log feed with `demo` picked behind it is the same screen as the log feed with `maxi`.
+	const [spot, setSpot] = useState(PLANE_ROWS);
+	const cursor = spot - PLANE_ROWS;
+	const panel = panelAt(spot);
 	const [lines, setLines] = useState<readonly string[]>([]);
 	// One for the life of the console, because both the plane's stream and the ports this console
 	// opens write into it and the folding it does is per agent across everything it has been told.
@@ -1626,8 +1675,9 @@ export function App({
 	// loud because a selection that vanishes on the next keystroke leaves nothing to show it worked.
 	const [copy, setCopy] = useState<{ rows: number; sure: boolean } | undefined>(undefined);
 
-	// Undefined on the row under the agents, which is not an agent but the way to make one.
-	const selected = agents[Math.min(cursor, agents.length)];
+	// Undefined on the plane's rows, and on the row under the agents, which is not an agent but the
+	// way to make one.
+	const selected = cursor < 0 ? undefined : agents[Math.min(cursor, agents.length)];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
 	const walk = setupRows(providers, models);
@@ -2093,14 +2143,14 @@ export function App({
 					continue;
 				}
 				if (move.did === "down") {
-					// A press in the agents column is that agent chosen, which is what a list on the left of
-					// a screen invites and what the keyboard needs a chord for. Answered on the way down
-					// rather than on the way up, the way a row of a list answers everywhere else — and it
-					// starts no drag, since the column has no text anybody wants on a clipboard.
-					const row =
-						panel === "setup" ? undefined : picked(move.at, { agents: agents.length, rows: body });
+					// A press in the column is that row opened, which is what a list on the left of a screen
+					// invites. Answered on the way down rather than on the way up, the way a row of a list
+					// answers everywhere else — and it starts no drag, since the column has no text anybody
+					// wants on a clipboard. Never the only way to get anywhere: tab reaches every one of
+					// these rows, and this is the shortcut for a hand that is already on the mouse.
+					const row = picked(move.at, { agents: agents.length, rows: body });
 					if (row !== undefined) {
-						setCursor(row);
+						setSpot(row);
 						setHeld(undefined);
 						setCopy(undefined);
 						continue;
@@ -2278,21 +2328,6 @@ export function App({
 			scroll(0, input === "u" ? -0.5 : 0.5);
 			return;
 		}
-		// The agents, on a chord rather than on the bare arrows: those belong to the line being typed,
-		// the way they do at every prompt. Two chords for the one move, and both on purpose. The
-		// modified arrow is the gesture — it is up and down, which is what a column is — but whether it
-		// arrives at all is the terminal's decision, and there are terminals that swallow it. So the
-		// letters are there too and they are what the footer names, since a hint for a key that this
-		// terminal never delivers is a hint that lies.
-		if (key.ctrl && (input === "p" || input === "n")) {
-			if (panel !== "setup")
-				setCursor((prev) => nudge(prev, input === "p" ? -1 : 1, agents.length));
-			return;
-		}
-		if (key.ctrl && (key.upArrow || key.downArrow)) {
-			if (panel !== "setup") setCursor((prev) => nudge(prev, key.upArrow ? -1 : 1, agents.length));
-			return;
-		}
 		if (key.pageUp) {
 			scroll(0, -1);
 			return;
@@ -2301,9 +2336,14 @@ export function App({
 			scroll(0, 1);
 			return;
 		}
-		// While the menu is up these three keys belong to it, which is what they do in every other box
-		// that completes. Swapping the panel or the agent out from under a half-typed command loses the
-		// command, and the arrows are the only way to reach the entry that is not the first.
+		// Tab means the next thing, and what the next thing is depends on whether there is a line under
+		// the hand: the next completion while something is being typed, the next row of the column when
+		// there is not. That is the whole of moving around here — one key, one list, top to bottom,
+		// with shift for the way back. The bare arrows stay the prompt's, which is what they are at
+		// every other prompt, and nothing is left needing a chord or a mouse.
+		//
+		// While the menu is up these keys belong to it, which is what they do in every other box that
+		// completes. Swapping the row out from under a half-typed command loses the command.
 		if (key.tab) {
 			// At a shell prompt the tab is the shell's, which is what it is at every shell: a hand that
 			// borrowed this prompt to walk around a box is a hand that will press it looking for a
@@ -2320,7 +2360,7 @@ export function App({
 				setPick(0);
 				return;
 			}
-			setPanel(after);
+			setSpot((prev) => walked(prev, key.shift ? -1 : 1, agents.length));
 			return;
 		}
 		// Back through what was already typed, which is what these two keys mean at every other prompt
@@ -2328,14 +2368,17 @@ export function App({
 		// nothing: this prompt takes no cursor, so there was no line to walk along with them.
 		if (key.upArrow) {
 			// On the setup screen the arrows are the list's, not the prompt's: there is no prompt behind
-			// it, and moving a row out from under a key about to be typed would be a surprise.
+			// it, and moving a row out from under a key about to be typed would be a surprise. Over the
+			// feed there is no prompt either, so they do the only thing left to want there.
 			if (panel === "setup") setWhere(Math.max(0, onRow - 1));
+			else if (panel === "logs") scroll(-1, 0);
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
 			else step(1);
 			return;
 		}
 		if (key.downArrow) {
 			if (panel === "setup") setWhere(Math.min(walk.length - 1, onRow + 1));
+			else if (panel === "logs") scroll(1, 0);
 			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
 			else step(-1);
 			return;
@@ -2475,7 +2518,9 @@ export function App({
 		setDraft(rest.join(" ").trim());
 	});
 
-	const title = selected === undefined ? "new agent" : selected.id;
+	// The panel says which row of the column it belongs to, and nothing else: the three-way breadcrumb
+	// that used to stand here was a second copy of a selection the column already draws.
+	const title = panel !== "chat" ? panel : selected === undefined ? "new agent" : selected.id;
 	// A selection disappears the moment the next key is pressed, so without a word here there is
 	// nothing to say it ever landed. It says which way it went, too: a program on this machine took
 	// it, or the sequence went to the terminal and no answer to it is coming back.
@@ -2485,7 +2530,7 @@ export function App({
 			: `   ⧉ ${copy.rows} ${copy.rows === 1 ? "row" : "rows"} ${copy.sure ? "copied" : "sent to the terminal"}`;
 	// What the left of the title row has already spent, so that what goes at the right end knows how
 	// much of the row is left for it. Three columns of gap, so the two halves never touch.
-	const tabs = `${title}   chat · logs · setup${top === undefined ? "" : "   ↑ scrolled"}${took}   `;
+	const tabs = `${title}${top === undefined ? "" : "   ↑ scrolled"}${took}   `;
 	const state =
 		selected === undefined ? { model: "", spend: "" } : standing(selected, width - tabs.length);
 	const heat = selected === undefined ? { dimColor: true } : burning(selected);
@@ -2514,7 +2559,7 @@ export function App({
 		h(
 			Box,
 			{ flexDirection: "row", flexGrow: 1, key: "panes" },
-			h(Agents, { agents, cursor, busy, rows: body, key: "agents" }),
+			h(Column, { agents, spot, busy, rows: body, key: "agents" }),
 			h(
 				Box,
 				{
@@ -2532,12 +2577,6 @@ export function App({
 					Box,
 					{ flexDirection: "row", key: "tabs" },
 					h(Text, { bold: true, color: "cyan" }, title),
-					h(Text, null, "   "),
-					h(Text, { bold: panel === "chat", dimColor: panel !== "chat" }, "chat"),
-					h(Text, { dimColor: true }, " · "),
-					h(Text, { bold: panel === "logs", dimColor: panel !== "logs" }, "logs"),
-					h(Text, { dimColor: true }, " · "),
-					h(Text, { bold: panel === "setup", dimColor: panel !== "setup" }, "setup"),
 					// What a pane showing the end of things cannot say for itself: that this one is not.
 					// Without it, an answer arriving out of sight looks like an agent that said nothing.
 					top === undefined ? null : h(Text, { color: "yellow" }, "   ↑ scrolled"),
@@ -2628,72 +2667,80 @@ export function App({
 								["n", "cancel"],
 								["^C", "quit"],
 							]
-						: panel === "setup"
-							? // What return does here depends on the row, so the row is what the hint says. A hint
-								// naming a key that does nothing on the row under the cursor is the same lie as a
-								// hint for a key that does nothing at all.
+						: panel === "logs"
+							? // The feed has no prompt, so the arrows are free to be what they are over any other
+								// wall of text. Nothing else this row usually offers exists here.
 								[
-									["↑↓", "move"],
-									...(setupRow?.kind === "provider"
-										? [["⏎", "set key"]]
-										: setupRow?.kind === "add"
-											? [["⏎", "add model"]]
-											: setupRow?.model.added === true
-												? [["⌫", "drop model"]]
-												: []),
-									["tab", after(panel)],
+									["↑↓", "scroll"],
+									["^U^D", "half"],
+									["tab", nextRow(spot, agents)],
 									["^C", "quit"],
 								]
-							: menu.length > 0
-								? // The keys have been taken by the menu, so the row says what they do now instead of
-									// what they did a keystroke ago. A hint left standing for a key the menu has taken is
-									// the same lie as a hint for a key that does nothing.
+							: panel === "setup"
+								? // What return does here depends on the row, so the row is what the hint says. A hint
+									// naming a key that does nothing on the row under the cursor is the same lie as a
+									// hint for a key that does nothing at all.
 									[
-										["↑↓", among],
-										["⏎", "choose"],
+										["↑↓", "move"],
+										...(setupRow?.kind === "provider"
+											? [["⏎", "set key"]]
+											: setupRow?.kind === "add"
+												? [["⏎", "add model"]]
+												: setupRow?.model.added === true
+													? [["⌫", "drop model"]]
+													: []),
+										["tab", nextRow(spot, agents)],
 										["^C", "quit"],
 									]
-								: deleting !== undefined
-									? // A question is open and it has the keyboard, so the row says the two keys that mean
-										// anything. Everything it usually offers would be a way out of answering that does
-										// not exist — and `n` is spelled out rather than left as "any other key", because a
-										// key to press is a thing a hand does and "any other key" is a thing to work out.
+								: menu.length > 0
+									? // The keys have been taken by the menu, so the row says what they do now instead of
+										// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+										// the same lie as a hint for a key that does nothing.
 										[
-											["y", "delete"],
-											["n", "cancel"],
+											["↑↓", among],
+											["⏎", "choose"],
 											["^C", "quit"],
 										]
-									: selected === undefined
-										? // Nothing else the row usually offers is true here: there is no conversation to
-											// scroll, no shell to open and no commands, until the name has been given.
+									: deleting !== undefined
+										? // A question is open and it has the keyboard, so the row says the two keys that mean
+											// anything. Everything it usually offers would be a way out of answering that does
+											// not exist — and `n` is spelled out rather than left as "any other key", because a
+											// key to press is a thing a hand does and "any other key" is a thing to work out.
 											[
-												["^N^P", "agent"],
-												["⏎", "create"],
+												["y", "delete"],
+												["n", "cancel"],
 												["^C", "quit"],
 											]
-										: [
-												["^N^P", "agent"],
-												["^U^D", "scroll"],
-												// Only while there is a line to walk back to: up and down do nothing in a
-												// conversation nobody has typed into yet, and a hint for a key that does nothing
-												// is the same lie as a hint for a key the menu has taken.
-												...(typed(said).length > 0 ? [["↑↓", "history"]] : []),
-												["tab", after(panel)],
-												// A key nobody guesses is pressable. The rest of this row is what to press to move
-												// around; this one is what to press to be told what else there is. In the shell the
-												// two of them say nothing true, and the way back out is worth saying instead.
-												...(shell
-													? [["⌫", "chat"]]
-													: [
-															["/", "commands"],
-															["!", "shell"],
-														]),
-												["^C", "quit"],
-												// Last, so that the rest of the row does not move as it comes and goes, and shown
-												// only while there is something to stop: the key does nothing at any other time,
-												// and offering it then is how a hint becomes a thing that lies.
-												...(busy.size > 0 ? [["esc", "stop"]] : []),
-											]
+										: selected === undefined
+											? // Nothing else the row usually offers is true here: there is no conversation to
+												// scroll, no shell to open and no commands, until the name has been given.
+												[
+													["tab", nextRow(spot, agents)],
+													["⏎", "create"],
+													["^C", "quit"],
+												]
+											: [
+													["^U^D", "scroll"],
+													// Only while there is a line to walk back to: up and down do nothing in a
+													// conversation nobody has typed into yet, and a hint for a key that does nothing
+													// is the same lie as a hint for a key the menu has taken.
+													...(typed(said).length > 0 ? [["↑↓", "history"]] : []),
+													["tab", nextRow(spot, agents)],
+													// A key nobody guesses is pressable. The rest of this row is what to press to move
+													// around; this one is what to press to be told what else there is. In the shell the
+													// two of them say nothing true, and the way back out is worth saying instead.
+													...(shell
+														? [["⌫", "chat"]]
+														: [
+																["/", "commands"],
+																["!", "shell"],
+															]),
+													["^C", "quit"],
+													// Last, so that the rest of the row does not move as it comes and goes, and shown
+													// only while there is something to stop: the key does nothing at any other time,
+													// and offering it then is how a hint becomes a thing that lies.
+													...(busy.size > 0 ? [["esc", "stop"]] : []),
+												]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

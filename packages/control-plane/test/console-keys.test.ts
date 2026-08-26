@@ -2,7 +2,7 @@ import { PassThrough } from "node:stream";
 import { render } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
-import { App, type Talk } from "../src/console.ts";
+import { App, bare, type Talk } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
 import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
@@ -34,14 +34,10 @@ const DOWN = "[B";
 const UP = "[A";
 const RIGHT = "\u001b[C";
 const LEFT = "\u001b[D";
-/** Next and previous agent. Chords, because the bare arrows belong to the line being typed. */
-const NEXT = "\u000e";
-const PREVIOUS = "\u0010";
-/** The same move said the way a hand reaches for it, which not every terminal sends. */
-const CTRL_DOWN = "\u001b[1;5B";
-const CTRL_UP = "\u001b[1;5A";
 const ENTER = "\r";
 const TAB = "\t";
+/** The way back up the column, which every terminal sends and no terminal keeps for itself. */
+const SHIFT_TAB = "\u001b[Z";
 /** What the key marked backspace actually sends, which is what the delete key sends too. */
 const BACKSPACE = "\u007F";
 const ESCAPE = "\u001B";
@@ -162,6 +158,24 @@ function plane(
 	};
 }
 
+/**
+ * What the panel beside the column is showing, which is what its title row says.
+ *
+ * The title row is the first the two boxes share, so it is the first line with both their borders
+ * on it. Read off the screen rather than off the state, because which screen a key opens is exactly
+ * what these tests are about.
+ */
+const showing = (screen: string): string => {
+	const row = screen.split("\n").find((line) => line.includes("││")) ?? "";
+	// What the row says at its left end, which is the title. The numbers at its right end are the
+	// selected agent's, and they are somebody else's test.
+	return (
+		bare(row.split("││")[1] ?? "")
+			.trim()
+			.split(/\s{2,}/)[0] ?? ""
+	).trim();
+};
+
 /** Renders the console over a keyboard nothing is attached to, and hands back what it drew. */
 function open(
 	client: ControlClient,
@@ -201,22 +215,25 @@ describe("the console, pressed at", () => {
 			await console_.press();
 
 			expect(console_.screen()).toContain("+ new agent");
-			expect(console_.screen()).toContain("new agent   chat");
+			expect(showing(console_.screen())).toBe("new agent");
 		} finally {
 			console_.close();
 		}
 	});
 
-	// The whole of the feature in one chord: what moves between agents is what arrives at making one,
-	// and there is nothing else to know to get there.
-	it("reaches that row from the last agent with the chord that moves between them", async () => {
+	// The whole of moving around here, in one key: the column is one list, tab walks it, and the row
+	// that makes an agent is the row after the last one. There is nothing else to know to get there.
+	it("walks the column on tab, from the plane's rows down to the row that makes an agent", async () => {
 		const { client, asked } = plane();
 		const console_ = open(client, [listed("demo"), listed("maxi")]);
 		try {
-			// One at a time: two of these written together arrive as one chunk, which is a paste.
-			await console_.press(NEXT);
-			await console_.press(NEXT);
-			expect(console_.screen()).toContain("new agent   chat");
+			expect(showing(console_.screen())).toBe("demo");
+
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("maxi");
+
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("new agent");
 
 			await console_.press("scout", ENTER);
 
@@ -227,20 +244,51 @@ describe("the console, pressed at", () => {
 	});
 
 	/**
-	 * The same move on the chord a hand actually reaches for, which is up and down with control held.
-	 * Kept beside the letters rather than instead of them: whether this sequence arrives at all is the
-	 * terminal's decision, and the footer names the pair that always does.
+	 * The feed and the setup screen were panels of an agent, and neither is about an agent: the feed
+	 * is the plane's one stream and the screen is the plane's keys. They stand over the list now, and
+	 * the same key reaches them.
 	 */
-	it("reaches it with a modified arrow too, where the terminal sends one", async () => {
+	it("carries on past the last row into the plane's own two", async () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(CTRL_DOWN);
-			expect(console_.screen()).toContain("new agent   chat");
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("new agent");
 
-			await console_.press(CTRL_UP);
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("logs");
 
-			expect(console_.screen()).toContain("demo   chat");
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("setup");
+
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("demo");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** The way back up the column, which is what shift with this key is everywhere else. */
+	it("walks the other way with shift held", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(SHIFT_TAB);
+
+			expect(showing(console_.screen())).toBe("setup");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** Said in the column itself, because the row at the foot of the screen is not where it is asked. */
+	it("says in the column which key walks it", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press();
+
+			expect(console_.screen()).toContain("tab moves");
 		} finally {
 			console_.close();
 		}
@@ -253,7 +301,7 @@ describe("the console, pressed at", () => {
 		try {
 			await console_.press(RIGHT, RIGHT, LEFT);
 
-			expect(console_.screen()).toContain("demo   chat");
+			expect(showing(console_.screen())).toBe("demo");
 		} finally {
 			console_.close();
 		}
@@ -272,7 +320,7 @@ describe("the console, pressed at", () => {
 			expect(console_.screen()).not.toContain("creating scout");
 			// Appended where the plane appends it, which is the row the cursor was already on.
 			expect(console_.screen()).toContain("● scout");
-			expect(console_.screen()).toContain("scout   chat");
+			expect(showing(console_.screen())).toBe("scout");
 		} finally {
 			console_.close();
 		}
@@ -300,7 +348,7 @@ describe("the console, pressed at", () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(NEXT);
+			await console_.press(TAB);
 			await console_.press("!ls");
 			expect(console_.screen()).toContain("+ !ls");
 
@@ -381,7 +429,7 @@ describe("the console, pressed at", () => {
 
 			expect(commanded).toEqual(["/delete", "/delete demo"]);
 			expect(console_.screen()).not.toContain("● demo");
-			expect(console_.screen()).toContain("new agent   chat");
+			expect(showing(console_.screen())).toBe("new agent");
 		} finally {
 			console_.close();
 		}
@@ -393,12 +441,12 @@ describe("the console, pressed at", () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(NEXT);
-			expect(console_.screen()).toContain("new agent   chat");
+			await console_.press(TAB);
+			expect(showing(console_.screen())).toBe("new agent");
 
-			await console_.press(PREVIOUS);
+			await console_.press(SHIFT_TAB);
 
-			expect(console_.screen()).toContain("demo   chat");
+			expect(showing(console_.screen())).toBe("demo");
 			expect(console_.screen()).toContain("! shell");
 		} finally {
 			console_.close();
@@ -535,7 +583,7 @@ describe("the shell prompt, tabbed at", () => {
 
 			expect(asking).toEqual(["READ"]);
 			expect(console_.screen()).toContain("cat README.md");
-			expect(console_.screen()).toContain("demo   chat");
+			expect(showing(console_.screen())).toBe("demo");
 		} finally {
 			console_.close();
 		}
@@ -770,14 +818,13 @@ describe("the setup screen, pressed at", () => {
 	async function setup(options: Parameters<typeof plane>[0] = { pays, thinks }) {
 		const it_ = plane(options);
 		const console_ = open(it_.client, [listed("demo")]);
-		// One at a time: two writes in a tick arrive as one chunk, which is one keystroke to a terminal
-		// and would be a tab nobody pressed.
-		await console_.press(TAB);
-		await console_.press(TAB);
+		// Up rather than down: the screen stands over the agents, so from the first of them it is one
+		// press back, and going forward would be a walk through every agent the plane has.
+		await console_.press(SHIFT_TAB);
 		return { ...it_, ...console_ };
 	}
 
-	it("is where the tab that cycles the panes arrives, with what the plane could pay for on it", async () => {
+	it("is a row of the column, with what the plane could pay for on it", async () => {
 		const screen = await setup();
 		try {
 			expect(screen.screen()).toContain("DEEPSEEK_API_KEY");
@@ -900,7 +947,7 @@ describe("the setup screen, pressed at", () => {
 			await screen.press(ESCAPE);
 			await screen.press(TAB);
 
-			expect(screen.screen()).toContain("demo   chat");
+			expect(showing(screen.screen())).toBe("demo");
 			expect(screen.screen()).not.toContain("sk-");
 			expect(screen.screen()).not.toContain("ls");
 		} finally {

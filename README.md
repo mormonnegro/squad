@@ -192,35 +192,45 @@ asking to see the thing, not to be told a fact about it:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ agents               ││ demo   chat · logs · setup   deepseek-v4-flash   $0.42 / $5.00 │
-│                      ││                                                                │
-│ ◐ demo         $0.42 ││ > que es un webhook                                            │
-│ ● maxi     15m $4.80 ││                                                                │
-│ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
-│                      ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
-│ + new agent          ││ envía una petición HTTP a una URL configurada.                 │
-│                      ││ ⠹ 9s search webhook retry semantics                            │
+│ logs                 ││ demo                         deepseek-v4-flash   $0.42 / $5.00 │
+│ setup                ││                                                                │
+│                      ││ > que es un webhook                                            │
+│ agents               ││                                                                │
+│                      ││ Un webhook es una forma de comunicación automática entre       │
+│ ◐ demo         $0.42 ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
+│ ● maxi     15m $4.80 ││ envía una petición HTTP a una URL configurada.                 │
+│ ○ scout              ││ ⠹ 9s search webhook retry semantics                            │
 │                      ││ ⋯ y cada cuanto reintenta?                                     │
+│ + new agent          ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
-│                      ││ │ >                                                          │ │
+│ tab moves            ││ │ >                                                          │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ^N^P agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
+ ^U^D scroll   tab maxi   / commands   ! shell   ^C quit
 ```
 
-The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
-gets a mark of its own because with several agents on screen it is the one thing you cannot find
-out by asking again in a second. The one the keyboard is on is its name in the colour the panel
-title gives the same name, and not an arrow in a gutter beside the marks: a column whose header
-stands against the border and whose rows all begin two further in reads as a list indented under a
-title it does not belong to. `^N` and `^P` move between them — or a click on the row, or `^↑` and
-`^↓` where the terminal sends them — and `tab` cycles the panel through that agent's conversation,
-the log feed — the same feed `agent logs` prints, running the whole time either way — and the setup
-screen, which is about the plane rather than about the agent behind it. The move is a chord and not
-the bare arrows because the bare arrows are the line being typed: up and down walk back through what
-was sent, the way they do in every other prompt, and a column of agents is not worth taking that
-from the row a hand is actually on. `^N` and `^P` are what the footer names because a terminal is
-free not to send `^↑` at all, and a key the footer promises has to arrive.
+The column on the left is the whole of what this console can show, and `tab` walks it top to bottom
+— `shift` with it for the way back, and a click on a row for a hand already on the mouse. One key,
+one list: the log feed, the setup screen, then every agent the plane has, `●` up, `○` stopped, `◐`
+mid-turn — thinking gets a mark of its own because with several agents on screen it is the one thing
+you cannot find out by asking again in a second. The row the keyboard is on is its name in the colour
+the panel title gives the same name, and not an arrow in a gutter beside the marks: a column whose
+header stands against the border and whose rows all begin two further in reads as a list indented
+under a title it does not belong to. At the foot of the column is `tab moves`, because a list that
+nothing points at does not otherwise say how to walk it — the row along the bottom of the screen says
+where `tab` goes next, which is only an answer for somebody who already knows to press it.
+
+The feed and the setup screen stand over the agents rather than behind one because neither is about
+an agent. The feed is the plane's, one stream with every agent in it — the same feed `agent logs`
+prints, running the whole time either way — and the setup screen is the plane's keys and the plane's
+models. They used to be panels you reached by tabbing inside an agent, which meant picking an agent
+first and then ignoring which one you had picked, and the panel title carried a `chat · logs · setup`
+breadcrumb that was a second copy of a selection the column was already drawing.
+
+It is `tab` and not the bare arrows because the bare arrows are the line being typed: up and down
+walk back through what was sent, the way they do at every other prompt, and a column is not worth
+taking that from the row a hand is actually on. It is not a chord either — `^N` and `^P` were the
+version before this one, and a prompt you have to learn the chords for is a prompt.
 While that agent is thinking, the row under the conversation carries the spinner, the seconds and
 whatever the turn is on: a spinner alone says something is happening, the number rising beside it
 says whether it still is, and the tool being run is the difference between stuck on the model and
@@ -235,7 +245,7 @@ then it drops into the conversation under the answer it was waiting on, and the 
 begins. Put into the conversation the moment it was sent, it would have sat above an answer written
 before it existed, and the pane would read as if that answer were the reply to it.
 
-Under the last agent is the row that makes one, reached with the same `^N` as any of them. It is a
+Under the last agent is the row that makes one, reached with the same `tab` as any of them. It is a
 row rather than a command because that is where somebody who wants an agent is already looking —
 with none at all it is the only row there is, and the console opens on it. The panel behind it takes
 a name and `⏎` builds it: a container, a repository of its own, nothing in its memory, and exactly
@@ -258,10 +268,11 @@ operator's config file. As the terminal narrows the model goes first, then the c
 money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fact half said.
 
 `↑` and `↓` walk back through the lines you have typed at this agent, which is what those two keys
-do at every other prompt there has ever been. That is what moved the agents onto a chord: a prompt
+do at every other prompt there has ever been. That is what moved the column onto `tab`: a prompt
 whose arrows do something else than a prompt's arrows do is a prompt you have to learn, and there
-was nothing about a column of names worth that. The half-written line you were on when the walk
-began comes back whole at the end of it, so a stray arrow costs you nothing. Each agent's history is its own, and it survives the console
+was nothing about a list of names worth that. The half-written line you were on when the walk began
+comes back whole at the end of it, so a stray arrow costs you nothing. Over the feed and the setup
+screen there is no prompt for them to belong to, so they are the list's and the scrollback's there. Each agent's history is its own, and it survives the console
 being closed, because the lines are read out of the conversation the plane kept.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
@@ -946,15 +957,15 @@ to the setup screen and both halves are a list:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ agents               ││ demo   chat · logs · setup                       $0.42 / $5.00 │
+│ logs                 ││ setup                                                          │
+│ setup                ││                                                                │
 │                      ││                                                                │
-│ ● demo         $0.42 ││                                                                │
-│ ○ scout              ││ holds from the next turn — nothing restarts.                   │
+│ agents               ││ holds from the next turn — nothing restarts.                   │
 │                      ││                                                                │
-│ + new agent          ││ providers                                                      │
-│                      ││ ● deepseek   DEEPSEEK_API_KEY   flash                          │
+│ ● demo         $0.42 ││ providers                                                      │
+│ ○ scout              ││ ● deepseek   DEEPSEEK_API_KEY   flash                          │
 │                      ││ ○ anthropic  ANTHROPIC_API_KEY  sonnet                         │
-│                      ││ ○ openai     OPENAI_API_KEY     gpt-5                          │
+│ + new agent          ││ ○ openai     OPENAI_API_KEY     gpt-5                          │
 │                      ││ ○ groq       GROQ_API_KEY       no models                      │
 │                      ││                                                                │
 │                      ││ models                                                         │
@@ -963,10 +974,10 @@ to the setup screen and both halves are a list:
 │                      ││ ○ gpt-5   openai     added here                                │
 │                      ││ + a model                                                      │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
-│                      ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
+│ tab moves            ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ set key   tab chat   ^C quit
+ ↑↓ move   ⏎ set key   tab demo   ^C quit
 ```
 
 `●` is something this plane can use right now and `○` one it cannot, which is the same mark the
@@ -990,15 +1001,17 @@ to, all at once, and what comes back is a list to arrow through:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ agents               ││ demo   chat · logs · setup                       $0.42 / $5.00 │
+│ logs                 ││ setup                                                          │
+│ setup                ││                                                                │
 │                      ││                                                                │
-│ ● demo         $0.42 ││                                                                │
-│ ○ scout              ││ 3 on offer                                                     │
+│ agents               ││ 3 on offer                                                     │
 │                      ││ › gpt-5-mini   openai                                          │
-│ + new agent          ││   gpt-4o-mini  openai                                          │
-│                      ││   o4-mini      openai                                          │
+│ ● demo         $0.42 ││   gpt-4o-mini  openai                                          │
+│ ○ scout              ││   o4-mini      openai                                          │
+│                      ││                                                                │
+│ + new agent          ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
-│                      ││ │ model  openai mini                                         │ │
+│ tab moves            ││ │ model  openai mini                                         │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
  ↑↓ move   ⏎ add   esc cancel   ^C quit
