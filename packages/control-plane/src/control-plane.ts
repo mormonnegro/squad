@@ -522,6 +522,13 @@ export class ControlPlane {
 			// that printed every newsletter it declined would be a console nobody reads.
 			onDropped: (why, count) =>
 				this.#emit({ kind: "note", who: "email", action: "dropped", detail: `${why} ×${count}` }),
+			onWatching: (where, fromUid) =>
+				this.#emit({
+					kind: "note",
+					who: "email",
+					action: "watching",
+					detail: `${where}, from message ${fromUid}`,
+				}),
 		});
 		this.router.register(this.webhooks);
 		this.router.register(this.telegram);

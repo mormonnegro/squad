@@ -87,6 +87,16 @@ export interface EmailChannelOptions {
 	readonly onError?: (error: Error) => void;
 	/** What was dropped and why, counted rather than listed. Most of a mailbox is not for the agent. */
 	readonly onDropped?: (why: string, count: number) => void;
+	/**
+	 * The mailbox being watched, said once per connection, with the point it is watching from.
+	 *
+	 * Because the alternative is what this channel used to be: silent while it worked and silent while
+	 * it was dead, so a mailbox nothing was arriving at looked exactly like a mailbox nobody had
+	 * written to. Once per connection is not a stream — a connection lasts until the network breaks.
+	 */
+	readonly onWatching?: (where: string, fromUid: number) => void;
+	/** How often the mailbox is looked at anyway, in case the server never said anything arrived. */
+	readonly sweepMs?: number;
 	/** Opens a session. Given only so a test can hand over a mailbox that is not on the internet. */
 	readonly open?: (account: Account) => Session;
 	/** Opens the way out. Given for the same reason, so nothing under test posts a real message. */
@@ -144,6 +154,15 @@ export interface Post {
 const FIRST_RETRY_MS = 1000;
 const LONGEST_RETRY_MS = 60_000;
 
+/**
+ * The longest a message can sit unread when the server never announced it. One fetch a minute.
+ *
+ * A ceiling rather than a rate: mail normally arrives on the announcement, in the second it lands,
+ * and this only ever runs into a mailbox with nothing new in it. What it buys is that "nothing has
+ * happened" stops being a state a mailbox can be stuck in.
+ */
+const SWEEP_MS = 60_000;
+
 /** The address an agent is reached at: the account's, with the agent's name tagged onto it. */
 export function addressFor(mailbox: string, agentId: string): string {
 	const at = mailbox.lastIndexOf("@");
@@ -173,6 +192,8 @@ export class EmailChannel implements Channel {
 	readonly #onChange: ((account: Account) => void) | undefined;
 	readonly #onError: ((error: Error) => void) | undefined;
 	readonly #onDropped: ((why: string, count: number) => void) | undefined;
+	readonly #onWatching: ((where: string, fromUid: number) => void) | undefined;
+	readonly #sweepMs: number;
 	readonly #open: (account: Account) => Session;
 	readonly #post: (account: Account, outgoing: Outgoing) => Post;
 
@@ -199,6 +220,8 @@ export class EmailChannel implements Channel {
 		this.#onChange = options.onChange;
 		this.#onError = options.onError;
 		this.#onDropped = options.onDropped;
+		this.#onWatching = options.onWatching;
+		this.#sweepMs = options.sweepMs ?? SWEEP_MS;
 		this.#open = options.open ?? openImap;
 		this.#post = options.post ?? openSmtp;
 	}
@@ -349,10 +372,30 @@ export class EmailChannel implements Channel {
 			await session.connect();
 			const box = await session.mailboxOpen("INBOX");
 			this.#reconcile(account, box);
+			// After reconciling, so the number said is the one the next fetch will actually ask for. It is
+			// the whole of what there is to check when nothing is arriving: a mailbox watched from past
+			// where the mail is landing reads every bit as quiet as one nobody is watching.
+			this.#onWatching?.(
+				`${account.address} at ${account.host}:${account.port}`,
+				(this.#account?.seen?.lastUid ?? 0) + 1,
+			);
 
 			session.on("exists", () => void this.#serialize(() => this.#drain(session)));
 			await this.#serialize(() => this.#drain(session));
-			await ended;
+			// The announcement is how mail arrives quickly and it is not how mail arrives. A server that
+			// never sends one, or sends it while the connection is between IDLEs, leaves the message
+			// sitting in a mailbox nothing will look at again until the network happens to break — which
+			// is a mail answered in six minutes or tomorrow, from a channel that looks fine throughout.
+			const sweep = setInterval(() => {
+				void this.#serialize(() => this.#drain(session));
+			}, this.#sweepMs);
+			sweep.unref?.();
+
+			try {
+				await ended;
+			} finally {
+				clearInterval(sweep);
+			}
 		} finally {
 			if (this.#session === session) this.#session = undefined;
 			session.close();

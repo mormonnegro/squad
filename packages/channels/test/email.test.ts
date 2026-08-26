@@ -155,6 +155,7 @@ interface Running {
 	readonly publisher: RecordingPublisher;
 	readonly changes: Account[];
 	readonly dropped: Array<{ why: string; count: number }>;
+	readonly watching: Array<{ where: string; fromUid: number }>;
 }
 
 interface Setup {
@@ -164,6 +165,8 @@ interface Setup {
 	readonly holding?: readonly Letter[];
 	/** A mailbox with nowhere to hand mail in, which is what a provider publishing only IMAP gives. */
 	readonly readsOnly?: boolean;
+	/** Shortened from a minute so a test can watch the mailbox get looked at unprompted. */
+	readonly sweepMs?: number;
 }
 
 /**
@@ -180,6 +183,7 @@ async function running(setup: Setup = {}): Promise<Running> {
 	const publisher = new RecordingPublisher();
 	const changes: Account[] = [];
 	const dropped: Array<{ why: string; count: number }> = [];
+	const watching: Array<{ where: string; fromUid: number }> = [];
 	const agents = setup.agents ?? ["scout", "clerk"];
 	const wanted: Account = { ...ACCOUNT, ...setup.account };
 	const { outgoing: _nowhere, ...reading } = wanted;
@@ -191,11 +195,13 @@ async function running(setup: Setup = {}): Promise<Running> {
 		post: submission.open,
 		onChange: (changed) => changes.push(changed),
 		onDropped: (why, count) => dropped.push({ why, count }),
+		onWatching: (where, fromUid) => watching.push({ where, fromUid }),
+		...(setup.sweepMs !== undefined ? { sweepMs: setup.sweepMs } : {}),
 	});
 	stoppers.push(() => channel.stop());
 	channel.start();
 	await until(() => mailbox.reads > 0, "the first read");
-	return { channel, mailbox, submission, publisher, changes, dropped };
+	return { channel, mailbox, submission, publisher, changes, dropped, watching };
 }
 
 describe("addressFor and pairingPhrase", () => {
@@ -407,6 +413,31 @@ describe("EmailChannel", () => {
 		await until(() => publisher.published.length > 0, "the event after it");
 
 		expect(publisher.published[0]).toMatchObject({ body: "still here" });
+	});
+
+	// The announcement is how mail arrives quickly, and it is not how mail arrives. A server that
+	// never sends one leaves the message in a box nothing looks at again until the network breaks,
+	// which is an answer in six minutes or tomorrow, from a channel that looks healthy throughout.
+	it("looks in the mailbox anyway, when the server never said anything had arrived", async () => {
+		const { mailbox, publisher } = await running({
+			sweepMs: 10,
+			account: { seen: { uidValidity: "100", lastUid: 0 } },
+		});
+
+		mailbox.hold({ uid: 1, from: "nico@example.com", body: "unannounced", results: SIGNED });
+		await until(() => publisher.published.length > 0, "the sweep");
+
+		expect(publisher.published[0]).toMatchObject({ body: "unannounced" });
+	});
+
+	// Silent while it worked and silent while it was dead: the two states a mailbox is hardest to
+	// tell apart, and the number here is the whole of what separates them.
+	it("says which mailbox it is watching and which message it is watching from", async () => {
+		const { watching } = await running({ account: { seen: { uidValidity: "100", lastUid: 63 } } });
+
+		expect(watching).toEqual([
+			{ where: "agents@example.com at imap.example.com:993", fromUid: 64 },
+		]);
 	});
 });
 
