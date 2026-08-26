@@ -20,4 +20,4 @@ export const PI = "https://github.com/earendil-works/pi";
 
 export const TITLE = "agent-dive";
 export const TAGLINE =
-	"Agents of your own, on a machine of your own. Tell one what to look after and it stays there after you close the laptop, waking on Monday morning, when a check goes red, or when you text it, and comes back to you where you already are.";
+	"Run AI agents on a server of your own. Give one a standing job — watch a repo, track a rival, fix a check that broke — and it wakes on its own to do it, then writes back to tell you how it went.";
