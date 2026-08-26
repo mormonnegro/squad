@@ -151,8 +151,9 @@ export default function Home() {
 				<div className="wrap">
 					<h1>agent-dive</h1>
 					<p className="lede">
-						Self-hosted cloud agents. A container that stays running, wakes when something happens,
-						and reaches the world only through credentials it never sees.
+						Agents of your own, on a machine of your own. Tell one what to look after and it stays
+						there after you close the laptop — waking on Monday morning, when a check goes red, or
+						when you text it — and comes back to you where you already are.
 					</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump jump-lead">
@@ -163,9 +164,9 @@ export default function Home() {
 						</Link>
 					</div>
 					<div className="hero-meta">
-						<span>Docker and Node 22</span>
-						<span>One VPS is enough</span>
-						<span>MIT</span>
+						<span>Stays up without you</span>
+						<span>Wakes on its own</span>
+						<span>Writes back on Telegram</span>
 					</div>
 				</div>
 				<div className="wrap-wide hero-console">

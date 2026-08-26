@@ -20,4 +20,4 @@ export const PI = "https://github.com/earendil-works/pi";
 
 export const TITLE = "agent-dive";
 export const TAGLINE =
-	"Self-hosted cloud agents. A container that stays running, wakes when something happens, and reaches the outside world only through credentials it never sees.";
+	"Agents of your own, on a machine of your own. Tell one what to look after and it stays there after you close the laptop, waking on Monday morning, when a check goes red, or when you text it, and comes back to you where you already are.";
