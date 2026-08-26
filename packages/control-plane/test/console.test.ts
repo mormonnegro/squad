@@ -18,6 +18,7 @@ import {
 	inverted,
 	laid,
 	mouse,
+	moved,
 	New,
 	nextRow,
 	panelAt,
@@ -507,6 +508,32 @@ describe("walked", () => {
 	it("walks a plane with nothing on it", () => {
 		expect(walked(0, 1, 0)).toBe(1);
 		expect(walked(2, 1, 0)).toBe(0);
+	});
+});
+
+/**
+ * The arrows' shorter ring: the agents and the row that makes one, and nothing under it.
+ *
+ * Up from the first agent should land on something somebody might have been after, and the plane's
+ * keys are not it. Reaching those is `tab`'s, which is a press nobody makes by accident on the way
+ * to the agent above.
+ */
+describe("moved", () => {
+	it("moves one agent down, and one up", () => {
+		expect(moved(0, 1, 3)).toBe(1);
+		expect(moved(2, -1, 3)).toBe(1);
+	});
+
+	it("wraps at the row that makes an agent, never onto the plane's two", () => {
+		expect(moved(2, 1, 3)).toBe(3);
+		expect(moved(3, 1, 3)).toBe(0);
+		expect(moved(0, -1, 3)).toBe(3);
+	});
+
+	/** The only row a plane with nothing on it has, so both keys stand still on it. */
+	it("stays put on a plane with nothing on it", () => {
+		expect(moved(0, 1, 0)).toBe(0);
+		expect(moved(0, -1, 0)).toBe(0);
 	});
 });
 

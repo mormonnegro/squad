@@ -268,15 +268,10 @@ export function Console() {
 				step: landed[landed.length - 1]?.text ?? THINKING,
 			};
 
-	// What tab opens next, which is the row under this one: the column is one list, and the footer
-	// promises the next thing in it rather than a fixed destination. The mock only ever stands on an
-	// agent, so the row under is the next agent or, past the last of them, the one that makes one.
-	const next = USES[USES.indexOf(use) + 1]?.name ?? "new agent";
-
 	const keys: [string, string][] = [
+		["↑↓", "agents"],
+		["←→", "history"],
 		["^U^D", "scroll"],
-		["↑↓", "history"],
-		["tab", next],
 		["/", "commands"],
 		["!", "shell"],
 		["^C", "quit"],
@@ -338,9 +333,11 @@ export function Console() {
 					    keys and models. */}
 					<div className="mock-plane">logs</div>
 					<div className="mock-plane">config</div>
-					{/* A list nothing points at does not say how to walk it, so the column says so itself. */}
+					{/* A list nothing points at does not say how to walk it, so the column says so itself. It
+					    names the key that walks it from where the keyboard already is: the arrows on a
+					    conversation, which is the only row this mock ever stands on. */}
 					<div className="mock-how">
-						<b>tab</b> moves
+						<b>↑↓</b> moves
 					</div>
 				</div>
 

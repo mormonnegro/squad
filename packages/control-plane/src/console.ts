@@ -192,10 +192,25 @@ export function panelAt(spot: number, agents: number): Panel {
 	return spot <= agents ? "chat" : spot === agents + 1 ? "logs" : "config";
 }
 
+/** Turns a walk into a ring of `rows`, so neither end of the column is ever run off. */
+function ringed(spot: number, by: 1 | -1, rows: number): number {
+	return (((spot + by) % rows) + rows) % rows;
+}
+
 /** The next row down, or up. It wraps, so the first agent is one key past the config screen. */
 export function walked(spot: number, by: 1 | -1, agents: number): number {
-	const rows = agents + PLANE_ROWS + 1;
-	return (((spot + by) % rows) + rows) % rows;
+	return ringed(spot, by, agents + PLANE_ROWS + 1);
+}
+
+/**
+ * The next agent down, or up, wrapping at the row that makes one.
+ *
+ * The arrows stop short of the plane's own two rows on purpose: pressing up from the first agent
+ * should land on something you might have been looking for, and a screen of API keys is not it. Those
+ * are `tab`'s, which is a press nobody makes by accident on the way to the agent above.
+ */
+export function moved(spot: number, by: 1 | -1, agents: number): number {
+	return ringed(spot, by, agents + 1);
 }
 
 /** What tab is about to open, for the row that says what tab does. */
@@ -884,12 +899,20 @@ export function Column({
 		// press it; this says what to press, inside the thing it is about. On the bottom border rather
 		// than after the last row, so it reads as this column's own footing and not as one more thing
 		// in the list — and given up first, when the column is too short to spare a row.
+		//
+		// It names whichever key walks the column from where the keyboard already is: the arrows on a
+		// conversation, and tab from the plane's own two, where the arrows belong to what is drawn
+		// beside them. A footing naming a key that does something else here would be worse than none.
 		spaced ? h(Box, { flexGrow: 1, key: "rest" }) : undefined,
 		spaced
 			? h(
 					Text,
 					{ key: "how", wrap: "truncate" },
-					h(Text, { color: "cyan", dimColor: true }, "tab"),
+					h(
+						Text,
+						{ color: "cyan", dimColor: true },
+						panelAt(cursor, agents.length) === "chat" ? "↑↓" : "tab",
+					),
 					h(Text, { dimColor: true }, " moves"),
 				)
 			: undefined,
@@ -2378,27 +2401,32 @@ export function App({
 			setSpot((prev) => walked(prev, key.shift ? -1 : 1, agents.length));
 			return;
 		}
-		// Back through what was already typed, which is what these two keys mean at every other prompt
-		// a hand has ever been at. The agents moved off them and onto left and right, which were doing
-		// nothing: this prompt takes no cursor, so there was no line to walk along with them.
+		// Up and down the list beside them, which is what these two keys do beside a list on every
+		// screen that has one. They were the prompt's history and the history is now left and right,
+		// which cost it nothing: this prompt takes no cursor, so there was never a line to walk along
+		// with them, and the agents are the thing on this screen that is a list.
 		if (key.upArrow) {
-			// On the config screen the arrows are the list's, not the prompt's: there is no prompt behind
-			// it, and moving a row out from under a key about to be typed would be a surprise. Over the
-			// feed there is no prompt either, so they do the only thing left to want there.
+			// On the config screen the arrows are that list's, and over the feed they are the scrollback's
+			// — both are what up and down are beside those, and neither screen has agents drawn against
+			// it to move through. `tab` is what walks the column from either of them.
 			if (panel === "config") setWhere(Math.max(0, onRow - 1));
 			else if (panel === "logs") scroll(-1, 0);
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
-			else step(1);
+			else setSpot((prev) => moved(prev, -1, agents.length));
 			return;
 		}
 		if (key.downArrow) {
 			if (panel === "config") setWhere(Math.min(walk.length - 1, onRow + 1));
 			else if (panel === "logs") scroll(1, 0);
 			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
-			else step(-1);
+			else setSpot((prev) => moved(prev, 1, agents.length));
 			return;
 		}
-		if (key.leftArrow || key.rightArrow) return;
+		// Back through what was already sent, and forward again. Left is older because left is back.
+		if (key.leftArrow || key.rightArrow) {
+			if (panel === "chat" && menu.length === 0) step(key.leftArrow ? 1 : -1);
+			return;
+		}
 		if (panel === "config") {
 			// Everything this screen does is about the row the arrows are standing on, which is why there
 			// is nothing here to type into until one of these is pressed.
@@ -2730,17 +2758,17 @@ export function App({
 											? // Nothing else the row usually offers is true here: there is no conversation to
 												// scroll, no shell to open and no commands, until the name has been given.
 												[
-													["tab", nextRow(spot, agents)],
+													["↑↓", "agents"],
 													["⏎", "create"],
 													["^C", "quit"],
 												]
 											: [
-													["^U^D", "scroll"],
-													// Only while there is a line to walk back to: up and down do nothing in a
+													["↑↓", "agents"],
+													// Only while there is a line to walk back to: left and right do nothing in a
 													// conversation nobody has typed into yet, and a hint for a key that does nothing
 													// is the same lie as a hint for a key the menu has taken.
-													...(typed(said).length > 0 ? [["↑↓", "history"]] : []),
-													["tab", nextRow(spot, agents)],
+													...(typed(said).length > 0 ? [["←→", "history"]] : []),
+													["^U^D", "scroll"],
 													// A key nobody guesses is pressable. The rest of this row is what to press to move
 													// around; this one is what to press to be told what else there is. In the shell the
 													// two of them say nothing true, and the way back out is worth saying instead.

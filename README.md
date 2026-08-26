@@ -204,21 +204,26 @@ asking to see the thing, not to be told a fact about it:
 │ config               ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ >                                                          │ │
-│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
+│ ↑↓ moves             ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ^U^D scroll   tab maxi   / commands   ! shell   ^C quit
+ ↑↓ agents   ←→ history   ^U^D scroll   / commands   ! shell   ^C quit
 ```
 
-The column on the left is the whole of what this console can show, and `tab` walks it top to bottom
-— `shift` with it for the way back, and a click on a row for a hand already on the mouse. One key,
-one list: every agent the plane has — `●` up, `○` stopped, `◐` mid-turn — then the row that makes
-one, then the log feed and the config screen. Thinking gets a mark of its own because with several
-agents on screen it is the one thing you cannot find out by asking again in a second. The row the keyboard is on is its name in the colour
+The column on the left is the whole of what this console can show, one list top to bottom: every
+agent the plane has — `●` up, `○` stopped, `◐` mid-turn — then the row that makes one, then the log
+feed and the config screen. Up and down move between the agents, which is what those two keys do
+beside a list on every screen that draws one. They stop at the row that makes an agent: `tab` is what
+carries on into the plane's own two rows and back round to the top — `shift` with it for the way
+back — because pressing up from the first agent should land on something you might have been after,
+and a screen of API keys is not it. A click on a row works too, for a hand already on the mouse.
+Thinking gets a mark of its own because with several agents on screen it is the one thing you cannot
+find out by asking again in a second. The row the keyboard is on is its name in the colour
 the panel title gives the same name, and not an arrow in a gutter beside the marks: a column whose
 header stands against the border and whose rows all begin two further in reads as a list indented
-under a title it does not belong to. At the foot of the column is `tab moves`, because a list that
-nothing points at does not otherwise say how to walk it — the row along the bottom of the screen says
-where `tab` goes next, which is only an answer for somebody who already knows to press it.
+under a title it does not belong to. At the foot of the column is `↑↓ moves`, because a list that
+nothing points at does not otherwise say how to walk it. It names whichever key walks the column from
+where the keyboard already is, so on the feed and the config screen — where the arrows belong to the
+scrollback and to the list drawn beside them — it reads `tab moves` instead.
 
 The feed and the config screen stand at the foot of the column rather than behind an agent because
 neither is about an agent. The feed is the plane's, one stream with every agent in it — the same feed
@@ -230,10 +235,11 @@ drawing. Under the agents rather than over them because that is the order they a
 this to talk to an agent, and you go to the feed when something is wrong or to the keys once, at the
 start.
 
-It is `tab` and not the bare arrows because the bare arrows are the line being typed: up and down
-walk back through what was sent, the way they do at every other prompt, and a column is not worth
-taking that from the row a hand is actually on. It is not a chord either — `^N` and `^P` were the
-version before this one, and a prompt you have to learn the chords for is a prompt.
+The line already sent is walked back through with left and right rather than up and down, which
+costs this prompt nothing: it takes no cursor, so there was never a line to walk along sideways, and
+the thing this screen actually draws a list of is the agents. Neither walk is a chord — `^N` and
+`^P` were the version before this one, and a prompt you have to learn the chords for is a prompt
+nobody moves around in.
 While that agent is thinking, the row under the conversation carries the spinner, the seconds and
 whatever the turn is on: a spinner alone says something is happening, the number rising beside it
 says whether it still is, and the tool being run is the difference between stuck on the model and
@@ -270,12 +276,13 @@ that the way to find out which model an agent was answering badly with was to go
 operator's config file. As the terminal narrows the model goes first, then the ceiling, then the
 money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fact half said.
 
-`↑` and `↓` walk back through the lines you have typed at this agent, which is what those two keys
-do at every other prompt there has ever been. That is what moved the column onto `tab`: a prompt
-whose arrows do something else than a prompt's arrows do is a prompt you have to learn, and there
-was nothing about a list of names worth that. The half-written line you were on when the walk began
-comes back whole at the end of it, so a stray arrow costs you nothing. Over the feed and the config
-screen there is no prompt for them to belong to, so they are the list's and the scrollback's there. Each agent's history is its own, and it survives the console
+`←` and `→` walk back through the lines you have typed at this agent, left for older because left is
+back. Sideways rather than up and down because this prompt takes no cursor: there is no line to walk
+along with those two, so they cost the prompt nothing here, and up and down go to the agents, which
+are the one thing on this screen that is a list. The half-written line you were on when the walk
+began comes back whole at the end of it, so a stray arrow costs you nothing. Over the feed and the
+config screen there is no prompt for them to belong to, so up and down are the list's and the
+scrollback's there. Each agent's history is its own, and it survives the console
 being closed, because the lines are read out of the conversation the plane kept.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one

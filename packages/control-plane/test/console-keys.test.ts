@@ -281,6 +281,33 @@ describe("the console, pressed at", () => {
 		}
 	});
 
+	/**
+	 * Up and down, which is what a list answers to on every screen that draws one.
+	 *
+	 * They stop at the row that makes an agent instead of carrying on into the plane's own two:
+	 * pressing up from the first agent should land on something somebody might have been after, and a
+	 * screen of API keys is not it.
+	 */
+	it("moves between the agents on up and down, without reaching the plane's rows", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo"), listed("maxi")]);
+		try {
+			await console_.press(DOWN);
+			expect(showing(console_.screen())).toBe("maxi");
+
+			await console_.press(DOWN);
+			expect(showing(console_.screen())).toBe("new agent");
+
+			await console_.press(DOWN);
+			expect(showing(console_.screen())).toBe("demo");
+
+			await console_.press(UP);
+			expect(showing(console_.screen())).toBe("new agent");
+		} finally {
+			console_.close();
+		}
+	});
+
 	/** Said in the column itself, because the row at the foot of the screen is not where it is asked. */
 	it("says in the column which key walks it", async () => {
 		const { client } = plane();
@@ -288,20 +315,24 @@ describe("the console, pressed at", () => {
 		try {
 			await console_.press();
 
-			expect(console_.screen()).toContain("tab moves");
+			expect(console_.screen()).toContain("↑↓ moves");
 		} finally {
 			console_.close();
 		}
 	});
 
-	/** They belong to the line being typed now, and a line with no cursor has nowhere to go. */
-	it("leaves the agents where they are on a bare left or right", async () => {
+	/**
+	 * The arrows on the plane's two rows belong to what is drawn beside them — the scrollback and the
+	 * config list — so the column names the key that does still walk it from there.
+	 */
+	it("names tab in the column once the arrows belong to the screen beside it", async () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(RIGHT, RIGHT, LEFT);
+			await console_.press(SHIFT_TAB);
 
-			expect(showing(console_.screen())).toBe("demo");
+			expect(showing(console_.screen())).toBe("config");
+			expect(console_.screen()).toContain("tab moves");
 		} finally {
 			console_.close();
 		}
@@ -457,19 +488,19 @@ describe("the console, pressed at", () => {
 /**
  * The prompt, walked back through and taken back from.
  *
- * All three of these are keys a hand already knows from somewhere else — a shell, a browser, every
- * other prompt — and a console that took them for something of its own would be a console where
- * that knowledge is worth nothing.
+ * Left and right rather than up and down, which cost the prompt nothing: this one takes no cursor,
+ * so there was never a line to walk along with them, and up and down went to the agents, which are
+ * the list this screen actually draws. Left is older because left is back.
  */
 describe("the prompt, walked back through", () => {
 	const spoke = (agentId: string, ...lines: string[]): Talk =>
 		new Map([[agentId, lines.map((text) => ({ from: "operator" as const, text }))]]);
 
-	it("puts the last line back in the prompt on an up arrow", async () => {
+	it("puts the last line back in the prompt on a left arrow", async () => {
 		const { client } = plane({ has: [listed("demo")] });
 		const console_ = open(client, [listed("demo")], spoke("demo", "hola", "que hora es"));
 		try {
-			await console_.press(UP);
+			await console_.press(LEFT);
 
 			expect(console_.screen()).toContain("> que hora es");
 		} finally {
@@ -481,7 +512,9 @@ describe("the prompt, walked back through", () => {
 		const { client } = plane({ has: [listed("demo")] });
 		const console_ = open(client, [listed("demo")], spoke("demo", "hola", "que hora es"));
 		try {
-			await console_.press(UP, UP, UP);
+			await console_.press(LEFT);
+			await console_.press(LEFT);
+			await console_.press(LEFT);
 
 			expect(console_.screen()).toContain("> hola");
 		} finally {
@@ -495,12 +528,26 @@ describe("the prompt, walked back through", () => {
 		const console_ = open(client, [listed("demo")], spoke("demo", "hola"));
 		try {
 			await console_.press("medio escr");
-			await console_.press(UP);
+			await console_.press(LEFT);
 			expect(console_.screen()).toContain("> hola");
 
-			await console_.press(DOWN);
+			await console_.press(RIGHT);
 
 			expect(console_.screen()).toContain("> medio escr");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** And the agents stay put while it happens: the two walks are different keys and different lists. */
+	it("leaves the agent where it is while the line is walked back", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo"), listed("maxi")], spoke("demo", "hola"));
+		try {
+			await console_.press(LEFT);
+
+			expect(console_.screen()).toContain("> hola");
+			expect(showing(console_.screen())).toBe("demo");
 		} finally {
 			console_.close();
 		}
