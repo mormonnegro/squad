@@ -24,10 +24,11 @@ COPY relay.mjs /usr/local/lib/agent-dive/relay.mjs
 
 # The plane's own extensions, kept here rather than in the agent's repository: that repository is
 # written once and is the agent's from then on, so anything shipped into it could never be fixed.
-# The first two are imported by the extensions below rather than registered themselves, which is what
+# The first three are imported by the extensions below rather than registered themselves, which is what
 # lets them be tested: neither reaches for pi or typebox, so vitest can load them outside the image.
 COPY http-reply.ts /usr/local/lib/agent-dive/extensions/http-reply.ts
 COPY appointment.ts /usr/local/lib/agent-dive/extensions/appointment.ts
+COPY commands.ts /usr/local/lib/agent-dive/extensions/commands.ts
 COPY wake.ts /usr/local/lib/agent-dive/extensions/wake.ts
 COPY search.ts /usr/local/lib/agent-dive/extensions/search.ts
 COPY mcp.ts /usr/local/lib/agent-dive/extensions/mcp.ts

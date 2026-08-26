@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { type Asked, alreadyAsked, askFor } from "./commands.ts";
 
 /**
  * The file the control plane reads once the turn is over, for the same reason the wakeup is a file:
@@ -14,29 +15,22 @@ import { Type } from "typebox";
  */
 const CONSOLE_FILE = process.env.AGENT_DIVE_CONSOLE_FILE ?? "/home/agent/.run/console.json";
 
-/**
- * How many one turn may ask for. The plane caps this too, since the agent has a shell and could
- * write the file itself; here it is so that an agent looping on a refusal finds out inside the turn
- * rather than filling a console with the same line forty times.
- */
-const MOST = 10;
-
-/** Appended rather than replaced: adding a server and logging into it is two lines and one intent. */
-function ask(line: string): number {
-	mkdirSync(dirname(CONSOLE_FILE), { recursive: true });
-	let asked: string[] = [];
+/** The queue as the plane will find it, since the file is the whole of what passes between them. */
+function ask(line: string): Asked {
+	let held: string | undefined;
 	try {
-		const parsed: unknown = JSON.parse(readFileSync(CONSOLE_FILE, "utf8"));
-		if (Array.isArray(parsed)) asked = parsed.filter((one) => typeof one === "string");
+		held = readFileSync(CONSOLE_FILE, "utf8");
 	} catch {
-		// No file yet, or one left unreadable. Either way this turn's first line starts the list.
+		// No file yet: this turn has asked for nothing so far, which is what askFor is about to be told.
 	}
-	if (asked.length >= MOST) {
-		throw new Error(`You have already asked for ${MOST} commands this turn, which is the most.`);
-	}
-	asked.push(line);
-	writeFileSync(CONSOLE_FILE, `${JSON.stringify(asked)}\n`, { encoding: "utf8", mode: 0o600 });
-	return asked.length;
+
+	const asked = askFor(line, alreadyAsked(held));
+	mkdirSync(dirname(CONSOLE_FILE), { recursive: true });
+	writeFileSync(CONSOLE_FILE, `${JSON.stringify(asked.asked)}\n`, {
+		encoding: "utf8",
+		mode: 0o600,
+	});
+	return asked;
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -85,27 +79,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_toolCallId, params) {
 			const { line } = params as { line: string };
-			const wanted = line.trim();
-
-			if (!wanted.startsWith("/")) {
-				throw new Error(`A command starts with a slash. "${wanted}" is not one.`);
-			}
-			// Refused here as well as at the plane, because a newline would put a second command into the
-			// conversation under the first one's answer, where nobody is looking for it.
-			if (/[\n\r]/.test(wanted)) {
-				throw new Error("One command to a call. Call this again for the next one.");
-			}
-
-			const asked = ask(wanted);
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Asked for: ${wanted}\n\nIt runs when this turn ends, and the answer goes to your operator. ${asked === 1 ? "It is the only command you have asked for this turn." : `It is ${asked} of the commands you have asked for this turn, and they run in order.`}`,
-					},
-				],
-				details: {},
-			};
+			return { content: [{ type: "text", text: ask(line).text }], details: {} };
 		},
 	});
 }
