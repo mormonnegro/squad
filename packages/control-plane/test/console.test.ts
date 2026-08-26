@@ -17,6 +17,7 @@ import {
 	holding,
 	inverted,
 	laid,
+	type MailField,
 	mouse,
 	New,
 	nextRow,
@@ -42,6 +43,7 @@ import {
 	walked,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
+import type { MailStanding } from "../src/mailbox.ts";
 import type { ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer } from "../src/models.ts";
 import type { SearchStanding } from "../src/search.ts";
@@ -1561,11 +1563,24 @@ describe("Config", () => {
 			loggedIn: false,
 		},
 	];
+	const post: MailStanding = {
+		mailbox: "desk@agent-dive.dev",
+		host: "imap.fastmail.com",
+		carrier: "mailgun",
+		domain: "agent-dive.dev",
+		keyEnv: "MAILGUN_API_KEY",
+		held: true,
+		here: false,
+		writes: true,
+		trouble: undefined,
+	};
 	/** Every one of these is about the models section, which is where this screen's lists are. */
 	const pane = (props: {
 		section?: Section | undefined;
 		search?: SearchStanding | undefined;
 		servers?: readonly ServerStanding[];
+		mail?: MailStanding | undefined;
+		mailing?: { field: MailField; text: string } | undefined;
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
@@ -1586,6 +1601,7 @@ describe("Config", () => {
 				models,
 				search: searching,
 				servers: shelf,
+				mail: post,
 				cursor: 0,
 				typing: undefined,
 				secret: "",
@@ -1940,6 +1956,107 @@ describe("Config", () => {
 		it("asks before forgetting, and says it comes off every agent", () => {
 			expect(shelved({ cursor: 0, forgetting: "linear" })).toContain(
 				"comes off every agent holding it",
+			);
+		});
+	});
+
+	/**
+	 * The mailbox, and whoever carries what is written back out of it.
+	 *
+	 * Two halves that fail for unrelated reasons — a mailbox nobody connected reaches nothing, and a
+	 * carrier nobody paid for reads and cannot answer — so the screen keeps a dot for each.
+	 */
+	describe("the email section", () => {
+		const mailed = (props: Parameters<typeof pane>[0] = {}) =>
+			pane({ section: "email", columns: 90, ...props });
+		// The rows the arrows walk, told from the prose above them by the dot each one opens with — the
+		// prose says "mailbox" and "domain" too, and a screen searched for a word would find those first.
+		const fields = (drawn: string): readonly string[] =>
+			drawn
+				.split("\n")
+				.map(bare)
+				.filter((row) => /^[●○] /.test(row));
+
+		it("says the mailbox, who carries the answers, and what pays for that", () => {
+			const drawn = mailed();
+
+			expect(drawn).toContain("desk@agent-dive.dev");
+			expect(drawn).toContain("Mailgun");
+			expect(drawn).toContain("agent-dive.dev");
+			expect(drawn).toContain("MAILGUN_API_KEY");
+		});
+
+		// The mailbox is connected and the carrier is not paid for: one dot lit and one dark, which a
+		// single dot over the pair could not say.
+		it("marks reading and sending apart, because they fail apart", () => {
+			const drawn = fields(mailed({ mail: { ...post, held: false, writes: false } }));
+
+			expect(drawn.find((row) => row.startsWith("● mailbox"))).toBeDefined();
+			expect(drawn.find((row) => row.startsWith("○ carrier"))).toBeDefined();
+		});
+
+		// Most carriers work the domain out of the address. Mailgun will not, so the row is there for
+		// Mailgun and gone for the rest, rather than sitting on every screen saying nothing.
+		it("leaves out the rows that could only say they do not apply", () => {
+			expect(fields(mailed()).map((row) => row.slice(2, 12).trim())).toEqual([
+				"mailbox",
+				"carrier",
+				"domain",
+				"key",
+			]);
+
+			const guessed = mailed({ mail: { ...post, carrier: "resend", keyEnv: "RESEND_API_KEY" } });
+			expect(fields(guessed).map((row) => row.slice(2, 12).trim())).toEqual([
+				"mailbox",
+				"carrier",
+				"key",
+			]);
+
+			// The mailbox's own submission server: no company to name a domain to and no key to pay.
+			const own = mailed({ mail: { ...post, carrier: "", domain: "", keyEnv: undefined } });
+			expect(own).toContain("the mailbox's own server");
+			expect(fields(own).map((row) => row.slice(2, 12).trim())).toEqual(["mailbox", "carrier"]);
+		});
+
+		it("says of the row it is on the half the column has no room for", () => {
+			expect(mailed({ cursor: 0 })).toContain("imap.fastmail.com");
+			expect(mailed({ cursor: 2 })).toContain("sends only for a domain it was set up for");
+			expect(mailed({ cursor: 3 })).toContain("from this plane's environment");
+			expect(mailed({ cursor: 3, mail: { ...post, here: true } })).toContain("set here");
+			expect(mailed({ cursor: 3, mail: { ...post, held: false } })).toContain(
+				"no key, so nothing can be sent",
+			);
+		});
+
+		it("says what there is to type when nothing is connected", () => {
+			const drawn = mailed({
+				cursor: 0,
+				mail: { ...post, mailbox: undefined, host: undefined, writes: false },
+			});
+
+			expect(drawn).toContain("nothing connected");
+			expect(drawn).toContain("the app password your provider issued for it");
+		});
+
+		// The plane's own complaint, said instead of the hint — a mailbox that stopped reading is the
+		// one thing this screen exists to show, and the hint would draw over it.
+		it("says what went wrong instead of what to type", () => {
+			expect(
+				mailed({ cursor: 0, mail: { ...post, trouble: "the password was refused" } }),
+			).toContain("the password was refused");
+		});
+
+		it("shows an address as it is typed, and never a password", () => {
+			expect(mailed({ mailing: { field: "address", text: "desk@" } })).toContain("desk@");
+
+			const secret = mailed({ mailing: { field: "password", text: "kwil-brac-nemo-shad" } });
+			expect(secret).toContain("password");
+			expect(secret).not.toContain("kwil-brac-nemo-shad");
+		});
+
+		it("asks before forgetting, and says every agent stops being reachable", () => {
+			expect(mailed({ cursor: 0, forgetting: "desk@agent-dive.dev" })).toContain(
+				"forget the mailbox at desk@agent-dive.dev",
 			);
 		});
 	});

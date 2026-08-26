@@ -1,5 +1,6 @@
 import { dirname } from "node:path";
 import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
+import { CARRIERS } from "@agent-dive/channels";
 import {
 	Box,
 	type DOMElement,
@@ -25,6 +26,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LocalDoors, wanted } from "./doors.ts";
 import { LogFeed } from "./feed.ts";
+import type { MailStanding } from "./mailbox.ts";
 import { MarkdownStream } from "./markdown.ts";
 import { readName, readServer, type ServerStanding, written } from "./mcp.ts";
 import type { ModelOffer, ModelStanding, ProviderStanding } from "./models.ts";
@@ -1254,7 +1256,7 @@ const SEARCHING = [
  * exists for: none of this is a file on the host to edit and nothing here is a reason to restart.
  */
 const PLACES = [
-	"Everything this plane can be given is here: the keys it pays with, what its agents think with, and where they search from.",
+	"Everything this plane can be given is here: the keys it pays with, what its agents think with, where they search from, and the mailbox they are written to at.",
 	"",
 	"All of it is kept beside deploy/config.yaml rather than in it — what that file declares is read here and changed only there — and all of it holds from the next turn, with nothing restarted.",
 ];
@@ -1271,11 +1273,24 @@ const SERVERS = [
 	"None of them holds a key. A remote one is reached through the proxy like every other host, and one that wants an account is logged into from an agent that has it, with /mcp login.",
 ];
 
+/**
+ * What email is here, above the rows that connect it.
+ *
+ * The second paragraph is the choice this section exists to offer. Reading has one answer and always
+ * did; sending has two, and the difference between them is whose domain the mail appears to be from
+ * and whether anything ever tells you it did not arrive.
+ */
+const MAIL = [
+	"One mailbox serves every agent: mail to you+scout@ is scout's and mail to you+clerk@ is clerk's, so connecting this is a thing done once, including for the agents that do not exist yet.",
+	"",
+	"Reading is IMAP, which wants no domain and nothing open on this machine. Sending is either the mailbox's own server, or a company that carries mail for a domain of yours and says whether it landed.",
+];
+
 /** A part of this plane with something to set, which is one row of the list this screen opens on. */
-export type Section = "models" | "search" | "mcp";
+export type Section = "models" | "search" | "mcp" | "email";
 
 /** In the order they are walked, which is the order they are usually needed in. */
-const SECTION_ORDER: readonly Section[] = ["models", "search", "mcp"];
+const SECTION_ORDER: readonly Section[] = ["models", "search", "mcp", "email"];
 
 const SECTIONS: Readonly<
 	Record<Section, { readonly does: string; readonly said: readonly string[] }>
@@ -1283,10 +1298,23 @@ const SECTIONS: Readonly<
 	models: { does: "the providers this plane can pay, and what its agents think with", said: KEYS },
 	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
 	mcp: { does: "the servers on the shelf, and which agents hold them", said: SERVERS },
+	email: { does: "the mailbox agents are reached at, and who carries their answers", said: MAIL },
 };
 
 /** The three facts about searching, in the order a hand fills them in. */
 const SEARCH_FIELDS = ["provider", "model", "key"] as const;
+
+/** What the mailbox's own submission server is called on a list of companies that are not it. */
+const OWN_SERVER = "the mailbox's own server";
+
+/**
+ * The one thing about email that is typed rather than picked, and which of the three it is.
+ *
+ * Three, because connecting a mailbox is two questions with a round trip between them: the address
+ * decides whether there is any point asking for a password, and on half the providers the answer is
+ * that this account cannot be reached this way at all.
+ */
+export type MailField = "address" | "password" | "domain";
 
 /** A row on the config screen: a section to open, a key to fill in, a model, or the row that adds one. */
 export type ConfigRow =
@@ -1296,7 +1324,8 @@ export type ConfigRow =
 	| { readonly kind: "add" }
 	| { readonly kind: "search"; readonly field: (typeof SEARCH_FIELDS)[number] }
 	| { readonly kind: "server"; readonly server: ServerStanding }
-	| { readonly kind: "add-server" };
+	| { readonly kind: "add-server" }
+	| { readonly kind: "mail"; readonly field: "mailbox" | "carrier" | "domain" | "key" };
 
 /**
  * The screen's rows in the order the arrows walk them, headers and blank lines left out.
@@ -1315,12 +1344,25 @@ export function configRows(
 	providers: readonly ProviderStanding[],
 	models: readonly ModelStanding[],
 	servers: readonly ServerStanding[],
+	mail?: MailStanding | undefined,
 ): readonly ConfigRow[] {
 	if (section === undefined) {
 		return SECTION_ORDER.map((one) => ({ kind: "section", section: one }) as const);
 	}
 	if (section === "search") {
 		return SEARCH_FIELDS.map((field) => ({ kind: "search", field }) as const);
+	}
+	// The rows that mean something and no others: with the mailbox's own server carrying the mail there
+	// is no key to pay it with, and most carriers work out the domain from the address they are given.
+	// A row that can only ever say "not applicable" is a row somebody presses return on to find out.
+	if (section === "email") {
+		const carrier = mail === undefined ? undefined : CARRIERS[mail.carrier];
+		return [
+			{ kind: "mail", field: "mailbox" } as const,
+			{ kind: "mail", field: "carrier" } as const,
+			...(carrier?.needsDomain === true ? [{ kind: "mail", field: "domain" } as const] : []),
+			...(carrier !== undefined ? [{ kind: "mail", field: "key" } as const] : []),
+		];
 	}
 	if (section === "mcp") {
 		return [
@@ -1370,6 +1412,10 @@ export function Config({
 	search,
 	/** Every server on the shelf, with who holds each. */
 	servers,
+	/** The mailbox and the way its mail leaves, or nothing while the plane is still being asked. */
+	mail,
+	/** The one line of the mailbox being typed out, and which of the three it is. */
+	mailing,
 	cursor,
 	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
 	typing,
@@ -1396,6 +1442,8 @@ export function Config({
 	readonly models: readonly ModelStanding[];
 	readonly search: SearchStanding | undefined;
 	readonly servers: readonly ServerStanding[];
+	readonly mail?: MailStanding | undefined;
+	readonly mailing?: { readonly field: MailField; readonly text: string } | undefined;
 	readonly cursor: number;
 	readonly typing: string | undefined;
 	readonly secret: string;
@@ -1416,7 +1464,7 @@ export function Config({
 	const widestProvider = Math.max(0, ...models.map((model) => model.provider.length));
 	const dim = (line: string): string => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`);
 	const said = (section === undefined ? PLACES : SECTIONS[section].said).map(dim);
-	const walked = configRows(section, providers, models, servers);
+	const walked = configRows(section, providers, models, servers, mail);
 	const row = walked[Math.min(cursor, walked.length - 1)];
 	// Above the list, because it is why the list says what it says — and when the plane refused to
 	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
@@ -1528,7 +1576,9 @@ export function Config({
 					? models.some((model) => model.held)
 					: one === "search"
 						? search?.held === true
-						: servers.some((server) => server.agents.length > 0);
+						: one === "email"
+							? mail?.mailbox !== undefined
+							: servers.some((server) => server.agents.length > 0);
 			const mark = ready ? MARKS.running : MARKS.stopped;
 			if (index === cursor) at = listed.length;
 			listed.push(
@@ -1555,15 +1605,21 @@ export function Config({
 				text:
 					which === "models"
 						? `${models.length} to think with, ${paid} of ${providers.length} providers paid for`
-						: which === "mcp"
-							? servers.length === 0
-								? "nothing on the shelf yet"
-								: `${servers.length} on the shelf, ${servers.filter((server) => server.agents.length > 0).length} of them given to somebody`
-							: search === undefined
+						: which === "email"
+							? mail === undefined
 								? "asking the plane…"
-								: search.held
-									? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
-									: `${search.keyEnv}   no key, refused at the proxy`,
+								: mail.mailbox === undefined
+									? "no mailbox, so nobody can write to an agent"
+									: `${mail.mailbox}${mail.writes ? "" : "   reading only"}`
+							: which === "mcp"
+								? servers.length === 0
+									? "nothing on the shelf yet"
+									: `${servers.length} on the shelf, ${servers.filter((server) => server.agents.length > 0).length} of them given to somebody`
+								: search === undefined
+									? "asking the plane…"
+									: search.held
+										? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
+										: `${search.keyEnv}   no key, refused at the proxy`,
 			},
 			boxed,
 			rows,
@@ -1620,6 +1676,87 @@ export function Config({
 													? `${search.keyEnv}   from this plane's environment`
 													: `${search.keyEnv}   no key, refused at the proxy`,
 						},
+			boxed,
+			rows,
+			columns,
+		});
+	}
+	if (section === "email") {
+		const carrier = mail === undefined ? undefined : CARRIERS[mail.carrier];
+		// One dot per half, because the two fail for unrelated reasons: a mailbox nobody connected is a
+		// channel that is not there, and a carrier nobody paid for is a channel that reads and cannot
+		// answer. A single dot over both would go out for either and say which for neither.
+		const value = (field: ConfigRow & { kind: "mail" }): { text: string; on: boolean } => {
+			if (mail === undefined) return { text: "…", on: false };
+			if (field.field === "mailbox") {
+				return { text: mail.mailbox ?? "nothing connected", on: mail.mailbox !== undefined };
+			}
+			if (field.field === "carrier") {
+				return { text: carrier?.title ?? OWN_SERVER, on: mail.writes };
+			}
+			if (field.field === "domain") {
+				return { text: mail.domain.length > 0 ? mail.domain : "not said yet", on: mail.writes };
+			}
+			return { text: mail.keyEnv ?? "", on: mail.held };
+		};
+		for (const [index, field] of walked.entries()) {
+			if (field.kind !== "mail") continue;
+			const { text, on } = value(field);
+			const mark = on ? MARKS.running : MARKS.stopped;
+			if (index === cursor) at = listed.length;
+			listed.push(
+				h(
+					Text,
+					{ key: `mail-${field.field}`, wrap: "truncate" },
+					h(Text, { color: mark.color }, mark.glyph),
+					h(Text, pointed(index === cursor, on), ` ${field.field.padEnd(10)}`),
+					h(Text, { dimColor: true }, text),
+				),
+			);
+		}
+		const field = row?.kind === "mail" ? row.field : "mailbox";
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt:
+				typing !== undefined
+					? { kind: "typed", mark: `key for ${typing}  `, text: secret, secret: true }
+					: mailing !== undefined
+						? {
+								kind: "typed",
+								mark: mailing.field === "domain" ? "domain  " : `${mailing.field}  `,
+								text: mailing.text,
+								// The app password, never drawn back. It is the one thing on this screen that lets
+								// whoever has it read every message in the account, tagged or not.
+								secret: mailing.field === "password",
+							}
+						: forgetting !== undefined
+							? {
+									kind: "dim",
+									text: `forget the mailbox at ${forgetting}? every agent stops being reachable — y or n`,
+								}
+							: {
+									kind: "dim",
+									text:
+										mail === undefined
+											? "asking the plane…"
+											: field === "mailbox"
+												? (mail.trouble ??
+													(mail.mailbox === undefined
+														? "an address, then the app password your provider issued for it"
+														: `${mail.host}   ⌫ disconnects it`))
+												: field === "carrier"
+													? `${Object.keys(CARRIERS).length} to send with, or the server the mailbox came with`
+													: field === "domain"
+														? `${carrier?.title ?? "a carrier"} sends only for a domain it was set up for`
+														: mail.here
+															? `${mail.keyEnv}   set here`
+															: mail.held
+																? `${mail.keyEnv}   from this plane's environment`
+																: `${mail.keyEnv}   no key, so nothing can be sent`,
+								},
 			boxed,
 			rows,
 			columns,
@@ -1996,7 +2133,13 @@ export function App({
 	const [shelving, setShelving] = useState<string | undefined>(undefined);
 	// The server a forget was asked about, while the console waits to hear it was meant. Its own
 	// question rather than the model's, because what it takes away is every agent's and not one row's.
+	// The email section asks the same question about its mailbox, and holds the address here.
 	const [forgetting, setForgetting] = useState<string | undefined>(undefined);
+	// The mailbox and the way its mail leaves, or nothing until the plane has answered.
+	const [mail, setMail] = useState<MailStanding | undefined>(undefined);
+	// The one line of it being typed out. The password goes here rather than into the draft for the
+	// reason every secret on this screen does: the chat prompt is one `tab` away.
+	const [mailing, setMailing] = useState<{ field: MailField; text: string } | undefined>(undefined);
 	// What the providers this plane can pay say they answer to, or nothing while they are being asked.
 	// Fetched when the row that adds a model is entered rather than with the screen, because it is a
 	// round trip to every provider at once and most visits here are about a key.
@@ -2020,7 +2163,7 @@ export function App({
 	const selected = agents[spot];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
-	const walk = configRows(section, providers, models, servers);
+	const walk = configRows(section, providers, models, servers, mail);
 	const onRow = Math.min(where, walk.length - 1);
 	const configRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
@@ -2224,12 +2367,19 @@ export function App({
 	useEffect(() => () => doors.close(), [doors]);
 
 	const readConfig = useCallback(async (): Promise<void> => {
-		await Promise.all([client.providers(), client.models(), client.search(), client.servers()])
-			.then(([keys, thinking, searching, shelf]) => {
+		await Promise.all([
+			client.providers(),
+			client.models(),
+			client.search(),
+			client.servers(),
+			client.mail(),
+		])
+			.then(([keys, thinking, searching, shelf, post]) => {
 				setProviders(keys);
 				setModels(thinking);
 				setSearch(searching);
 				setServers(shelf);
+				setMail(post);
 				setUnanswered(undefined);
 			})
 			.catch((error: unknown) => setUnanswered((error as Error).message));
@@ -2341,6 +2491,62 @@ export function App({
 		[client, say],
 	);
 
+	/**
+	 * Finds out where an address's mail lives, and asks for the password only if it is worth asking.
+	 *
+	 * Two steps and a round trip between them, because the discovery is what says whether this account
+	 * can be reached this way at all — half the large providers stopped issuing app passwords, and
+	 * finding that out after somebody went and looked for one is the one wasted trip worth avoiding.
+	 */
+	const offerMail = useCallback(
+		async (address: string): Promise<void> => {
+			try {
+				await client.offerMail(address);
+			} catch (error) {
+				setUnanswered((error as Error).message);
+				return;
+			}
+			setMailing({ field: "password", text: "" });
+		},
+		[client],
+	);
+
+	/** Finishes it with the password, and starts reading. Nothing typed here reaches a transcript. */
+	const connectMail = useCallback(
+		async (password: string): Promise<void> => {
+			// Mail with no tag on it has to reach somebody, and that somebody is who the console was
+			// standing on. Without an agent there is nothing to fall back to and nothing to connect for.
+			const fallback = selected?.id ?? agents[0]?.id;
+			if (fallback === undefined) {
+				setUnanswered("make an agent first — mail with no tag on it has to reach one");
+				return;
+			}
+			await say(async () => {
+				await client.connectMail(fallback, password);
+			});
+		},
+		[agents, client, say, selected],
+	);
+
+	/** Names who carries the mail out, keeping whatever domain was already said for them. */
+	const post = useCallback(
+		async (title: string): Promise<void> => {
+			const name = Object.keys(CARRIERS).find((one) => CARRIERS[one]?.title === title);
+			const domain = mail?.domain ?? "";
+			await say(() =>
+				client.setCarrier(name === undefined ? undefined : { carrier: name, domain }),
+			);
+		},
+		[client, mail, say],
+	);
+
+	/** Tells the carrier which domain it is sending for, which is the rest of naming one. */
+	const sendingFor = useCallback(
+		async (domain: string): Promise<void> =>
+			say(() => client.setCarrier({ carrier: mail?.carrier ?? "", domain })),
+		[client, mail, say],
+	);
+
 	/** Gives an agent one off the shelf, or takes it back — the toggle the picker's rows stand for. */
 	const hold = useCallback(
 		async (agentId: string, name: string, held: boolean): Promise<void> =>
@@ -2350,6 +2556,12 @@ export function App({
 
 	const unshelve = useCallback(
 		async (name: string): Promise<void> => say(() => client.forgetServer(name)),
+		[client, say],
+	);
+
+	/** Puts the mailbox down for the whole plane, which is every agent's address at once. */
+	const unmail = useCallback(
+		async (): Promise<void> => say(() => client.forgetMail()),
 		[client, say],
 	);
 
@@ -2612,7 +2824,11 @@ export function App({
 		// forgetting one takes it off every agent that had it, not off the row the cursor is on.
 		if (forgetting !== undefined) {
 			setForgetting(undefined);
-			if (input === "y" || input === "Y") void unshelve(forgetting);
+			// The same question over two things, told apart by the section it was asked in: only one of
+			// them has a list of servers under the cursor, and only the other has a mailbox at all.
+			if (input === "y" || input === "Y") {
+				void (section === "email" ? unmail() : unshelve(forgetting));
+			}
 			return;
 		}
 		/**
@@ -2746,6 +2962,47 @@ export function App({
 		 * found or a command with its arguments, and neither is a thing this plane could offer to pick
 		 * from. Here for the same reason the other boxes are — a `/` in a URL is a `/`, not a command.
 		 */
+		/**
+		 * A line of the mailbox is being typed, and until it is entered nothing else has the keyboard.
+		 *
+		 * Above the panes for the reason the key box is: one of these three is an app password, and a
+		 * branch below would read half of it as a command and leave the other half in a chat prompt.
+		 */
+		if (mailing !== undefined) {
+			const entered = (value: string): void => {
+				const { field } = mailing;
+				setMailing(undefined);
+				const said = field === "password" ? value : value.trim();
+				if (said.length === 0) return;
+				if (field === "address") void offerMail(said);
+				else if (field === "password") void connectMail(said);
+				else void sendingFor(said);
+			};
+			if (key.escape) {
+				setMailing(undefined);
+				return;
+			}
+			if (key.return) {
+				entered(mailing.text);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setMailing((prev) =>
+					prev === undefined ? prev : { ...prev, text: prev.text.slice(0, -1) },
+				);
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			// An app password arrives pasted, in the four-by-four grouping the provider printed it in and
+			// often with the newline the copy took with it.
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			if (rest.length === 0) {
+				setMailing((prev) => (prev === undefined ? prev : { ...prev, text: prev.text + first }));
+				return;
+			}
+			entered(mailing.text + first);
+			return;
+		}
 		if (shelving !== undefined) {
 			const entered = (value: string): void => {
 				setShelving(undefined);
@@ -2944,9 +3201,45 @@ export function App({
 					});
 					setPick(0);
 				}
+				// Four rows, and each is the way its own half of email is decided: the mailbox is typed out
+				// because an address is not a thing this plane could offer to pick from, the carrier is picked
+				// because the list of companies that will do this is a table, the domain is typed because it
+				// is yours, and the key is taken the way every other key on this screen is taken.
+				if (configRow.kind === "mail" && mail !== undefined) {
+					if (configRow.field === "mailbox") {
+						if (mail.mailbox === undefined) setMailing({ field: "address", text: "" });
+						// Connected already: the address is the one thing here that is not changed in place, because
+						// a second mailbox over the first is the same act as forgetting this one and connecting that.
+						else setUnanswered(`${mail.mailbox} is connected — ⌫ disconnects it`);
+					}
+					if (configRow.field === "carrier") {
+						const among = [OWN_SERVER, ...Object.values(CARRIERS).map((one) => one.title)];
+						setChoosing({
+							what: "the mail goes out through",
+							among,
+							take: (one) => void post(one),
+						});
+						// Standing on what is already set, so a list opened to look at it can be closed again without
+						// having changed anything by pressing return on the first row.
+						setPick(Math.max(0, among.indexOf(CARRIERS[mail.carrier]?.title ?? OWN_SERVER)));
+					}
+					if (configRow.field === "domain") setMailing({ field: "domain", text: mail.domain });
+					if (configRow.field === "key" && mail.keyEnv !== undefined) {
+						setTyping(mail.keyEnv);
+						setSecret("");
+					}
+				}
 			}
 			if ((key.backspace || key.delete) && configRow?.kind === "server") {
 				setForgetting(configRow.server.name);
+			}
+			if (
+				(key.backspace || key.delete) &&
+				configRow?.kind === "mail" &&
+				configRow.field === "mailbox" &&
+				mail?.mailbox !== undefined
+			) {
+				setForgetting(mail.mailbox);
 			}
 			// Backspace rather than a letter, because every letter is a character somebody will one day
 			// type into a box on this screen, and this is the key that already means take it away.
@@ -3144,6 +3437,8 @@ export function App({
 								models,
 								search,
 								servers,
+								mail,
+								mailing,
 								cursor: Math.max(0, onRow),
 								typing,
 								secret,
@@ -3271,9 +3566,23 @@ export function App({
 																					["⏎", "give"],
 																					["⌫", "forget"],
 																				]
-																			: configRow?.model.added === true
-																				? [["⌫", "drop model"]]
-																				: []),
+																			: configRow?.kind === "mail"
+																				? [
+																						[
+																							"⏎",
+																							configRow.field === "key"
+																								? "set key"
+																								: configRow.field === "mailbox"
+																									? "connect"
+																									: "change",
+																						],
+																						...(configRow.field === "mailbox"
+																							? [["⌫", "disconnect"]]
+																							: []),
+																					]
+																				: configRow?.model.added === true
+																					? [["⌫", "drop model"]]
+																					: []),
 													// Only where there is one to leave, because a key named on a row it does nothing
 													// on is the same lie as a key named for nothing at all.
 													...(section === undefined ? [] : [["esc", "back"]]),

@@ -4,7 +4,6 @@ import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
 import type { Outgoing } from "./autoconfig.ts";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
-import { carry, type CarrierSpec, resolveCarrier } from "./outbox.ts";
 import {
 	addressesIn,
 	agentFor,
@@ -16,6 +15,7 @@ import {
 	withoutTrail,
 } from "./mail.ts";
 import { asHtml } from "./markup.ts";
+import { type CarrierSpec, carry, resolveCarrier } from "./outbox.ts";
 
 /** How far the mailbox has been read, which is two numbers that only mean anything together. */
 export interface ReadMark {
@@ -354,7 +354,8 @@ export class EmailChannel implements Channel {
 		}
 
 		const way = await this.#way(account);
-		if (typeof way === "string") throw new ChannelError(`Cannot write to ${reply.channel}: ${way}.`);
+		if (typeof way === "string")
+			throw new ChannelError(`Cannot write to ${reply.channel}: ${way}.`);
 
 		// The address the mail says it is from is the agent's either way. What a carrier changes is who
 		// hands it over, not who it is from — the tag is what brings the answer back to this agent.

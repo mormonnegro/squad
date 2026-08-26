@@ -179,7 +179,8 @@ export const CARRIERS: Readonly<Record<string, Carrier>> = {
 								: {}),
 						},
 					],
-					from: name !== undefined && name.length > 0 ? { email: address, name } : { email: address },
+					from:
+						name !== undefined && name.length > 0 ? { email: address, name } : { email: address },
 					reply_to: { email: letter.replyTo },
 					subject: letter.subject,
 					content: [

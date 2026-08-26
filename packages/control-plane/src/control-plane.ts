@@ -9,6 +9,8 @@ import {
 	appPasswordPage,
 	type Bot,
 	baseAddress,
+	CARRIERS,
+	type CarrierSpec,
 	type Channel,
 	ChannelRouter,
 	closedTo,
@@ -17,6 +19,7 @@ import {
 	type Hook,
 	needsBridge,
 	pairingPhrase,
+	resolveCarrier,
 	startLink,
 	TelegramChannel,
 	WebhookChannel,
@@ -58,7 +61,7 @@ import {
 } from "./commands.ts";
 import { ExecStream } from "./exec-stream.ts";
 import { ProviderKeys } from "./keys.ts";
-import { MailboxStore } from "./mailbox.ts";
+import { MailboxStore, type MailStanding } from "./mailbox.ts";
 import { hostOf, type McpServer, McpShelf, readName, type ServerStanding } from "./mcp.ts";
 import {
 	AddedModels,
@@ -1322,6 +1325,56 @@ export class ControlPlane {
 		this.#offered = undefined;
 		this.email.set(settled);
 		return this.emailStanding(agentId) as EmailStanding;
+	}
+
+	/** This plane's email as the config screen has it, which is both halves of it at once. */
+	async mail(): Promise<MailStanding> {
+		const account = this.email.account;
+		const resolved = account?.carrier === undefined ? undefined : resolveCarrier(account.carrier);
+		const carrier = typeof resolved === "object" ? resolved : undefined;
+		const keyEnv = carrier?.keyEnv;
+		const held =
+			keyEnv === undefined
+				? account?.outgoing !== undefined
+				: ((await this.#keys.resolve({ ref: keyEnv })) ?? "").length > 0;
+		return {
+			mailbox: account?.address,
+			host: account?.host,
+			carrier: account?.carrier?.carrier ?? "",
+			domain: account?.carrier?.domain ?? "",
+			keyEnv,
+			held,
+			here: keyEnv !== undefined && (await this.#keys.here()).has(keyEnv),
+			writes: account !== undefined && held,
+			// A carrier resolving to a sentence is a carrier chosen and not finished — the domain it will
+			// not send without — and that is the trouble worth saying here over anything the reader hit.
+			trouble: typeof resolved === "string" ? resolved : (this.#mailTrouble ?? this.#mailMute),
+		};
+	}
+
+	/**
+	 * Chooses who carries the mail out, or hands it back to the mailbox's own submission server.
+	 *
+	 * Written to the account rather than to a file of its own, because it is a fact about the mailbox
+	 * in exactly the way the submission server it was discovered beside is. Nothing is verified here:
+	 * a key can be pasted after the carrier is named, and a screen that refused the order would be a
+	 * screen with one right order and no way to know it.
+	 */
+	async setCarrier(spec: CarrierSpec | undefined): Promise<void> {
+		const account = this.email.account;
+		if (account === undefined) throw new Error("There is no mailbox to send from yet.");
+		// The name only. A carrier that still needs its domain is a half-filled row on the screen that
+		// asked for it, and the screen says so; it is not a reason to refuse the name it was given.
+		if (spec !== undefined && CARRIERS[spec.carrier] === undefined) {
+			throw new Error(
+				`nothing here knows how to send with "${spec.carrier}". Known: ${Object.keys(CARRIERS).join(", ")}`,
+			);
+		}
+		const { carrier: _was, ...rest } = account;
+		const settled: Account = spec === undefined ? rest : { ...rest, carrier: spec };
+		await this.#mailbox.save(settled);
+		this.#mailTrouble = undefined;
+		this.email.set(settled);
 	}
 
 	/** Puts the mailbox down for the whole plane, and says whether there was one. */

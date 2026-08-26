@@ -46,7 +46,10 @@ describe("what each carrier makes of one message", () => {
 		const wrote = JSON.parse(body) as Record<string, unknown>;
 		expect(wrote.to).toEqual(["boss@work.com"]);
 		expect(wrote.reply_to).toBe("you+scout@example.com");
-		expect(wrote.headers).toEqual({ "In-Reply-To": "<abc@work.com>", References: "<abc@work.com>" });
+		expect(wrote.headers).toEqual({
+			"In-Reply-To": "<abc@work.com>",
+			References: "<abc@work.com>",
+		});
 	});
 
 	it("gives Postmark its capitalised keys and its list of header pairs", () => {
@@ -80,9 +83,9 @@ describe("what each carrier makes of one message", () => {
 
 	it("leaves the threading out of a message that is not answering anything", () => {
 		const { inReplyTo: _a, references: _b, ...first } = LETTER;
-		expect(new URLSearchParams(CARRIERS.mailgun?.send(first, CARRYING).body).has("h:In-Reply-To")).toBe(
-			false,
-		);
+		expect(
+			new URLSearchParams(CARRIERS.mailgun?.send(first, CARRYING).body).has("h:In-Reply-To"),
+		).toBe(false);
 		expect(JSON.parse(CARRIERS.resend?.send(first, CARRYING).body ?? "{}").headers).toBeUndefined();
 	});
 });
@@ -122,12 +125,14 @@ describe("handing a message over", () => {
 	it("says what the carrier said, because the status alone is never the problem", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response('{"message":"Domain not found: example.com"}', { status: 404 })),
+			vi.fn(
+				async () => new Response('{"message":"Domain not found: example.com"}', { status: 404 }),
+			),
 		);
 		const carrier = CARRIERS.mailgun;
 		if (carrier === undefined) throw new Error("no mailgun");
 		await expect(carry(carrier, CARRYING).sendMail(LETTER)).rejects.toThrow(
-			"Mailgun refused with 404: {\"message\":\"Domain not found: example.com\"}",
+			'Mailgun refused with 404: {"message":"Domain not found: example.com"}',
 		);
 	});
 

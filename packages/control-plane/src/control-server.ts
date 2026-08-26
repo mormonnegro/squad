@@ -3,8 +3,10 @@ import { chmod, unlink } from "node:fs/promises";
 import net from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import type { Channel, Reply } from "@agent-dive/channels";
+import type { CarrierSpec, Channel, Reply } from "@agent-dive/channels";
+import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
@@ -103,6 +105,32 @@ export type ControlRequest =
 			readonly held: boolean;
 	  }
 	| { readonly id: string; readonly op: "forget-server"; readonly name: string }
+	/** The mailbox this plane reads and the carrier it writes through, which is one screen's worth. */
+	| { readonly id: string; readonly op: "mail" }
+	/**
+	 * Works out where an address's mail lives, without connecting to it or writing anything down.
+	 *
+	 * Two requests rather than one because the answer to this decides whether there is any point
+	 * asking for a password: a provider that stopped issuing them, or one reachable only through a
+	 * bridge on somebody's desktop, is a discovery worth making before somebody goes and finds a
+	 * credential on another machine.
+	 */
+	| { readonly id: string; readonly op: "offer-mail"; readonly address: string }
+	/**
+	 * Finishes that offer with an app password, over the socket rather than into a conversation.
+	 *
+	 * The whole reason the config screen has a mailbox row at all: `/email` in a chat works, and
+	 * leaves the password in the transcript of what the operator said to that agent.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "connect-mail";
+			readonly agentId: string;
+			readonly password: string;
+	  }
+	/** Who carries the mail out. Nothing at all hands it back to the mailbox's own server. */
+	| { readonly id: string; readonly op: "set-carrier"; readonly spec?: CarrierSpec }
+	| { readonly id: string; readonly op: "forget-mail" }
 	/**
 	 * Takes this connection over and turns the rest of it into bytes to a port inside a sandbox.
 	 *
@@ -136,6 +164,9 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
+	| { readonly id: string; readonly ok: true; readonly mail: MailStanding }
+	/** What was found out about an address before anybody was asked for a password for it. */
+	| { readonly id: string; readonly ok: true; readonly offer: EmailOffer }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
@@ -396,6 +427,25 @@ export class ControlServer {
 			} else if (request.op === "forget-server") {
 				await this.#plane.forgetServer(request.name);
 				this.#write(socket, { id: request.id, ok: true, text: request.name });
+			} else if (request.op === "mail") {
+				this.#write(socket, { id: request.id, ok: true, mail: await this.#plane.mail() });
+			} else if (request.op === "offer-mail") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					offer: await this.#plane.offerEmail(request.address),
+				});
+			} else if (request.op === "connect-mail") {
+				const standing = await this.#plane.connectEmail(request.agentId, request.password);
+				// The address, not the account: what came back holds the password that was just typed, and
+				// this answer is read by a screen that has no use for any of the rest of it.
+				this.#write(socket, { id: request.id, ok: true, text: standing.mailbox });
+			} else if (request.op === "set-carrier") {
+				await this.#plane.setCarrier(request.spec);
+				this.#write(socket, { id: request.id, ok: true, text: request.spec?.carrier ?? "" });
+			} else if (request.op === "forget-mail") {
+				await this.#plane.disconnectEmail();
+				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });

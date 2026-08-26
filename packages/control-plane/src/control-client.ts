@@ -1,8 +1,11 @@
 import net from "node:net";
 import type { Duplex } from "node:stream";
+import type { CarrierSpec } from "@agent-dive/channels";
+import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
+import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
@@ -203,6 +206,36 @@ export class ControlClient {
 	/** Takes one off the shelf, and off every agent holding it. */
 	async forgetServer(name: string): Promise<void> {
 		await this.#once({ op: "forget-server", name });
+	}
+
+	/** The mailbox this plane reads and the way its mail leaves, which is one screen's worth. */
+	async mail(): Promise<MailStanding> {
+		const response = await this.#once({ op: "mail" });
+		if ("mail" in response) return response.mail;
+		throw new ControlError("unexpected answer to mail");
+	}
+
+	/** Finds out where an address's mail lives. Nothing is connected and nothing is written down. */
+	async offerMail(address: string): Promise<EmailOffer> {
+		const response = await this.#once({ op: "offer-mail", address });
+		if ("offer" in response) return response.offer;
+		throw new ControlError("unexpected answer to offer-mail");
+	}
+
+	/** Finishes that offer with an app password, and answers with the address it connected. */
+	async connectMail(agentId: string, password: string): Promise<string> {
+		const response = await this.#once({ op: "connect-mail", agentId, password });
+		if ("text" in response) return response.text;
+		throw new ControlError("unexpected answer to connect-mail");
+	}
+
+	/** Names who carries the mail out, or with nothing hands it back to the mailbox's own server. */
+	async setCarrier(spec?: CarrierSpec): Promise<void> {
+		await this.#once({ op: "set-carrier", ...(spec !== undefined ? { spec } : {}) });
+	}
+
+	async forgetMail(): Promise<void> {
+		await this.#once({ op: "forget-mail" });
 	}
 
 	/** What the providers this plane can pay say they answer to, minus what is configured already. */

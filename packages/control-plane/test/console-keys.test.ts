@@ -1,10 +1,12 @@
 import { PassThrough } from "node:stream";
+import { CARRIERS, type CarrierSpec } from "@agent-dive/channels";
 import { render } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
 import { App, bare, type Talk } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
+import type { MailStanding } from "../src/mailbox.ts";
 import type { McpServer, ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
 import { resolveSearch, type Search, type SearchSpec } from "../src/search.ts";
@@ -44,6 +46,19 @@ const SHIFT_TAB = "\u001b[Z";
 const BACKSPACE = "\u007F";
 const ESCAPE = "\u001B";
 
+/** No mailbox at all, which is what a plane nobody has pasted an address into says. */
+const NO_MAIL: MailStanding = {
+	mailbox: undefined,
+	host: undefined,
+	carrier: "",
+	domain: "",
+	keyEnv: undefined,
+	held: false,
+	here: false,
+	writes: false,
+	trouble: undefined,
+};
+
 const listed = (id: string): AgentSummary => ({
 	id,
 	running: true,
@@ -76,6 +91,8 @@ function plane(
 		completes?: readonly string[];
 		paysSearch?: boolean;
 		shelf?: readonly ServerStanding[];
+		posts?: MailStanding;
+		refusesMail?: string;
 	} = {},
 ) {
 	const asked: string[] = [];
@@ -90,11 +107,18 @@ function plane(
 	const shelved: [string, McpServer][] = [];
 	const handed: [string, string, boolean][] = [];
 	const unshelved: string[] = [];
+	const offered: string[] = [];
+	const connected: [string, string][] = [];
+	const carried: (CarrierSpec | undefined)[] = [];
+	const unmailed: string[] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
 	// Where the search is pointed. Answered back the way the plane answers it — read again after
 	// every change — because the screen shows what the plane says and not what the keyboard did.
 	let pointed: SearchSpec = { provider: "openai", model: "gpt-5-mini" };
+	// The mail the same way: named through the client, read back off the plane. Naming a carrier
+	// changes what the next `mail()` says, so the screen can be asserted on rather than the keyboard.
+	let posted: MailStanding = options.posts ?? NO_MAIL;
 	let finish: (agent: AgentSummary) => void = () => {};
 	let feed: (event: PlaneEvent) => void = () => {};
 	let fail: (error: Error) => void = () => {};
@@ -172,6 +196,45 @@ function plane(
 		forgetServer: async (name: string) => {
 			unshelved.push(name);
 		},
+		mail: async () => posted,
+		offerMail: async (address: string) => {
+			offered.push(address);
+			if (options.refusesMail !== undefined) throw new Error(options.refusesMail);
+			return {
+				address,
+				host: "imap.fastmail.com",
+				port: 993,
+				found: "the provider publishes it",
+				appPasswords: "https://app.fastmail.com/settings/security/devicekeys",
+				closed: undefined,
+				bridge: false,
+				outgoing: { host: "smtp.fastmail.com", port: 465 },
+			};
+		},
+		connectMail: async (agentId: string, password: string) => {
+			connected.push([agentId, password]);
+			posted = { ...posted, mailbox: "desk@agent-dive.dev", host: "imap.fastmail.com" };
+			return "desk@agent-dive.dev";
+		},
+		setCarrier: async (spec: CarrierSpec | undefined) => {
+			carried.push(spec);
+			// Which key pays for it is the carrier's own business and not something the console sends,
+			// so the plane answers it back — and so does this, or the key row would never appear.
+			const keyEnv = spec === undefined ? undefined : CARRIERS[spec.carrier]?.keyEnv;
+			const held = keyEnv === undefined || given.some(([env]) => env === keyEnv);
+			posted = {
+				...posted,
+				carrier: spec?.carrier ?? "",
+				domain: spec?.domain ?? "",
+				keyEnv,
+				held,
+				writes: posted.mailbox !== undefined && held,
+			};
+		},
+		forgetMail: async () => {
+			unmailed.push(posted.mailbox ?? "");
+			posted = NO_MAIL;
+		},
 	} as unknown as ControlClient;
 	return {
 		client,
@@ -187,6 +250,10 @@ function plane(
 		shelved,
 		handed,
 		unshelved,
+		offered,
+		connected,
+		carried,
+		unmailed,
 		built: (id: string) => finish(listed(id)),
 		/** The plane is what says an agent is thinking, so the console is told the way it tells it. */
 		thinking: (id: string) => feed({ kind: "thinking", agentId: id }),
@@ -1583,6 +1650,225 @@ describe("the config screen, pressed at", () => {
 				await screen.press(ENTER);
 
 				expect(screen.unshelved).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+	});
+
+	/**
+	 * The mailbox, and whoever carries what the agents write back.
+	 *
+	 * The half that cannot be drawn is the app password: it is typed here and it opens the whole
+	 * account, so what has to be true is that no branch below this one ever sees it — a `/` in it is
+	 * not a command, and the pane one `tab` away must never receive a character of it.
+	 */
+	describe("the email section", () => {
+		const reading: MailStanding = {
+			...NO_MAIL,
+			mailbox: "desk@agent-dive.dev",
+			host: "imap.fastmail.com",
+			writes: true,
+		};
+
+		/** Opens the config screen with the mail already open, which is the last row. */
+		async function mailed(posts: MailStanding = reading, refusesMail?: string) {
+			const screen = await config({
+				pays,
+				thinks,
+				posts,
+				...(refusesMail !== undefined ? { refusesMail } : {}),
+			});
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			return screen;
+		}
+
+		it("shows the mailbox and who takes the mail out", async () => {
+			const screen = await mailed();
+			try {
+				expect(screen.screen()).toContain("desk@agent-dive.dev");
+				expect(screen.screen()).toContain("carrier");
+				expect(screen.screen()).toContain("the mailbox's own server");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Two lines and a round trip between them, because what the address turns out to be is what
+		// decides whether asking for a password is worth anybody's time.
+		it("takes an address, then the password, and never draws the password back", async () => {
+			const screen = await mailed(NO_MAIL);
+			try {
+				expect(screen.screen()).toContain("nothing connected");
+
+				await screen.press(ENTER);
+				await screen.press("desk@agent-dive.dev");
+				await screen.press(ENTER);
+
+				expect(screen.offered).toEqual(["desk@agent-dive.dev"]);
+				expect(screen.screen()).toContain("password");
+
+				await screen.press("kwil-brac-nemo-shad");
+				expect(screen.screen()).not.toContain("kwil-brac-nemo-shad");
+
+				await screen.press(ENTER);
+				expect(screen.connected).toEqual([["demo", "kwil-brac-nemo-shad"]]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The password arrives pasted, and the copy usually takes the newline with it. That newline is
+		// the return key, so it must finish the line rather than land in the pane behind it.
+		it("takes a password pasted with the newline the copy took", async () => {
+			const screen = await mailed(NO_MAIL);
+			try {
+				await screen.press(ENTER);
+				await screen.press("desk@agent-dive.dev\n");
+				await screen.press("kwil brac nemo shad\n");
+
+				expect(screen.connected).toEqual([["demo", "kwil brac nemo shad"]]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Half the large providers stopped issuing app passwords. Finding that out is the whole point of
+		// the round trip, so what comes back has to be said instead of a password box opening anyway.
+		it("says why an address will not take a password, instead of asking for one", async () => {
+			const screen = await mailed(NO_MAIL, "Google stopped issuing app passwords for this account");
+			try {
+				await screen.press(ENTER);
+				await screen.press("desk@gmail.com");
+				await screen.press(ENTER);
+
+				expect(screen.screen()).toContain("stopped issuing app passwords");
+				expect(screen.connected).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Picked, not typed: the companies that will do this are a table, and a name spelled wrong here
+		// is a mailbox that reads and silently never answers.
+		it("names a carrier off a list of them", async () => {
+			const screen = await mailed();
+			try {
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+				expect(screen.screen()).toContain("Mailgun");
+
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+
+				expect(screen.carried).toEqual([{ carrier: "mailgun", domain: "" }]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Mailgun will not guess, so naming it opens a row that was not there a moment ago — and the key
+		// row with it, because a carrier that is not the mailbox's own server has to be paid for.
+		it("asks for the domain only when the carrier will not guess it", async () => {
+			const screen = await mailed();
+			try {
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+
+				expect(screen.screen()).toContain("domain");
+				expect(screen.screen()).toContain("MAILGUN_API_KEY");
+
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+				await screen.press("agent-dive.dev");
+				await screen.press(ENTER);
+
+				expect(screen.carried).toEqual([
+					{ carrier: "mailgun", domain: "" },
+					{ carrier: "mailgun", domain: "agent-dive.dev" },
+				]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("leaves the carrier where it was when the list is escaped", async () => {
+			const screen = await mailed();
+			try {
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+				await screen.press(DOWN);
+				await screen.press(ESCAPE);
+
+				expect(screen.carried).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The key is taken on the screen the carrier was named on, and taken the way every key here is.
+		it("takes the key the carrier is paid with, without showing it", async () => {
+			const screen = await mailed({ ...reading, carrier: "resend", keyEnv: "RESEND_API_KEY" });
+			try {
+				await screen.press(DOWN);
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+
+				expect(screen.screen()).toContain("key for RESEND_API_KEY");
+
+				await screen.press("re-carrying");
+				expect(screen.screen()).not.toContain("re-carrying");
+
+				await screen.press(ENTER);
+				expect(screen.given).toEqual([["RESEND_API_KEY", "re-carrying"]]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Wider than the row: every agent stops being reachable, so it is asked before it happens and
+		// answered by one key — and the address is not retyped to prove anything.
+		it("asks before forgetting the mailbox, and forgets it when the answer is yes", async () => {
+			const screen = await mailed();
+			try {
+				await screen.press(BACKSPACE);
+				expect(screen.screen()).toContain("forget the mailbox at desk@agent-dive.dev");
+				expect(screen.screen()).toContain("y forget");
+				expect(screen.unmailed).toEqual([]);
+
+				await screen.press("y");
+				expect(screen.unmailed).toEqual(["desk@agent-dive.dev"]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("keeps the mailbox when the answer is anything else", async () => {
+			const screen = await mailed();
+			try {
+				await screen.press(BACKSPACE);
+				await screen.press(ENTER);
+
+				expect(screen.unmailed).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// A second address over the first is not a change, it is a disconnection and a connection. The
+		// row says so rather than quietly opening a box that would half-replace the account.
+		it("will not type a second address over a connected one", async () => {
+			const screen = await mailed();
+			try {
+				await screen.press(ENTER);
+
+				expect(screen.offered).toEqual([]);
+				expect(screen.screen()).toContain("⌫ disconnects it");
 			} finally {
 				screen.close();
 			}

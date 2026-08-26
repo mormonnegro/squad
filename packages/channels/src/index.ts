@@ -32,12 +32,12 @@ export {
 } from "./mail.ts";
 export { asHtml } from "./markup.ts";
 export {
-	type Call,
-	carry,
-	type Carrier,
 	CARRIERS,
+	type Call,
+	type Carrier,
 	type CarrierSpec,
 	type Carrying,
+	carry,
 	resolveCarrier,
 } from "./outbox.ts";
 export { pairingPhrase } from "./phrase.ts";
