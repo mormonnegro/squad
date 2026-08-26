@@ -28,6 +28,7 @@ import {
 	recalled,
 	resume,
 	type Said,
+	type Section,
 	type Span,
 	saidBy,
 	scrolled,
@@ -42,6 +43,7 @@ import {
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 import type { ModelOffer } from "../src/models.ts";
+import type { SearchStanding } from "../src/search.ts";
 
 /**
  * The transcript is the words; the colour is put on at the last moment.
@@ -1532,12 +1534,28 @@ describe("Config", () => {
 		{ provider: "openai", id: "gpt-5-mini" },
 		{ provider: "groq", id: "kimi-k2" },
 	];
+	const searching = {
+		provider: "openai",
+		model: "gpt-5-mini",
+		endpoint: "https://api.openai.com/v1/responses",
+		shape: "responses" as const,
+		keyEnv: "OPENAI_API_KEY",
+		perSearchUsd: 0.01,
+		rate: { input: 0.25, output: 2 },
+		chosen: false,
+		held: true,
+		here: false,
+	};
+	/** Every one of these is about the models section, which is where this screen's lists are. */
 	const pane = (props: {
+		section?: Section | undefined;
+		search?: SearchStanding | undefined;
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
 		adding?: string | undefined;
 		offers?: readonly ModelOffer[] | undefined;
+		choosing?: { what: string; among: readonly string[] } | undefined;
 		pick?: number;
 		unanswered?: string | undefined;
 		rows?: number;
@@ -1545,8 +1563,10 @@ describe("Config", () => {
 	}) =>
 		renderToString(
 			h(Config, {
+				section: "models",
 				providers,
 				models,
+				search: searching,
 				cursor: 0,
 				typing: undefined,
 				secret: "",
@@ -1736,6 +1756,106 @@ describe("Config", () => {
 	// way. The other way round is a short terminal showing three paragraphs and no providers.
 	it("keeps the providers when there is only room for some of it", () => {
 		expect(pane({ rows: 6 })).toContain("deepseek");
+	});
+
+	/**
+	 * The list this screen opens on, which is the only screen where everything it holds is one list.
+	 *
+	 * Four things share nothing but the file they are kept in, so they are four lists rather than one
+	 * to scroll — and this is the row that has to say which of them is the one you came here for.
+	 */
+	describe("the sections", () => {
+		const list = (props: Parameters<typeof pane>[0] = {}) =>
+			pane({ section: undefined, columns: 90, ...props });
+
+		it("lists what there is to set, with what each of them is for", () => {
+			const drawn = list();
+
+			expect(drawn).toContain("models");
+			expect(drawn).toContain("search");
+			expect(drawn).toContain("what its agents think with");
+			expect(drawn).toContain("where web_search goes");
+		});
+
+		// The same dot the agents column uses, meaning the same thing: something this plane could
+		// actually use right now. It is the whole point of the list — finding what is not set up yet.
+		it("marks a section this plane can already pay for", () => {
+			const rows = list({ search: { ...searching, held: false } }).split("\n");
+
+			expect(rows.find((row) => row.includes("what its agents think with"))).toContain("●");
+			expect(rows.find((row) => row.includes("where web_search goes"))).toContain("○");
+		});
+
+		it("says under the list what the section it is standing on holds", () => {
+			expect(list({ cursor: 0 })).toContain("2 of 3 providers paid for");
+			expect(list({ cursor: 1 })).toContain("gpt-5-mini");
+		});
+
+		// The one thing worth knowing before opening a section that costs money on every use.
+		it("says what a search costs, on the row that opens the search", () => {
+			expect(list({ cursor: 1 })).toContain("$0.010 a search");
+		});
+
+		it("says the search is refused rather than pricing one that cannot happen", () => {
+			expect(list({ cursor: 1, search: { ...searching, held: false } })).toContain(
+				"no key, refused at the proxy",
+			);
+		});
+	});
+
+	/**
+	 * Three rows: who searches, what they search with, and the key that pays for it.
+	 *
+	 * The whole of configuring a search tool, on one screen, because the three are useless apart — a
+	 * provider chosen against a key this plane does not hold is a search refused at the proxy.
+	 */
+	describe("the search section", () => {
+		const search = (props: Parameters<typeof pane>[0] = {}) =>
+			pane({ section: "search", columns: 90, ...props });
+
+		it("says where searching goes and what drives it", () => {
+			const drawn = search();
+
+			expect(drawn).toContain("provider");
+			expect(drawn).toContain("openai");
+			expect(drawn).toContain("gpt-5-mini");
+			expect(drawn).toContain("OPENAI_API_KEY");
+		});
+
+		// Dark on all three rows, because none of them is in force without the key.
+		it("marks every row by whether the key behind them is held", () => {
+			expect(search()).toContain("●");
+			expect(search({ search: { ...searching, held: false } })).not.toContain("●");
+		});
+
+		it("says of the row it is on what it costs or where its key came from", () => {
+			expect(search({ cursor: 1 })).toContain("$0.25 in, $2.00 out");
+			expect(search({ cursor: 2 })).toContain("from this plane's environment");
+			expect(search({ cursor: 2, search: { ...searching, here: true } })).toContain("set here");
+			expect(search({ cursor: 2, search: { ...searching, held: false } })).toContain(
+				"no key, refused at the proxy",
+			);
+		});
+
+		// The same prompt the providers take, for the same reason: it is a key, and a key is never on
+		// a screen that keeps its own scrollback.
+		it("takes the key without showing a character of it", () => {
+			const drawn = search({ cursor: 2, typing: "OPENAI_API_KEY", secret: "sk-typed" });
+
+			expect(drawn).toContain("key for OPENAI_API_KEY");
+			expect(drawn).not.toContain("sk-typed");
+		});
+
+		// Every answer is already on the list, so there is nothing to type and nothing to spell wrong.
+		it("lists what there is to choose among, when one is being chosen", () => {
+			const drawn = search({
+				choosing: { what: "searches", among: ["openai", "perplexity"] },
+				pick: 1,
+			});
+
+			expect(drawn).toContain("searches");
+			expect(drawn.split("\n").find((row) => row.includes("perplexity"))).toContain("›");
+		});
 	});
 });
 

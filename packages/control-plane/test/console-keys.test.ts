@@ -6,6 +6,7 @@ import { App, bare, type Talk } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
 import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
+import { resolveSearch, type Search, type SearchSpec } from "../src/search.ts";
 import type { Utterance } from "../src/transcript.ts";
 
 /**
@@ -72,6 +73,7 @@ function plane(
 		sells?: readonly ModelOffer[];
 		unreachable?: readonly string[];
 		completes?: readonly string[];
+		paysSearch?: boolean;
 	} = {},
 ) {
 	const asked: string[] = [];
@@ -82,8 +84,12 @@ function plane(
 	const given: [string, string][] = [];
 	const written: ModelSpec[] = [];
 	const dropped: string[] = [];
+	const aimed: SearchSpec[] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
+	// Where the search is pointed. Answered back the way the plane answers it — read again after
+	// every change — because the screen shows what the plane says and not what the keyboard did.
+	let pointed: SearchSpec = { provider: "openai", model: "gpt-5-mini" };
 	let finish: (agent: AgentSummary) => void = () => {};
 	let feed: (event: PlaneEvent) => void = () => {};
 	let fail: (error: Error) => void = () => {};
@@ -139,6 +145,18 @@ function plane(
 			offers: options.sells ?? [],
 			trouble: options.unreachable ?? [],
 		}),
+		// Resolved through the real table, so that a provider chosen alone comes back with that
+		// provider's own first model — which is the half of the answer the console never sends.
+		search: async () => ({
+			...(resolveSearch(pointed) as Search),
+			chosen: true,
+			held: options.paysSearch ?? true,
+			here: false,
+		}),
+		setSearch: async (spec: SearchSpec) => {
+			pointed = spec;
+			aimed.push(spec);
+		},
 	} as unknown as ControlClient;
 	return {
 		client,
@@ -150,6 +168,7 @@ function plane(
 		given,
 		written,
 		dropped,
+		aimed,
 		built: (id: string) => finish(listed(id)),
 		/** The plane is what says an agent is thinking, so the console is told the way it tells it. */
 		thinking: (id: string) => feed({ kind: "thinking", agentId: id }),
@@ -910,8 +929,26 @@ describe("the config screen, pressed at", () => {
 		return { ...it_, ...console_ };
 	}
 
-	it("is a row of the column, with what the plane could pay for on it", async () => {
+	/** The same, with the models section already open, which is where most of these start. */
+	async function models(options: Parameters<typeof plane>[0] = { pays, thinks }) {
+		const screen = await config(options);
+		await screen.press(ENTER);
+		return screen;
+	}
+
+	it("is a row of the column, and opens on what there is to set", async () => {
 		const screen = await config();
+		try {
+			expect(screen.screen()).toContain("models");
+			expect(screen.screen()).toContain("search");
+			expect(screen.screen()).toContain("⏎ open");
+		} finally {
+			screen.close();
+		}
+	});
+
+	it("opens a section on return, with what the plane could pay for on it", async () => {
+		const screen = await models();
 		try {
 			expect(screen.screen()).toContain("DEEPSEEK_API_KEY");
 			expect(screen.screen()).toContain("flash");
@@ -921,10 +958,45 @@ describe("the config screen, pressed at", () => {
 		}
 	});
 
+	// The way back is the way in: escape leaves the section, and the cursor is left on the row that
+	// opened it rather than at the top of a list it has already walked past.
+	it("goes back to the sections on escape, standing on the one it left", async () => {
+		const screen = await models();
+		try {
+			await screen.press(ESCAPE);
+			expect(screen.screen()).toContain("⏎ open");
+
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+
+			expect(screen.screen()).toContain("OPENAI_API_KEY");
+			expect(screen.screen()).toContain("gpt-5-mini");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The same walk backwards, on the key that walks the list: one press per level, and the press
+	// after the last one steps off the screen entirely.
+	it("walks up out of a section before it walks off the screen", async () => {
+		const screen = await models();
+		try {
+			await screen.press(DOWN);
+			await screen.press(UP);
+			await screen.press(UP);
+			expect(screen.screen()).toContain("⏎ open");
+
+			await screen.press(UP);
+			expect(showing(screen.screen())).toBe("logs");
+		} finally {
+			screen.close();
+		}
+	});
+
 	// A row of marks cannot say where a key came from, and that is the difference between changing it
 	// here and going to look for the `.env` the plane was started with.
 	it("says of the row it is standing on where that key came from", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			expect(screen.screen()).toContain("no key, refused at the proxy");
 
@@ -939,7 +1011,7 @@ describe("the config screen, pressed at", () => {
 	});
 
 	it("takes a key without putting it on the screen", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(ENTER);
 			expect(screen.screen()).toContain("key for DEEPSEEK_API_KEY");
@@ -955,7 +1027,7 @@ describe("the config screen, pressed at", () => {
 	});
 
 	it("hands the key to the plane when it is entered", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-typed");
@@ -971,7 +1043,7 @@ describe("the config screen, pressed at", () => {
 	// A key half typed at the wrong provider is the ordinary mistake here, and escape is where every
 	// hand goes for it. Nothing is sent, which is what makes it safe to press.
 	it("gives up on a key without giving it", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-typed");
@@ -987,7 +1059,7 @@ describe("the config screen, pressed at", () => {
 	// The way to take back a key given here. Nothing else on this screen can say it, and without it a
 	// key typed at the wrong provider would be one there is no way to undo from the console.
 	it("takes an empty line for taking the key back", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -1003,7 +1075,7 @@ describe("the config screen, pressed at", () => {
 	// A key is pasted rather than typed, and it arrives with the newline of whatever it was copied out
 	// of about as often as not. That newline is the return, not a character of the key.
 	it("enters a key that arrived with its newline still on it", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-pasted\n");
@@ -1022,7 +1094,7 @@ describe("the config screen, pressed at", () => {
 	 * draft is on its way to an agent, and a secret is the one thing that may never get there.
 	 */
 	it("never lets a character of a key reach the agent behind the screen", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-/limit!ls");
@@ -1043,7 +1115,7 @@ describe("the config screen, pressed at", () => {
 
 	/** The arrows walk one list, so the row after the last key is the first model and not nothing. */
 	it("carries on into the models the keys are for", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -1062,7 +1134,7 @@ describe("the config screen, pressed at", () => {
 	// The whole of "all the configuration from the program": a model this plane never had, given a
 	// name and a provider at a keyboard, with no file edited and nothing restarted.
 	it("takes a model written out on the row that adds one", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			for (const _ of thinks) await screen.press(DOWN);
@@ -1086,7 +1158,7 @@ describe("the config screen, pressed at", () => {
 	// The provider's own name for a model is the id far more often than not, so leaving it out is the
 	// short way to say the ordinary thing rather than a line the plane has to refuse.
 	it("leaves the provider's own name out when it was not said", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
 			await screen.press(ENTER);
@@ -1100,7 +1172,7 @@ describe("the config screen, pressed at", () => {
 	});
 
 	it("says why a model was refused, instead of a list it is quietly not in", async () => {
-		const screen = await config({
+		const screen = await models({
 			pays,
 			thinks,
 			refusesModel: 'nothing here knows "my-gateway"',
@@ -1125,7 +1197,7 @@ describe("the config screen, pressed at", () => {
 
 	/** Opens the config screen with the cursor already on the row that adds a model, and enters it. */
 	async function offering(options: Parameters<typeof plane>[0] = { pays, thinks, sells }) {
-		const screen = await config(options);
+		const screen = await models(options);
 		for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
 		await screen.press(ENTER);
 		return screen;
@@ -1197,7 +1269,7 @@ describe("the config screen, pressed at", () => {
 	});
 
 	it("gives up on a model without adding it", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
 			await screen.press(ENTER);
@@ -1213,7 +1285,7 @@ describe("the config screen, pressed at", () => {
 	// Asked before it happens, and answered by one key, because the cursor is already on the row and
 	// the hand is already on the keys that would answer it by accident.
 	it("asks before dropping a model, and drops it when the answer is yes", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -1230,7 +1302,7 @@ describe("the config screen, pressed at", () => {
 	});
 
 	it("keeps a model when the answer is anything else", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -1250,7 +1322,7 @@ describe("the config screen, pressed at", () => {
 	 * — and a question answered `y` that then does nothing is worse than one that was never asked.
 	 */
 	it("sends a model the file declared back to the file", async () => {
-		const screen = await config();
+		const screen = await models();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			await screen.press(BACKSPACE);
@@ -1260,5 +1332,101 @@ describe("the config screen, pressed at", () => {
 		} finally {
 			screen.close();
 		}
+	});
+
+	/**
+	 * The section that decides where an agent's one route to the web goes.
+	 *
+	 * All three of its rows are the plane's own answer read back: the console sends a name off a
+	 * table and the plane fills in the model, the endpoint and what a search will cost.
+	 */
+	describe("the search section", () => {
+		/** Opens the config screen with the search section already open, which is the second row. */
+		async function searching(options: Parameters<typeof plane>[0] = { pays, thinks }) {
+			const screen = await config(options);
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			return screen;
+		}
+
+		it("says where searching goes, and what it is driving", async () => {
+			const screen = await searching();
+			try {
+				expect(screen.screen()).toContain("openai");
+				expect(screen.screen()).toContain("gpt-5-mini");
+				expect(screen.screen()).toContain("OPENAI_API_KEY");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The whole of pointing it somewhere else: a list of the providers that will search, and the
+		// one the arrows are on. Nothing is typed, because there is nothing here to spell wrong.
+		it("points the search at another provider, off a list of them", async () => {
+			const screen = await searching();
+			try {
+				await screen.press(ENTER);
+				expect(screen.screen()).toContain("perplexity");
+
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+
+				expect(screen.aimed).toEqual([{ provider: "perplexity" }]);
+				// The model came from the plane, not from here: naming a provider alone is naming its first.
+				expect(screen.screen()).toContain("sonar");
+				expect(screen.screen()).toContain("PERPLEXITY_API_KEY");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("changes which model of that provider does the searching", async () => {
+			const screen = await searching();
+			try {
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+
+				expect(screen.aimed).toEqual([{ provider: "openai", model: "gpt-5" }]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("leaves the search where it was when the list is escaped", async () => {
+			const screen = await searching();
+			try {
+				await screen.press(ENTER);
+				await screen.press(DOWN);
+				await screen.press(ESCAPE);
+
+				expect(screen.aimed).toEqual([]);
+				expect(screen.screen()).toContain("openai");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The key that pays for it is taken here rather than on a screen two sections away, and taken
+		// the way every key on this screen is: never a character of it on a terminal with scrollback.
+		it("takes the key the searching is paid with, without showing it", async () => {
+			const screen = await searching();
+			try {
+				await screen.press(DOWN);
+				await screen.press(DOWN);
+				await screen.press(ENTER);
+
+				expect(screen.screen()).toContain("key for OPENAI_API_KEY");
+
+				await screen.press("sk-searching");
+				expect(screen.screen()).not.toContain("sk-searching");
+
+				await screen.press(ENTER);
+				expect(screen.given).toEqual([["OPENAI_API_KEY", "sk-searching"]]);
+			} finally {
+				screen.close();
+			}
+		});
 	});
 });

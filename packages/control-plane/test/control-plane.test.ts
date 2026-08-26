@@ -1866,6 +1866,12 @@ describe("what a login lets an agent reach", () => {
 
 	const model = { id: "model", host: "api.anthropic.com", injection: { kind: "none" } } as const;
 
+	/**
+	 * What this agent reaches before anything is logged into: the grant declared below, and the one
+	 * every agent gets for searching — which is derived from the config screen's choice, not declared.
+	 */
+	const DECLARED = 2;
+
 	/** State as a login and an attachment would have left it, written before the plane reads it. */
 	async function held(over: { url?: string; transport?: "http" | "sse"; login?: boolean } = {}) {
 		await writeFile(
@@ -1904,7 +1910,7 @@ describe("what a login lets an agent reach", () => {
 	it("adds a grant for the server it was logged in to, on top of the declared ones", async () => {
 		const plane = await held();
 
-		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(2);
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(DECLARED + 1);
 		expect(await plane.command("scout", "/mcp")).toContain("(logged in)");
 	});
 
@@ -1925,7 +1931,7 @@ describe("what a login lets an agent reach", () => {
 	it("gives nothing to an agent that never logged in", async () => {
 		const plane = await held({ login: false });
 
-		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(DECLARED);
 	});
 
 	// The reach was for the server, so taking the server away takes the reach with it.
@@ -1934,7 +1940,7 @@ describe("what a login lets an agent reach", () => {
 
 		await plane.command("scout", "/mcp drop notion");
 
-		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(DECLARED);
 	});
 
 	it("takes it back when the operator logs out, and says the reach went too", async () => {
@@ -1943,7 +1949,7 @@ describe("what a login lets an agent reach", () => {
 		const answer = await plane.command("scout", "/mcp logout notion");
 
 		expect(answer).toContain("Logged out of mcp.notion.com");
-		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(1);
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(DECLARED);
 	});
 
 	/**

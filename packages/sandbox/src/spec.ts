@@ -66,6 +66,15 @@ export const SANDBOX_WAKE_FILE = `${SANDBOX_HOME}/.run/wake.json`;
 export const SANDBOX_MCP_FILE = `${SANDBOX_HOME}/.run/mcp.json`;
 
 /**
+ * Where the plane leaves the search provider it has chosen, read at the start of every turn.
+ *
+ * Beside the servers and for the same reason: which provider searches, what it drives and what that
+ * costs are the plane's to decide, and a copy on the agent's own volume would be a copy the agent
+ * could edit — which is to say, a way to search somewhere nobody granted and bill it as nothing.
+ */
+export const SANDBOX_SEARCH_FILE = `${SANDBOX_HOME}/.run/search.json`;
+
+/**
  * Where the agent leaves the console commands it is asking for, read once the turn is over.
  *
  * A list rather than one line, unlike the wakeup, because these are steps: adding a server and then
@@ -111,6 +120,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		AGENT_DIVE_REPO: SANDBOX_REPO_PATH,
 		AGENT_DIVE_WAKE_FILE: SANDBOX_WAKE_FILE,
 		AGENT_DIVE_MCP_FILE: SANDBOX_MCP_FILE,
+		AGENT_DIVE_SEARCH_FILE: SANDBOX_SEARCH_FILE,
 		AGENT_DIVE_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,

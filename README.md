@@ -226,8 +226,8 @@ until it runs out above the cursor — it reads `tab moves` instead.
 
 The feed and the config screen stand at the foot of the column rather than behind an agent because
 neither is about an agent. The feed is the plane's, one stream with every agent in it — the same feed
-`agent logs` prints, running the whole time either way — and the config screen is the plane's keys
-and the plane's models. They used to be panels you reached by tabbing inside an agent, which meant
+`agent logs` prints, running the whole time either way — and the config screen is everything the
+plane itself was given. They used to be panels you reached by tabbing inside an agent, which meant
 picking an agent first and then ignoring which one you had picked, and the panel title carried a
 `chat · logs · setup` breadcrumb that was a second copy of a selection the column was already
 drawing. Under the agents rather than over them because that is the order they are used in: you open
@@ -960,10 +960,38 @@ instead of a working plane. The config screen is where the answer is to paste on
 
 ## The keys the plane pays with
 
+Everything this plane can be given is on one screen, and the screen opens on a list of what those
+things are rather than on any of them:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ config                                                         │
+│                      ││                                                                │
+│ ● demo         $0.42 ││ Everything this plane can be given is here: the keys it pays   │
+│ ○ scout              ││ with, what its agents think with, and where they search from.  │
+│                      ││                                                                │
+│ + new agent          ││ ● models   the providers this plane can pay, and what its      │
+│                      ││ ○ search   where web_search goes, and what a search costs      │
+│ logs                 ││                                                                │
+│ config               ││                                                                │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ 3 to think with, 1 of 4 providers paid for                 │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ move   ⏎ open   tab demo   ^C quit
+```
+
+Each row says what its section is for, because a column of bare nouns is a screen you have to open
+every row of to find the one you came here for. The dot is the agents column's, meaning the same
+thing: filled in is something this plane could use right now. The line under the list is how that
+section actually stands — `1 of 4 providers paid for` is the fact a row saying what it is for cannot
+carry, and it is usually the reason you are here. `⏎` opens one, `esc` comes back to standing on the
+row you left.
+
 A model is three lines of configuration and one exported variable, and the variable is the half that
 is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
-is running and configured and refused at the proxy, with turns dying over a host nobody typed. `tab`
-to the config screen and both halves are a list:
+is running and configured and refused at the proxy, with turns dying over a host nobody typed. Open
+`models` and both halves are a list:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
@@ -987,7 +1015,7 @@ to the config screen and both halves are a list:
 │                      ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ set key   tab demo   ^C quit
+ ↑↓ move   ⏎ set key   esc back   tab demo   ^C quit
 ```
 
 `●` is something this plane can use right now and `○` one it cannot, which is the same mark the
@@ -1137,21 +1165,45 @@ context on the reading before it gets to the thinking.
 
 So the searching and the reading happen on the far side of one granted host. The `web_search` tool
 is a pi extension shipped in the sandbox image, like `wake_me`, and it posts the question to a
-hosted search that reads the pages itself and answers in prose with its sources linked in:
+hosted search that reads the pages itself and answers in prose with its sources linked in.
 
-```yaml
-- id: search
-  host: api.openai.com
-  pathPrefix: /v1/responses
-  methods: [POST]
-  injection:
-    kind: bearer
-    token: { ref: OPENAI_API_KEY }
+Which hosted search is the config screen's `search` section, and choosing there is the whole of
+setting it up:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ config                                                         │
+│                      ││                                                                │
+│ ● demo         $0.42 ││ Choosing here is the whole of setting it up — the host, the    │
+│ ○ scout              ││ key and what a search costs come with the provider, and the    │
+│                      ││ proxy is told to pay for that one endpoint and nothing else.   │
+│ + new agent          ││                                                                │
+│                      ││ ● provider   openai                                            │
+│ logs                 ││ ● model      gpt-5-mini                                        │
+│ config               ││ ● key        OPENAI_API_KEY                                    │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ 2 to search with   $0.010 a search here                    │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ move   ⏎ change   esc back   tab demo   ^C quit
 ```
 
-The path scope is the part worth keeping. The same key against the rest of that API is a second
-model to think with, bought by whoever takes the agent over, and a grant that only opens the
-endpoint which searches is one that cannot be spent on anything else.
+Where that provider lives, the one endpoint on it that searches, the variable its key is read from
+and what a search costs are facts about the provider rather than decisions, so none of them is asked
+for: `⏎` on the first two rows is a list to arrow through, and `⏎` on the third takes the key the
+same masked way the model keys are taken. The dot is the same on all three rows because none of them
+is in force without the key — a provider and a model chosen against a key this plane does not hold
+is a search refused at the proxy, and one mark that says so is better than two that disagree.
+
+What the plane derives from the screen above is `api.openai.com`, `POST /v1/responses`, bearer from
+`OPENAI_API_KEY` — and the path scope is the part worth keeping. The same key against the rest of
+that API is a second model to think with, bought by whoever takes the agent over, and a grant that
+only opens the endpoint which searches is one that cannot be spent on anything else.
+
+Every agent gets it, because it is a tool rather than a reach: the question goes to one host and the
+answer comes back, and no agent is narrowed by being kept off it. Writing the grant out by hand in
+`deploy/config.yaml` still works and still wins, if you want the endpoint pinned somewhere a console
+cannot move it.
 
 The tool reaches the proxy with `curl` rather than `fetch`, because a sandbox has no DNS and no
 route out except that proxy: Node's `fetch` reads neither `HTTPS_PROXY` nor `NODE_EXTRA_CA_CERTS`

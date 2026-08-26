@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -9,37 +10,58 @@ import { Type } from "typebox";
  * reading happen on the other side of one granted host, and what comes back is prose with its
  * sources in it.
  */
-const ENDPOINT = "https://api.openai.com/v1/responses";
-
-/** The call is billed per search and dwarfs its own tokens, so the model driving it may be a small one. */
-const MODEL = process.env.AGENT_DIVE_SEARCH_MODEL ?? "gpt-5-mini";
 
 /**
- * What a search costs before a single token is read: ten dollars the thousand, at any model.
+ * Which provider searches and what that costs, as the plane wrote it before the turn began.
  *
- * This is the number that makes the tool worth counting. A cent a search is more than a whole short
- * turn of the model driving it, and it is charged per search rather than per call — the model on the
- * far side looks again when the first answer did not settle it, and each of those looks is billed.
+ * Read from a file rather than baked into this extension, because all three of these are the
+ * operator's to choose at the config screen and a container's environment cannot be edited after it
+ * starts. The prices come with it for the same reason they are the plane's: this file used to hold
+ * its own list, which put the one number that decides whether a spending ceiling means anything two
+ * packages away from the table that knows it.
  */
-const SEARCH_USD = 0.01;
+interface Chosen {
+	readonly endpoint: string;
+	readonly model: string;
+	/** How the answer comes back: OpenAI's output list, or the message shape everyone else uses. */
+	readonly shape: "responses" | "chat";
+	readonly perSearchUsd: number;
+	readonly rate: { readonly input: number; readonly output: number };
+}
 
 /**
- * US dollars per million tokens, in and out, for the models this can be pointed at.
+ * What this searches with when the plane has said nothing, which is what it always did.
  *
- * The API says what was used and never what it cost, so the prices have to be held somewhere, and
- * the file that makes the call is the shortest distance between the two. This list will go out of
- * date — that is what the fallback is for, and why the fallback is the dearest line on it rather
- * than nothing. A model nobody has priced counting as free is the whole bug this is here to fix.
+ * Here rather than left as an error, because a turn that cannot read one file should be a turn with
+ * a working search tool. A plane that has chosen writes over every field of this.
  */
-const RATES: Record<string, { readonly input: number; readonly output: number }> = {
-	"gpt-5": { input: 1.25, output: 10 },
-	"gpt-5-mini": { input: 0.25, output: 2 },
-	"gpt-5-nano": { input: 0.05, output: 0.4 },
+const FALLBACK: Chosen = {
+	endpoint: "https://api.openai.com/v1/responses",
+	model: "gpt-5-mini",
+	shape: "responses",
+	perSearchUsd: 0.01,
+	rate: { input: 0.25, output: 2 },
 };
 
-const DEAREST = Object.values(RATES).reduce((worst, rate) =>
-	rate.output > worst.output ? rate : worst,
-);
+const CHOSEN_FILE = process.env.AGENT_DIVE_SEARCH_FILE ?? "";
+
+async function chosen(): Promise<Chosen> {
+	if (CHOSEN_FILE.length === 0) return FALLBACK;
+	try {
+		const parsed = JSON.parse(await readFile(CHOSEN_FILE, "utf8")) as Partial<Chosen>;
+		// Field by field rather than wholesale, so a file written by an older plane is a file missing
+		// one thing rather than a search that refuses.
+		return {
+			endpoint: parsed.endpoint ?? FALLBACK.endpoint,
+			model: parsed.model ?? FALLBACK.model,
+			shape: parsed.shape === "chat" ? "chat" : "responses",
+			perSearchUsd: parsed.perSearchUsd ?? FALLBACK.perSearchUsd,
+			rate: parsed.rate ?? FALLBACK.rate,
+		};
+	} catch {
+		return FALLBACK;
+	}
+}
 
 /** What pi carries a cost in, written out here because the type of it lives two packages away. */
 interface Usage {
@@ -65,7 +87,16 @@ interface Answered {
 		readonly type: string;
 		readonly content?: readonly { readonly type: string; readonly text?: string }[];
 	}[];
-	readonly usage?: { readonly input_tokens?: number; readonly output_tokens?: number };
+	readonly choices?: readonly { readonly message?: { readonly content?: string } }[];
+	/** What a chat-shaped provider read to answer, which is the sources the prose refers to. */
+	readonly citations?: readonly string[];
+	readonly search_results?: readonly { readonly url?: string; readonly title?: string }[];
+	readonly usage?: {
+		readonly input_tokens?: number;
+		readonly output_tokens?: number;
+		readonly prompt_tokens?: number;
+		readonly completion_tokens?: number;
+	};
 	readonly error?: { readonly message?: string } | null;
 }
 
@@ -78,13 +109,16 @@ interface Answered {
  * Nothing here sends an Authorization: the proxy writes one and strips whatever was sent, so an
  * agent that had a key could not use it and this one has none to send.
  */
-function post(body: string): Promise<{ readonly status: number; readonly body: string }> {
+function post(
+	endpoint: string,
+	body: string,
+): Promise<{ readonly status: number; readonly body: string }> {
 	return new Promise((resolve, reject) => {
 		const curl = execFile(
 			"curl",
 			[
 				"-sS",
-				ENDPOINT,
+				endpoint,
 				"-H",
 				"Content-Type: application/json",
 				"--data-binary",
@@ -106,14 +140,40 @@ function post(body: string): Promise<{ readonly status: number; readonly body: s
 	});
 }
 
-/** The answer, which is one part of an output that also carries the model's reasoning and its search. */
-function said(answer: Answered): string {
-	const message = answer.output?.find((part) => part.type === "message");
-	return (message?.content ?? [])
-		.filter((part) => part.type === "output_text")
-		.map((part) => part.text ?? "")
-		.join("")
-		.trim();
+/** What to send, which is the one thing the two shapes disagree about beyond where the answer is. */
+function asked(chosen: Chosen, query: string): string {
+	return JSON.stringify(
+		chosen.shape === "responses"
+			? { model: chosen.model, tools: [{ type: "web_search" }], input: query }
+			: { model: chosen.model, messages: [{ role: "user", content: query }] },
+	);
+}
+
+/**
+ * The answer, which for the responses shape is one part of an output that also carries the model's
+ * reasoning and its searching.
+ *
+ * A chat-shaped provider answers in prose with numbered references in it and lists what those numbers
+ * are separately, so the list is appended: prose citing `[1]` with no `[1]` under it is prose whose
+ * sources the agent cannot pass on.
+ */
+function said(chosen: Chosen, answer: Answered): string {
+	if (chosen.shape === "responses") {
+		const message = answer.output?.find((part) => part.type === "message");
+		return (message?.content ?? [])
+			.filter((part) => part.type === "output_text")
+			.map((part) => part.text ?? "")
+			.join("")
+			.trim();
+	}
+
+	const prose = (answer.choices?.[0]?.message?.content ?? "").trim();
+	const sources =
+		answer.search_results?.map((found) => found.url ?? "").filter((url) => url.length > 0) ??
+		answer.citations ??
+		[];
+	if (prose.length === 0 || sources.length === 0) return prose;
+	return `${prose}\n\nSources:\n${sources.map((url, index) => `[${index + 1}] ${url}`).join("\n")}`;
 }
 
 /**
@@ -124,18 +184,17 @@ function said(answer: Answered): string {
  * provider, on another account, that the model driving the turn never sees a token of. An agent
  * could search all afternoon under a ceiling it never touched.
  *
- * The searches are counted from the answer rather than assumed to be one, since the model on the far
- * side decides how many times to look. Cached input is cheaper and is not told apart, which rounds
- * this the wrong way on purpose: of the two ways to be wrong about a ceiling, stopping an agent a
- * little early is the one that can be undone.
+ * The searches are counted from the answer where the provider says, and taken as one where it does
+ * not. Cached input is cheaper and is not told apart, which rounds this the wrong way on purpose: of
+ * the two ways to be wrong about a ceiling, stopping an agent a little early can be undone.
  */
-function spent(answer: Answered): Usage {
-	const searches = (answer.output ?? []).filter((part) => part.type === "web_search_call").length;
-	const input = answer.usage?.input_tokens ?? 0;
-	const output = answer.usage?.output_tokens ?? 0;
-	const rate = RATES[MODEL] ?? DEAREST;
-	const read = (input * rate.input) / 1e6;
-	const written = (output * rate.output) / 1e6;
+function spent(chosen: Chosen, answer: Answered): Usage {
+	const counted = (answer.output ?? []).filter((part) => part.type === "web_search_call").length;
+	const searches = chosen.shape === "responses" ? counted : 1;
+	const input = answer.usage?.input_tokens ?? answer.usage?.prompt_tokens ?? 0;
+	const output = answer.usage?.output_tokens ?? answer.usage?.completion_tokens ?? 0;
+	const read = (input * chosen.rate.input) / 1e6;
+	const written = (output * chosen.rate.output) / 1e6;
 	return {
 		input,
 		output,
@@ -149,7 +208,7 @@ function spent(answer: Answered): Usage {
 			cacheWrite: 0,
 			// More than its own parts, and the only line here that is: the fee is charged for asking
 			// rather than for anything read or written, so it belongs to the total and to neither half.
-			total: read + written + searches * SEARCH_USD,
+			total: read + written + searches * chosen.perSearchUsd,
 		},
 	};
 }
@@ -185,9 +244,10 @@ export default function (pi: ExtensionAPI): void {
 				throw new Error("A search needs something to search for.");
 			}
 
-			const { status, body } = await post(
-				JSON.stringify({ model: MODEL, tools: [{ type: "web_search" }], input: query }),
-			);
+			// Read per search rather than once when pi started: a turn is a process, but a long one, and
+			// the file is written before every turn by the plane that owns the choice.
+			const with_ = await chosen();
+			const { status, body } = await post(with_.endpoint, asked(with_, query));
 
 			let answer: Answered;
 			try {
@@ -203,11 +263,11 @@ export default function (pi: ExtensionAPI): void {
 				);
 			}
 
-			const text = said(answer);
+			const text = said(with_, answer);
 			if (text.length === 0) {
 				throw new Error("The search came back with nothing to say. Try asking it differently.");
 			}
-			return { content: [{ type: "text", text }], details: {}, usage: spent(answer) };
+			return { content: [{ type: "text", text }], details: {}, usage: spent(with_, answer) };
 		},
 	});
 }

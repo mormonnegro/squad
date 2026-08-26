@@ -6,12 +6,14 @@ import {
 	SANDBOX_CONSOLE_FILE,
 	SANDBOX_EXTENSIONS,
 	SANDBOX_MCP_FILE,
+	SANDBOX_SEARCH_FILE,
 	SANDBOX_WAKE_FILE,
 } from "@agent-dive/sandbox";
 import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
+import type { Search } from "./search.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
 export interface TurnSandbox {
@@ -159,6 +161,9 @@ export interface PiTurnRunnerOptions {
 	/** The MCP servers this agent has been given, asked for again at the start of every turn. */
 	readonly servers?: (agentId: string) => Promise<readonly NamedServer[]>;
 	readonly mcpFile?: string;
+	/** Which provider the web_search tool goes through, asked again at the start of every turn. */
+	readonly search?: () => Promise<Search | undefined>;
+	readonly searchFile?: string;
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
@@ -184,6 +189,8 @@ export class PiTurnRunner {
 	readonly #extensions: readonly string[];
 	readonly #servers: ((agentId: string) => Promise<readonly NamedServer[]>) | undefined;
 	readonly #mcpFile: string;
+	readonly #search: (() => Promise<Search | undefined>) | undefined;
+	readonly #searchFile: string;
 	/** The turn each agent is taking, while it is taking it, so that it can be stopped. */
 	readonly #running = new Map<string, AbortController>();
 
@@ -200,6 +207,8 @@ export class PiTurnRunner {
 		this.#extensions = options.extensions ?? SANDBOX_EXTENSIONS;
 		this.#servers = options.servers;
 		this.#mcpFile = options.mcpFile ?? SANDBOX_MCP_FILE;
+		this.#search = options.search;
+		this.#searchFile = options.searchFile ?? SANDBOX_SEARCH_FILE;
 	}
 
 	sessionId(agentId: string): string {
@@ -298,6 +307,7 @@ export class PiTurnRunner {
 		let executed: ExecResult;
 		try {
 			await this.#putServers(agentId);
+			await this.#putSearch(agentId);
 			const thinksWith = await this.#model?.(agentId);
 			// In its own repository, so what it remembers and what it can do are where it works.
 			executed = await this.#sandbox.run(agentId, this.commandFor(agentId, thinksWith), prompt, {
@@ -382,6 +392,26 @@ export class PiTurnRunner {
 				agentId,
 				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#mcpFile],
 				JSON.stringify(held),
+			)
+			.catch(() => undefined);
+	}
+
+	/**
+	 * Puts the search provider this plane has chosen where the extension will look.
+	 *
+	 * On the same terms as the servers: written every turn so that a provider chosen at the console
+	 * holds on the next one, and a failed write leaves the turn to happen anyway — the extension keeps
+	 * a default, and a worse search is better than no turn.
+	 */
+	async #putSearch(agentId: string): Promise<void> {
+		if (this.#search === undefined) return;
+		const chosen = await this.#search().catch(() => undefined);
+		if (chosen === undefined) return;
+		await this.#sandbox
+			.run(
+				agentId,
+				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#searchFile],
+				JSON.stringify(chosen),
 			)
 			.catch(() => undefined);
 	}

@@ -22,6 +22,9 @@ const defaults = {
 	grants: [{ id: "model", host: "api.anthropic.com", injection: { kind: "none" } }],
 } as const;
 
+/** The one grant above, and the one every agent gets for searching, which the plane derives. */
+const DEFAULT_GRANTS = 2;
+
 /**
  * An agent that nobody wrote down, made while the plane was running.
  *
@@ -56,7 +59,12 @@ suite("an agent created while the plane runs", () => {
 		try {
 			const created = await first.create(AGENT_ID);
 
-			expect(created).toMatchObject({ id: AGENT_ID, running: true, created: true, grants: 1 });
+			expect(created).toMatchObject({
+				id: AGENT_ID,
+				running: true,
+				created: true,
+				grants: DEFAULT_GRANTS,
+			});
 			const manifest = await manager.run(AGENT_ID, ["cat", "/home/agent/.self/agent.yaml"], "", {
 				timeoutMs: 30_000,
 			});
@@ -153,7 +161,12 @@ suite("an agent created while the plane runs", () => {
 		try {
 			const back = await sixth.create(DECLARED_ID);
 
-			expect(back).toMatchObject({ id: DECLARED_ID, running: true, created: false, grants: 1 });
+			expect(back).toMatchObject({
+				id: DECLARED_ID,
+				running: true,
+				created: false,
+				grants: DEFAULT_GRANTS,
+			});
 			expect(JSON.parse(await readFile(join(stateDir, "deleted.json"), "utf8"))).toEqual([]);
 			expect(JSON.parse(await readFile(join(stateDir, "agents.json"), "utf8"))).toEqual([]);
 		} finally {

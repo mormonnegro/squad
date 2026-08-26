@@ -29,6 +29,7 @@ import { MarkdownStream } from "./markdown.ts";
 import type { ModelOffer, ModelStanding, ProviderStanding } from "./models.ts";
 import { openInBrowser } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
+import { SEARCH_PROVIDERS, type SearchSpec, type SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
 /**
@@ -1232,11 +1233,54 @@ const KEYS = [
 	"Both lists are this plane's own, kept beside deploy/config.yaml rather than in it: what that file declares is read here and changed only there. Everything given here holds from the next turn — nothing restarts.",
 ];
 
-/** A row on the config screen: a key to fill in, a model, or the row that adds one. */
+/**
+ * What the search tool is, above the three rows that decide it.
+ *
+ * The second paragraph is the reason this is a screen and not a line of YAML: choosing a provider
+ * writes the grant that pays for it, so there is no second place to go afterwards and nothing to
+ * restart. The first is why an agent cannot simply read the web itself.
+ */
+const SEARCHING = [
+	"An agent has no route to the web of its own: it asks, and a model on the other side of one approved host does the searching and the reading and answers in prose with its sources in it.",
+	"",
+	"Choosing here is the whole of setting it up — the host, the key and what a search costs come with the provider, and the proxy is told to pay for that one endpoint and nothing else on it.",
+];
+
+/**
+ * What this screen is, above the list of what it holds.
+ *
+ * Said once here rather than repeated in every section, and it is the sentence the whole screen
+ * exists for: none of this is a file on the host to edit and nothing here is a reason to restart.
+ */
+const PLACES = [
+	"Everything this plane can be given is here: the keys it pays with, what its agents think with, and where they search from.",
+	"",
+	"All of it is kept beside deploy/config.yaml rather than in it — what that file declares is read here and changed only there — and all of it holds from the next turn, with nothing restarted.",
+];
+
+/** A part of this plane with something to set, which is one row of the list this screen opens on. */
+export type Section = "models" | "search";
+
+/** In the order they are walked, which is the order they are usually needed in. */
+const SECTION_ORDER: readonly Section[] = ["models", "search"];
+
+const SECTIONS: Readonly<
+	Record<Section, { readonly does: string; readonly said: readonly string[] }>
+> = {
+	models: { does: "the providers this plane can pay, and what its agents think with", said: KEYS },
+	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
+};
+
+/** The three facts about searching, in the order a hand fills them in. */
+const SEARCH_FIELDS = ["provider", "model", "key"] as const;
+
+/** A row on the config screen: a section to open, a key to fill in, a model, or the row that adds one. */
 export type ConfigRow =
+	| { readonly kind: "section"; readonly section: Section }
 	| { readonly kind: "provider"; readonly provider: ProviderStanding }
 	| { readonly kind: "model"; readonly model: ModelStanding }
-	| { readonly kind: "add" };
+	| { readonly kind: "add" }
+	| { readonly kind: "search"; readonly field: (typeof SEARCH_FIELDS)[number] };
 
 /**
  * The screen's rows in the order the arrows walk them, headers and blank lines left out.
@@ -1244,11 +1288,23 @@ export type ConfigRow =
  * Shared with the keyboard rather than built twice, because what return does depends on which row it
  * is standing on — and a cursor counting one list while the screen draws another is a key pressed at
  * something other than what is highlighted.
+ *
+ * Which rows there are depends on the section that is open, and the sections themselves are the rows
+ * when none is: one list at a time, because the four things there are to configure here share nothing
+ * but the file they are kept in, and a single list of all of them would be a screen to scroll rather
+ * than a screen to read.
  */
 export function configRows(
+	section: Section | undefined,
 	providers: readonly ProviderStanding[],
 	models: readonly ModelStanding[],
 ): readonly ConfigRow[] {
+	if (section === undefined) {
+		return SECTION_ORDER.map((one) => ({ kind: "section", section: one }) as const);
+	}
+	if (section === "search") {
+		return SEARCH_FIELDS.map((field) => ({ kind: "search", field }) as const);
+	}
 	return [
 		...providers.map((provider) => ({ kind: "provider", provider }) as const),
 		...models.map((model) => ({ kind: "model", model }) as const),
@@ -1276,15 +1332,19 @@ export function matching(offers: readonly ModelOffer[], filter: string): readonl
 }
 
 /**
- * The providers this plane could pay for, and which of them it can.
+ * What there is to set here, one section at a time.
  *
- * A screen rather than a command, because it is a list to look down: the question it answers is
- * which keys are missing, and a command that answered it one provider at a time would be a question
- * you have to already know how to ask.
+ * A screen rather than a command, because all of it is a list to look down: the questions it answers
+ * are which keys are missing and what searching costs, and a command that answered them one provider
+ * at a time would be a question you have to already know how to ask.
  */
 export function Config({
+	/** Which section is open, or nothing while the list of them is what the arrows are walking. */
+	section,
 	providers,
 	models,
+	/** Where searching goes, or nothing while the plane is still being asked. */
+	search,
 	cursor,
 	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
 	typing,
@@ -1293,20 +1353,25 @@ export function Config({
 	adding,
 	/** Everything the keys this plane holds could buy, or nothing while the providers are being asked. */
 	offers,
-	/** Which of the offers left after `adding` narrowed them the arrows are standing on. */
+	/** One of a short list being picked off it — a search provider, or one of its models. */
+	choosing,
+	/** Which of the offers left after `adding` narrowed them, or of `choosing`, the arrows stand on. */
 	pick,
 	/** What the plane said instead of answering, when it did that. */
 	unanswered,
 	rows,
 	columns,
 }: {
+	readonly section: Section | undefined;
 	readonly providers: readonly ProviderStanding[];
 	readonly models: readonly ModelStanding[];
+	readonly search: SearchStanding | undefined;
 	readonly cursor: number;
 	readonly typing: string | undefined;
 	readonly secret: string;
 	readonly adding: string | undefined;
 	readonly offers?: readonly ModelOffer[] | undefined;
+	readonly choosing?: { readonly what: string; readonly among: readonly string[] } | undefined;
 	readonly pick?: number;
 	readonly unanswered: string | undefined;
 	readonly rows: number;
@@ -1317,8 +1382,9 @@ export function Config({
 	const widestKey = Math.max(0, ...providers.map((provider) => provider.keyEnv.length));
 	const widestModel = Math.max(0, ...models.map((model) => model.id.length));
 	const widestProvider = Math.max(0, ...models.map((model) => model.provider.length));
-	const said = KEYS.map((line) => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`));
-	const walked = configRows(providers, models);
+	const dim = (line: string): string => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`);
+	const said = (section === undefined ? PLACES : SECTIONS[section].said).map(dim);
+	const walked = configRows(section, providers, models);
 	const row = walked[Math.min(cursor, walked.length - 1)];
 	// Above the list, because it is why the list says what it says — and when the plane refused to
 	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
@@ -1336,6 +1402,34 @@ export function Config({
 	// The prose above ends where the list begins, and without this the two run together into one
 	// paragraph with rows in it.
 	listed.push(h(Text, { key: "before" }, " "));
+	// A short list being picked off, which is what a setting with a handful of known answers is. It is
+	// drawn like the offers below and unlike them takes nothing typed: every answer is already on it,
+	// so a box to write in would be a box whose only use is getting the spelling wrong.
+	if (choosing !== undefined) {
+		const on = Math.min(Math.max(0, pick ?? 0), Math.max(0, choosing.among.length - 1));
+		listed.push(heading(choosing.what));
+		for (const [index, one] of choosing.among.entries()) {
+			if (index === on) at = listed.length;
+			listed.push(
+				h(
+					Text,
+					{ key: `among-${one}`, wrap: "truncate" },
+					h(Text, { color: index === on ? "cyan" : "gray" }, index === on ? "›" : " "),
+					h(Text, pointed(index === on, true), ` ${one}`),
+				),
+			);
+		}
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt: { kind: "dim", text: "⏎ takes the one the arrows are on" },
+			boxed,
+			rows,
+			columns,
+		});
+	}
 	if (adding !== undefined) {
 		const found = offers === undefined ? [] : matching(offers, adding);
 		const on = Math.min(Math.max(0, pick ?? 0), Math.max(0, found.length - 1));
@@ -1383,6 +1477,107 @@ export function Config({
 			trouble,
 			said,
 			prompt: { kind: "typed", mark: "model  ", text: adding, secret: false },
+			boxed,
+			rows,
+			columns,
+		});
+	}
+	// The list this screen opens on, which is the only place the four things it holds are one list.
+	// Each row says what its section is for, because a column of bare nouns is a screen you have to
+	// open every row of to find out which one you came here for.
+	if (section === undefined) {
+		const paid = providers.filter((provider) => provider.held).length;
+		for (const [index, one] of SECTION_ORDER.entries()) {
+			// Filled in when that section is something this plane could actually use right now: a model
+			// it holds the key for, a search it can pay for. It is the same dot the agents column uses.
+			const ready = one === "models" ? models.some((model) => model.held) : search?.held === true;
+			const mark = ready ? MARKS.running : MARKS.stopped;
+			if (index === cursor) at = listed.length;
+			listed.push(
+				h(
+					Text,
+					{ key: `section-${one}`, wrap: "truncate" },
+					h(Text, { color: mark.color }, mark.glyph),
+					h(Text, pointed(index === cursor, ready), ` ${one.padEnd(10)}`),
+					h(Text, { dimColor: true }, SECTIONS[one].does),
+				),
+			);
+		}
+		const open = walked[Math.min(cursor, walked.length - 1)];
+		const which = open?.kind === "section" ? open.section : "models";
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			// What that section holds as it stands, which is the fact a row saying what it is for cannot
+			// carry: the point of the list is finding the one thing that is not set up yet.
+			prompt: {
+				kind: "dim",
+				text:
+					which === "models"
+						? `${models.length} to think with, ${paid} of ${providers.length} providers paid for`
+						: search === undefined
+							? "asking the plane…"
+							: search.held
+								? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
+								: `${search.keyEnv}   no key, refused at the proxy`,
+			},
+			boxed,
+			rows,
+			columns,
+		});
+	}
+	if (section === "search") {
+		// The same dot on all three, because none of them is in force without the key: a provider and a
+		// model chosen against a key this plane does not hold is a search that is refused at the proxy.
+		const mark = search?.held === true ? MARKS.running : MARKS.stopped;
+		const value = (field: (typeof SEARCH_FIELDS)[number]): string =>
+			search === undefined
+				? "…"
+				: field === "provider"
+					? search.provider
+					: field === "model"
+						? search.model
+						: search.keyEnv;
+		for (const [index, field] of SEARCH_FIELDS.entries()) {
+			if (index === cursor) at = listed.length;
+			listed.push(
+				h(
+					Text,
+					{ key: `search-${field}`, wrap: "truncate" },
+					h(Text, { color: mark.color }, mark.glyph),
+					h(Text, pointed(index === cursor, search?.held === true), ` ${field.padEnd(10)}`),
+					h(Text, { dimColor: true }, value(field)),
+				),
+			);
+		}
+		const field = row?.kind === "search" ? row.field : "provider";
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt:
+				typing !== undefined
+					? { kind: "typed", mark: `key for ${typing}  `, text: secret, secret: true }
+					: {
+							kind: "dim",
+							// What the row costs or where its key came from, which is the half of each of these
+							// three that no column has room for and the half worth knowing before pressing return.
+							text:
+								search === undefined
+									? "asking the plane…"
+									: field === "provider"
+										? `${Object.keys(SEARCH_PROVIDERS).length} to search with   $${search.perSearchUsd.toFixed(3)} a search here`
+										: field === "model"
+											? `$${search.rate.input.toFixed(2)} in, $${search.rate.output.toFixed(2)} out, per million tokens`
+											: search.here
+												? `${search.keyEnv}   set here`
+												: search.held
+													? `${search.keyEnv}   from this plane's environment`
+													: `${search.keyEnv}   no key, refused at the proxy`,
+						},
 			boxed,
 			rows,
 			columns,
@@ -1443,21 +1638,21 @@ export function Config({
 	// What the row the cursor is on is, which is the one thing a column of marks cannot say: a key
 	// this plane was started with is changed by editing `.env`, and one given here is not.
 	const from =
-		row === undefined || row.kind === "add"
-			? "a model to think with, as: name provider [the provider's own name for it]"
-			: row.kind === "model"
-				? // The provider's own name for it, which is the one part of a model the row has no column
-					// for and the part that decides what is actually being paid for.
-					row.model.added
-					? `${row.model.model}   added here`
-					: `${row.model.model}   declared in deploy/config.yaml`
-				: row.provider.here
+		row?.kind === "model"
+			? // The provider's own name for it, which is the one part of a model the row has no column
+				// for and the part that decides what is actually being paid for.
+				row.model.added
+				? `${row.model.model}   added here`
+				: `${row.model.model}   declared in deploy/config.yaml`
+			: row?.kind === "provider"
+				? row.provider.here
 					? `${row.provider.keyEnv}   set here`
 					: row.provider.held
 						? `${row.provider.keyEnv}   from this plane's environment`
 						: // Short enough to survive a narrow terminal: the line is truncated rather than wrapped,
 							// and the half that gets cut is the half that says what is wrong.
-							`${row.provider.keyEnv}   no key, refused at the proxy`;
+							`${row.provider.keyEnv}   no key, refused at the proxy`
+				: "a model to think with, as: name provider [the provider's own name for it]";
 	return configScreen({
 		listed,
 		at,
@@ -1673,6 +1868,16 @@ export function App({
 	// up to date: nothing else changes them, and the one thing that does is on this keyboard.
 	const [providers, setProviders] = useState<readonly ProviderStanding[]>([]);
 	const [models, setModels] = useState<readonly ModelStanding[]>([]);
+	const [search, setSearch] = useState<SearchStanding | undefined>(undefined);
+	// Which section of the config screen is open, or nothing while the list of them is. One at a time,
+	// because what these have in common is where they are kept and nothing else — and the cursor is
+	// theirs, so it starts at the top of whichever list was just opened.
+	const [section, setSection] = useState<Section | undefined>(undefined);
+	// The short list being picked off, when one is: what is being chosen, and every answer to it. Kept
+	// apart from `adding` because that one takes a line typed out and this one never does.
+	const [choosing, setChoosing] = useState<
+		{ what: string; among: readonly string[]; take: (one: string) => void } | undefined
+	>(undefined);
 	// Why the list is empty, when it is empty because the plane would not answer. An empty screen that
 	// swallowed the reason reads as a plane with no providers, and the reason is usually that the
 	// console is newer than the plane it is talking to — which is a sentence, not a mystery.
@@ -1708,7 +1913,7 @@ export function App({
 	const selected = agents[spot];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
-	const walk = configRows(providers, models);
+	const walk = configRows(section, providers, models);
 	const onRow = Math.min(where, walk.length - 1);
 	const configRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
@@ -1912,10 +2117,11 @@ export function App({
 	useEffect(() => () => doors.close(), [doors]);
 
 	const readConfig = useCallback(async (): Promise<void> => {
-		await Promise.all([client.providers(), client.models()])
-			.then(([keys, thinking]) => {
+		await Promise.all([client.providers(), client.models(), client.search()])
+			.then(([keys, thinking, searching]) => {
 				setProviders(keys);
 				setModels(thinking);
+				setSearch(searching);
 				setUnanswered(undefined);
 			})
 			.catch((error: unknown) => setUnanswered((error as Error).message));
@@ -1986,6 +2192,18 @@ export function App({
 
 	const forget = useCallback(
 		async (modelId: string): Promise<void> => say(() => client.dropModel(modelId)),
+		[client, say],
+	);
+
+	/**
+	 * Points the search tool somewhere else, which is the whole of configuring one.
+	 *
+	 * Read back like everything else here, because the plane fills in the half of the answer that was
+	 * not said: naming a provider alone takes that provider's first model, and what a search will cost
+	 * from now on is a number only the plane's table has.
+	 */
+	const point = useCallback(
+		async (spec: SearchSpec): Promise<void> => say(() => client.setSearch(spec)),
 		[client, say],
 	);
 
@@ -2085,6 +2303,12 @@ export function App({
 			exit();
 			return;
 		}
+		// Closes the open section of the config screen, leaving the cursor on the row it was opened
+		// from: walking back out of something should end where walking into it began.
+		const leave = (): void => {
+			if (section !== undefined) setWhere(Math.max(0, SECTION_ORDER.indexOf(section)));
+			setSection(undefined);
+		};
 		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
 		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
 		const scroll = (by: number, pages: number): void => {
@@ -2278,6 +2502,35 @@ export function App({
 			entered(secret + first);
 			return;
 		}
+		/**
+		 * A setting with a handful of known answers is being picked off a list of them.
+		 *
+		 * Nothing here reads a character, and that is the difference between this and the box under it:
+		 * every answer a search provider could have is already on the list, so there is nothing to type
+		 * and every other key is swallowed rather than falling through to a pane that would act on it.
+		 */
+		if (choosing !== undefined) {
+			const on = Math.min(Math.max(0, pick), Math.max(0, choosing.among.length - 1));
+			if (key.escape) {
+				setChoosing(undefined);
+				return;
+			}
+			if (key.upArrow) {
+				setPick(Math.max(0, on - 1));
+				return;
+			}
+			if (key.downArrow) {
+				setPick(Math.min(Math.max(0, choosing.among.length - 1), on + 1));
+				return;
+			}
+			if (key.return) {
+				const one = choosing.among[on];
+				setChoosing(undefined);
+				setPick(0);
+				if (one !== undefined) choosing.take(one);
+			}
+			return;
+		}
 		// A model is being picked, and like the key above it the branch sits here so that none of the
 		// panes below read a character of what is typed as one of their own. The arrows are the list's
 		// while it is up, which is what they are in every other box that completes.
@@ -2337,6 +2590,13 @@ export function App({
 		// reaches the agent being watched from whichever one is open. Only while it is thinking: escape
 		// on an agent with nothing to stop is a key pressed at the wrong moment, not a command.
 		if (key.escape) {
+			// On the config screen it is the way back out of a section, which is what escape is in every
+			// list that opens one. Before the stop, because a turn thinking behind this screen is not what
+			// a key pressed on it is about.
+			if (panel === "config" && section !== undefined) {
+				leave();
+				return;
+			}
 			if (selected !== undefined && busy.has(selected.id)) {
 				void client.stop(selected.id).catch(() => {});
 				// A turn stopped before it said anything leaves the question standing alone in the
@@ -2402,8 +2662,10 @@ export function App({
 		if (key.upArrow) {
 			// The config screen's own list is a list too, and it holds the arrows while there is any of
 			// it above the cursor. At the top they go back to walking the column, so that screen is left
-			// by the same key that arrived on it.
+			// by the same key that arrived on it — and out of an open section first, one level per press,
+			// which is the same walk backwards.
 			if (panel === "config" && onRow > 0) setWhere(onRow - 1);
+			else if (panel === "config" && section !== undefined) leave();
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
 			else setSpot((prev) => walked(prev, -1, agents.length));
 			return;
@@ -2425,9 +2687,46 @@ export function App({
 			// Everything this screen does is about the row the arrows are standing on, which is why there
 			// is nothing here to type into until one of these is pressed.
 			if (key.return && configRow !== undefined) {
+				// Opening a section puts the cursor at the top of it rather than at whatever row number it
+				// happened to be on: the count belongs to the list, and the lists are not the same length.
+				if (configRow.kind === "section") {
+					setSection(configRow.section);
+					setWhere(0);
+				}
 				if (configRow.kind === "provider") {
 					setTyping(configRow.provider.keyEnv);
 					setSecret("");
+				}
+				// Two of the three are picked off a list this console already has — the providers that will
+				// search and the models each of them drives are a table, not an opinion — and the third is
+				// a key, taken the same way every other key on this screen is.
+				if (configRow.kind === "search" && search !== undefined) {
+					if (configRow.field === "key") {
+						setTyping(search.keyEnv);
+						setSecret("");
+					} else {
+						const among =
+							configRow.field === "provider"
+								? Object.keys(SEARCH_PROVIDERS)
+								: (SEARCH_PROVIDERS[search.provider]?.models ?? []);
+						const standing = configRow.field === "provider" ? search.provider : search.model;
+						setChoosing({
+							what:
+								configRow.field === "provider" ? "searches" : `${search.provider} searches with`,
+							among,
+							// A provider chosen alone leaves the model to the plane, which takes that provider's
+							// first: the model it was on belongs to whoever it was chosen from.
+							take: (one) =>
+								void point(
+									configRow.field === "provider"
+										? { provider: one }
+										: { provider: search.provider, model: one },
+								),
+						});
+						// Standing on what is already set, so a list opened to look at it is a list that can be
+						// closed again without having changed anything by pressing return on the first row.
+						setPick(Math.max(0, among.indexOf(standing)));
+					}
 				}
 				// The row under the models, which is the one that makes one — the same shape as the row
 				// under the agents, because it is the same idea and a second one would be a second thing
@@ -2630,13 +2929,16 @@ export function App({
 					? h(Logs, { lines, rows: inner, top, held, key: "logs" })
 					: panel === "config"
 						? h(Config, {
+								section,
 								providers,
 								models,
+								search,
 								cursor: Math.max(0, onRow),
 								typing,
 								secret,
 								adding,
 								offers,
+								choosing,
 								pick,
 								unanswered,
 								rows: inner,
@@ -2679,106 +2981,121 @@ export function App({
 			{ flexDirection: "row", key: "hint" },
 			h(Text, null, " "),
 			// The key stands out from what it does, because the key is the part being looked for.
-			...(adding !== undefined
-				? // The list has the arrows while it is up, and return takes what they are standing on.
+			...(choosing !== undefined
+				? // A list of every answer there is, so the row says the three keys that exist here.
 					[
-						...(offers !== undefined && matching(offers, adding).length > 0
-							? [
-									["↑↓", "move"],
-									["⏎", "add"],
-								]
-							: [["⏎", "add"]]),
+						["↑↓", "move"],
+						["⏎", "choose"],
 						["esc", "cancel"],
 						["^C", "quit"],
 					]
-				: typing !== undefined
-					? // A key is being typed and has the keyboard, so the row is the two ways out of that.
+				: adding !== undefined
+					? // The list has the arrows while it is up, and return takes what they are standing on.
 						[
-							["⏎", "save"],
+							...(offers !== undefined && matching(offers, adding).length > 0
+								? [
+										["↑↓", "move"],
+										["⏎", "add"],
+									]
+								: [["⏎", "add"]]),
 							["esc", "cancel"],
 							["^C", "quit"],
 						]
-					: dropping !== undefined
-						? [
-								["y", "drop"],
-								["n", "cancel"],
+					: typing !== undefined
+						? // A key is being typed and has the keyboard, so the row is the two ways out of that.
+							[
+								["⏎", "save"],
+								["esc", "cancel"],
 								["^C", "quit"],
 							]
-						: panel === "logs"
-							? // The arrows walk the column here as they do over a conversation, so the feed is
-								// moved with the same chords a conversation is moved with rather than with the two
-								// keys that mean somewhere else on every other row of this screen. Nothing else
-								// this row usually offers exists here.
-								[
-									["↑↓", "move"],
-									["^U^D", "scroll"],
+						: dropping !== undefined
+							? [
+									["y", "drop"],
+									["n", "cancel"],
 									["^C", "quit"],
 								]
-							: panel === "config"
-								? // What return does here depends on the row, so the row is what the hint says. A hint
-									// naming a key that does nothing on the row under the cursor is the same lie as a
-									// hint for a key that does nothing at all.
+							: panel === "logs"
+								? // The arrows walk the column here as they do over a conversation, so the feed is
+									// moved with the same chords a conversation is moved with rather than with the two
+									// keys that mean somewhere else on every other row of this screen. Nothing else
+									// this row usually offers exists here.
 									[
 										["↑↓", "move"],
-										...(configRow?.kind === "provider"
-											? [["⏎", "set key"]]
-											: configRow?.kind === "add"
-												? [["⏎", "add model"]]
-												: configRow?.model.added === true
-													? [["⌫", "drop model"]]
-													: []),
-										["tab", nextRow(spot, agents)],
+										["^U^D", "scroll"],
 										["^C", "quit"],
 									]
-								: menu.length > 0
-									? // The keys have been taken by the menu, so the row says what they do now instead of
-										// what they did a keystroke ago. A hint left standing for a key the menu has taken is
-										// the same lie as a hint for a key that does nothing.
+								: panel === "config"
+									? // What return does here depends on the row, so the row is what the hint says. A hint
+										// naming a key that does nothing on the row under the cursor is the same lie as a
+										// hint for a key that does nothing at all.
 										[
-											["↑↓", among],
-											["⏎", "choose"],
+											["↑↓", "move"],
+											...(configRow?.kind === "section"
+												? [["⏎", "open"]]
+												: configRow?.kind === "provider"
+													? [["⏎", "set key"]]
+													: configRow?.kind === "add"
+														? [["⏎", "add model"]]
+														: configRow?.kind === "search"
+															? [["⏎", configRow.field === "key" ? "set key" : "change"]]
+															: configRow?.model.added === true
+																? [["⌫", "drop model"]]
+																: []),
+											// Only where there is one to leave, because a key named on a row it does nothing
+											// on is the same lie as a key named for nothing at all.
+											...(section === undefined ? [] : [["esc", "back"]]),
+											["tab", nextRow(spot, agents)],
 											["^C", "quit"],
 										]
-									: deleting !== undefined
-										? // A question is open and it has the keyboard, so the row says the two keys that mean
-											// anything. Everything it usually offers would be a way out of answering that does
-											// not exist — and `n` is spelled out rather than left as "any other key", because a
-											// key to press is a thing a hand does and "any other key" is a thing to work out.
+									: menu.length > 0
+										? // The keys have been taken by the menu, so the row says what they do now instead of
+											// what they did a keystroke ago. A hint left standing for a key the menu has taken is
+											// the same lie as a hint for a key that does nothing.
 											[
-												["y", "delete"],
-												["n", "cancel"],
+												["↑↓", among],
+												["⏎", "choose"],
 												["^C", "quit"],
 											]
-										: selected === undefined
-											? // Nothing else the row usually offers is true here: there is no conversation to
-												// scroll, no shell to open and no commands, until the name has been given.
+										: deleting !== undefined
+											? // A question is open and it has the keyboard, so the row says the two keys that mean
+												// anything. Everything it usually offers would be a way out of answering that does
+												// not exist — and `n` is spelled out rather than left as "any other key", because a
+												// key to press is a thing a hand does and "any other key" is a thing to work out.
 												[
-													["↑↓", "agents"],
-													["⏎", "create"],
+													["y", "delete"],
+													["n", "cancel"],
 													["^C", "quit"],
 												]
-											: [
-													["↑↓", "agents"],
-													// Only while there is a line to walk back to: left and right do nothing in a
-													// conversation nobody has typed into yet, and a hint for a key that does nothing
-													// is the same lie as a hint for a key the menu has taken.
-													...(typed(said).length > 0 ? [["←→", "history"]] : []),
-													["^U^D", "scroll"],
-													// A key nobody guesses is pressable. The rest of this row is what to press to move
-													// around; this one is what to press to be told what else there is. In the shell the
-													// two of them say nothing true, and the way back out is worth saying instead.
-													...(shell
-														? [["⌫", "chat"]]
-														: [
-																["/", "commands"],
-																["!", "shell"],
-															]),
-													["^C", "quit"],
-													// Last, so that the rest of the row does not move as it comes and goes, and shown
-													// only while there is something to stop: the key does nothing at any other time,
-													// and offering it then is how a hint becomes a thing that lies.
-													...(busy.size > 0 ? [["esc", "stop"]] : []),
-												]
+											: selected === undefined
+												? // Nothing else the row usually offers is true here: there is no conversation to
+													// scroll, no shell to open and no commands, until the name has been given.
+													[
+														["↑↓", "agents"],
+														["⏎", "create"],
+														["^C", "quit"],
+													]
+												: [
+														["↑↓", "agents"],
+														// Only while there is a line to walk back to: left and right do nothing in a
+														// conversation nobody has typed into yet, and a hint for a key that does nothing
+														// is the same lie as a hint for a key the menu has taken.
+														...(typed(said).length > 0 ? [["←→", "history"]] : []),
+														["^U^D", "scroll"],
+														// A key nobody guesses is pressable. The rest of this row is what to press to move
+														// around; this one is what to press to be told what else there is. In the shell the
+														// two of them say nothing true, and the way back out is worth saying instead.
+														...(shell
+															? [["⌫", "chat"]]
+															: [
+																	["/", "commands"],
+																	["!", "shell"],
+																]),
+														["^C", "quit"],
+														// Last, so that the rest of the row does not move as it comes and goes, and shown
+														// only while there is something to stop: the key does nothing at any other time,
+														// and offering it then is how a hint becomes a thing that lies.
+														...(busy.size > 0 ? [["esc", "stop"]] : []),
+													]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

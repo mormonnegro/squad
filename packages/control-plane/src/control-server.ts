@@ -6,6 +6,7 @@ import type { Duplex } from "node:stream";
 import type { Channel, Reply } from "@agent-dive/channels";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
+import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
@@ -71,6 +72,13 @@ export type ControlRequest =
 	| { readonly id: string; readonly op: "drop-model"; readonly modelId: string }
 	/** What every provider this plane holds a key for says it will answer to. */
 	| { readonly id: string; readonly op: "offers" }
+	/** Which provider the web_search tool goes through, and whether this plane can pay for it. */
+	| { readonly id: string; readonly op: "search" }
+	/**
+	 * Points the search tool somewhere else. The same widening as adding a model, and here for the
+	 * same reason: it derives a grant every agent gets, so only the operator's socket may say it.
+	 */
+	| { readonly id: string; readonly op: "set-search"; readonly spec: SearchSpec }
 	/**
 	 * Takes this connection over and turns the rest of it into bytes to a port inside a sandbox.
 	 *
@@ -102,6 +110,7 @@ export type ControlResponse =
 	  }
 	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
+	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
 	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
@@ -346,6 +355,11 @@ export class ControlServer {
 				this.#write(socket, { id: request.id, ok: true, text: request.modelId });
 			} else if (request.op === "offers") {
 				this.#write(socket, { id: request.id, ok: true, catalog: await this.#plane.offers() });
+			} else if (request.op === "search") {
+				this.#write(socket, { id: request.id, ok: true, search: await this.#plane.search() });
+			} else if (request.op === "set-search") {
+				await this.#plane.chooseSearch(request.spec);
+				this.#write(socket, { id: request.id, ok: true, text: request.spec.provider });
 			} else if (request.op === "remove") {
 				await this.#plane.remove(request.agentId, { purge: request.purge });
 				this.#write(socket, { id: request.id, ok: true, text: "" });

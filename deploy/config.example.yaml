@@ -79,19 +79,11 @@ defaults:
       injection:
         kind: none
 
-    # How an agent reaches a *search engine*, which is a different thing and stays scoped. Both the
-    # searching and the reading of what it finds happen on the far side of this one host, so the tool
-    # works without the key ever being somewhere the agent could take it.
-    #
-    # Scoped to the endpoint that searches, because the same key against the rest of that API is a
-    # second model to think with — bought by whoever takes the agent over.
-    - id: search
-      host: api.openai.com
-      pathPrefix: /v1/responses
-      methods: [POST]
-      injection:
-        kind: bearer
-        token: { ref: OPENAI_API_KEY }
+    # There is no `search` grant here, and that is not an omission. How an agent reaches a search
+    # engine is set at the console — config › search — and the plane derives the grant from what is
+    # chosen there: the host, the endpoint that searches and the key it is paid with all come with
+    # the provider. Writing one out by hand still works and still wins, if you want the endpoint
+    # pinned somewhere a console cannot move it.
 
 agents:
   # Everything above is already true of this agent. What is here is what makes it that one.

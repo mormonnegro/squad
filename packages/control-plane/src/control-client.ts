@@ -4,6 +4,7 @@ import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
+import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
 export class ControlError extends Error {
@@ -167,6 +168,18 @@ export class ControlClient {
 
 	async dropModel(modelId: string): Promise<void> {
 		await this.#once({ op: "drop-model", modelId });
+	}
+
+	/** Where the web_search tool goes, what it drives, and whether this plane can pay for it. */
+	async search(): Promise<SearchStanding> {
+		const response = await this.#once({ op: "search" });
+		if ("search" in response) return response.search;
+		throw new ControlError("unexpected answer to search");
+	}
+
+	/** Points the search tool at another provider, or at another of that provider's models. */
+	async setSearch(spec: SearchSpec): Promise<void> {
+		await this.#once({ op: "set-search", spec });
 	}
 
 	/** What the providers this plane can pay say they answer to, minus what is configured already. */

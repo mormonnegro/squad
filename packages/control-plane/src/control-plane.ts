@@ -80,6 +80,16 @@ import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { type Served, ServedPorts } from "./ports.ts";
+import {
+	DEFAULT_SEARCH_PROVIDER,
+	resolveSearch,
+	SEARCH_PROVIDERS,
+	type Search,
+	SearchChoice,
+	type SearchSpec,
+	type SearchStanding,
+	searchGrant,
+} from "./search.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
 import { TelegramBots } from "./telegram.ts";
@@ -398,6 +408,8 @@ export class ControlPlane {
 	/** The half of that store this plane may write: the provider keys given at the console. */
 	readonly #keys: ProviderKeys;
 	readonly #mcp: McpShelf;
+	/** Which provider the web_search tool goes through, when somebody has chosen one at the console. */
+	readonly #search: SearchChoice;
 	readonly #bots: TelegramBots;
 	readonly #mailbox: MailboxStore;
 	/**
@@ -468,6 +480,7 @@ export class ControlPlane {
 		);
 		this.#secrets = this.#keys;
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
+		this.#search = new SearchChoice(join(this.#stateDir, "search.json"));
 		this.#bots = new TelegramBots(join(this.#stateDir, "telegram.json"));
 		this.#mailbox = new MailboxStore(join(this.#stateDir, "mailbox.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
@@ -941,10 +954,52 @@ export class ControlPlane {
 	 * file was careful to only name. A provider key fills a grant every agent already holds.
 	 */
 	async setKey(keyEnv: string, value: string): Promise<void> {
-		if (!providersOf(await this.models()).some((provider) => provider.keyEnv === keyEnv)) {
-			throw new Error(`${keyEnv} is not a provider key`);
-		}
+		const thinking = providersOf(await this.models()).some(
+			(provider) => provider.keyEnv === keyEnv,
+		);
+		// The searching providers as well as the thinking ones. Their key fills a grant this plane
+		// derives for every agent, exactly as a model's does, so it is the same kind of thing to be
+		// allowed to type — and a search screen that could show the key but not take it would be a
+		// screen that sends you to the `.env` on the host.
+		const searching = Object.values(SEARCH_PROVIDERS).some(
+			(provider) => provider.keyEnv === keyEnv,
+		);
+		if (!thinking && !searching) throw new Error(`${keyEnv} is not a provider key`);
 		await this.#keys.keep(keyEnv, value.trim());
+	}
+
+	/** Where searching goes, filled in from the table, and whether this plane can pay for it. */
+	async search(): Promise<SearchStanding> {
+		const chosen = await this.#search.chosen();
+		const resolved = resolveSearch(chosen ?? { provider: DEFAULT_SEARCH_PROVIDER });
+		// A stored choice can only be refused by a plane that has since forgotten the provider, which
+		// leaves the search where it would have been anyway rather than leaving the screen with nothing.
+		const search =
+			typeof resolved === "string"
+				? (resolveSearch({ provider: DEFAULT_SEARCH_PROVIDER }) as Search)
+				: resolved;
+		const key = await this.#secrets.resolve({ ref: search.keyEnv }).catch(() => undefined);
+		const here = await this.#keys.here();
+		return {
+			...search,
+			chosen: chosen !== undefined,
+			held: key !== undefined && key.length > 0,
+			here: here.has(search.keyEnv),
+		};
+	}
+
+	/**
+	 * Points the search tool at another provider, or another of that provider's models.
+	 *
+	 * Every agent's grants are written again afterwards, because the grant that pays for searching is
+	 * derived from this: without it the choice would hold in the sandbox on the next turn and be
+	 * refused at the proxy, which is the worst of the two halves being out of step.
+	 */
+	async chooseSearch(spec: SearchSpec): Promise<void> {
+		const resolved = resolveSearch(spec);
+		if (typeof resolved === "string") throw new Error(resolved);
+		await this.#search.choose(spec);
+		await this.#reregisterAll();
 	}
 
 	/**
@@ -982,6 +1037,13 @@ export class ControlPlane {
 		const thinking = modelGrants(await this.#addedModels.all()).filter(
 			(grant) => !declared.some((own) => own.id === grant.id),
 		);
+		// The one grant the search tool needs, on the same terms as the model grants: derived rather
+		// than written down, so that choosing a search provider at the config screen is the whole of
+		// setting one up. Behind the declared ones, so the hand-written `search` grant older
+		// configurations still carry is the one that matches first and nothing changes under them.
+		const searching = [searchGrant(await this.search())].filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
 		const earned: Grant[] = [];
 		for (const { name, server } of await this.#mcp.attached(agentId)) {
 			const host = hostOf(server);
@@ -995,7 +1057,7 @@ export class ControlPlane {
 				injection: { kind: "bearer", token: oauthRef(name) },
 			});
 		}
-		return [...declared, ...thinking, ...earned];
+		return [...declared, ...thinking, ...searching, ...earned];
 	}
 
 	/**
@@ -1730,6 +1792,9 @@ export class ControlPlane {
 			// Asked again each turn for the same reason, so `/model` reaches an agent that is already
 			// up on its next turn rather than on its next container.
 			model: (agentId) => this.#thinksWith(agentId),
+			// And again for the same reason: a search provider chosen at the console searches on the
+			// next turn rather than on the next container.
+			search: () => this.search(),
 			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),
 		});
 		await this.attach(agent.id, runner);
