@@ -16,11 +16,12 @@ import { useReveal } from "../lib/reveal";
 type Use = {
 	name: string;
 	label: string;
-	// How it stands when it is not the one being looked at.
 	state: "up" | "thinking" | "stopped";
 	spend: string;
 	// A spend is dim until it is worth reading: amber at four fifths of the ceiling, red at it.
 	heat?: "warn";
+	// The appointment it has booked, when it has one, and how long it has been at this turn.
+	next?: string;
 	wait?: string;
 	model: string;
 	limit: string;
@@ -41,6 +42,7 @@ const USES: [Use, ...Use[]] = [
 		label: "track a competitor",
 		state: "up",
 		spend: "$1.10",
+		next: "mon 08:00",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		ask: "every monday at 8, diff the other three's pricing and changelogs and mail me what moved",
@@ -101,6 +103,7 @@ const USES: [Use, ...Use[]] = [
 		label: "from your phone",
 		state: "up",
 		spend: "$0.18",
+		next: "in 5m",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		from: "telegram · you",
@@ -118,7 +121,7 @@ const USES: [Use, ...Use[]] = [
 	{
 		name: "ops",
 		label: "ask it anything",
-		state: "stopped",
+		state: "up",
 		spend: "$0.06",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
@@ -230,16 +233,15 @@ export function Console() {
 							type="button"
 							key={u.name}
 							className="mock-agent mock-in"
-							data-state={u === use ? "up" : u.state}
+							data-state={u.state}
 							data-here={u === use ? "true" : undefined}
 							style={{ "--i": i } as CSSProperties}
 							onClick={() => pick(u)}
 						>
 							<span className="mock-dot" aria-hidden="true" />
 							<span className="mock-name">{u.name}</span>
-							{u.wait !== undefined && u !== use ? (
-								<span className="mock-wait">{u.wait}</span>
-							) : null}
+							{u.next === undefined ? null : <span className="mock-next">{u.next}</span>}
+							{u.wait === undefined ? null : <span className="mock-wait">{u.wait}</span>}
 							<span className="mock-spend" data-heat={u.heat}>
 								{u.spend}
 							</span>

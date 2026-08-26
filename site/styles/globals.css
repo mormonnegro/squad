@@ -580,6 +580,12 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 	color: var(--cyan);
 }
 
+/* The appointment it has booked. Dim, because it is a fact about later. */
+.mock-next {
+	color: var(--muted);
+}
+
+/* How long this turn has been running. Amber, because it is a fact about now. */
 .mock-wait {
 	color: var(--amber);
 	opacity: 0.65;
