@@ -174,18 +174,13 @@ export default function Home() {
 				<div className="wrap">
 					<span className="eyebrow">Why the parts are shaped this way</span>
 					<h2>Three problems decide the whole design</h2>
-				</div>
-				<div className="wrap-wide">
-					<div className="cards cards-3">
-						{PROBLEMS.map((p, i) => (
-							<div className="card problem" key={p.rule}>
-								<span className="problem-n">{String(i + 1).padStart(2, "0")}</span>
-								<h3>{p.problem}</h3>
-								<p>{p.body}</p>
-								<p className="problem-rule">{p.rule}</p>
-							</div>
-						))}
-					</div>
+					{PROBLEMS.map((p) => (
+						<div className="rule" key={p.rule}>
+							<h3>{p.problem}</h3>
+							<p>{p.body}</p>
+							<p className="rule-out">{p.rule}</p>
+						</div>
+					))}
 				</div>
 			</section>
 
