@@ -416,16 +416,22 @@ be paid for by every line said after it.
 The conversation belongs to the plane rather than to the console, so closing one is not ending it:
 the next console opens on what was said, and the last couple of hundred lines survive the terminal
 being closed, the machine being logged out of and the plane itself being reloaded. It follows that a
-turn nobody at a keyboard started appears there too — a schedule coming due, a webhook arriving, an
-agent waking itself — with a mark saying where it came from:
+turn nobody at a keyboard started appears there too — a schedule coming due, a webhook arriving, a
+message you sent by mail, an agent waking itself — with a mark saying where it came from:
 
 ```
 > ¿cómo va la cola?
 cuatro issues abiertos, ninguno bloqueado.
 ‹wake› volver a chequear la cola
 sigue igual.
+‹email› ¿y el build?
+verde desde anoche.
 ‹webhook:github› the nightly build failed on main
 ```
+
+Your own mail is marked too, and for the same reason: it is you, and it is not you at this keyboard.
+An agent that answered its mail at four in the morning would otherwise read back, hours later, as
+something you had sat down and typed.
 
 The mark is there because the pane gets read back to work out who asked for what, and a line from a
 stranger with a URL drawn the same way as the operator's is the one bug in a chat window that

@@ -29,6 +29,23 @@ describe("overheard", () => {
 		expect(said).toEqual({ from: "operator", text: "hola" });
 	});
 
+	// Same person, same trust, and a turn that started while nobody was looking at the pane. Without
+	// the mark an agent that answered its mail at four in the morning reads back, hours later, as
+	// something the operator sat down and typed.
+	it("names the channel an operator's message arrived on, when it was not the console", () => {
+		const said = overheard(
+			arriving({
+				agentId: "scout",
+				source: "channel",
+				trust: "operator",
+				channel: "email:vos@example.com",
+				body: "contame un chiste",
+			}),
+		);
+
+		expect(said).toEqual({ from: "operator", via: "email", text: "contame un chiste" });
+	});
+
 	// Operator trust is minted at the socket and nowhere else, so a cron the operator wrote is still
 	// the operator talking — but it did not arrive by anyone typing, and the pane should say which.
 	it("keeps an operator's schedule apart from an operator at the keyboard", () => {

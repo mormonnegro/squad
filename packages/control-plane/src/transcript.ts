@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AgentEvent, isOwnNote } from "@agent-dive/events";
+import { CLI_CHANNEL } from "./control-server.ts";
 
 /**
  * One line of the conversation an agent is part of.
@@ -45,11 +46,29 @@ export interface Utterance {
 export function overheard(event: AgentEvent): Utterance {
 	if (isOwnNote(event)) return { from: "agent", via: "wake", text: event.body };
 	if (event.trust === "operator") {
-		return event.source === "channel"
+		// The same person, and not the same thing to read back: a line typed into a console is one you
+		// watched yourself write, while one that arrived by mail is a turn the plane took while nobody
+		// was looking at it. Marked by the channel rather than by who is at the far end of it, because
+		// the far end of an operator's channel is the operator.
+		const carried = event.source === "channel" ? carriedBy(event.channel) : event.source;
+		return carried === undefined
 			? { from: "operator", text: event.body }
-			: { from: "operator", via: event.source, text: event.body };
+			: { from: "operator", via: carried, text: event.body };
 	}
 	return { from: "other", via: event.channel, text: event.body };
+}
+
+/**
+ * Which channel carried a message, or nothing at all when it was the console being typed into.
+ *
+ * Nothing, because the mark is there to say a turn happened while this pane was not being watched,
+ * and a line typed into the pane is the one case where somebody was. Naming it would put a label on
+ * every message the operator sends from the only place most of them are sent from.
+ */
+function carriedBy(channel: string): string | undefined {
+	const colon = channel.indexOf(":");
+	const name = colon === -1 ? channel : channel.slice(0, colon);
+	return name === CLI_CHANNEL ? undefined : name;
 }
 
 /**
