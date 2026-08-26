@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Appointment, MAX_SECONDS, MIN_SECONDS } from "./appointment.ts";
 
 /**
  * The file the control plane reads once the turn is over, and the reason this is a file rather than
@@ -14,25 +15,14 @@ import { Type } from "typebox";
  */
 const WAKE_FILE = process.env.AGENT_DIVE_WAKE_FILE ?? "/home/agent/.run/wake.json";
 
-/** A second, because "right after this turn" is a real thing to want and the plane can honour it. */
-const MIN_SECONDS = 1;
-const MAX_SECONDS = 30 * 24 * 60 * 60;
-
 /** Both tools write the same file, because the plane reads one file and acts on what it says. */
 function request(asked: Record<string, unknown>): void {
 	mkdirSync(dirname(WAKE_FILE), { recursive: true });
 	writeFileSync(WAKE_FILE, `${JSON.stringify(asked)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
-/**
- * When the turn already booked its wakeup, if it did. One pi process is one turn, so this is per-turn.
- *
- * The bug it exists to stop is an agent that reads "you will be woken at 09:41" as the waiting being
- * over, and gets on with what it meant to do then — asks again, is told 09:42, gets on with that one
- * too. An agent asked for a joke a minute told two hundred of them in a single turn that way, at a
- * joke every three seconds, and the operator's only way to end it was to press stop.
- */
-let booked: Date | undefined;
+/** One pi process is one turn, so this is the appointment of this turn and of no other. */
+const appointment = new Appointment();
 
 export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
@@ -69,42 +59,8 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_toolCallId, params) {
 			const { afterSeconds, note } = params as { afterSeconds: number; note: string };
-
-			if (!Number.isInteger(afterSeconds) || afterSeconds < MIN_SECONDS) {
-				throw new Error(`The soonest you can be woken is ${MIN_SECONDS} seconds from now.`);
-			}
-			if (afterSeconds > MAX_SECONDS) {
-				throw new Error(`The furthest you can be woken is ${MAX_SECONDS} seconds from now.`);
-			}
-			if (note.trim().length === 0) {
-				throw new Error("A wakeup with no note wakes you knowing nothing. Say what to continue.");
-			}
-			// Refused rather than moved, because an agent asking twice in one turn is not changing its
-			// mind about when — it is waiting, here, for a turn that cannot start until it stops.
-			if (booked !== undefined) {
-				throw new Error(
-					`You have already asked, and you are being woken at ${booked.toISOString()}. There is` +
-						" one wakeup and it is booked. No time passes while this turn runs, so asking again" +
-						" cannot bring it closer: end the turn, and it will come.",
-				);
-			}
-
-			request({ afterSeconds, note });
-
-			// Said as a time rather than a count of seconds, because what the agent has to judge is
-			// whether that is soon enough, and it is about to go and not be able to reconsider.
-			booked = new Date(Date.now() + afterSeconds * 1000);
-			return {
-				content: [
-					{
-						type: "text",
-						text:
-							`You will be woken at ${booked.toISOString()} with: ${note}\n` +
-							"The wait starts when this turn ends. Finish what you are saying and stop.",
-					},
-				],
-				details: {},
-			};
+			const asked = appointment.book(afterSeconds, note, request);
+			return { content: [{ type: "text", text: asked.text }], details: {} };
 		},
 	});
 
@@ -128,14 +84,8 @@ export default function (pi: ExtensionAPI): void {
 		],
 		parameters: Type.Object({}),
 		async execute() {
-			request({ cancel: true });
-			// Which leaves the turn free to book one again, and is the way to change one's mind about
-			// when: dropping the appointment is what makes asking a second time mean something.
-			booked = undefined;
-			return {
-				content: [{ type: "text", text: "Your wakeup is cancelled. Nothing will wake you." }],
-				details: {},
-			};
+			const asked = appointment.cancel(request);
+			return { content: [{ type: "text", text: asked.text }], details: {} };
 		},
 	});
 }
