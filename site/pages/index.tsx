@@ -150,11 +150,7 @@ export default function Home() {
 			<section className="hero">
 				<div className="wrap">
 					<h1>agent-dive</h1>
-					<p className="lede">
-						Run AI agents on a server of your own. Give one a standing job — watch a repo, track a
-						rival, fix a check that broke — and it wakes on its own to do it, then writes back to
-						tell you how it went.
-					</p>
+					<p className="lede">{TAGLINE}</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump jump-lead">
 							self-host it →
@@ -164,7 +160,7 @@ export default function Home() {
 						</Link>
 					</div>
 					<div className="hero-meta">
-						<span>Stays up without you</span>
+						<span>On a server of your own</span>
 						<span>Wakes on its own</span>
 						<span>Writes back on Telegram</span>
 					</div>

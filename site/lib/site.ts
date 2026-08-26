@@ -19,5 +19,8 @@ export const PACKAGE = "agent-dive";
 export const PI = "https://github.com/earendil-works/pi";
 
 export const TITLE = "agent-dive";
+
+// The hero reads this and so does the meta description, because a page that describes itself one way
+// to a reader and another way to a search result is describing two different projects.
 export const TAGLINE =
-	"Run AI agents on a server of your own. Give one a standing job — watch a repo, track a rival, fix a check that broke — and it wakes on its own to do it, then writes back to tell you how it went.";
+	"Cloud agents that keep working while you sleep. Give one a standing job — watch a repo, track a rival, fix a check that broke — and it wakes on its own to do it, then writes back to tell you how it went.";
