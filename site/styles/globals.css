@@ -244,47 +244,6 @@ code {
 	color: var(--line);
 }
 
-/* ---------- the install, on the front page ---------- */
-
-/* The same measure as the lede above it. Two paragraphs in one block ending in different places is
-   the whole reason the hero read as crooked; the command box is squared to it for the same reason. */
-.start {
-	max-width: 38rem;
-	margin: 1.9rem 0 0;
-}
-
-.start-cmd {
-	display: flex;
-	align-items: center;
-	gap: 1rem;
-	padding: 0.55rem 0.85rem;
-	background: var(--bg-code);
-	border: 1px solid var(--line);
-	border-radius: 7px;
-}
-
-.start-cmd pre {
-	flex: 1;
-	margin: 0;
-	font-family: var(--mono);
-	font-size: 0.95rem;
-	line-height: 1.4;
-	color: var(--text-strong);
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-}
-
-.start-cmd .prompt {
-	color: var(--green);
-}
-
-.start-then {
-	margin: 0.75rem 0 0;
-	font-size: 0.95rem;
-	line-height: 1.65;
-	color: var(--text);
-}
-
 /* ---------- code blocks ---------- */
 
 .code {
@@ -360,17 +319,8 @@ code {
 	border-color: var(--green);
 }
 
-/* Inside the hero box, a bordered button would be a box drawn inside a box. */
-.start-cmd .copy {
-	padding: 0;
-	font-family: var(--mono);
-	font-size: 0.74rem;
-	border: 0;
-}
-
 /* The prompt line of a shell block, so the command reads as something typed. */
-.code .prompt,
-.start-cmd .prompt {
+.code .prompt {
 	color: var(--green);
 	user-select: none;
 }

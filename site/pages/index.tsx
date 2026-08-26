@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Console } from "../components/Console";
 import { Feed, type FeedRow } from "../components/Feed";
-import { Install } from "../components/Install";
 import { Layout } from "../components/Layout";
 import { PI, REPO, TAGLINE } from "../lib/site";
 
@@ -155,7 +154,6 @@ export default function Home() {
 						Self-hosted cloud agents. A container that stays running, wakes when something happens,
 						and reaches the world only through credentials it never sees.
 					</p>
-					<Install />
 					<div className="jump-row">
 						<Link href="/install" className="jump jump-lead">
 							self-host it →
