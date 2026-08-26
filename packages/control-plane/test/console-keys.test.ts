@@ -34,6 +34,12 @@ const DOWN = "[B";
 const UP = "[A";
 const RIGHT = "\u001b[C";
 const LEFT = "\u001b[D";
+/** Next and previous agent. Chords, because the bare arrows belong to the line being typed. */
+const NEXT = "\u000e";
+const PREVIOUS = "\u0010";
+/** The same move said the way a hand reaches for it, which not every terminal sends. */
+const CTRL_DOWN = "\u001b[1;5B";
+const CTRL_UP = "\u001b[1;5A";
 const ENTER = "\r";
 const TAB = "\t";
 /** What the key marked backspace actually sends, which is what the delete key sends too. */
@@ -201,18 +207,53 @@ describe("the console, pressed at", () => {
 		}
 	});
 
-	// The whole of the feature in one press: the arrow that moves between agents is the arrow that
-	// arrives at making one, and there is nothing else to know to get there.
-	it("reaches that row from the last agent with the same arrow that moves between them", async () => {
+	// The whole of the feature in one chord: what moves between agents is what arrives at making one,
+	// and there is nothing else to know to get there.
+	it("reaches that row from the last agent with the chord that moves between them", async () => {
 		const { client, asked } = plane();
 		const console_ = open(client, [listed("demo"), listed("maxi")]);
 		try {
-			await console_.press(RIGHT, RIGHT);
+			// One at a time: two of these written together arrive as one chunk, which is a paste.
+			await console_.press(NEXT);
+			await console_.press(NEXT);
 			expect(console_.screen()).toContain("new agent   chat");
 
 			await console_.press("scout", ENTER);
 
 			expect(asked).toEqual(["scout"]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	/**
+	 * The same move on the chord a hand actually reaches for, which is up and down with control held.
+	 * Kept beside the letters rather than instead of them: whether this sequence arrives at all is the
+	 * terminal's decision, and the footer names the pair that always does.
+	 */
+	it("reaches it with a modified arrow too, where the terminal sends one", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(CTRL_DOWN);
+			expect(console_.screen()).toContain("new agent   chat");
+
+			await console_.press(CTRL_UP);
+
+			expect(console_.screen()).toContain("demo   chat");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** They belong to the line being typed now, and a line with no cursor has nowhere to go. */
+	it("leaves the agents where they are on a bare left or right", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(RIGHT, RIGHT, LEFT);
+
+			expect(console_.screen()).toContain("demo   chat");
 		} finally {
 			console_.close();
 		}
@@ -259,7 +300,7 @@ describe("the console, pressed at", () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(RIGHT);
+			await console_.press(NEXT);
 			await console_.press("!ls");
 			expect(console_.screen()).toContain("+ !ls");
 
@@ -352,10 +393,10 @@ describe("the console, pressed at", () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
-			await console_.press(RIGHT);
+			await console_.press(NEXT);
 			expect(console_.screen()).toContain("new agent   chat");
 
-			await console_.press(LEFT);
+			await console_.press(PREVIOUS);
 
 			expect(console_.screen()).toContain("demo   chat");
 			expect(console_.screen()).toContain("! shell");

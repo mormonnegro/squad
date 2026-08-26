@@ -300,6 +300,30 @@ export function filled(line: string, options: readonly string[]): Filled {
 	return { draft: `${head}${quoted(agreed(options))}`, options };
 }
 
+/**
+ * Which agent a press in the column landed on, or nothing when it landed on no row at all.
+ *
+ * The column stands in the top left corner of the screen and keeps its width, so where its rows are
+ * is arithmetic and not a measurement: a row of border, the title, the air over the list when there
+ * is room for it, then the agents, then the row that makes one. One past the last agent is that row,
+ * which is the same number the arrows reach it by.
+ */
+export function picked(at: At, shape: { agents: number; rows: number }): number | undefined {
+	if (at.column < 1 || at.column > AGENTS_WIDTH) return undefined;
+	// Read off `Agents`, which gives up the air the moment the column is too short to spare it.
+	const spaced = shape.agents + 3 <= shape.rows;
+	const shown = spaced ? shape.agents : Math.max(0, shape.rows - 1);
+	const row = at.row - 1 - (spaced ? 3 : 2);
+	if (row >= 0 && row < shown) return row;
+	if (shape.rows > 0 && row === shown + (spaced ? 1 : 0)) return shape.agents;
+	return undefined;
+}
+
+/** One row along the agents, stopping at the ends. One past the last is the row that makes one. */
+export function nudge(cursor: number, by: 1 | -1, agents: number): number {
+	return Math.min(Math.max(0, cursor + by), agents);
+}
+
 function without<T>(map: ReadonlyMap<string, T>, key: string): ReadonlyMap<string, T> {
 	const next = new Map(map);
 	next.delete(key);
@@ -2069,6 +2093,18 @@ export function App({
 					continue;
 				}
 				if (move.did === "down") {
+					// A press in the agents column is that agent chosen, which is what a list on the left of
+					// a screen invites and what the keyboard needs a chord for. Answered on the way down
+					// rather than on the way up, the way a row of a list answers everywhere else — and it
+					// starts no drag, since the column has no text anybody wants on a clipboard.
+					const row =
+						panel === "setup" ? undefined : picked(move.at, { agents: agents.length, rows: body });
+					if (row !== undefined) {
+						setCursor(row);
+						setHeld(undefined);
+						setCopy(undefined);
+						continue;
+					}
 					pressed.current = move.at;
 					setHeld(undefined);
 					setCopy(undefined);
@@ -2242,6 +2278,21 @@ export function App({
 			scroll(0, input === "u" ? -0.5 : 0.5);
 			return;
 		}
+		// The agents, on a chord rather than on the bare arrows: those belong to the line being typed,
+		// the way they do at every prompt. Two chords for the one move, and both on purpose. The
+		// modified arrow is the gesture — it is up and down, which is what a column is — but whether it
+		// arrives at all is the terminal's decision, and there are terminals that swallow it. So the
+		// letters are there too and they are what the footer names, since a hint for a key that this
+		// terminal never delivers is a hint that lies.
+		if (key.ctrl && (input === "p" || input === "n")) {
+			if (panel !== "setup")
+				setCursor((prev) => nudge(prev, input === "p" ? -1 : 1, agents.length));
+			return;
+		}
+		if (key.ctrl && (key.upArrow || key.downArrow)) {
+			if (panel !== "setup") setCursor((prev) => nudge(prev, key.upArrow ? -1 : 1, agents.length));
+			return;
+		}
 		if (key.pageUp) {
 			scroll(0, -1);
 			return;
@@ -2289,13 +2340,7 @@ export function App({
 			else step(-1);
 			return;
 		}
-		if (key.leftArrow || key.rightArrow) {
-			if (panel === "setup") return;
-			// One past the last agent, which is the row that makes one.
-			if (key.rightArrow) setCursor((prev) => Math.min(agents.length, prev + 1));
-			else setCursor((prev) => Math.max(0, prev - 1));
-			return;
-		}
+		if (key.leftArrow || key.rightArrow) return;
 		if (panel === "setup") {
 			// Everything this screen does is about the row the arrows are standing on, which is why there
 			// is nothing here to type into until one of these is pressed.
@@ -2622,12 +2667,12 @@ export function App({
 										? // Nothing else the row usually offers is true here: there is no conversation to
 											// scroll, no shell to open and no commands, until the name has been given.
 											[
-												["←→", "agent"],
+												["^N^P", "agent"],
 												["⏎", "create"],
 												["^C", "quit"],
 											]
 										: [
-												["←→", "agent"],
+												["^N^P", "agent"],
 												["^U^D", "scroll"],
 												// Only while there is a line to walk back to: up and down do nothing in a
 												// conversation nobody has typed into yet, and a hint for a key that does nothing

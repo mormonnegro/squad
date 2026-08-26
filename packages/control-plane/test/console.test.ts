@@ -18,6 +18,8 @@ import {
 	laid,
 	mouse,
 	New,
+	nudge,
+	picked,
 	plain,
 	pointed,
 	quoted,
@@ -428,6 +430,59 @@ describe("typed", () => {
 		expect(
 			typed([said("operator", "/model"), said("operator", "hola"), said("operator", "/model")]),
 		).toEqual(["/model", "hola", "/model"]);
+	});
+});
+
+/**
+ * The column read back from a press, since the keyboard reaches it by a chord.
+ *
+ * The bare arrows belong to the line being typed, so moving between agents costs `^N` or `^P` — and
+ * a list sitting in the left of the screen is a list a hand goes to point at. Rows counted rather
+ * than measured: the column stands in the corner and keeps its width.
+ */
+describe("picked", () => {
+	const shape = { agents: 2, rows: 20 };
+
+	it("gives the agent whose row was pressed", () => {
+		expect(picked({ row: 4, column: 4 }, shape)).toBe(0);
+		expect(picked({ row: 5, column: 4 }, shape)).toBe(1);
+	});
+
+	it("gives the row that makes one, which is the number past the last", () => {
+		expect(picked({ row: 7, column: 4 }, shape)).toBe(2);
+	});
+
+	it("gives nothing for the title, the air, or a row with nothing on it", () => {
+		expect(picked({ row: 2, column: 4 }, shape)).toBeUndefined();
+		expect(picked({ row: 3, column: 4 }, shape)).toBeUndefined();
+		expect(picked({ row: 6, column: 4 }, shape)).toBeUndefined();
+		expect(picked({ row: 12, column: 4 }, shape)).toBeUndefined();
+	});
+
+	it("gives nothing for a press in the panel beside it", () => {
+		expect(picked({ row: 4, column: 40 }, shape)).toBeUndefined();
+	});
+
+	/** The column gives up its air before it gives up an agent, and the rows move up with it. */
+	it("follows the list when the column is too short for air", () => {
+		const tight = { agents: 3, rows: 5 };
+
+		expect(picked({ row: 3, column: 4 }, tight)).toBe(0);
+		expect(picked({ row: 5, column: 4 }, tight)).toBe(2);
+		expect(picked({ row: 6, column: 4 }, tight)).toBe(3);
+	});
+});
+
+describe("nudge", () => {
+	it("moves one row, and stops at the top", () => {
+		expect(nudge(1, -1, 3)).toBe(0);
+		expect(nudge(0, -1, 3)).toBe(0);
+	});
+
+	/** One past the last agent is the row that makes one, so it is where down stops rather than past. */
+	it("stops on the row that makes an agent", () => {
+		expect(nudge(2, 1, 3)).toBe(3);
+		expect(nudge(3, 1, 3)).toBe(3);
 	});
 });
 

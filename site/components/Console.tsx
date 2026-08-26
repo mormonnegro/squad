@@ -269,7 +269,7 @@ export function Console() {
 			};
 
 	const keys: [string, string][] = [
-		["←→", "agent"],
+		["^N^P", "agent"],
 		["^U^D", "scroll"],
 		["↑↓", "history"],
 		["tab", "logs"],

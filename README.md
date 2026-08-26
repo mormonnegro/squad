@@ -205,7 +205,7 @@ asking to see the thing, not to be told a fact about it:
 │                      ││ │ >                                                          │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ←→ agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
+ ^N^P agent   ^U^D scroll   tab logs   / commands   ! shell   ^C quit
 ```
 
 The column on the left is every agent the plane has, `●` up, `○` stopped, `◐` mid-turn — thinking
@@ -213,9 +213,14 @@ gets a mark of its own because with several agents on screen it is the one thing
 out by asking again in a second. The one the keyboard is on is its name in the colour the panel
 title gives the same name, and not an arrow in a gutter beside the marks: a column whose header
 stands against the border and whose rows all begin two further in reads as a list indented under a
-title it does not belong to. `←→` moves between them and `tab` cycles the panel through that
-agent's conversation, the log feed — the same feed `agent logs` prints, running the whole time
-either way — and the setup screen, which is about the plane rather than about the agent behind it.
+title it does not belong to. `^N` and `^P` move between them — or a click on the row, or `^↑` and
+`^↓` where the terminal sends them — and `tab` cycles the panel through that agent's conversation,
+the log feed — the same feed `agent logs` prints, running the whole time either way — and the setup
+screen, which is about the plane rather than about the agent behind it. The move is a chord and not
+the bare arrows because the bare arrows are the line being typed: up and down walk back through what
+was sent, the way they do in every other prompt, and a column of agents is not worth taking that
+from the row a hand is actually on. `^N` and `^P` are what the footer names because a terminal is
+free not to send `^↑` at all, and a key the footer promises has to arrive.
 While that agent is thinking, the row under the conversation carries the spinner, the seconds and
 whatever the turn is on: a spinner alone says something is happening, the number rising beside it
 says whether it still is, and the tool being run is the difference between stuck on the model and
@@ -230,7 +235,7 @@ then it drops into the conversation under the answer it was waiting on, and the 
 begins. Put into the conversation the moment it was sent, it would have sat above an answer written
 before it existed, and the pane would read as if that answer were the reply to it.
 
-Under the last agent is the row that makes one, reached with the same `←→` as any of them. It is a
+Under the last agent is the row that makes one, reached with the same `^N` as any of them. It is a
 row rather than a command because that is where somebody who wants an agent is already looking —
 with none at all it is the only row there is, and the console opens on it. The panel behind it takes
 a name and `⏎` builds it: a container, a repository of its own, nothing in its memory, and exactly
@@ -253,10 +258,10 @@ operator's config file. As the terminal narrows the model goes first, then the c
 money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fact half said.
 
 `↑` and `↓` walk back through the lines you have typed at this agent, which is what those two keys
-do at every other prompt there has ever been. That is what moved the agents onto `←` and `→`: this
-prompt takes no cursor, so there was no line to walk along sideways and the arrows were doing
-nothing there. The half-written line you were on when the walk began comes back whole at the end of
-it, so a stray arrow costs you nothing. Each agent's history is its own, and it survives the console
+do at every other prompt there has ever been. That is what moved the agents onto a chord: a prompt
+whose arrows do something else than a prompt's arrows do is a prompt you have to learn, and there
+was nothing about a column of names worth that. The half-written line you were on when the walk
+began comes back whole at the end of it, so a stray arrow costs you nothing. Each agent's history is its own, and it survives the console
 being closed, because the lines are read out of the conversation the plane kept.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
