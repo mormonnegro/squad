@@ -12,12 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @earendil-works/pi-coding-agent@0.84.2 && npm cache clean --force
 
 # The node image already owns uid 1000. Replace it so the sandbox user is named and homed
-# predictably, and pre-create /home/agent/.self owned by that user: Docker seeds an empty named
+# predictably, and pre-create the two mount points owned by that user: Docker seeds an empty named
 # volume from the image's mount point, and without this a non-root agent cannot write its own
-# repository on first boot.
+# repository or anything it builds on first boot.
 RUN userdel -r node \
     && useradd --uid 1000 --user-group --create-home --home-dir /home/agent --shell /bin/bash agent \
-    && mkdir -p /etc/agent-dive /home/agent/.self /home/agent/.run \
+    && mkdir -p /etc/agent-dive /home/agent/.self /home/agent/.run /home/agent/workspace \
     && chown -R agent:agent /home/agent
 
 COPY relay.mjs /usr/local/lib/agent-dive/relay.mjs

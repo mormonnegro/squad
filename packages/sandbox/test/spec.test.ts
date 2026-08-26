@@ -6,6 +6,7 @@ import {
 	buildNetworkConfig,
 	CA_CERT_PATH,
 	containerName,
+	SANDBOX_WORKSPACE_PATH,
 	type SandboxSpec,
 } from "../src/spec.ts";
 
@@ -13,6 +14,7 @@ const spec: SandboxSpec = {
 	agentId: "emma",
 	image: "agent-dive/sandbox:latest",
 	volumeName: "agent-dive-emma-self",
+	workspaceVolumeName: "agent-dive-emma-work",
 	networkName: "agent-dive-egress",
 	proxyUrl: "http://emma:tok@egress:8080",
 	caCertHostPath: "/host/pki/ca.crt",
@@ -71,6 +73,15 @@ describe("mounts", () => {
 		expect(binds).toContain(`agent-dive-emma-self:${SANDBOX_REPO_PATH}`);
 	});
 
+	/**
+	 * On a volume rather than in the container, because a container is thrown away and rebuilt every
+	 * time the image changes. What the agent built would go with it, and a place work evaporates from
+	 * is a place nobody would put work.
+	 */
+	it("mounts the workspace volume beside it, so what the agent builds outlives the container", () => {
+		expect(binds).toContain(`agent-dive-emma-work:${SANDBOX_WORKSPACE_PATH}`);
+	});
+
 	it("mounts the proxy CA read-only", () => {
 		expect(binds).toContain(`/host/pki/ca.crt:${CA_CERT_PATH}:ro`);
 	});
@@ -105,6 +116,11 @@ describe("environment", () => {
 	it("exposes the repo path to the agent", () => {
 		expect(env.get("AGENT_DIVE_REPO")).toBe(SANDBOX_REPO_PATH);
 		expect(env.get("AGENT_DIVE_AGENT_ID")).toBe("emma");
+	});
+
+	/** So a script the agent writes can name the place without hard-coding somebody's home directory. */
+	it("exposes the workspace path too", () => {
+		expect(env.get("AGENT_DIVE_WORKSPACE")).toBe(SANDBOX_WORKSPACE_PATH);
 	});
 
 	it("lets callers add variables but not override containment", () => {

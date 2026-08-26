@@ -41,9 +41,16 @@ memory/      what it chose to remember, partitioned by users, projects and refer
 tools/       scripts it wrote for itself
 ```
 
-It is scaffolded once, git-initialised, and then left alone: turns run inside it, so what the agent
-learns and what it can do are files it edits and commits itself. The control plane never writes
-there again, because the second write would be the control plane overwriting the agent's own work.
+It is scaffolded once, git-initialised, and then left alone: what the agent learns and what it can do
+are files it edits and commits itself. The control plane never writes there again, because the second
+write would be the control plane overwriting the agent's own work.
+
+That repository is the agent, not its desk. Turns start next door, in a second volume at
+`/home/agent/workspace`, and the house rule goes in as argv on every turn: one directory per project,
+nothing loose at the top, and tidy what you find untidy rather than leaving it. It is said by the
+plane rather than written into `soul.md` because the agent may rewrite its soul, and a rule the
+subject can edit is not a rule. Both volumes outlive the container, which is replaced every time the
+image changes.
 
 Nothing in that repository grants anything. `agent.yaml` lists capability *requests*, and an
 operator answers them in the config file the agent cannot reach.

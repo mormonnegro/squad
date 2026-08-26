@@ -18,6 +18,7 @@ export {
 	type SandboxStatus,
 	SandboxTimeoutError,
 	volumeName,
+	workspaceVolumeName,
 } from "./sandbox.ts";
 export {
 	buildContainerConfig,
@@ -38,5 +39,6 @@ export {
 	SANDBOX_USER,
 	SANDBOX_WAKE_EXTENSION,
 	SANDBOX_WAKE_FILE,
+	SANDBOX_WORKSPACE_PATH,
 	type SandboxSpec,
 } from "./spec.ts";

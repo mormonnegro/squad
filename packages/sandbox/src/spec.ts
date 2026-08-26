@@ -5,6 +5,20 @@ export const CA_CERT_PATH = "/etc/agent-dive/ca.crt";
 
 export const SANDBOX_HOME = "/home/agent";
 
+/**
+ * Where the agent puts the things it builds, on a volume of its own.
+ *
+ * Beside the repository rather than inside it, because the repository is the agent — its soul, its
+ * skills, what it chose to remember — and a to-do list app checked in among those is a change to who
+ * the agent is. An agent given nowhere else works where it is standing, and where it was standing
+ * was `.self`; this is somewhere else to stand.
+ *
+ * Its own volume rather than a directory under the home, because only a volume survives the
+ * container being replaced, and a container is replaced every time the image is rebuilt. Work that
+ * evaporates on the next `agent up` is work nobody would leave here.
+ */
+export const SANDBOX_WORKSPACE_PATH = `${SANDBOX_HOME}/workspace`;
+
 /** Non-root uid:gid the agent process runs as. Must match the sandbox image. */
 export const SANDBOX_USER = "1000:1000";
 
@@ -88,6 +102,8 @@ export interface SandboxSpec {
 	readonly image: string;
 	/** Named Docker volume holding the agent repository. Survives container replacement. */
 	readonly volumeName: string;
+	/** Named Docker volume holding what the agent builds. Survives container replacement too. */
+	readonly workspaceVolumeName: string;
 	/** Internal Docker network. Must have no route off-host except through the proxy. */
 	readonly networkName: string;
 	/** Reachable from inside the network, e.g. "http://agent-1:token@egress:8080". */
@@ -118,6 +134,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		HOME: SANDBOX_HOME,
 		AGENT_DIVE_AGENT_ID: spec.agentId,
 		AGENT_DIVE_REPO: SANDBOX_REPO_PATH,
+		AGENT_DIVE_WORKSPACE: SANDBOX_WORKSPACE_PATH,
 		AGENT_DIVE_WAKE_FILE: SANDBOX_WAKE_FILE,
 		AGENT_DIVE_MCP_FILE: SANDBOX_MCP_FILE,
 		AGENT_DIVE_SEARCH_FILE: SANDBOX_SEARCH_FILE,
@@ -162,6 +179,7 @@ export function buildContainerConfig(spec: SandboxSpec): ContainerConfig {
 		HostConfig: {
 			Binds: [
 				`${spec.volumeName}:${SANDBOX_REPO_PATH}`,
+				`${spec.workspaceVolumeName}:${SANDBOX_WORKSPACE_PATH}`,
 				`${spec.caCertHostPath}:${CA_CERT_PATH}:ro`,
 			],
 			NetworkMode: spec.networkName,

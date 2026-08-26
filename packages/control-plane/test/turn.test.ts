@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { NamedServer } from "../src/mcp.ts";
 import {
 	createTurnHandler,
+	HOUSE_RULES,
 	MOST_ASKED,
 	PiTurnRunner,
 	parseAsked,
@@ -137,6 +138,8 @@ describe("PiTurnRunner", () => {
 			"/home/agent/.self/.sessions",
 			"--append-system-prompt",
 			"/home/agent/.self/soul.md",
+			"--append-system-prompt",
+			HOUSE_RULES,
 			"--skill",
 			"/home/agent/.self/skills",
 			"--extension",
@@ -236,12 +239,32 @@ describe("PiTurnRunner", () => {
 		);
 	});
 
-	it("takes the turn inside the agent's repository, so memory is where it works", async () => {
+	/**
+	 * The bug: an agent asked for a to-do list built it in `.self`, among its soul and its skills,
+	 * because that was where it was standing. The soul, the skills and the session are all named by
+	 * absolute path on the command, so none of them needs the turn to start in the repository.
+	 */
+	it("takes the turn in the workspace, so what it builds is not built inside itself", async () => {
 		const sandbox = new StubSandbox();
 
 		await new PiTurnRunner({ sandbox }).run("a1", "hello");
 
-		expect(sandbox.calls[0]?.workingDir).toBe("/home/agent/.self");
+		expect(sandbox.calls[0]?.workingDir).toBe("/home/agent/workspace");
+	});
+
+	// Every turn and not only the first, because tidiness is a habit; and from the plane rather than
+	// from `soul.md`, because a rule the agent can rewrite is not a rule.
+	it("says the house rule on every turn, where the agent cannot edit it", async () => {
+		const sandbox = new StubSandbox();
+		const runner = new PiTurnRunner({ sandbox });
+
+		await runner.run("a1", "hello");
+		await runner.run("a1", "again");
+
+		const turns = sandbox.calls.filter((call) => call.cmd[0] === "pi");
+		expect(turns).toHaveLength(2);
+		for (const turn of turns) expect(turn.cmd).toContain(HOUSE_RULES);
+		expect(HOUSE_RULES).toContain("/home/agent/workspace");
 	});
 
 	it("keeps every wakeup in one session per agent", () => {

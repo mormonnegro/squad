@@ -63,6 +63,17 @@ export function volumeName(agentId: string): string {
 	return `agent-dive-${agentId}-self`;
 }
 
+/**
+ * The other durable thing an agent has: everything it has built.
+ *
+ * Two volumes and not one because they are discarded together but read apart — an operator looking
+ * at what an agent made should not have to walk past its memory to find it, and a project checked
+ * into the repository would arrive in the diff of who the agent is.
+ */
+export function workspaceVolumeName(agentId: string): string {
+	return `agent-dive-${agentId}-work`;
+}
+
 /** Docker reports the environment as `NAME=value` strings, where the value may itself hold `=`. */
 function readEnv(env: readonly string[] | undefined, name: string): string | undefined {
 	const found = env?.find((entry) => entry.startsWith(`${name}=`));
@@ -112,12 +123,22 @@ export class DockerSandboxManager {
 		return name;
 	}
 
-	async create(spec: Omit<SandboxSpec, "volumeName" | "networkName">): Promise<string> {
+	async ensureWorkspaceVolume(agentId: string): Promise<string> {
+		const name = workspaceVolumeName(agentId);
+		await this.engine.request("POST", "/volumes/create", buildVolumeConfig(name, agentId));
+		return name;
+	}
+
+	async create(
+		spec: Omit<SandboxSpec, "volumeName" | "workspaceVolumeName" | "networkName">,
+	): Promise<string> {
 		await this.ensureNetwork();
 		const volume = await this.ensureVolume(spec.agentId);
+		const workspace = await this.ensureWorkspaceVolume(spec.agentId);
 		const config = buildContainerConfig({
 			...spec,
 			volumeName: volume,
+			workspaceVolumeName: workspace,
 			networkName: this.networkName,
 		});
 
@@ -334,7 +355,7 @@ export class DockerSandboxManager {
 		});
 	}
 
-	/** Removes the container. The volume is kept unless explicitly discarded, since it is the agent. */
+	/** Removes the container. The volumes are kept unless explicitly discarded, since they are the agent. */
 	async destroy(agentId: string, options: { discardState?: boolean } = {}): Promise<void> {
 		try {
 			await this.engine.request("DELETE", `/containers/${containerName(agentId)}?force=true`);
@@ -343,10 +364,14 @@ export class DockerSandboxManager {
 		}
 
 		if (options.discardState === true) {
-			try {
-				await this.engine.request("DELETE", `/volumes/${volumeName(agentId)}`);
-			} catch (error) {
-				if (!(error instanceof DockerError && error.status === 404)) throw error;
+			// Both, because discarding the agent and leaving its work behind would leave a volume nothing
+			// names: the next agent of that name adopts it and inherits a workspace it never built.
+			for (const volume of [volumeName(agentId), workspaceVolumeName(agentId)]) {
+				try {
+					await this.engine.request("DELETE", `/volumes/${volume}`);
+				} catch (error) {
+					if (!(error instanceof DockerError && error.status === 404)) throw error;
+				}
 			}
 		}
 	}

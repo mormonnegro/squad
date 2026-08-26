@@ -8,6 +8,7 @@ import {
 	SANDBOX_MCP_FILE,
 	SANDBOX_SEARCH_FILE,
 	SANDBOX_WAKE_FILE,
+	SANDBOX_WORKSPACE_PATH,
 } from "@agent-dive/sandbox";
 import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
@@ -151,6 +152,8 @@ export interface PiTurnRunnerOptions {
 	readonly sessionDir?: string;
 	/** The agent's own repository inside the sandbox: its soul, its skills, its memory. */
 	readonly repoPath?: string;
+	/** Where the agent works, and where a turn starts. Its projects, not itself. */
+	readonly workspacePath?: string;
 	readonly timeoutMs?: number;
 	readonly command?: readonly string[];
 	/** Called with each thing the agent does inside the sandbox, while it is still doing it. */
@@ -170,6 +173,31 @@ const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
 /**
+ * The house rule, said by the plane every turn rather than written into the agent.
+ *
+ * An agent asked for a to-do list built it in `.self`, which is where it was standing and the only
+ * place it had ever been told about. Being given somewhere to work is half the fix; the other half
+ * is that tidiness is a habit and a habit has to be said again, so this goes in as argv on every
+ * turn. Not into `soul.md`: that file is the agent's own and it may rewrite it, and a rule the
+ * subject can edit is not a rule. Not into the workspace either, for the same reason.
+ *
+ * Short on purpose. A paragraph of housekeeping in front of the actual question is a paragraph the
+ * model reads past.
+ */
+export const HOUSE_RULES = [
+	`Everything you build goes under ${SANDBOX_WORKSPACE_PATH}, one directory per project:`,
+	`${SANDBOX_WORKSPACE_PATH}/todo-list/index.html, never ${SANDBOX_WORKSPACE_PATH}/index.html.`,
+	"Make the directory before the first file, even when you think there will only be one.",
+	"",
+	`Nothing sits loose at the top of ${SANDBOX_WORKSPACE_PATH}. If you find something that does,`,
+	"put it where it belongs as part of whatever you are doing rather than leaving it for later,",
+	"and delete the scratch files you made to work something out once you have worked it out.",
+	"",
+	`${SANDBOX_REPO_PATH} is not a workspace. It is you — your soul, your skills, what you chose to`,
+	"remember. Go there to change yourself, never to park a project.",
+].join("\n");
+
+/**
  * Takes one turn by running pi non-interactively inside the agent's sandbox.
  *
  * pi 0.84.2 has no server to hold a session open, so each wakeup is a separate process. Passing a
@@ -181,6 +209,7 @@ export class PiTurnRunner {
 	readonly #model: ((agentId: string) => Promise<ModelChoice | undefined>) | undefined;
 	readonly #sessionDir: string;
 	readonly #repoPath: string;
+	readonly #workspacePath: string;
 	readonly #timeoutMs: number;
 	readonly #command: readonly string[];
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
@@ -198,6 +227,7 @@ export class PiTurnRunner {
 		this.#sandbox = options.sandbox;
 		this.#model = options.model;
 		this.#repoPath = options.repoPath ?? DEFAULT_REPO_PATH;
+		this.#workspacePath = options.workspacePath ?? SANDBOX_WORKSPACE_PATH;
 		this.#sessionDir = options.sessionDir ?? `${this.#repoPath}/.sessions`;
 		this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.#command = options.command ?? ["pi"];
@@ -233,6 +263,11 @@ export class PiTurnRunner {
 			this.#sessionDir,
 			"--append-system-prompt",
 			`${this.#repoPath}/${SOUL_FILE}`,
+			// After the soul rather than before it, because the soul is who the agent is and this is the
+			// house it lives in: an agent may rewrite the first and may not rewrite the second. pi takes
+			// this flag more than once, and takes text where the line above takes a path.
+			"--append-system-prompt",
+			HOUSE_RULES,
 			"--skill",
 			`${this.#repoPath}/${SKILLS_DIR}`,
 			// Named rather than discovered, for the same reason the skills are: discovery is gated on
@@ -309,10 +344,13 @@ export class PiTurnRunner {
 			await this.#putServers(agentId);
 			await this.#putSearch(agentId);
 			const thinksWith = await this.#model?.(agentId);
-			// In its own repository, so what it remembers and what it can do are where it works.
+			// In the workspace, because a turn works where it is standing and the repository is not a
+			// workspace: standing there is what had agents building projects inside their own soul. The
+			// soul, the skills and the session are named by absolute path above, so none of them needs
+			// this to be the repository — and the agent can still walk into it when it means to.
 			executed = await this.#sandbox.run(agentId, this.commandFor(agentId, thinksWith), prompt, {
 				timeoutMs: this.#timeoutMs,
-				workingDir: this.#repoPath,
+				workingDir: this.#workspacePath,
 				onStdout: (chunk) => output.push(chunk),
 				signal: stopping.signal,
 			});
