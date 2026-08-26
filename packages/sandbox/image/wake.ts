@@ -24,6 +24,16 @@ function request(asked: Record<string, unknown>): void {
 	writeFileSync(WAKE_FILE, `${JSON.stringify(asked)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
+/**
+ * When the turn already booked its wakeup, if it did. One pi process is one turn, so this is per-turn.
+ *
+ * The bug it exists to stop is an agent that reads "you will be woken at 09:41" as the waiting being
+ * over, and gets on with what it meant to do then — asks again, is told 09:42, gets on with that one
+ * too. An agent asked for a joke a minute told two hundred of them in a single turn that way, at a
+ * joke every three seconds, and the operator's only way to end it was to press stop.
+ */
+let booked: Date | undefined;
+
 export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "wake_me",
@@ -37,12 +47,16 @@ export default function (pi: ExtensionAPI): void {
 			"not about yourself: what you were doing, and what to do next. Anything that will not fit",
 			"belongs in a file in your memory, with the note saying which one.",
 			"",
-			"You have one wakeup, not a queue of them. Asking again moves it, and cancel_wake drops it.",
+			"The wait does not begin until this turn is over, and nothing is waited out inside a turn.",
+			"What you are asking for the time to do is work for the turn you are asking for, and not",
+			"for the rest of this one.",
+			"",
+			"You have one wakeup, not a queue of them, and a turn books it once. cancel_wake drops it.",
 		].join("\n"),
 		promptSnippet: "Ask for another turn later, with a note to yourself about what to continue",
 		promptGuidelines: [
 			"Use wake_me rather than ending a turn with a task abandoned, when the task is one that cannot be finished now.",
-			"wake_me holds a single wakeup: calling it again moves that one rather than adding another.",
+			"Book the wakeup once and then finish the turn. The wait starts when the turn ends, so asking again cannot bring the next turn any closer.",
 			"To stop being woken at all, use cancel_wake. Moving the wakeup far away only postpones it.",
 		],
 		parameters: Type.Object({
@@ -65,14 +79,30 @@ export default function (pi: ExtensionAPI): void {
 			if (note.trim().length === 0) {
 				throw new Error("A wakeup with no note wakes you knowing nothing. Say what to continue.");
 			}
+			// Refused rather than moved, because an agent asking twice in one turn is not changing its
+			// mind about when — it is waiting, here, for a turn that cannot start until it stops.
+			if (booked !== undefined) {
+				throw new Error(
+					`You have already asked, and you are being woken at ${booked.toISOString()}. There is` +
+						" one wakeup and it is booked. No time passes while this turn runs, so asking again" +
+						" cannot bring it closer: end the turn, and it will come.",
+				);
+			}
 
 			request({ afterSeconds, note });
 
 			// Said as a time rather than a count of seconds, because what the agent has to judge is
 			// whether that is soon enough, and it is about to go and not be able to reconsider.
-			const at = new Date(Date.now() + afterSeconds * 1000);
+			booked = new Date(Date.now() + afterSeconds * 1000);
 			return {
-				content: [{ type: "text", text: `You will be woken at ${at.toISOString()} with: ${note}` }],
+				content: [
+					{
+						type: "text",
+						text:
+							`You will be woken at ${booked.toISOString()} with: ${note}\n` +
+							"The wait starts when this turn ends. Finish what you are saying and stop.",
+					},
+				],
 				details: {},
 			};
 		},
@@ -99,6 +129,9 @@ export default function (pi: ExtensionAPI): void {
 		parameters: Type.Object({}),
 		async execute() {
 			request({ cancel: true });
+			// Which leaves the turn free to book one again, and is the way to change one's mind about
+			// when: dropping the appointment is what makes asking a second time mean something.
+			booked = undefined;
 			return {
 				content: [{ type: "text", text: "Your wakeup is cancelled. Nothing will wake you." }],
 				details: {},

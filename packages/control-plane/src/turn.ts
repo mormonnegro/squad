@@ -1,6 +1,6 @@
 import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
 import type { Reply } from "@agent-dive/channels";
-import type { WakeupHandler } from "@agent-dive/events";
+import { type AgentEvent, isOwnNote, type WakeupHandler } from "@agent-dive/events";
 import {
 	type ExecResult,
 	SANDBOX_CONSOLE_FILE,
@@ -477,9 +477,8 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		// a process that stops between the two should have kept the one the agent cannot ask for twice.
 		// With the channel it was booked on, because an agent asking to be woken is carrying on the
 		// conversation it is in the middle of: somebody who asked by mail for a joke every minute is
-		// owed the second joke where they asked for the first. The last thing said, of a burst that
-		// may have come from several places, is the one the agent was answering when it asked.
-		if (result.wake) await options.onWake?.(agentId, result.wake, events.at(-1)?.channel);
+		// owed the second joke where they asked for the first.
+		if (result.wake) await options.onWake?.(agentId, result.wake, answering(events));
 		// After the wake and before the reply, for both of their reasons: it is state rather than a
 		// courtesy, and what it changes is what the agent has — which whoever reads the reply is about
 		// to be told about.
@@ -496,4 +495,17 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 				.catch((error: Error) => options.onUndelivered?.(agentId, channel, error));
 		}
 	};
+}
+
+/**
+ * Which conversation a turn was having, for the next turn it books: whoever spoke to it, last first.
+ *
+ * A wakeup that comes due while somebody is writing is folded into the same turn, and the agent's own
+ * note is the one thing in a burst that is nobody talking. Taking the last event outright let the note
+ * win that tie, and losing it once loses it for good — every turn after that has only its own note to
+ * go by, and books another one exactly like it. A note is what is left when nothing else spoke, and by
+ * then it is already carrying the channel of the conversation it came from.
+ */
+function answering(events: readonly AgentEvent[]): string | undefined {
+	return (events.findLast((event) => !isOwnNote(event)) ?? events.at(-1))?.channel;
 }

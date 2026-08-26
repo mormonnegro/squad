@@ -625,6 +625,47 @@ describe("createTurnHandler", () => {
 		expect(booked).toEqual(["email:vos@example.com"]);
 	});
 
+	/**
+	 * The bug this exists to prevent, and it took a second try to find: a wakeup that came due while
+	 * the mail was being written landed last in the same burst, won the tie, and booked the next turn
+	 * to answer to nobody. From there it was permanent — every turn after it had only its own note in
+	 * front of it, and booked another one just like it.
+	 */
+	it("books on the conversation rather than on its own note, whichever came in last", async () => {
+		const booked: Array<string | undefined> = [];
+		const handler = createTurnHandler({
+			runner: {
+				run: async () => ({
+					...answered("dale"),
+					wake: { afterSeconds: 60, note: "el que sigue" },
+				}),
+			},
+			onWake: async (_id, _wake, answering) => {
+				booked.push(answering);
+			},
+		});
+		const ownNote = {
+			...wakeup("wake", "contá el que sigue"),
+			source: "schedule",
+			metadata: { createdBy: "agent" },
+		} as const;
+
+		await handler({
+			agentId: "a1",
+			events: [wakeup("email:vos@example.com", "un chiste por minuto"), ownNote],
+			prompt: "p",
+		});
+		// And a turn nobody spoke into keeps whatever channel its own note is already carrying, which
+		// is how a cycle stays where it began instead of drifting home after the first quiet minute.
+		await handler({
+			agentId: "a1",
+			events: [{ ...ownNote, channel: "email:vos@example.com" }],
+			prompt: "p",
+		});
+
+		expect(booked).toEqual(["email:vos@example.com", "email:vos@example.com"]);
+	});
+
 	it("keeps a taken turn when a channel cannot carry the reply", async () => {
 		// A hook without a reply URL is a legitimate one-way channel, and it used to be fatal: the
 		// send threw, the handler threw, the events were requeued, and the next attempt hit the same

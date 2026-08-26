@@ -766,7 +766,16 @@ arrives by mail like the first: the appointment carries the channel the turn tha
 answering, and so does the appointment that turn books after it. A wakeup used to answer to the
 agent itself, which is why the first joke arrived and the rest were written, paid for, and said to
 nobody. The console shows the turn either way — a pane reads a turn as it is written, rather than by
-way of a channel.
+way of a channel. A wakeup that comes due while somebody is writing is folded into the same turn,
+and there the conversation wins the tie: an agent that booked on its own note instead would have
+nothing but its own notes in front of it ever after, and would book the next one the same way.
+
+A turn books its wakeup once. The second ask in the same turn is refused, because it is not an agent
+changing its mind about when — it is an agent that read *you will be woken at 09:41* as the waiting
+being over and got on with what it meant to do then. One asked for a joke a minute told two hundred
+of them in a single turn that way, three seconds apart, and the only way to stop it was to press
+stop. Changing one's mind is `cancel_wake` and then asking again, which says out loud that the
+appointment is gone.
 
 Calling it off drops what the appointment has already produced as well as the appointment, because
 an appointment that has come due is no longer only an appointment. A ten-second wakeup fires while
