@@ -232,40 +232,43 @@ code {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.5rem 1.6rem;
-	margin-top: 2rem;
+	margin-top: 1.6rem;
 	font-family: var(--mono);
-	font-size: 0.8rem;
+	font-size: 0.78rem;
 	color: var(--muted);
 }
 
-.hero-meta span::before {
+/* Between the items and not before the first one, which would push the row off the left margin. */
+.hero-meta span + span::before {
 	content: "· ";
 	color: var(--line);
 }
 
 /* ---------- the install, on the front page ---------- */
 
+/* The same measure as the lede above it. Two paragraphs in one block ending in different places is
+   the whole reason the hero read as crooked; the command box is squared to it for the same reason. */
 .start {
-	margin: 2.1rem 0 1.2rem;
+	max-width: 38rem;
+	margin: 1.9rem 0 0;
 }
 
-/* No panel around it and no label above it. One line, at the size of the sentence it replaces. */
 .start-cmd {
 	display: flex;
 	align-items: center;
 	gap: 1rem;
-	padding: 1.1rem 1.2rem;
+	padding: 0.55rem 0.85rem;
 	background: var(--bg-code);
 	border: 1px solid var(--line);
-	border-radius: 8px;
+	border-radius: 7px;
 }
 
 .start-cmd pre {
 	flex: 1;
 	margin: 0;
 	font-family: var(--mono);
-	font-size: 1.35rem;
-	line-height: 1.3;
+	font-size: 0.95rem;
+	line-height: 1.4;
 	color: var(--text-strong);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
@@ -276,7 +279,7 @@ code {
 }
 
 .start-then {
-	margin: 0.95rem 0 0;
+	margin: 0.75rem 0 0;
 	font-size: 0.95rem;
 	line-height: 1.65;
 	color: var(--text);
@@ -355,6 +358,14 @@ code {
 .copy[data-done="true"] {
 	color: var(--green);
 	border-color: var(--green);
+}
+
+/* Inside the hero box, a bordered button would be a box drawn inside a box. */
+.start-cmd .copy {
+	padding: 0;
+	font-family: var(--mono);
+	font-size: 0.74rem;
+	border: 0;
 }
 
 /* The prompt line of a shell block, so the command reads as something typed. */
@@ -935,9 +946,9 @@ footer {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.5rem;
-	padding: 0.55rem 1rem;
+	padding: 0.45rem 0.85rem;
 	font-family: var(--mono);
-	font-size: 0.83rem;
+	font-size: 0.8rem;
 	color: var(--text-strong);
 	background: var(--bg-raised);
 	border: 1px solid var(--line);
@@ -958,6 +969,6 @@ footer {
 .jump-row {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.7rem;
-	margin-top: 1.8rem;
+	gap: 0.6rem;
+	margin-top: 1.6rem;
 }

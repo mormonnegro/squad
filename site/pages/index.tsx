@@ -152,19 +152,10 @@ export default function Home() {
 				<div className="wrap">
 					<h1>agent-dive</h1>
 					<p className="lede">
-						Self-hosted cloud agents. An agent here is a container that stays running, wakes up when
-						something happens, and reaches the outside world only through credentials it never sees.
-					</p>
-					<p className="muted">
-						It is a runtime, not a harness. The thinking is done by <a href={PI}>pi</a> — agent-dive
-						gives it a machine to live on, a way to be woken, and a boundary to work inside.
+						Self-hosted cloud agents. A container that stays running, wakes when something happens,
+						and reaches the world only through credentials it never sees.
 					</p>
 					<Install />
-					<p className="small muted">
-						It asks for no keys. Every one of them is given later on the setup screen, so the
-						install is never held up by a key you have to go and find. Nothing is published and
-						there is nothing to log into.
-					</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump jump-lead">
 							self-host it →
@@ -351,6 +342,10 @@ export default function Home() {
 				<div className="wrap">
 					<span className="eyebrow">The pieces</span>
 					<h2>Seven packages, no build step</h2>
+					<p>
+						It is a runtime, not a harness. The thinking is done by <a href={PI}>pi</a> — agent-dive
+						gives it a machine to live on, a way to be woken, and a boundary to work inside.
+					</p>
 					<table className="table">
 						<tbody>
 							{PIECES.map(([name, what]) => (

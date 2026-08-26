@@ -25,10 +25,8 @@ export function Install() {
 				</button>
 			</div>
 			<p className="start-then">
-				<strong>You run it on your own computer.</strong> It asks which machine the agents should
-				live on — any machine you have SSH to — installs itself there over that same connection, and
-				leaves <code>agent</code> here as the console for it. Two machines, one command, and nothing
-				to open on the far one.
+				Run it on your own computer. It installs on the machine you name, over the SSH you already
+				have to it, and leaves <code>agent</code> here as its console.
 			</p>
 		</div>
 	);
