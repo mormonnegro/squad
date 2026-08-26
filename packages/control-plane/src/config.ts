@@ -171,7 +171,7 @@ function parseModel(raw: unknown, index: number, issues: string[]): Model | unde
 
 	// The key is not looked for here, and its absence is not an error. Refusing to start over a
 	// variable nobody has exported yet would make the first run of this thing a configuration
-	// exercise, and there is somewhere better to say it: the setup screen marks the ones with no key
+	// exercise, and there is somewhere better to say it: the config screen marks the ones with no key
 	// behind them, in the place where the answer is to paste one in.
 	const resolved = resolveModel({
 		id,

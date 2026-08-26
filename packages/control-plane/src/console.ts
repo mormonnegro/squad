@@ -171,26 +171,28 @@ export function shown(said: Utterance, width: number): Said {
 	};
 }
 
-type Panel = "chat" | "logs" | "setup";
+type Panel = "chat" | "logs" | "config";
 
 /**
- * The two rows the column holds before the agents: the log feed and the setup screen.
+ * The two rows the column holds under the agents: the log feed and the config screen.
  *
  * They were panels of an agent, reached by tabbing inside one, and neither is about an agent. The
- * feed is the plane's — one stream, every agent in it — and the setup screen is the plane's keys and
+ * feed is the plane's — one stream, every agent in it — and the config screen is the plane's keys and
  * the plane's models. Sitting behind `demo` they read as `demo`'s, and to get at them you had to
  * pick an agent first and then ignore which one you had picked.
  *
- * So the column is the whole of what this console can show, top to bottom, and one key walks it.
+ * So the column is the whole of what this console can show, top to bottom, and one key walks it. The
+ * agents come first because they are what somebody opens this for; the plane's two rows sit at the
+ * foot, where the things you set once and then leave alone belong.
  */
 export const PLANE_ROWS = 2;
 
-/** Which panel the column's row opens. Everything from the agents down is a conversation. */
-export function panelAt(spot: number): Panel {
-	return spot === 0 ? "logs" : spot === 1 ? "setup" : "chat";
+/** Which panel the column's row opens. Everything down to the row that makes an agent is a chat. */
+export function panelAt(spot: number, agents: number): Panel {
+	return spot <= agents ? "chat" : spot === agents + 1 ? "logs" : "config";
 }
 
-/** The next row down, or up. It wraps, so the plane's two rows are one key past the last agent. */
+/** The next row down, or up. It wraps, so the first agent is one key past the config screen. */
 export function walked(spot: number, by: 1 | -1, agents: number): number {
 	const rows = agents + PLANE_ROWS + 1;
 	return (((spot + by) % rows) + rows) % rows;
@@ -199,9 +201,8 @@ export function walked(spot: number, by: 1 | -1, agents: number): number {
 /** What tab is about to open, for the row that says what tab does. */
 export function nextRow(spot: number, agents: readonly { readonly id: string }[]): string {
 	const next = walked(spot, 1, agents.length);
-	if (next === 0) return "logs";
-	if (next === 1) return "setup";
-	return clipped(agents[next - PLANE_ROWS]?.id ?? "new agent", 12);
+	if (next < agents.length) return clipped(agents[next]?.id ?? "", 12);
+	return next === agents.length ? "new agent" : next === agents.length + 1 ? "logs" : "config";
 }
 
 export type Talk = ReadonlyMap<string, readonly Said[]>;
@@ -330,20 +331,25 @@ export function filled(line: string, options: readonly string[]): Filled {
  * Which row of the column a press landed on, or nothing when it landed between them.
  *
  * The column stands in the top left corner of the screen and keeps its width, so where its rows are
- * is arithmetic and not a measurement: a row of border, the plane's two, the air over the list when
- * there is room for it, the header, the agents, then the row that makes one. The number this answers
+ * is arithmetic and not a measurement: a row of border, the header, the air over the list when there
+ * is room for it, the agents, the row that makes one, then the plane's two. The number this answers
  * with is the number tab reaches the same row by.
  */
 export function picked(at: At, shape: { agents: number; rows: number }): number | undefined {
 	if (at.column < 1 || at.column > AGENTS_WIDTH || shape.rows <= 0) return undefined;
 	// Read off `Column`, which gives up the air the moment it is too short to spare it.
-	const spaced = shape.agents + 8 <= shape.rows;
-	const row = at.row - 2;
-	if (row === 0 || row === 1) return row;
-	const shown = spaced ? shape.agents : Math.max(0, shape.rows - 4);
-	const index = row - (spaced ? 5 : 3);
-	if (index >= 0 && index < shown) return index + PLANE_ROWS;
-	if (index === shown + (spaced ? 1 : 0)) return shape.agents + PLANE_ROWS;
+	const budget = shape.rows - 2;
+	const spaced = shape.agents + 8 <= budget;
+	const head = spaced || budget >= 5;
+	const shown = spaced ? shape.agents : Math.max(0, budget - 3 - (head ? 1 : 0));
+	const row = at.row - 2 - (head ? 1 : 0) - (spaced ? 1 : 0);
+	if (row >= 0 && row < shown) return row;
+	// What follows the list: the blank under it when there is one, the row that makes an agent, the
+	// blank that sets the plane's rows apart, then those two.
+	const after = row - shown - (spaced ? 1 : 0);
+	if (after === 0) return shape.agents;
+	if (after === (spaced ? 2 : 1)) return shape.agents + 1;
+	if (after === (spaced ? 3 : 2)) return shape.agents + 2;
 	return undefined;
 }
 
@@ -795,21 +801,27 @@ export function Column({
 	rows,
 }: {
 	readonly agents: readonly AgentSummary[];
-	/** Which row of the whole column the keyboard is on, the plane's two counted first. */
+	/** Which row of the whole column the keyboard is on, counted from the first agent. */
 	readonly spot: number;
 	/** Each agent mid-turn, against when its turn started. The column only asks whether. */
 	readonly busy: ReadonlyMap<string, number>;
 	readonly rows: number;
 }): ReactElement {
-	const cursor = spot - PLANE_ROWS;
+	const cursor = spot;
 	// The row under the last agent, which tab reaches with the same press as any other.
 	const making = cursor === agents.length;
 	// A blank over the list and another under it, which is what makes the header a header and the
 	// last row a thing of its own rather than a fourth agent. Given up the moment the column is short
-	// enough that a gap would cost it an agent: air is what a list has when it has room for it.
-	const spaced = agents.length + 8 <= rows;
+	// enough that a gap would cost it an agent: air is what a list has when it has room for it. The
+	// word `agents` goes next, once there is not even room for one under it.
+	//
+	// The two borders are rows and count against this — they did not, and a column a row or two too
+	// tall for its box came out with lines written over each other rather than merely cut short.
+	const budget = rows - 2;
+	const spaced = agents.length + 8 <= budget;
+	const head = spaced || budget >= 5;
 	const listed = agents
-		.slice(0, spaced ? agents.length : Math.max(0, rows - 4))
+		.slice(0, spaced ? agents.length : Math.max(0, budget - 3 - (head ? 1 : 0)))
 		.map((agent, index) => {
 			// Thinking is worth a different mark from merely being up: with several agents on screen it
 			// is the one thing you cannot find out by asking again in a second.
@@ -843,13 +855,7 @@ export function Column({
 			borderColor: "gray",
 			paddingX: 1,
 		},
-		// The plane's own rows, first because they are what this console is before it is any one
-		// agent, and drawn like the agents rather than like a title: they are pressed at, and a row
-		// that is pressed at wears the colour that says the keyboard is on it.
-		h(Text, { key: "logs", ...pointed(spot === 0, true) }, "logs"),
-		h(Text, { key: "setup", ...pointed(spot === 1, true) }, "setup"),
-		spaced ? h(Text, { key: "gap" }, " ") : undefined,
-		h(Text, { dimColor: true, key: "title" }, "agents"),
+		head ? h(Text, { dimColor: true, key: "title" }, "agents") : undefined,
 		spaced ? h(Text, { key: "over" }, " ") : undefined,
 		...listed,
 		spaced ? h(Text, { key: "under" }, " ") : undefined,
@@ -866,6 +872,13 @@ export function Column({
 					h(Text, { color: "green" }, "+"),
 					h(Text, pointed(making, false), " new agent"),
 				),
+		// The plane's own rows, under the agents because that is the order somebody uses them in: you
+		// come here to talk to an agent, and you go to the feed or the keys when something is wrong or
+		// once, at the start. Drawn like the agents rather than like a title — they are pressed at, and
+		// a row that is pressed at wears the colour that says the keyboard is on it.
+		spaced ? h(Text, { key: "gap" }, " ") : undefined,
+		h(Text, { key: "logs", ...pointed(cursor === agents.length + 1, true) }, "logs"),
+		h(Text, { key: "config", ...pointed(cursor === agents.length + 2, true) }, "config"),
 		// A list nothing points at does not say how to walk it. The row at the bottom of the screen
 		// says where tab goes next, which only answers the question of somebody who already knows to
 		// press it; this says what to press, inside the thing it is about. On the bottom border rather
@@ -1206,8 +1219,8 @@ const KEYS = [
 	"Both lists are this plane's own, kept beside deploy/config.yaml rather than in it: what that file declares is read here and changed only there. Everything given here holds from the next turn — nothing restarts.",
 ];
 
-/** A row on the setup screen: a key to fill in, a model, or the row that adds one. */
-export type SetupRow =
+/** A row on the config screen: a key to fill in, a model, or the row that adds one. */
+export type ConfigRow =
 	| { readonly kind: "provider"; readonly provider: ProviderStanding }
 	| { readonly kind: "model"; readonly model: ModelStanding }
 	| { readonly kind: "add" };
@@ -1219,10 +1232,10 @@ export type SetupRow =
  * is standing on — and a cursor counting one list while the screen draws another is a key pressed at
  * something other than what is highlighted.
  */
-export function setupRows(
+export function configRows(
 	providers: readonly ProviderStanding[],
 	models: readonly ModelStanding[],
-): readonly SetupRow[] {
+): readonly ConfigRow[] {
 	return [
 		...providers.map((provider) => ({ kind: "provider", provider }) as const),
 		...models.map((model) => ({ kind: "model", model }) as const),
@@ -1256,7 +1269,7 @@ export function matching(offers: readonly ModelOffer[], filter: string): readonl
  * which keys are missing, and a command that answered it one provider at a time would be a question
  * you have to already know how to ask.
  */
-export function Setup({
+export function Config({
 	providers,
 	models,
 	cursor,
@@ -1292,7 +1305,7 @@ export function Setup({
 	const widestModel = Math.max(0, ...models.map((model) => model.id.length));
 	const widestProvider = Math.max(0, ...models.map((model) => model.provider.length));
 	const said = KEYS.map((line) => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`));
-	const walked = setupRows(providers, models);
+	const walked = configRows(providers, models);
 	const row = walked[Math.min(cursor, walked.length - 1)];
 	// Above the list, because it is why the list says what it says — and when the plane refused to
 	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
@@ -1351,7 +1364,7 @@ export function Setup({
 				);
 			}
 		}
-		return setupScreen({
+		return configScreen({
 			listed,
 			at,
 			trouble,
@@ -1432,7 +1445,7 @@ export function Setup({
 						: // Short enough to survive a narrow terminal: the line is truncated rather than wrapped,
 							// and the half that gets cut is the half that says what is wrong.
 							`${row.provider.keyEnv}   no key, refused at the proxy`;
-	return setupScreen({
+	return configScreen({
 		listed,
 		at,
 		trouble,
@@ -1450,12 +1463,12 @@ export function Setup({
 }
 
 /**
- * The setup screen's two halves: a list that takes the room it needs, and a prompt under it.
+ * The config screen's two halves: a list that takes the room it needs, and a prompt under it.
  *
  * Both of the things this screen does are a list and a line to type into, and drawing that twice was
  * how the list of models ended up scrolling differently from the list of keys.
  */
-function setupScreen({
+function configScreen({
 	listed,
 	at,
 	trouble,
@@ -1576,9 +1589,11 @@ export function App({
 	// One place in one list, which is the whole of where this console is pointed. The panel and the
 	// agent used to be two selections crossed with each other, and half of the pairs meant nothing:
 	// the log feed with `demo` picked behind it is the same screen as the log feed with `maxi`.
-	const [spot, setSpot] = useState(PLANE_ROWS);
-	const cursor = spot - PLANE_ROWS;
-	const panel = panelAt(spot);
+	// Clamped where it is read rather than where it is set: an agent can go away under the cursor, and
+	// the rows below would then shift up, so a removal would land you on the config screen.
+	const [raw, setSpot] = useState(0);
+	const spot = Math.min(raw, agents.length + PLANE_ROWS);
+	const panel = panelAt(spot, agents.length);
 	const [lines, setLines] = useState<readonly string[]>([]);
 	// One for the life of the console, because both the plane's stream and the ports this console
 	// opens write into it and the folding it does is per agent across everything it has been told.
@@ -1675,14 +1690,14 @@ export function App({
 	// loud because a selection that vanishes on the next keystroke leaves nothing to show it worked.
 	const [copy, setCopy] = useState<{ rows: number; sure: boolean } | undefined>(undefined);
 
-	// Undefined on the plane's rows, and on the row under the agents, which is not an agent but the
-	// way to make one.
-	const selected = cursor < 0 ? undefined : agents[Math.min(cursor, agents.length)];
+	// Undefined on the row under the agents, which is not an agent but the way to make one, and on the
+	// plane's two below it.
+	const selected = agents[spot];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
-	const walk = setupRows(providers, models);
+	const walk = configRows(providers, models);
 	const onRow = Math.min(where, walk.length - 1);
-	const setupRow = walk[onRow];
+	const configRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
 	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
 	// not over a name, which is not addressed to an agent that exists yet.
@@ -1883,7 +1898,7 @@ export function App({
 	}, [doors, agents]);
 	useEffect(() => () => doors.close(), [doors]);
 
-	const readSetup = useCallback(async (): Promise<void> => {
+	const readConfig = useCallback(async (): Promise<void> => {
 		await Promise.all([client.providers(), client.models()])
 			.then(([keys, thinking]) => {
 				setProviders(keys);
@@ -1898,8 +1913,8 @@ export function App({
 	// counts as arriving, because the menu under `/model ` is that same list of models, offered where
 	// the command that uses one is typed. The log feed is the one pane with no use for either.
 	useEffect(() => {
-		if (panel !== "logs") void readSetup();
-	}, [panel, readSetup]);
+		if (panel !== "logs") void readConfig();
+	}, [panel, readConfig]);
 
 	/**
 	 * Asks the plane for something, reads the lists back, and leaves the refusal on screen if it came.
@@ -1918,10 +1933,10 @@ export function App({
 			} catch (error) {
 				trouble = (error as Error).message;
 			}
-			await readSetup();
+			await readConfig();
 			if (trouble !== undefined) setUnanswered(trouble);
 		},
-		[readSetup],
+		[readConfig],
 	);
 
 	const keep = useCallback(
@@ -2367,36 +2382,36 @@ export function App({
 		// a hand has ever been at. The agents moved off them and onto left and right, which were doing
 		// nothing: this prompt takes no cursor, so there was no line to walk along with them.
 		if (key.upArrow) {
-			// On the setup screen the arrows are the list's, not the prompt's: there is no prompt behind
+			// On the config screen the arrows are the list's, not the prompt's: there is no prompt behind
 			// it, and moving a row out from under a key about to be typed would be a surprise. Over the
 			// feed there is no prompt either, so they do the only thing left to want there.
-			if (panel === "setup") setWhere(Math.max(0, onRow - 1));
+			if (panel === "config") setWhere(Math.max(0, onRow - 1));
 			else if (panel === "logs") scroll(-1, 0);
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
 			else step(1);
 			return;
 		}
 		if (key.downArrow) {
-			if (panel === "setup") setWhere(Math.min(walk.length - 1, onRow + 1));
+			if (panel === "config") setWhere(Math.min(walk.length - 1, onRow + 1));
 			else if (panel === "logs") scroll(1, 0);
 			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
 			else step(-1);
 			return;
 		}
 		if (key.leftArrow || key.rightArrow) return;
-		if (panel === "setup") {
+		if (panel === "config") {
 			// Everything this screen does is about the row the arrows are standing on, which is why there
 			// is nothing here to type into until one of these is pressed.
-			if (key.return && setupRow !== undefined) {
-				if (setupRow.kind === "provider") {
-					setTyping(setupRow.provider.keyEnv);
+			if (key.return && configRow !== undefined) {
+				if (configRow.kind === "provider") {
+					setTyping(configRow.provider.keyEnv);
 					setSecret("");
 				}
 				// The row under the models, which is the one that makes one — the same shape as the row
 				// under the agents, because it is the same idea and a second one would be a second thing
 				// to learn. The providers are asked what they offer on the way in, so what opens is a
 				// list to look down rather than a box wanting a name nobody memorises.
-				if (setupRow.kind === "add") {
+				if (configRow.kind === "add") {
 					setAdding("");
 					setPick(0);
 					void look();
@@ -2404,12 +2419,12 @@ export function App({
 			}
 			// Backspace rather than a letter, because every letter is a character somebody will one day
 			// type into a box on this screen, and this is the key that already means take it away.
-			if ((key.backspace || key.delete) && setupRow?.kind === "model") {
+			if ((key.backspace || key.delete) && configRow?.kind === "model") {
 				// Said here rather than left to the plane to refuse: the plane's refusal would arrive
 				// after the question was answered, and a `y` that then does nothing is worse than a
 				// question that was never asked.
-				if (setupRow.model.added) setDropping(setupRow.model.id);
-				else setUnanswered(`"${setupRow.model.id}" is the file's — drop it there`);
+				if (configRow.model.added) setDropping(configRow.model.id);
+				else setUnanswered(`"${configRow.model.id}" is the file's — drop it there`);
 			}
 			return;
 		}
@@ -2591,8 +2606,8 @@ export function App({
 				airy ? h(Text, { key: "under" }, " ") : null,
 				panel === "logs"
 					? h(Logs, { lines, rows: inner, top, held, key: "logs" })
-					: panel === "setup"
-						? h(Setup, {
+					: panel === "config"
+						? h(Config, {
 								providers,
 								models,
 								cursor: Math.max(0, onRow),
@@ -2604,7 +2619,7 @@ export function App({
 								unanswered,
 								rows: inner,
 								columns: width,
-								key: "setup",
+								key: "config",
 							})
 						: selected === undefined
 							? h(New, {
@@ -2676,17 +2691,17 @@ export function App({
 									["tab", nextRow(spot, agents)],
 									["^C", "quit"],
 								]
-							: panel === "setup"
+							: panel === "config"
 								? // What return does here depends on the row, so the row is what the hint says. A hint
 									// naming a key that does nothing on the row under the cursor is the same lie as a
 									// hint for a key that does nothing at all.
 									[
 										["↑↓", "move"],
-										...(setupRow?.kind === "provider"
+										...(configRow?.kind === "provider"
 											? [["⏎", "set key"]]
-											: setupRow?.kind === "add"
+											: configRow?.kind === "add"
 												? [["⏎", "add model"]]
-												: setupRow?.model.added === true
+												: configRow?.model.added === true
 													? [["⌫", "drop model"]]
 													: []),
 										["tab", nextRow(spot, agents)],

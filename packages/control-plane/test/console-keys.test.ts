@@ -244,9 +244,9 @@ describe("the console, pressed at", () => {
 	});
 
 	/**
-	 * The feed and the setup screen were panels of an agent, and neither is about an agent: the feed
-	 * is the plane's one stream and the screen is the plane's keys. They stand over the list now, and
-	 * the same key reaches them.
+	 * The feed and the config screen were panels of an agent, and neither is about an agent: the feed
+	 * is the plane's one stream and the screen is the plane's keys. They stand at the foot of the
+	 * column now, and the same key reaches them.
 	 */
 	it("carries on past the last row into the plane's own two", async () => {
 		const { client } = plane();
@@ -259,7 +259,7 @@ describe("the console, pressed at", () => {
 			expect(showing(console_.screen())).toBe("logs");
 
 			await console_.press(TAB);
-			expect(showing(console_.screen())).toBe("setup");
+			expect(showing(console_.screen())).toBe("config");
 
 			await console_.press(TAB);
 			expect(showing(console_.screen())).toBe("demo");
@@ -275,7 +275,7 @@ describe("the console, pressed at", () => {
 		try {
 			await console_.press(SHIFT_TAB);
 
-			expect(showing(console_.screen())).toBe("setup");
+			expect(showing(console_.screen())).toBe("config");
 		} finally {
 			console_.close();
 		}
@@ -667,7 +667,7 @@ describe("the shell prompt, tabbed at", () => {
 /**
  * The list of models, offered where the command that uses one is typed.
  *
- * The names were only ever written down on the setup screen, two panes away, so moving an agent was
+ * The names were only ever written down on the config screen, two panes away, so moving an agent was
  * remembering a word or leaving the prompt to go and read it. Only true as keystrokes: what the menu
  * is offering depends on how much of the line is typed, and the return that takes a row off it is the
  * same key that sends the line under it.
@@ -779,7 +779,7 @@ describe("the model menu, pressed at", () => {
  * key go into it and nowhere else — every pane behind this one would take some of them for something
  * it does, and the first that did would leave the rest of a live key in a message to an agent.
  */
-describe("the setup screen, pressed at", () => {
+describe("the config screen, pressed at", () => {
 	const paying = (
 		id: string,
 		keyEnv: string,
@@ -814,18 +814,18 @@ describe("the setup screen, pressed at", () => {
 		thinking("mini", "openai", true, true),
 	];
 
-	/** Opens the console and tabs to the setup screen, which is where every one of these starts. */
-	async function setup(options: Parameters<typeof plane>[0] = { pays, thinks }) {
+	/** Opens the console and tabs to the config screen, which is where every one of these starts. */
+	async function config(options: Parameters<typeof plane>[0] = { pays, thinks }) {
 		const it_ = plane(options);
 		const console_ = open(it_.client, [listed("demo")]);
-		// Up rather than down: the screen stands over the agents, so from the first of them it is one
-		// press back, and going forward would be a walk through every agent the plane has.
+		// Up rather than down: the screen is the last row of the column, so from the first agent it is
+		// one press back, and a walk through every agent the plane has the other way.
 		await console_.press(SHIFT_TAB);
 		return { ...it_, ...console_ };
 	}
 
 	it("is a row of the column, with what the plane could pay for on it", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			expect(screen.screen()).toContain("DEEPSEEK_API_KEY");
 			expect(screen.screen()).toContain("flash");
@@ -838,7 +838,7 @@ describe("the setup screen, pressed at", () => {
 	// A row of marks cannot say where a key came from, and that is the difference between changing it
 	// here and going to look for the `.env` the plane was started with.
 	it("says of the row it is standing on where that key came from", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			expect(screen.screen()).toContain("no key, refused at the proxy");
 
@@ -853,7 +853,7 @@ describe("the setup screen, pressed at", () => {
 	});
 
 	it("takes a key without putting it on the screen", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(ENTER);
 			expect(screen.screen()).toContain("key for DEEPSEEK_API_KEY");
@@ -869,7 +869,7 @@ describe("the setup screen, pressed at", () => {
 	});
 
 	it("hands the key to the plane when it is entered", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-typed");
@@ -885,7 +885,7 @@ describe("the setup screen, pressed at", () => {
 	// A key half typed at the wrong provider is the ordinary mistake here, and escape is where every
 	// hand goes for it. Nothing is sent, which is what makes it safe to press.
 	it("gives up on a key without giving it", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-typed");
@@ -901,7 +901,7 @@ describe("the setup screen, pressed at", () => {
 	// The way to take back a key given here. Nothing else on this screen can say it, and without it a
 	// key typed at the wrong provider would be one there is no way to undo from the console.
 	it("takes an empty line for taking the key back", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -917,7 +917,7 @@ describe("the setup screen, pressed at", () => {
 	// A key is pasted rather than typed, and it arrives with the newline of whatever it was copied out
 	// of about as often as not. That newline is the return, not a character of the key.
 	it("enters a key that arrived with its newline still on it", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-pasted\n");
@@ -936,7 +936,7 @@ describe("the setup screen, pressed at", () => {
 	 * draft is on its way to an agent, and a secret is the one thing that may never get there.
 	 */
 	it("never lets a character of a key reach the agent behind the screen", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(ENTER);
 			await screen.press("sk-/limit!ls");
@@ -957,7 +957,7 @@ describe("the setup screen, pressed at", () => {
 
 	/** The arrows walk one list, so the row after the last key is the first model and not nothing. */
 	it("carries on into the models the keys are for", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -976,7 +976,7 @@ describe("the setup screen, pressed at", () => {
 	// The whole of "all the configuration from the program": a model this plane never had, given a
 	// name and a provider at a keyboard, with no file edited and nothing restarted.
 	it("takes a model written out on the row that adds one", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			for (const _ of thinks) await screen.press(DOWN);
@@ -1000,7 +1000,7 @@ describe("the setup screen, pressed at", () => {
 	// The provider's own name for a model is the id far more often than not, so leaving it out is the
 	// short way to say the ordinary thing rather than a line the plane has to refuse.
 	it("leaves the provider's own name out when it was not said", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
 			await screen.press(ENTER);
@@ -1014,7 +1014,7 @@ describe("the setup screen, pressed at", () => {
 	});
 
 	it("says why a model was refused, instead of a list it is quietly not in", async () => {
-		const screen = await setup({
+		const screen = await config({
 			pays,
 			thinks,
 			refusesModel: 'nothing here knows "my-gateway"',
@@ -1037,9 +1037,9 @@ describe("the setup screen, pressed at", () => {
 		{ provider: "anthropic", id: "claude-opus-4-7" },
 	];
 
-	/** Opens the setup screen with the cursor already on the row that adds a model, and enters it. */
+	/** Opens the config screen with the cursor already on the row that adds a model, and enters it. */
 	async function offering(options: Parameters<typeof plane>[0] = { pays, thinks, sells }) {
-		const screen = await setup(options);
+		const screen = await config(options);
 		for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
 		await screen.press(ENTER);
 		return screen;
@@ -1111,7 +1111,7 @@ describe("the setup screen, pressed at", () => {
 	});
 
 	it("gives up on a model without adding it", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			for (const _ of [...pays, ...thinks]) await screen.press(DOWN);
 			await screen.press(ENTER);
@@ -1127,7 +1127,7 @@ describe("the setup screen, pressed at", () => {
 	// Asked before it happens, and answered by one key, because the cursor is already on the row and
 	// the hand is already on the keys that would answer it by accident.
 	it("asks before dropping a model, and drops it when the answer is yes", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -1144,7 +1144,7 @@ describe("the setup screen, pressed at", () => {
 	});
 
 	it("keeps a model when the answer is anything else", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -1164,7 +1164,7 @@ describe("the setup screen, pressed at", () => {
 	 * — and a question answered `y` that then does nothing is worse than one that was never asked.
 	 */
 	it("sends a model the file declared back to the file", async () => {
-		const screen = await setup();
+		const screen = await config();
 		try {
 			for (const _ of pays) await screen.press(DOWN);
 			await screen.press(BACKSPACE);

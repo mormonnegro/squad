@@ -144,7 +144,7 @@ describe("the model an agent was moved onto", () => {
 /**
  * The keys a console can fill in.
  *
- * The plane's half of the setup screen: what it is willing to be told, and what it refuses to be
+ * The plane's half of the config screen: what it is willing to be told, and what it refuses to be
  * told at a keyboard no matter who is holding it.
  */
 describe("provider keys", () => {

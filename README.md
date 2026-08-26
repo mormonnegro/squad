@@ -114,7 +114,7 @@ ends on the console. Running it again is the update: it pulls, rebuilds and swap
 never touches `config.yaml` or `.env`.
 
 It asks for no keys, because down a pipe the installer has no terminal to read one from; they are
-given later on the setup screen in `agent`. The npm name is not settled yet.
+given later on the config screen in `agent`. The npm name is not settled yet.
 
 The machine at the far end needs a Linux with SSH on it and nothing else — the installer brings
 Docker. One vCPU, a gigabyte of memory and ten gigabytes of disk runs a few agents, which is the
@@ -192,40 +192,43 @@ asking to see the thing, not to be told a fact about it:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ logs                 ││ demo                         deepseek-v4-flash   $0.42 / $5.00 │
-│ setup                ││                                                                │
-│                      ││ > que es un webhook                                            │
-│ agents               ││                                                                │
-│                      ││ Un webhook es una forma de comunicación automática entre       │
-│ ◐ demo         $0.42 ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
-│ ● maxi     15m $4.80 ││ envía una petición HTTP a una URL configurada.                 │
-│ ○ scout              ││ ⠹ 9s search webhook retry semantics                            │
-│                      ││ ⋯ y cada cuanto reintenta?                                     │
-│ + new agent          ││                                                                │
+│ agents               ││ demo                         deepseek-v4-flash   $0.42 / $5.00 │
+│                      ││                                                                │
+│ ◐ demo         $0.42 ││ > que es un webhook                                            │
+│ ● maxi     15m $4.80 ││                                                                │
+│ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
+│                      ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
+│ + new agent          ││ envía una petición HTTP a una URL configurada.                 │
+│                      ││ ⠹ 9s search webhook retry semantics                            │
+│ logs                 ││ ⋯ y cada cuanto reintenta?                                     │
+│ config               ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
-│ tab moves            ││ │ >                                                          │ │
-│                      ││ ╰────────────────────────────────────────────────────────────╯ │
+│                      ││ │ >                                                          │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
  ^U^D scroll   tab maxi   / commands   ! shell   ^C quit
 ```
 
 The column on the left is the whole of what this console can show, and `tab` walks it top to bottom
 — `shift` with it for the way back, and a click on a row for a hand already on the mouse. One key,
-one list: the log feed, the setup screen, then every agent the plane has, `●` up, `○` stopped, `◐`
-mid-turn — thinking gets a mark of its own because with several agents on screen it is the one thing
-you cannot find out by asking again in a second. The row the keyboard is on is its name in the colour
+one list: every agent the plane has — `●` up, `○` stopped, `◐` mid-turn — then the row that makes
+one, then the log feed and the config screen. Thinking gets a mark of its own because with several
+agents on screen it is the one thing you cannot find out by asking again in a second. The row the keyboard is on is its name in the colour
 the panel title gives the same name, and not an arrow in a gutter beside the marks: a column whose
 header stands against the border and whose rows all begin two further in reads as a list indented
 under a title it does not belong to. At the foot of the column is `tab moves`, because a list that
 nothing points at does not otherwise say how to walk it — the row along the bottom of the screen says
 where `tab` goes next, which is only an answer for somebody who already knows to press it.
 
-The feed and the setup screen stand over the agents rather than behind one because neither is about
-an agent. The feed is the plane's, one stream with every agent in it — the same feed `agent logs`
-prints, running the whole time either way — and the setup screen is the plane's keys and the plane's
-models. They used to be panels you reached by tabbing inside an agent, which meant picking an agent
-first and then ignoring which one you had picked, and the panel title carried a `chat · logs · setup`
-breadcrumb that was a second copy of a selection the column was already drawing.
+The feed and the config screen stand at the foot of the column rather than behind an agent because
+neither is about an agent. The feed is the plane's, one stream with every agent in it — the same feed
+`agent logs` prints, running the whole time either way — and the config screen is the plane's keys
+and the plane's models. They used to be panels you reached by tabbing inside an agent, which meant
+picking an agent first and then ignoring which one you had picked, and the panel title carried a
+`chat · logs · setup` breadcrumb that was a second copy of a selection the column was already
+drawing. Under the agents rather than over them because that is the order they are used in: you open
+this to talk to an agent, and you go to the feed when something is wrong or to the keys once, at the
+start.
 
 It is `tab` and not the bare arrows because the bare arrows are the line being typed: up and down
 walk back through what was sent, the way they do at every other prompt, and a column is not worth
@@ -271,7 +274,7 @@ money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fac
 do at every other prompt there has ever been. That is what moved the column onto `tab`: a prompt
 whose arrows do something else than a prompt's arrows do is a prompt you have to learn, and there
 was nothing about a list of names worth that. The half-written line you were on when the walk began
-comes back whole at the end of it, so a stray arrow costs you nothing. Over the feed and the setup
+comes back whole at the end of it, so a stray arrow costs you nothing. Over the feed and the config
 screen there is no prompt for them to belong to, so they are the list's and the scrollback's there. Each agent's history is its own, and it survives the console
 being closed, because the lines are read out of the conversation the plane kept.
 
@@ -931,7 +934,7 @@ name never has to be carried from here back to the prompt.
 This is a choice among what exists and never a way to add one, which is what makes it a command
 rather than an edit and a restart. Every model on that list is already reachable by every agent —
 configuring one is what granted it — so moving between them changes what a turn costs and how good
-it is, and changes nothing at all about what the agent can get to. Adding one is the setup screen's,
+it is, and changes nothing at all about what the agent can get to. Adding one is the config screen's,
 two panes away and never addressed to an agent, so it stays something an operator does rather than
 something an agent can talk one into.
 
@@ -946,26 +949,26 @@ part that does — is rebuilt the moment a model is added.
 A model whose key this plane does not hold is still listed, marked as having no key behind it. It is
 not a reason to refuse to start: `install.sh` writes the variable through empty when nobody has
 exported one yet, and refusing there would make the first run of this a configuration exercise
-instead of a working plane. The setup screen is where the answer is to paste one in.
+instead of a working plane. The config screen is where the answer is to paste one in.
 
 ## The keys the plane pays with
 
 A model is three lines of configuration and one exported variable, and the variable is the half that
 is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
 is running and configured and refused at the proxy, with turns dying over a host nobody typed. `tab`
-to the setup screen and both halves are a list:
+to the config screen and both halves are a list:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ logs                 ││ setup                                                          │
-│ setup                ││                                                                │
+│ agents               ││ config                                                         │
 │                      ││                                                                │
-│ agents               ││ holds from the next turn — nothing restarts.                   │
+│ ● demo         $0.42 ││                                                                │
+│ ○ scout              ││ holds from the next turn — nothing restarts.                   │
 │                      ││                                                                │
-│ ● demo         $0.42 ││ providers                                                      │
-│ ○ scout              ││ ● deepseek   DEEPSEEK_API_KEY   flash                          │
-│                      ││ ○ anthropic  ANTHROPIC_API_KEY  sonnet                         │
-│ + new agent          ││ ○ openai     OPENAI_API_KEY     gpt-5                          │
+│ + new agent          ││ providers                                                      │
+│                      ││ ● deepseek   DEEPSEEK_API_KEY   flash                          │
+│ logs                 ││ ○ anthropic  ANTHROPIC_API_KEY  sonnet                         │
+│ config               ││ ○ openai     OPENAI_API_KEY     gpt-5                          │
 │                      ││ ○ groq       GROQ_API_KEY       no models                      │
 │                      ││                                                                │
 │                      ││ models                                                         │
@@ -974,8 +977,8 @@ to the setup screen and both halves are a list:
 │                      ││ ○ gpt-5   openai     added here                                │
 │                      ││ + a model                                                      │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
-│ tab moves            ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
-│                      ││ ╰────────────────────────────────────────────────────────────╯ │
+│                      ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
  ↑↓ move   ⏎ set key   tab demo   ^C quit
 ```
@@ -1001,18 +1004,18 @@ to, all at once, and what comes back is a list to arrow through:
 
 ```
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
-│ logs                 ││ setup                                                          │
-│ setup                ││                                                                │
+│ agents               ││ config                                                         │
 │                      ││                                                                │
-│ agents               ││ 3 on offer                                                     │
+│ ● demo         $0.42 ││                                                                │
+│ ○ scout              ││ 3 on offer                                                     │
 │                      ││ › gpt-5-mini   openai                                          │
-│ ● demo         $0.42 ││   gpt-4o-mini  openai                                          │
-│ ○ scout              ││   o4-mini      openai                                          │
-│                      ││                                                                │
-│ + new agent          ││                                                                │
+│ + new agent          ││   gpt-4o-mini  openai                                          │
+│                      ││   o4-mini      openai                                          │
+│ logs                 ││                                                                │
+│ config               ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
-│ tab moves            ││ │ model  openai mini                                         │ │
-│                      ││ ╰────────────────────────────────────────────────────────────╯ │
+│                      ││ │ model  openai mini                                         │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
  ↑↓ move   ⏎ add   esc cancel   ^C quit
 ```

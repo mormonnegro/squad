@@ -268,10 +268,15 @@ export function Console() {
 				step: landed[landed.length - 1]?.text ?? THINKING,
 			};
 
+	// What tab opens next, which is the row under this one: the column is one list, and the footer
+	// promises the next thing in it rather than a fixed destination. The mock only ever stands on an
+	// agent, so the row under is the next agent or, past the last of them, the one that makes one.
+	const next = USES[USES.indexOf(use) + 1]?.name ?? "new agent";
+
 	const keys: [string, string][] = [
 		["^U^D", "scroll"],
 		["↑↓", "history"],
-		["tab", "logs"],
+		["tab", next],
 		["/", "commands"],
 		["!", "shell"],
 		["^C", "quit"],
@@ -299,10 +304,6 @@ export function Console() {
 
 			<div className="mock-frame">
 				<div className="mock-side">
-					{/* The plane's own screens, over the agents because neither is about an agent: one feed
-					    with every agent in it, and one set of keys and models. */}
-					<div className="mock-plane">logs</div>
-					<div className="mock-plane">setup</div>
 					<div className="mock-side-head">agents</div>
 					{USES.map((u, i) => {
 						const due = wake(u.next, now);
@@ -332,6 +333,11 @@ export function Console() {
 						<span className="mock-plus">+</span>
 						<span className="mock-name">new agent</span>
 					</div>
+					{/* The plane's own screens, under the agents because neither is about an agent and
+					    neither is what you came here for: one feed with every agent in it, and one set of
+					    keys and models. */}
+					<div className="mock-plane">logs</div>
+					<div className="mock-plane">config</div>
 					{/* A list nothing points at does not say how to walk it, so the column says so itself. */}
 					<div className="mock-how">
 						<b>tab</b> moves

@@ -501,13 +501,16 @@ code {
 }
 
 /* The plane's own screens are rows of this list like any other, so they are drawn like the agents and
-   not like the header over them: what you press at wears the shape of a thing you press at. */
+   not like the header above them: what you press at wears the shape of a thing you press at. */
 .mock-plane {
 	padding: 0.12rem 0.9rem;
 }
 
+.mock-new + .mock-plane {
+	margin-top: 0.5rem;
+}
+
 .mock-side-head {
-	margin-top: 0.6rem;
 	padding: 0 0.9rem 0.5rem;
 	color: var(--muted);
 }

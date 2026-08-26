@@ -72,7 +72,7 @@ export const PROVIDERS: Readonly<
 /**
  * A model as somebody said it, before the table filled the rest in.
  *
- * The same shape whether it came out of the operator's file or off the setup screen, so that the one
+ * The same shape whether it came out of the operator's file or off the config screen, so that the one
  * place that knows how a provider name becomes a host and a variable stays one place.
  */
 export interface ModelSpec {
@@ -88,7 +88,7 @@ export interface ModelSpec {
  * Fills in everything about a model that is a fact rather than a decision, or says what is missing.
  *
  * Returns the reason instead of throwing because both callers want it as words: the config file
- * collects them into the list of everything wrong with it, and the setup screen puts it on the row
+ * collects them into the list of everything wrong with it, and the config screen puts it on the row
  * under the one being typed.
  */
 export function resolveModel(spec: ModelSpec): Model | string {
@@ -118,7 +118,7 @@ export function resolveModel(spec: ModelSpec): Model | string {
 	};
 }
 
-/** A model as the setup screen has it: which of the two lists it is on, and whether it can be paid. */
+/** A model as the config screen has it: which of the two lists it is on, and whether it can be paid. */
 export interface ModelStanding extends Model {
 	/**
 	 * Given at a console rather than declared in the operator's file.
@@ -322,7 +322,7 @@ export function modelEnv(models: readonly Model[]): Record<string, string> {
  * Beside the operator's file rather than in it, which is the same answer every other thing decided
  * at a console gets here: the file is theirs, this plane may not rewrite it, and a change that
  * vanished on the next deploy would be worse than one that was never offered. What that costs is
- * that `config.yaml` is no longer the whole list — which is why the setup screen says, for every
+ * that `config.yaml` is no longer the whole list — which is why the config screen says, for every
  * model on it, which of the two it came from.
  */
 export class AddedModels {
