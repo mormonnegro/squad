@@ -1615,18 +1615,24 @@ export class ControlPlane {
 			}
 		}
 
-		for (const agent of this.#agents) await this.#startAgent(agent);
-
-		// After the agents, so a message arriving in the first second of a poll meets a plane that can
-		// take a turn for it. A bot whose agent is gone is left on the shelf rather than started: the
-		// token is still good, and it comes back with the name if the name does.
+		// Put in place before the agents and read from after them, which are two different moments and
+		// have to be. Starting an agent hands it whatever was left queued for it, so a turn runs here —
+		// and a turn that ends before its channel exists is an answer thrown away, which for mail is
+		// somebody who wrote in and got silence back. Reading, meanwhile, still has to wait: a message
+		// arriving before the agents are up would name an agent this plane does not have yet and be
+		// dropped as addressed to nobody.
+		//
+		// A bot whose agent is gone is left on the shelf rather than put in: the token is still good,
+		// and it comes back with the name if the name does.
 		for (const bot of await this.#bots.all()) {
 			if (this.#agents.some((agent) => agent.id === bot.agentId)) this.telegram.add(bot);
 		}
-		this.telegram.start();
-
 		const mailbox = await this.#mailbox.get();
 		if (mailbox !== undefined) this.email.set(mailbox);
+
+		for (const agent of this.#agents) await this.#startAgent(agent);
+
+		this.telegram.start();
 		this.email.start();
 
 		// Anything left queued by a previous process is delivered before new work arrives.
