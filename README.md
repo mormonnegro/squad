@@ -825,6 +825,91 @@ hand mail in, `/email` says so in the provider's own words, and sending a reply 
 the point of sending rather than somewhere further in — because an agent answering into the dark
 looks, to the person who wrote in, exactly like an agent ignoring them.
 
+### Letting somebody else carry the mail out
+
+A submission server that refuses is one reason to hand the mail to somebody else. Volume is another
+— a consumer mailbox has a daily cap somewhere and does not tell you where — and knowing whether it
+landed is the third: a submission server accepts the message and the story ends there, while a
+company that carries mail for a living has an answer about every one.
+
+So the way out is separable from the way in. Mailgun, Resend, Postmark and SendGrid each take a
+message over HTTP, and which one is a row on the config screen's `email` section:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ config                                                         │
+│                      ││                                                                │
+│ ● demo         $0.42 ││                                                                │
+│ ● scout              ││                                                                │
+│                      ││ One mailbox serves every agent: mail to you+scout@ is scout's  │
+│ + new agent          ││ and mail to you+clerk@ is clerk's, so connecting this is a     │
+│                      ││ thing done once, including for the agents that do not exist    │
+│ logs                 ││ yet.                                                           │
+│ config               ││                                                                │
+│                      ││ Reading is IMAP, which wants no domain and nothing open on     │
+│                      ││ this machine. Sending is either the mailbox's own server, or a │
+│                      ││ company that carries mail for a domain of yours and says       │
+│                      ││ whether it landed.                                             │
+│                      ││                                                                │
+│                      ││ ● mailbox   agents@fastmail.com                                │
+│                      ││ ● carrier   Mailgun                                            │
+│                      ││ ● domain    agent-dive.dev                                     │
+│                      ││ ● key       MAILGUN_API_KEY                                    │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ imap.fastmail.com   ⌫ disconnects it                       │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ move   ⏎ connect   ⌫ disconnect   esc back   tab demo   ^C quit
+```
+
+There is a dot for each half because the two halves fail for unrelated reasons. A mailbox nobody
+connected reaches nothing; a carrier nobody paid for reads fine and cannot answer. One dot over the
+pair would go dark for either and say which for neither.
+
+The rows that could only say they do not apply are not drawn. Most carriers work the sending domain
+out of the address they are handed — Mailgun will not, so `domain` is there for Mailgun and gone for
+the rest — and with the mailbox's own server carrying there is no company to name a domain to and no
+key to pay one with, so the list is two rows long. A row that can only ever say "not applicable" is
+a row somebody presses return on to find out.
+
+`⏎` on `mailbox` takes the address and then, one round trip later, the app password: the same two
+steps `/email` takes and for the same reason, since what the address turns out to be is what decides
+whether looking for a password is worth anybody's time. On a mailbox already connected — the one
+above — it says so instead of opening a box, because a second address over the first is not a change
+but a disconnection and a connection, and `⌫` is the key that means the first half of that. `⌫` asks
+before it happens, since it is wider than the row it is pressed on: every agent stops being
+reachable at once.
+
+`⏎` on `carrier` is a list to arrow through, because the companies that will do this are a table and
+a name spelled wrong here is a mailbox that reads and silently never answers. `⏎` on `key` takes the
+key the masked way every key on this screen is taken.
+
+**The carrier's key is not a proxy grant.** The plane sends the mail, not the sandbox — there is no
+container on that path to write a header into — so the key stays in the same `0600` file every other
+provider key is typed into and is read at the moment of sending. A key retyped at the console is in
+force on the next message, with nothing restarted and no second copy anywhere.
+
+Naming a carrier changes who hands the message over and nothing else. The `From` is still the
+agent's tagged address, the `Reply-To` still says it again, the subject and message id of what came
+in are still kept — so a reply still comes back to the agent that wrote it. What changes is the
+reputation the message goes out on: your own provider's, which you already have, or a domain of
+yours at a carrier, which you warm up yourself. The mailbox's own server remains the default for
+exactly that reason.
+
+**Cloudflare belongs on the other side of this.** Email Routing receives and forwards; it does not
+send, and listing it as a way out would be a lie told in a menu. What it is good for is the half
+this plane was already doing by IMAP: point the MX for a domain of yours at Cloudflare, forward
+`@yourdomain` into the ordinary mailbox above, and the agents are reachable at your own domain
+without the plane owning a mail server or opening a port. Mailgun's inbound routes do the same if
+the domain is already there for carrying.
+
+The tag does not survive a catch-all, though, and that is worth knowing before you point a domain at
+one. A forward rewrites the delivery to the mailbox it was given, so `scout@yourdomain` arrives as
+`agents@fastmail.com` with the original address only in `To:` — which is not the mailbox, so no tag
+is read and the mail goes to the agent untagged mail goes to. Reaching a particular agent through a
+forward takes one rule per agent, addressed to that agent's tagged address, rather than a single
+rule for the whole domain.
+
 An inbox is mostly not for you, so most of what arrives is dropped: anyone who is not the operator,
 anything auto-submitted, a tag that names no agent, and the mailbox's own mail — without that last
 one an agent Cc'd on its own answer would wake itself, read its own words as somebody's, and do it
@@ -974,13 +1059,22 @@ things are rather than on any of them:
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
 │ agents               ││ config                                                         │
 │                      ││                                                                │
-│ ● demo         $0.42 ││ Everything this plane can be given is here: the keys it pays   │
-│ ○ scout              ││ with, what its agents think with, and where they search from.  │
+│ ● demo         $0.42 ││                                                                │
+│ ○ scout              ││                                                                │
 │                      ││                                                                │
-│ + new agent          ││ ● models   the providers this plane can pay, and what its      │
-│                      ││ ○ search   where web_search goes, and what a search costs      │
-│ logs                 ││                                                                │
+│ + new agent          ││ Everything this plane can be given is here: the keys it pays   │
+│                      ││ with, what its agents think with, where they search from, and  │
+│ logs                 ││ the mailbox they are written to at.                            │
 │ config               ││                                                                │
+│                      ││ All of it is kept beside deploy/config.yaml rather than in it  │
+│                      ││ — what that file declares is read here and changed only there  │
+│                      ││ — and all of it holds from the next turn, with nothing         │
+│                      ││ restarted.                                                     │
+│                      ││                                                                │
+│                      ││ ● models    the providers this plane can pay, and what its ag… │
+│                      ││ ○ search    where web_search goes, and what a search costs     │
+│                      ││ ● mcp       the servers on the shelf, and which agents hold t… │
+│                      ││ ○ email     the mailbox agents are reached at, and who carrie… │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ 3 to think with, 1 of 4 providers paid for                 │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
@@ -991,9 +1085,14 @@ things are rather than on any of them:
 Each row says what its section is for, because a column of bare nouns is a screen you have to open
 every row of to find the one you came here for. The dot is the agents column's, meaning the same
 thing: filled in is something this plane could use right now. The line under the list is how that
-section actually stands — `1 of 4 providers paid for` is the fact a row saying what it is for cannot
-carry, and it is usually the reason you are here. `⏎` opens one, `esc` comes back to standing on the
+section actually stands — `1 of 4 providers paid for`, `2 on the shelf, 1 of them given to
+somebody`, the address the mail comes to — which is the fact a row saying what it is for cannot
+carry, and is usually the reason you are here. `⏎` opens one, `esc` comes back to standing on the
 row you left.
+
+One list at a time rather than all four down one screen: what they share is the file they are kept
+in and nothing else, and a single list of everything would be a screen to scroll rather than a
+screen to read.
 
 A model is three lines of configuration and one exported variable, and the variable is the half that
 is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
@@ -1261,6 +1360,45 @@ server a line cannot show by itself — and anything else is a command the agent
 `/mcp drop` takes one off this agent and leaves it on the shelf; `/mcp forget` takes it off the
 shelf and off every agent that had it, because an attachment naming a server that is gone is not an
 attachment.
+
+The shelf is also a section of the config screen, which is where you go to see the whole of it at
+once rather than one agent's share of it:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ config                                                         │
+│                      ││                                                                │
+│ ● demo         $0.42 ││                                                                │
+│ ● scout              ││                                                                │
+│                      ││                                                                │
+│ + new agent          ││                                                                │
+│                      ││ A server is something somebody went and found — a URL, a       │
+│ logs                 ││ command, the reading of a README — so the plane keeps it once  │
+│ config               ││ and every agent after the first is a name off this list.       │
+│                      ││                                                                │
+│                      ││ None of them holds a key. A remote one is reached through the  │
+│                      ││ proxy like every other host, and one that wants an account is  │
+│                      ││ logged into from an agent that has it, with /mcp login.        │
+│                      ││                                                                │
+│                      ││ ● linear  https://mcp.linear.app/mcp                           │
+│                      ││ ○ notion  https://mcp.notion.com/mcp                           │
+│                      ││ ● files   mcp-files /home/agent                                │
+│                      ││   + a server                                                   │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ scout   (logged in)                                        │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ move   ⏎ give   ⌫ forget   esc back   tab demo   ^C quit
+```
+
+The dot means what it means in the agents column: something that is actually reaching anything. A
+server nobody was given is a URL written down — `notion` above — and finding that is the question
+you would otherwise open every agent in turn to ask. `⏎` gives the row under the cursor to the agent
+`tab` names, and `⏎` again takes it back, because a row that says who holds it is a row that already
+means both. `⌫` is `/mcp forget` and asks first.
+
+The row that adds one takes the same line `/mcp add` takes — a name and then a URL or a command —
+rather than a second grammar that would be nearly right.
 
 **There is nowhere in a server to put a credential.** A local one inherits a sandbox whose only road
 out is the egress proxy, a remote one is reached down that same road, and the proxy already writes
