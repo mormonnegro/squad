@@ -4,14 +4,19 @@ import { describe, expect, it } from "vitest";
 import { COMMANDS, type Command } from "../src/commands.ts";
 import {
 	Agents,
+	type At,
+	bare,
 	Chat,
 	doing,
 	here,
+	holding,
 	laid,
+	mouse,
 	New,
 	pointed,
 	resume,
 	Setup,
+	type Span,
 	saidBy,
 	scrolled,
 	standing,
@@ -155,6 +160,105 @@ describe("visible", () => {
 	it("does not scroll past either end", () => {
 		expect(visible(["a", "b", "c"], 2, 99)).toEqual(["b", "c"]);
 		expect(visible(["a", "b", "c"], 2, -99)).toEqual(["a", "b"]);
+	});
+});
+
+/**
+ * The mouse arrives as text, on the same stream as everything the operator types, and everything
+ * downstream of this either scrolls on it, selects on it, or types it into the prompt.
+ */
+describe("mouse", () => {
+	const report = (button: number, column = 40, row = 12, end = "M"): string =>
+		`\u001b[<${button};${column};${row}${end}`;
+
+	it("reads the wheel in both directions", () => {
+		const [up] = mouse(report(64)) ?? [];
+		const [down] = mouse(report(65)) ?? [];
+
+		expect(up?.did === "wheel" && up.by).toBeLessThan(0);
+		expect(down?.did === "wheel" && down.by).toBeGreaterThan(0);
+	});
+
+	// One flick of a trackpad arrives as several reports in a single chunk, and a pane that moved
+	// once for the flick would take a minute to cross a long answer.
+	it("answers for every report that arrived together", () => {
+		expect(mouse(report(64).repeat(3))).toHaveLength(3);
+	});
+
+	it("tells a press from the drag that follows it and the release that ends it", () => {
+		expect(mouse(report(0, 30, 9))).toEqual([{ did: "down", at: { column: 30, row: 9 } }]);
+		expect(mouse(report(32, 30, 14))).toEqual([{ did: "drag", at: { column: 30, row: 14 } }]);
+		expect(mouse(report(0, 30, 14, "m"))).toEqual([{ did: "up", at: { column: 30, row: 14 } }]);
+	});
+
+	// The bug this was extracted for. Asking the terminal for the mouse asks it for every button,
+	// and a report nobody answers for is `[<2;39;15M` typed into the prompt.
+	it("swallows the buttons it has nothing to do with", () => {
+		expect(mouse(report(2))).toEqual([]);
+		expect(mouse(report(66))).toEqual([]);
+	});
+
+	it("leaves what is not the mouse to whoever it was meant for", () => {
+		expect(mouse("hola")).toBeUndefined();
+		expect(mouse("")).toBeUndefined();
+		// Escape is read here first and is the start of every mouse report, so a plain one getting
+		// answered for as a mouse that did nothing is a key that silently stops working.
+		expect(mouse("\u001b")).toBeUndefined();
+	});
+});
+
+/**
+ * Which rows of the screen a drag has hold of. The numbers here are the ones a real 100x30 window
+ * draws: the panel is the full height of the panes row, the prompt has its box, and the last line
+ * of talk lands on row 24 with the first on row 4.
+ */
+describe("holding", () => {
+	const pane = { x: 24, y: 0, width: 76, height: 29 };
+	const shape = { lines: 21, below: 3 };
+	const drag = (from: number, to: number): { from: At; to: At } => ({
+		from: { column: 40, row: from },
+		to: { column: 40, row: to },
+	});
+
+	it("counts from the first row the pane is showing", () => {
+		// Rows 5 and 25 of the terminal are the first and the last of the conversation.
+		expect(holding(drag(5, 25), pane, shape)).toEqual({ from: 0, to: 20 });
+		expect(holding(drag(10, 12), pane, shape)).toEqual({ from: 5, to: 7 });
+	});
+
+	// A hand drags upwards as often as down, and a selection that only worked one way would look
+	// like a selection that works when you are lucky.
+	it("holds the same rows dragged either way", () => {
+		expect(holding(drag(12, 10), pane, shape)).toEqual(holding(drag(10, 12), pane, shape));
+	});
+
+	// Pulling past the end means the end. Pressing outside means nothing at all: a drag that began
+	// on the prompt or in the list of agents is not a selection, and answering for it would put the
+	// last line of somebody else's conversation on the clipboard.
+	it("clamps where the drag ends and refuses where it began", () => {
+		expect(holding(drag(10, 99), pane, shape)).toEqual({ from: 5, to: 20 });
+		expect(holding(drag(10, -5), pane, shape)).toEqual({ from: 0, to: 5 });
+		expect(holding(drag(27, 27), pane, shape)).toBeUndefined();
+		expect(holding(drag(2, 10), pane, shape)).toBeUndefined();
+		expect(
+			holding({ from: { column: 4, row: 10 }, to: { column: 4, row: 12 } }, pane, shape),
+		).toBeUndefined();
+	});
+
+	// The feed has no prompt under it, so its last line is one row higher than the chat's.
+	it("takes the rows a pane drew below the text as the pane reports them", () => {
+		expect(holding(drag(28, 28), pane, { lines: 24, below: 0 })).toEqual({ from: 23, to: 23 });
+	});
+
+	it("holds nothing in a pane that is showing nothing", () => {
+		expect(holding(drag(10, 12), pane, { lines: 0, below: 3 })).toBeUndefined();
+	});
+});
+
+/** What lands on the clipboard is the words, not the colours they were drawn in. */
+describe("bare", () => {
+	it("strips what was only ever for the screen", () => {
+		expect(bare("\u001b[36mdara\u001b[39m: hola   ")).toBe("dara: hola");
 	});
 });
 
@@ -557,6 +661,7 @@ describe("Chat", () => {
 		confirm?: string | undefined;
 		menu?: readonly Command[];
 		pick?: number;
+		held?: Span | undefined;
 	}) =>
 		renderToString(
 			h(Chat, {
@@ -569,6 +674,7 @@ describe("Chat", () => {
 				confirm: undefined,
 				menu: [],
 				pick: 0,
+				held: undefined,
 				...props,
 			}),
 			{ columns: props.columns ?? 40 },

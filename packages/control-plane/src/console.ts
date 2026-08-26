@@ -1,6 +1,15 @@
 import { dirname } from "node:path";
 import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
-import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
+import {
+	Box,
+	type DOMElement,
+	measureElement,
+	render,
+	Text,
+	useApp,
+	useInput,
+	useWindowSize,
+} from "ink";
 import {
 	createElement as h,
 	type ReactElement,
@@ -10,6 +19,7 @@ import {
 	useState,
 } from "react";
 import wrapAnsi from "wrap-ansi";
+import { copied, osc52 } from "./clipboard.ts";
 import { type Command, completions, isCommand, isShell, money } from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
@@ -59,6 +69,22 @@ export function chatWidth(columns: number): number {
 const PROMPT_ROWS = 3;
 
 const ESC = "\u001b";
+
+/** What one notch of a wheel moves. Three is what a terminal scrolls, so it is what a hand expects. */
+const WHEEL_ROWS = 3;
+
+/**
+ * Asks the terminal to report the mouse: the buttons, the dragging, and all of it in the encoding
+ * that still works past the 223rd column.
+ *
+ * Being told about the wheel is the only way to scroll a screen the terminal did not draw, and it
+ * cannot be asked for on its own — a terminal reporting the wheel reports the clicks too, and one
+ * reporting clicks has stopped selecting text for whoever is reading. So the dragging is asked for
+ * as well and the selection is drawn here instead. That trade is the whole reason this line is
+ * allowed to exist, and it is void the moment a drag stops putting the words on the clipboard.
+ */
+const MOUSE_ON = `${ESC}[?1000h${ESC}[?1002h${ESC}[?1006h`;
+const MOUSE_OFF = `${ESC}[?1006l${ESC}[?1002l${ESC}[?1000l`;
 
 /**
  * Braille, because it turns in place: every frame is one column wide, so the line beside it does
@@ -298,6 +324,100 @@ export function scrolled(
 	// at its end already and never reports having been scrolled away from it.
 	const next = Math.max(0, (top ?? last) + by);
 	return next >= last ? undefined : next;
+}
+
+/** Where the mouse was when it was reported, in the terminal's own numbering: one for the first row. */
+export interface At {
+	readonly column: number;
+	readonly row: number;
+}
+
+/**
+ * What the mouse did: turned, or went down, moved with a button held, or came back up.
+ *
+ * The wheel is separate from the rest because it is the only one that says nothing about where it
+ * happened that anybody here needs — it scrolls the pane that is open, wherever the pointer is.
+ */
+export type Moved =
+	| { readonly did: "wheel"; readonly by: number }
+	| { readonly did: "down" | "drag" | "up"; readonly at: At };
+
+/**
+ * What a chunk of mouse reporting says happened — and nothing at all when the chunk is not the
+ * mouse, which is how the caller knows to hand it on to the keyboard.
+ *
+ * Reported as `ESC [ < button ; column ; row M`, with `m` for a release. The button carries flags
+ * as well as a number: 64 is the wheel, 32 is motion with something held down, and the bits above
+ * those are shift, meta and ctrl, which are none of this reader's business. Everything in the chunk
+ * is answered for, wheel or not: one flick of a trackpad arrives as several reports at once, and a
+ * click nobody claims is an escape sequence typed into the prompt.
+ */
+export function mouse(input: string): readonly Moved[] | undefined {
+	const moves: Moved[] = [];
+	let reported = false;
+	for (const piece of input.split(ESC)) {
+		const report = /^\[<(\d+);(\d+);(\d+)([Mm])/.exec(piece);
+		if (report === null) continue;
+		reported = true;
+		const [, code = "0", column = "1", row = "1", end = "M"] = report;
+		const button = Number(code);
+		const at = { column: Number(column), row: Number(row) };
+		if ((button & 64) !== 0) {
+			// 64 is a notch up and 65 a notch down; 66 and 67 are the same wheel tilted sideways, which
+			// this has nothing to scroll with and still has to swallow.
+			if ((button & 3) === 0) moves.push({ did: "wheel", by: -WHEEL_ROWS });
+			else if ((button & 3) === 1) moves.push({ did: "wheel", by: WHEEL_ROWS });
+			continue;
+		}
+		if (end === "m") moves.push({ did: "up", at });
+		else if ((button & 32) !== 0) moves.push({ did: "drag", at });
+		// Only the left button draws a selection. The others are reported, swallowed, and left alone:
+		// a terminal's own menu on the right button is not this console's to reinvent.
+		else if ((button & 3) === 0) moves.push({ did: "down", at });
+	}
+	return reported ? moves : undefined;
+}
+
+/** The rows a drag is holding, counted from the first row the pane is showing. */
+export interface Span {
+	readonly from: number;
+	readonly to: number;
+}
+
+/**
+ * Which rows of a conversation a drag has hold of, or nothing when it began outside it.
+ *
+ * Counted from the bottom of the pane rather than the top, because that is where both panes are
+ * anchored: they rest on the prompt, so the slack a short conversation leaves lands above it and
+ * arithmetic that started at the top would be off by exactly that slack. `below` is everything the
+ * pane drew under the last line — the prompt, its border, the command menu — which the pane knows
+ * and this cannot work out for itself.
+ *
+ * Where the drag ends is clamped and where it began is not: a hand that pulls past the last row
+ * means the last row, but a press on the prompt or on the agent list is not a selection at all.
+ */
+export function holding(
+	drag: { readonly from: At; readonly to: At },
+	pane: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+	shape: { readonly lines: number; readonly below: number },
+): Span | undefined {
+	if (shape.lines <= 0) return undefined;
+	// One row of border at the bottom, and the rows the pane drew above it.
+	const last = pane.y + pane.height - 2 - shape.below;
+	const first = last - shape.lines + 1;
+	// The terminal numbers its rows and columns from one and the layout numbers them from zero.
+	const began = drag.from.row - 1;
+	const column = drag.from.column - 1;
+	if (began < first || began > last) return undefined;
+	if (column < pane.x || column >= pane.x + pane.width) return undefined;
+	const ended = Math.min(Math.max(drag.to.row - 1, first), last);
+	return { from: Math.min(began, ended) - first, to: Math.max(began, ended) - first };
+}
+
+/** A row as it would be pasted: without the colours it was drawn in, and without the space at its end. */
+export function bare(line: string): string {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: the escape is what is being removed.
+	return line.replace(/\u001b\[[0-9;]*m/g, "").trimEnd();
 }
 
 /**
@@ -570,6 +690,39 @@ export function New({
 	);
 }
 
+/**
+ * The commands the prompt is offering right now, and where in the list they start.
+ *
+ * The menu is taken out of the conversation rather than laid over it, and never takes the last row:
+ * a pane being dragged to nothing must still be a pane, not a list with nowhere to type. Framed
+ * rather than cut at the top, because this list is as long as the models are and a cursor arrowed
+ * past the bottom of it would be a return pressed at a row nobody can see.
+ *
+ * Out here rather than inside the pane because the pane is not the only one who has to know: what a
+ * drag lands on depends on how many rows this took, and a hand counting them differently from the
+ * screen selects the wrong words.
+ */
+export function offering(
+	menu: readonly Command[],
+	pick: number,
+	rows: number,
+): { readonly from: number; readonly listed: readonly Command[] } {
+	const height = Math.max(0, chatRows(rows) - 1);
+	const from = frameFrom(menu.length, pick, height);
+	return { from, listed: menu.slice(from, from + height) };
+}
+
+/** The conversation as the rows a pane of this size is showing of it, which is what a drag copies. */
+export function reading(
+	history: readonly Said[],
+	columns: number,
+	rows: number,
+	taken: number,
+	top: number | undefined,
+): readonly string[] {
+	return visible(wrapped(transcript(history), columns), chatRows(rows) - taken, top);
+}
+
 export function Chat({
 	history,
 	draft,
@@ -581,6 +734,7 @@ export function Chat({
 	confirm,
 	menu,
 	pick,
+	held,
 }: {
 	readonly history: readonly Said[];
 	readonly draft: string;
@@ -596,20 +750,16 @@ export function Chat({
 	/** What the line being typed could still turn out to be, which is empty unless it began with a slash. */
 	readonly menu: readonly Command[];
 	readonly pick: number;
+	/** The rows a drag is holding, counted from the first one this pane is showing. */
+	readonly held: Span | undefined;
 }): ReactElement {
 	// The box around the prompt costs two rows. A pane with no room for them keeps the prompt and
 	// gives up the border, because a border drawn where there is no room is the broken screen again.
 	const boxed = rows > PROMPT_ROWS;
-	// The menu is taken out of the conversation rather than laid over it, and never takes the last
-	// row: a pane being dragged to nothing must still be a pane, not a list with nowhere to type.
-	// Framed rather than cut at the top, because this list is as long as the models are and a cursor
-	// arrowed past the bottom of it would be a return pressed at a row nobody can see.
-	const height = Math.max(0, chatRows(rows) - 1);
-	const from = frameFrom(menu.length, pick, height);
-	const listed = menu.slice(from, from + height);
+	const { from, listed } = offering(menu, pick, rows);
 	const named = listed.map((command) => `${command.name} ${command.takes}`.trimEnd());
 	const widest = Math.max(0, ...named.map((name) => name.length));
-	const lines = visible(wrapped(transcript(history), columns), chatRows(rows) - listed.length, top);
+	const lines = reading(history, columns, rows, listed.length, top);
 	// A spinner alone says something is happening; the number rising beside it is what separates slow
 	// from stuck, and twice now the thing that looked slow was a hang. The shell prompt is drawn over
 	// it rather than under it, because a mode has to be visible while it is on: `!` reaches the box
@@ -662,8 +812,21 @@ export function Chat({
 			{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end", key: "said" },
 			// Already the width of the pane, so Ink is told not to measure them again — a row it
 			// decided to wrap is a row this one did not budget for.
+			//
+			// A held row is drawn inverted, which is what a selection looks like everywhere else and is
+			// the one thing the terminal stopped doing for us the moment the mouse was asked for. The
+			// whole row goes, colours and all: `27` is the only code that undoes `7`, so the markdown
+			// already in the line cannot cancel the highlight halfway through a word.
 			...lines.map((line, index) =>
-				h(Text, { key: `${index}`, wrap: "truncate" }, line === "" ? " " : line),
+				h(
+					Text,
+					{
+						key: `${index}`,
+						wrap: "truncate",
+						inverse: held !== undefined && index >= held.from && index <= held.to,
+					},
+					line === "" ? " " : line,
+				),
 			),
 		),
 		// Outside the prompt's box and resting on it, the way the list of what a word could become
@@ -1059,17 +1222,28 @@ function Logs({
 	lines,
 	rows,
 	top,
+	held,
 }: {
 	readonly lines: readonly string[];
 	readonly rows: number;
 	readonly top: number | undefined;
+	/** The rows a drag is holding, counted from the first one this pane is showing. */
+	readonly held: Span | undefined;
 }): ReactElement {
 	return h(
 		Box,
 		// The newest line against the bottom edge, which is where a feed being watched is read.
 		{ flexDirection: "column", flexGrow: 1, justifyContent: "flex-end" },
 		...visible(lines, rows, top).map((line, index) =>
-			h(Text, { key: `${index}`, wrap: "truncate" }, line === "" ? " " : line),
+			h(
+				Text,
+				{
+					key: `${index}`,
+					wrap: "truncate",
+					inverse: held !== undefined && index >= held.from && index <= held.to,
+				},
+				line === "" ? " " : line,
+			),
 		),
 	);
 }
@@ -1158,6 +1332,17 @@ export function App({
 	const [offers, setOffers] = useState<readonly ModelOffer[] | undefined>(undefined);
 	// The model a drop was asked about, while the console waits to hear it was meant.
 	const [dropping, setDropping] = useState<string | undefined>(undefined);
+	// Where the panel actually is, measured rather than worked out: which row a click landed on is a
+	// question about the layout Ink just did, and every arithmetic answer to it was off by a border.
+	const pane = useRef<DOMElement | null>(null);
+	// Where the button went down, for as long as it is still down. A ref rather than state because a
+	// drag reports every row it crosses and re-rendering the anchor would be a render per row.
+	const pressed = useRef<At | undefined>(undefined);
+	// The rows the drag is holding, counted from the first one on screen.
+	const [held, setHeld] = useState<Span | undefined>(undefined);
+	// How many rows the last drag put on the clipboard, and whether a program took them. Said out
+	// loud because a selection that vanishes on the next keystroke leaves nothing to show it worked.
+	const [copy, setCopy] = useState<{ rows: number; sure: boolean } | undefined>(undefined);
 
 	// Undefined on the row under the agents, which is not an agent but the way to make one.
 	const selected = agents[Math.min(cursor, agents.length)];
@@ -1177,7 +1362,7 @@ export function App({
 	const chosen = menu[at];
 	// What the arrows are moving through, for the row that says so: a command until one has been
 	// chosen, and after that whatever the chosen one takes.
-	const offering = /\s/.test(draft) ? "model" : "command";
+	const among = /\s/.test(draft) ? "model" : "command";
 	const writing = selected === undefined ? undefined : live.get(selected.id);
 	const said =
 		selected === undefined
@@ -1200,6 +1385,23 @@ export function App({
 	// pane does without: the last row a six-row terminal should spend on anything is one spent on air.
 	const airy = body >= 8;
 	const inner = body - (airy ? 2 : 1);
+
+	// What the open pane has on screen, and how many rows it drew underneath them. Worked out here
+	// rather than left to the pane, because a drag arrives as a row of the terminal and these two are
+	// the whole of turning that row back into a line of text. The panes that are lists rather than
+	// text — a name being typed, the models — show nothing here, and nothing is what a drag on them
+	// takes: they have no lines anybody would want in a paste.
+	const boxed = inner > PROMPT_ROWS;
+	const listed = panel === "chat" && selected !== undefined ? offering(menu, at, inner).listed : [];
+	const onScreen =
+		panel === "logs"
+			? visible(lines, inner, top)
+			: panel === "chat" && selected !== undefined
+				? reading(said, width, inner, listed.length, top)
+				: [];
+	// The feed has no prompt under it. The chat has one, and the command menu when a slash is being
+	// typed, and both of them stand between the last line of talk and the bottom border.
+	const below = panel === "logs" ? 0 : listed.length + (boxed ? PROMPT_ROWS : 1);
 
 	// Scrolled back is a place in one conversation or one feed, and it does not survive being pointed
 	// at another: arriving in the middle of something nobody asked for is disorienting. Dropped during
@@ -1493,11 +1695,75 @@ export function App({
 		}
 		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
 		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
-		const scroll = (pages: number): void => {
+		const scroll = (by: number, pages: number): void => {
 			const height = panel === "logs" ? inner : chatRows(inner);
 			const total = panel === "logs" ? lines.length : wrapped(transcript(said), width).length;
-			setTop((prev) => scrolled(prev, Math.round(pages * height), { total, height }));
+			setTop((prev) => scrolled(prev, by + Math.round(pages * height), { total, height }));
 		};
+
+		/** Puts the rows a drag was holding on the clipboard, by whatever means this machine has. */
+		const take = async (span: Span): Promise<void> => {
+			const text = onScreen
+				.slice(span.from, span.to + 1)
+				.map(bare)
+				.join("\n");
+			if (text === "") return;
+			const sure = await copied(text);
+			// The escape sequence only when no program took it, and never instead of one: it is the only
+			// path that works from the far end of an `ssh`, where the clipboard worth landing on is the
+			// one in front of the person and `pbcopy` would write to the machine they logged in to.
+			// Nothing comes back to say whether the terminal understood it, which is why the row that
+			// reports this says which of the two happened rather than claiming both worked.
+			if (!sure) process.stdout.write(osc52(text));
+			setCopy({ rows: span.to - span.from + 1, sure });
+		};
+
+		// First, and before anything looks at the key: a mouse report is an escape sequence, and every
+		// branch below this one would take it for either a keystroke or something to type.
+		const moves = mouse(input);
+		if (moves !== undefined) {
+			for (const move of moves) {
+				if (move.did === "wheel") {
+					// The rows being held are rows of the screen, and the screen is about to say something
+					// else on them.
+					setHeld(undefined);
+					scroll(move.by, 0);
+					continue;
+				}
+				if (move.did === "down") {
+					pressed.current = move.at;
+					setHeld(undefined);
+					setCopy(undefined);
+					continue;
+				}
+				const began = pressed.current;
+				const box = pane.current;
+				if (began === undefined || box === null) continue;
+				const span = holding({ from: began, to: move.at }, measureElement(box), {
+					lines: onScreen.length,
+					below,
+				});
+				if (move.did === "drag") {
+					setHeld(span);
+					continue;
+				}
+				pressed.current = undefined;
+				// A button that went down and came up without moving is a click, and a click selects
+				// nothing: this pane is read with the mouse resting in it, and a stray one that copied the
+				// line under the pointer would quietly replace whatever was on the clipboard.
+				if (move.at.row === began.row && move.at.column === began.column) {
+					setHeld(undefined);
+					continue;
+				}
+				setHeld(span);
+				if (span !== undefined) void take(span);
+			}
+			return;
+		}
+		// Any key at all lets go of a selection, the way clicking elsewhere would: the rows under it are
+		// about to be scrolled, typed over or replaced by another agent's conversation.
+		if (held !== undefined) setHeld(undefined);
+		if (copy !== undefined) setCopy(undefined);
 
 		/**
 		 * A question is up, and until it is answered there is nothing else this keyboard does.
@@ -1615,9 +1881,9 @@ export function App({
 			entered(adding + first);
 			return;
 		}
-		// Before the panes, so it reaches the agent being watched from whichever one is open. Only
-		// while it is thinking: escape on an agent with nothing to stop is a key pressed at the wrong
-		// moment, not a command.
+		// After the mouse guard, so a wheel report is never read as this, and before the panes, so it
+		// reaches the agent being watched from whichever one is open. Only while it is thinking: escape
+		// on an agent with nothing to stop is a key pressed at the wrong moment, not a command.
 		if (key.escape) {
 			if (selected !== undefined && busy.has(selected.id)) {
 				void client.stop(selected.id).catch(() => {});
@@ -1626,19 +1892,17 @@ export function App({
 		}
 		// Half a pane at a time, from less and from vim. Chords, because every unmodified key that
 		// would have meant this — shift with an arrow, the page keys — is one the terminal keeps for
-		// scrolling its own scrollback and never delivers. The wheel is the terminal's too, and left
-		// to it on purpose: an app that asks to be told about the mouse is an app you cannot select
-		// text in, and reading the conversation somewhere else is worth more than a notch of scroll.
+		// scrolling its own scrollback and never delivers.
 		if (key.ctrl && (input === "u" || input === "d")) {
-			scroll(input === "u" ? -0.5 : 0.5);
+			scroll(0, input === "u" ? -0.5 : 0.5);
 			return;
 		}
 		if (key.pageUp) {
-			scroll(-1);
+			scroll(0, -1);
 			return;
 		}
 		if (key.pageDown) {
-			scroll(1);
+			scroll(0, 1);
 			return;
 		}
 		// While the menu is up these three keys belong to it, which is what they do in every other box
@@ -1797,9 +2061,16 @@ export function App({
 	});
 
 	const title = selected === undefined ? "new agent" : selected.id;
+	// A selection disappears the moment the next key is pressed, so without a word here there is
+	// nothing to say it ever landed. It says which way it went, too: a program on this machine took
+	// it, or the sequence went to the terminal and no answer to it is coming back.
+	const took =
+		copy === undefined
+			? ""
+			: `   ⧉ ${copy.rows} ${copy.rows === 1 ? "row" : "rows"} ${copy.sure ? "copied" : "sent to the terminal"}`;
 	// What the left of the title row has already spent, so that what goes at the right end knows how
 	// much of the row is left for it. Three columns of gap, so the two halves never touch.
-	const tabs = `${title}   chat · logs · setup${top === undefined ? "" : "   ↑ scrolled"}   `;
+	const tabs = `${title}   chat · logs · setup${top === undefined ? "" : "   ↑ scrolled"}${took}   `;
 	const state =
 		selected === undefined ? { model: "", spend: "" } : standing(selected, width - tabs.length);
 	const heat = selected === undefined ? { dimColor: true } : burning(selected);
@@ -1837,6 +2108,9 @@ export function App({
 					borderStyle: "round",
 					borderColor: "gray",
 					paddingX: 1,
+					// Held so a mouse report can be turned back into a row of text. Nothing here reads it
+					// during a render; it is measured on the click, against the layout as it stands then.
+					ref: pane,
 					key: "panel",
 				},
 				h(
@@ -1852,6 +2126,7 @@ export function App({
 					// What a pane showing the end of things cannot say for itself: that this one is not.
 					// Without it, an answer arriving out of sight looks like an agent that said nothing.
 					top === undefined ? null : h(Text, { color: "yellow" }, "   ↑ scrolled"),
+					took === "" ? null : h(Text, { color: copy?.sure === true ? "green" : "yellow" }, took),
 					// Pushed to the far end rather than set after the tabs, so that the tabs do not move
 					// sideways as a number under them grows: they are pressed at, and a target that
 					// wanders while you reach for it is worse than one that says less.
@@ -1861,7 +2136,7 @@ export function App({
 				),
 				airy ? h(Text, { key: "under" }, " ") : null,
 				panel === "logs"
-					? h(Logs, { lines, rows: inner, top, key: "logs" })
+					? h(Logs, { lines, rows: inner, top, held, key: "logs" })
 					: panel === "setup"
 						? h(Setup, {
 								providers,
@@ -1902,6 +2177,7 @@ export function App({
 									confirm: deleting,
 									menu,
 									pick: at,
+									held,
 									key: "chat",
 								}),
 			),
@@ -1957,7 +2233,7 @@ export function App({
 									// what they did a keystroke ago. A hint left standing for a key the menu has taken is
 									// the same lie as a hint for a key that does nothing.
 									[
-										["↑↓", offering],
+										["↑↓", among],
 										["⏎", "choose"],
 										["^C", "quit"],
 									]
@@ -2032,7 +2308,25 @@ export async function openConsole(client: ControlClient): Promise<number> {
 		await client.transcripts().catch(() => ({})),
 		chatWidth(process.stdout.columns ?? 80),
 	);
-	const app = render(h(App, { client, initial, conversations }), { exitOnCtrlC: false });
-	await app.waitUntilExit();
+	// The console takes the whole window and gives it back on the way out, the way `less` and `vim`
+	// do. It draws a screen the terminal did not draw, so the scrollback behind it held pictures of
+	// older frames rather than the conversation, and a wheel or a page key that reached it scrolled
+	// away from a live console into one of those pictures. On the alternate screen there is no
+	// scrollback to fall into, and nothing this printed is left behind in the shell it was opened
+	// from. Frames are written line by line rather than redrawn whole, which is what stops a console
+	// that repaints on every token from flickering while it is read.
+	const app = render(h(App, { client, initial, conversations }), {
+		exitOnCtrlC: false,
+		alternateScreen: true,
+		incrementalRendering: true,
+	});
+	process.stdout.write(MOUSE_ON);
+	try {
+		await app.waitUntilExit();
+	} finally {
+		// Whatever happened. A terminal left reporting its mouse prints an escape sequence at whoever
+		// clicks in it next, and they will be at a shell prompt with no idea what did that to them.
+		process.stdout.write(MOUSE_OFF);
+	}
 	return 0;
 }

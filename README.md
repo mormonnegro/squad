@@ -221,15 +221,23 @@ somebody has been told it stopped. What it had already written stays in the conv
 `stopped` under it, it is not taken again — an interrupted turn comes back, which is what whoever
 pressed the key was preventing — and it does not get to book the turn after it either.
 
+The console takes the whole window and gives it back on the way out, the way `less` and `vim` do.
+Nothing it printed is left behind in the shell it was opened from, and the wheel has somewhere to
+turn: on the alternate screen there is no scrollback to fall into, so a notch of it moves the
+conversation rather than scrolling away from a live console into pictures of an older one.
+
 `^U` and `^D` move the panel half a pane the way they do in `less`. Chords, because the keys that
 would have meant this without one — shift with the arrows, the page keys — are the ones the terminal
-takes for its own scrollback before they are ever ours, and that scrollback holds the frames this
-printed rather than the conversation.
+takes for its own scrollback before they are ever ours.
 
-The mouse is left alone, and the wheel with it. An app only gets told about the wheel by asking the
-terminal to report the mouse, and a terminal reporting the mouse is one you cannot drag a selection
-in — so the wheel would have been bought with the ability to copy what an agent said, which is most
-of what reading it is for.
+The wheel is paid for by drawing the selection here instead. A terminal only reports the wheel to an
+app that asked to be told about the mouse, and a terminal reporting the mouse is one that stops
+selecting text for you — so dragging over the conversation highlights the rows itself and putting
+the button back down puts them on the clipboard, `⧉ 3 rows copied` in the tab row to say it landed.
+A click that does not move copies nothing: the pointer rests in this pane while it is being read,
+and a stray click that replaced the clipboard would be a worse trade than the one being avoided.
+Over `ssh` there is no local program to hand the text to, so it goes to the terminal as an OSC 52
+sequence and the row says `sent to the terminal` rather than claiming a clipboard it cannot see.
 
 The tab row says `↑ scrolled` while a panel is not at the end — without that, an answer arriving out
 of sight reads as an agent that said nothing. Where it is scrolled to is a line and not a distance
