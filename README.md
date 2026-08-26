@@ -194,11 +194,13 @@ asking to see the thing, not to be told a fact about it:
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
 │ agents               ││ demo   chat · logs · setup   deepseek-v4-flash   $0.42 / $5.00 │
 │                      ││                                                                │
-│ ● demo         $0.42 ││ > que es un webhook                                            │
-│ ◐ maxi     15m $4.80 ││                                                                │
+│ ◐ demo         $0.42 ││ > que es un webhook                                            │
+│ ● maxi     15m $4.80 ││                                                                │
 │ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
-│                      ││ servicios: cuando ocurre un evento en un sistema, ese          │
-│ + new agent          ││ sistema envía una petición HTTP a una URL configurada.         │
+│                      ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
+│ + new agent          ││ envía una petición HTTP a una URL configurada.                 │
+│                      ││                                                                │
+│                      ││ ⠹ 9s search webhook retry semantics                            │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ >                                                          │ │
 │                      ││ ╰────────────────────────────────────────────────────────────╯ │
@@ -213,10 +215,13 @@ title gives the same name, and not an arrow in a gutter beside the marks: a colu
 stands against the border and whose rows all begin two further in reads as a list indented under a
 title it does not belong to. `↑↓` moves between them and `tab` cycles the panel through that
 agent's conversation, the log feed — the same feed `agent logs` prints, running the whole time
-either way — and the setup screen, which is about the plane rather than about the agent behind
-it. The prompt shows the spinner and the seconds while that agent is thinking,
-because a spinner alone says something is happening and the number rising beside it is what says
-whether it still is.
+either way — and the setup screen, which is about the plane rather than about the agent behind it.
+While that agent is thinking, the row under the conversation carries the spinner, the seconds and
+whatever the turn is on: a spinner alone says something is happening, the number rising beside it
+says whether it still is, and the tool being run is the difference between stuck on the model and
+stuck on a test suite. It is there rather than in the prompt because the prompt is the one row a
+hand is on — a turn takes minutes, the next question is thought of during them, and a box wearing a
+spinner reads as a box that has stopped taking keys.
 
 Under the last agent is the row that makes one, reached with the same `↑↓` as any of them. It is a
 row rather than a command because that is where somebody who wants an agent is already looking —
