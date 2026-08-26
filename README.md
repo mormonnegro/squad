@@ -101,26 +101,36 @@ want after changing the code, and it works because the new plane adopts the sand
 
 ## Running it
 
-On the machine it is going to live on:
+From the computer you are sitting at:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
+npx agent-dive
 ```
 
-That installs Docker if there is none, puts the repository in `/opt/agent-dive`, asks on the
-terminal for the keys the proxy will hold, writes a config with one agent and a ceiling of five
-dollars a day, starts the plane, and leaves `agent` on the PATH. Running it again is the update: it
-pulls, rebuilds and swaps the plane in, and never touches `config.yaml` or `.env`.
+It asks which machine your agents should live on and does the rest over the SSH you already have to
+it: Docker installed if there is none, the repository in `/opt/agent-dive`, a config with one agent
+and a ceiling of five dollars a day, the plane started, and `agent` on the PATH there and here. It
+ends on the console. Running it again is the update: it pulls, rebuilds and swaps the plane in, and
+never touches `config.yaml` or `.env`.
 
-On the computer you drive from, once:
+It asks for no keys, because down a pipe the installer has no terminal to read one from; they are
+given later on the setup screen in `agent`. The npm name is not settled yet.
+
+Nothing of that package stays on either machine. It pipes the two shell scripts below to the two
+ends of an SSH connection, and each of them stands alone:
 
 ```sh
+# on the machine the agents live on
+curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
+
+# on the computer you drive from, once
 curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/connect.sh | sh
 ```
 
-That leaves `agent` there too. Not a second copy of anything — it is the ssh that reaches the
-first one, so the console still runs on the machine the agents are on and there is no version to
-keep in step. The first run asks which machine your plane is on and writes the answer to
+Run at a terminal rather than down a pipe, the installer asks for the keys the proxy will hold as it
+goes. The second leaves `agent` on this computer — not a second copy of anything, but the ssh that
+reaches the first one, so the console still runs on the machine the agents are on and there is no
+version to keep in step. Its first run asks which machine your plane is on and writes the answer to
 `~/.agent-dive/plane`; a connection that never opened is treated as a typo rather than saved, and
 `agent connect user@host` points it somewhere else. The installer on the VPS prints the line with
 your own address already in it.

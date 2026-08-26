@@ -94,6 +94,8 @@ importers:
 
   packages/events: {}
 
+  packages/install: {}
+
   packages/proxy:
     dependencies:
       node-forge:

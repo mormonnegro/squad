@@ -161,10 +161,10 @@ export default function Home() {
 					</p>
 					<Install />
 					<p className="small muted">
-						That is the install; there is no third step. Nothing is published and there is nothing
-						to log into — the console travels the SSH connection you already have to the machine.
-						Every key can be skipped and pasted later on the setup screen, so it is never held up by
-						one you have to go and find.
+						It asks for no keys. Every one of them is given later on the setup screen, so the
+						install is never held up by a key you have to go and find. Nothing is published and
+						there is nothing to log into: after this, <code>agent</code> on your own computer is the
+						console on that machine.
 					</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump">

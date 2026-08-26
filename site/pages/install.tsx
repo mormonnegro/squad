@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Code } from "../components/Code";
 import { Layout } from "../components/Layout";
-import { CONNECT, INSTALL, REPO } from "../lib/site";
+import { CONNECT, INSTALL, PACKAGE, REPO } from "../lib/site";
 
 const ASKS: [string, string][] = [
 	["Docker", "installed from get.docker.com if the machine has none"],
@@ -14,7 +14,7 @@ export default function Install() {
 	return (
 		<Layout
 			title="install"
-			description="One command on a fresh VPS. Then you drive it by typing agent, over the SSH connection you already have."
+			description="One command from the computer you are sitting at. Then you drive it by typing agent, over the SSH connection you already have."
 		>
 			<section className="hero">
 				<div className="wrap">
@@ -33,16 +33,51 @@ export default function Install() {
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">On the machine</span>
-					<h2>One command, and it asks for the rest</h2>
+					<span className="eyebrow">From your computer</span>
+					<h2>One command, and it asks one thing</h2>
+					<Code label="on your laptop">{`
+$ npx ${PACKAGE}
+`}</Code>
+					<p>
+						The thing it asks is which machine your agents should live on. Everything after that
+						goes down the SSH you already have to it: Docker installed if there is none, the
+						repository in <code>/opt/agent-dive</code>, a config with one agent and a ceiling of
+						five dollars a day, the plane started, and <code>agent</code> left on the PATH — there,
+						and here. It ends on the console.
+					</p>
+					<p className="small muted">
+						It asks for no keys. Down a pipe the installer has no terminal to read one from, so
+						every key is given later on the setup screen in <code>agent</code> and the install is
+						never held up by a key you have to go and find. Run the same command again any time and
+						it becomes the update: it pulls, rebuilds, swaps the plane in, and leaves{" "}
+						<code>config.yaml</code> and <code>.env</code> alone — the second run is the one that
+						would quietly undo a grant somebody added.
+					</p>
+					<div className="note">
+						<p>
+							<strong>Nothing of it stays.</strong> The package chooses a machine and pipes two
+							shell scripts — <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a>{" "}
+							and <a href={`${REPO}/blob/main/deploy/connect.sh`}>deploy/connect.sh</a> — to the two
+							ends of an SSH connection, and neither end is left holding it. Both halves stand alone
+							and are below; <a href="#by-hand">the same install by hand</a> is at the bottom of
+							this page.
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div className="wrap">
+					<span className="eyebrow">Or the two halves, yourself</span>
+					<h2>What it runs, at each end</h2>
+					<p>
+						Run at a terminal instead of down a pipe, the installer asks for the keys as it goes.
+						That is the whole difference — same script, and the questions exist only because there
+						is now somebody there to answer them.
+					</p>
 					<Code label="on your VPS" wrap>{`
 $ curl -fsSL ${INSTALL} | sh
 `}</Code>
-					<p>
-						It installs Docker if there is none, puts the repository in <code>/opt/agent-dive</code>
-						, writes a config with one agent and a ceiling of five dollars a day, starts the plane,
-						and leaves <code>agent</code> on the PATH.
-					</p>
 					<table className="table">
 						<tbody>
 							{ASKS.map(([what, why]) => (
@@ -54,47 +89,34 @@ $ curl -fsSL ${INSTALL} | sh
 						</tbody>
 					</table>
 					<p className="small muted">
-						The keys are read from the terminal, not from the pipe, and land in a <code>0600</code>{" "}
-						file the agents cannot reach. Every one can be skipped and given later on the setup
-						screen in <code>agent</code>, so the install is never held up by a key you have to go
-						and find. Nothing else is asked. Run the same command again any time and it becomes the
-						update: it pulls, rebuilds, swaps the plane in, and leaves <code>config.yaml</code> and{" "}
-						<code>.env</code> alone — the second run is the one that would quietly undo a grant
-						somebody added.
+						They are read from the terminal, not from the pipe, and land in a <code>0600</code> file
+						the agents cannot reach. Every one can be skipped and given later on the setup screen.
+						Nothing else is asked.
 					</p>
-					<div className="note">
-						<p>
-							<strong>If you would rather read it first.</strong> It is{" "}
-							<a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a>, about two
-							hundred lines, and piping a script from a stranger into a shell is a reasonable thing
-							to refuse. <a href="#by-hand">The same install by hand</a> is at the bottom of this
-							page.
-						</p>
-					</div>
+					<Code label="on your laptop" wrap>{`
+$ curl -fsSL ${CONNECT} | sh
+`}</Code>
+					<p className="small muted">
+						That is the other half, and it leaves <code>agent</code> on this computer. It is not a
+						second copy of anything — it is the ssh that reaches the first one, under the name you
+						would have given the alias. The first run asks which machine your plane is on, writes
+						the answer to <code>~/.agent-dive/plane</code>, and never asks again; a connection that
+						never opened is treated as a typo rather than saved.{" "}
+						<code>agent connect user@host</code> points it somewhere else, and the installer on the
+						VPS prints that line with your own address already in it.
+					</p>
 				</div>
 			</section>
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">From your computer</span>
+					<span className="eyebrow">Once you are on it</span>
 					<h2>Then you type its name</h2>
 					<p>
 						The control surface is a unix socket inside the state directory and it never leaves the
 						machine. There is no port to open, no token to issue and nothing to log into: SSH
 						already decides who may touch that host, and touching that host is what holding the
 						socket means.
-					</p>
-					<Code label="on your laptop" wrap>{`
-$ curl -fsSL ${CONNECT} | sh
-`}</Code>
-					<p className="small muted">
-						That leaves <code>agent</code> on this computer as well. It is not a second copy of
-						anything — it is the ssh that reaches the first one, under the name you would have given
-						the alias. The first run asks which machine your plane is on, writes the answer to{" "}
-						<code>~/.agent-dive/plane</code>, and never asks again; a connection that never opened
-						is treated as a typo rather than saved. <code>agent connect user@host</code> points it
-						somewhere else, and the installer on the VPS prints that line with your own address
-						already in it.
 					</p>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,

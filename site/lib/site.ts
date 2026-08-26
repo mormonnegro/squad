@@ -12,6 +12,10 @@ export const INSTALL = `${RAW}/install.sh`;
 /** On the computer you drive from. */
 export const CONNECT = `${RAW}/connect.sh`;
 
+// The npm name, which is not settled and is not the repository's to assume. Written once so the
+// day it changes is one edit here and not a hunt through the pages for a command people copy.
+export const PACKAGE = "agent-dive";
+
 export const PI = "https://github.com/earendil-works/pi";
 
 export const TITLE = "agent-dive";

@@ -1,70 +1,34 @@
-import type { ReactNode } from "react";
 import { useCopy } from "../lib/copy";
-import { CONNECT, INSTALL } from "../lib/site";
+import { PACKAGE } from "../lib/site";
 
-// The whole path from a bare machine to a console, in the order it is typed. On the front page
-// rather than a link away, because "how do I run this" is the second question and it has a
-// two-line answer.
-const STEPS: { where: string; command: string; leaves: ReactNode }[] = [
-	{
-		where: "on your VPS",
-		command: `curl -fsSL ${INSTALL} | sh`,
-		leaves: (
-			<>
-				Installs Docker if the machine has none, asks for the keys the proxy will hold, and leaves{" "}
-				<code>agent</code> on the PATH.
-			</>
-		),
-	},
-	{
-		where: "on your laptop",
-		command: `curl -fsSL ${CONNECT} | sh`,
-		leaves: (
-			<>
-				Leaves <code>agent</code> there too. The first one asks which machine your plane is on and
-				remembers it; every one after it is the console.
-			</>
-		),
-	},
-];
+const COMMAND = `npx ${PACKAGE}`;
 
-function Step({
-	n,
-	where,
-	command,
-	leaves,
-}: {
-	n: number;
-	where: string;
-	command: string;
-	leaves: ReactNode;
-}) {
-	const { done, copy } = useCopy(command);
+/**
+ * The install, which is one command.
+ *
+ * It was two, and both of them were a hundred-character URL — the first thing on the page was the
+ * ugliest thing on it, and it read as a procedure rather than a product. There is still a procedure
+ * underneath and it is still two shell scripts; this is the line that knows where they go.
+ */
+export function Install() {
+	const { done, copy } = useCopy(COMMAND);
 
 	return (
-		<div className="install-step">
-			<div className="install-head">
-				<span className="install-n">{String(n).padStart(2, "0")}</span>
-				<span className="install-where">{where}</span>
+		<div className="start">
+			<div className="start-cmd">
+				<pre>
+					<span className="prompt">$ </span>
+					{COMMAND}
+				</pre>
 				<button type="button" className="copy" data-done={done} onClick={copy}>
 					{done ? "copied" : "copy"}
 				</button>
 			</div>
-			<pre className="install-cmd">
-				<span className="prompt">$ </span>
-				{command}
-			</pre>
-			<p className="install-then">{leaves}</p>
-		</div>
-	);
-}
-
-export function Install() {
-	return (
-		<div className="install">
-			{STEPS.map((step, i) => (
-				<Step key={step.where} n={i + 1} {...step} />
-			))}
+			<p className="start-then">
+				Asks one thing — which machine your agents should live on — and does the rest over the SSH
+				you already have to it. Nothing to open on the VPS, no session to paste into. It ends on the
+				console.
+			</p>
 		</div>
 	);
 }
