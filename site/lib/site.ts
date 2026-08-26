@@ -4,7 +4,13 @@ export const REPO = "https://github.com/agent-dive/agent-dive";
 
 // Derived rather than written out, because the two are the same repository and a site that offers
 // a `curl | sh` pointing at somebody else's fork is the worst thing on it.
-export const INSTALL = `${REPO.replace("github.com", "raw.githubusercontent.com")}/main/deploy/install.sh`;
+const RAW = `${REPO.replace("github.com", "raw.githubusercontent.com")}/main/deploy`;
+
+/** On the machine the agents will live on. */
+export const INSTALL = `${RAW}/install.sh`;
+
+/** On the computer you drive from. */
+export const CONNECT = `${RAW}/connect.sh`;
 
 export const PI = "https://github.com/earendil-works/pi";
 

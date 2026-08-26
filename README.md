@@ -109,9 +109,21 @@ curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/i
 
 That installs Docker if there is none, puts the repository in `/opt/agent-dive`, asks on the
 terminal for the keys the proxy will hold, writes a config with one agent and a ceiling of five
-dollars a day, starts the plane, and leaves `agent` on the PATH — so from your own computer the
-whole of it is `ssh -t root@your-vps agent`. Running it again is the update: it pulls, rebuilds and
-swaps the plane in, and never touches `config.yaml` or `.env`.
+dollars a day, starts the plane, and leaves `agent` on the PATH. Running it again is the update: it
+pulls, rebuilds and swaps the plane in, and never touches `config.yaml` or `.env`.
+
+On the computer you drive from, once:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/connect.sh | sh
+```
+
+That leaves `agent` there too. Not a second copy of anything — it is the ssh that reaches the
+first one, so the console still runs on the machine the agents are on and there is no version to
+keep in step. The first run asks which machine your plane is on and writes the answer to
+`~/.agent-dive/plane`; a connection that never opened is treated as a typo rather than saved, and
+`agent connect user@host` points it somewhere else. The installer on the VPS prints the line with
+your own address already in it.
 
 By hand, which is the same thing without the questions:
 

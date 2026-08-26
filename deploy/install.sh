@@ -22,6 +22,7 @@ DIR=${AGENT_DIVE_DIR:-/opt/agent-dive}
 REPO=${AGENT_DIVE_REPO:-https://github.com/agent-dive/agent-dive.git}
 BRANCH=${AGENT_DIVE_BRANCH:-main}
 STATE=/var/lib/agent-dive
+CONNECT=https://raw.githubusercontent.com/agent-dive/agent-dive/$BRANCH/deploy/connect.sh
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -294,11 +295,11 @@ note "agent                    on this machine, the console"
 note "agent ls                 what each agent is and whether it is up"
 note "agent logs               what every agent runs, answers and spends"
 printf '\n'
-note "From your own computer, over the connection you already have to this machine:"
-note "  ssh -t $(id -un)@$ADDR agent"
+note "From your own computer, one line, and then \`agent\` there means the console here:"
+note "  curl -fsSL $CONNECT | sh -s $(id -un)@$ADDR"
 printf '\n'
-note "Worth an alias, since it is the command you will type every day:"
-note "  alias dive='ssh -t $(id -un)@$ADDR agent'"
+note "It travels the connection you already have to this machine, so there is nothing to open"
+note "and nothing to log into. Without the address it asks for one the first time."
 
 step "Where things are"
 note "$DIR/deploy/config.yaml   what each agent may reach"

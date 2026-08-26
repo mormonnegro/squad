@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Code } from "../components/Code";
 import { Layout } from "../components/Layout";
-import { INSTALL, REPO } from "../lib/site";
+import { CONNECT, INSTALL, REPO } from "../lib/site";
 
 const ASKS: [string, string][] = [
 	["Docker", "installed from get.docker.com if the machine has none"],
@@ -84,17 +84,18 @@ $ curl -fsSL ${INSTALL} | sh
 						already decides who may touch that host, and touching that host is what holding the
 						socket means.
 					</p>
-					<Code label="from your laptop" wrap>{`
-$ ssh -t root@your-vps agent
+					<Code label="on your laptop" wrap>{`
+$ curl -fsSL ${CONNECT} | sh
 `}</Code>
 					<p className="small muted">
-						<code>-t</code> because the console takes the terminal over. The installer prints this
-						line with your own address in it. Worth an alias, since it is the command you will type
-						every day:
+						That leaves <code>agent</code> on this computer as well. It is not a second copy of
+						anything — it is the ssh that reaches the first one, under the name you would have given
+						the alias. The first run asks which machine your plane is on, writes the answer to{" "}
+						<code>~/.agent-dive/plane</code>, and never asks again; a connection that never opened
+						is treated as a typo rather than saved. <code>agent connect user@host</code> points it
+						somewhere else, and the installer on the VPS prints that line with your own address
+						already in it.
 					</p>
-					<Code label="~/.zshrc" wrap>{`
-alias dive='ssh -t root@your-vps agent'
-`}</Code>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,
 						the conversation, <code>/limit</code>, <code>/model</code>, <code>/mcp</code>,{" "}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCopy } from "../lib/copy";
-import { INSTALL } from "../lib/site";
+import { CONNECT, INSTALL } from "../lib/site";
 
 // The whole path from a bare machine to a console, in the order it is typed. On the front page
 // rather than a link away, because "how do I run this" is the second question and it has a
@@ -17,9 +17,14 @@ const STEPS: { where: string; command: string; leaves: ReactNode }[] = [
 		),
 	},
 	{
-		where: "from your laptop",
-		command: "ssh -t root@your-vps agent",
-		leaves: <>The console, over the connection you already use to reach the machine.</>,
+		where: "on your laptop",
+		command: `curl -fsSL ${CONNECT} | sh`,
+		leaves: (
+			<>
+				Leaves <code>agent</code> there too. The first one asks which machine your plane is on and
+				remembers it; every one after it is the console.
+			</>
+		),
 	},
 ];
 
