@@ -474,13 +474,11 @@ code {
 	border-color: color-mix(in srgb, var(--green) 40%, var(--line));
 }
 
+/* Two boxes side by side and touching, which is what the console is: the column of agents is a panel
+   of its own, drawn in its own border, and the pane beside it is another. */
 .mock-frame {
 	display: grid;
 	grid-template-columns: 1fr;
-	background: var(--bg-code);
-	border: 1px solid var(--line);
-	border-radius: 8px;
-	overflow: hidden;
 }
 
 @media (min-width: 720px) {
@@ -489,16 +487,15 @@ code {
 	}
 }
 
-.mock-side {
-	padding: 0.75rem 0;
-	border-bottom: 1px solid var(--line);
+.mock-side,
+.mock-main {
+	background: var(--bg-code);
+	border: 1px solid var(--line);
+	border-radius: 8px;
 }
 
-@media (min-width: 720px) {
-	.mock-side {
-		border-bottom: 0;
-		border-right: 1px solid var(--line);
-	}
+.mock-side {
+	padding: 0.75rem 0;
 }
 
 .mock-side-head {
@@ -524,11 +521,14 @@ button.mock-agent {
 	cursor: pointer;
 }
 
+/* ● up, ○ stopped, ◐ mid-turn: said in shape as well as in colour, because thinking is the one thing
+   about a row you cannot find out by looking again in a second. */
 .mock-dot {
 	flex: none;
 	align-self: center;
-	width: 0.5rem;
-	height: 0.5rem;
+	box-sizing: border-box;
+	width: 0.52rem;
+	height: 0.52rem;
 	border-radius: 50%;
 }
 
@@ -537,24 +537,12 @@ button.mock-agent {
 }
 
 .mock-agent[data-state="thinking"] .mock-dot {
-	background: var(--amber);
-	animation: pulse 1.4s ease-in-out infinite;
+	background: linear-gradient(to right, var(--amber) 50%, transparent 50%);
+	border: 1px solid var(--amber);
 }
 
 .mock-agent[data-state="stopped"] .mock-dot {
 	border: 1px solid var(--muted);
-}
-
-@keyframes pulse {
-	50% {
-		opacity: 0.25;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.mock-agent[data-state="thinking"] .mock-dot {
-		animation: none;
-	}
 }
 
 .mock-name {
@@ -580,13 +568,9 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 	color: var(--cyan);
 }
 
-/* The appointment it has booked. Dim, because it is a fact about later. */
-.mock-next {
-	color: var(--muted);
-}
-
-/* How long this turn has been running. Amber, because it is a fact about now. */
-.mock-wait {
+/* An agent that booked its own next turn is going to act while nobody is watching, which is the one
+   thing on this row worth a colour of its own. */
+.mock-wake {
 	color: var(--amber);
 	opacity: 0.65;
 }
@@ -652,7 +636,10 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 }
 
 .mock-body {
+	display: flex;
 	flex: 1;
+	flex-direction: column;
+	justify-content: flex-end;
 	padding: 0 1rem;
 }
 
@@ -662,71 +649,92 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 	line-height: 1.65;
 }
 
+/* The operator's own line, mark and all, in the colour the prompt it was typed into is drawn in. */
 .mock-said {
-	color: var(--text-strong);
+	color: var(--cyan);
 }
 
-/* What carried the turn in, when it was not typed here. */
+.mock-came {
+	color: var(--text);
+}
+
+/* What carried it: yellow, where dim would be wrong. A line nobody typed is the one worth finding
+   again on a pane full of answers, and dim is how a terminal says this may be skipped. */
 .mock-via {
-	color: var(--muted);
-}
-
-/* The text a line has not printed yet: hidden, not absent, so the pane never reflows while it
-   arrives. Without scripts nothing is printing and the stylesheet in <noscript> shows it all. */
-.mock-off {
-	visibility: hidden;
-}
-
-/* What it reached for on the way to the answer. Dim and tight, because it is there to be read past
-   unless something in it went wrong. */
-.mock-did {
-	margin-bottom: 0.8rem;
-}
-
-.mock-did p {
-	margin: 0;
-	color: var(--muted);
-	line-height: 1.5;
-}
-
-/* One column for the verb, so the four lines read as a log rather than as sentences. */
-.mock-verb {
-	display: inline-block;
-	width: 4.6rem;
-	color: var(--green);
-	opacity: 0.7;
-}
-
-.mock-verb[data-woke="true"] {
 	color: var(--amber);
-	opacity: 0.8;
 }
 
-.mock-cost {
+/* The text a line has not printed yet. Out of the layout rather than merely invisible: the pane
+   fills from the bottom the way a terminal does, and text held in reserve would leave the answer
+   floating over the hole it is going to fill. Without scripts nothing is printing, and the
+   stylesheet in <noscript> puts it all back. */
+.mock-off {
+	display: none;
+}
+
+/* A line that has not been said yet is not a blank row waiting for it. */
+.mock-body [data-off="true"] {
+	display: none;
+}
+
+/* A spinner alone says something is happening; the number rising beside it says whether it still
+   is, and what the turn is on is the difference between stuck on the model and stuck on a test. */
+.mock-working,
+.mock-queued {
+	margin: 0 0 0.35rem;
+	padding: 0 1rem;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.mock-clock {
+	color: var(--amber);
+}
+
+/* A column of its own, so the step beside it does not step sideways as the spinner turns. */
+.mock-spin {
+	display: inline-block;
+	width: 1ch;
+}
+
+.mock-step {
 	color: var(--muted);
-	opacity: 0.75;
 }
 
-/* Green, as the console draws it when it is ready to be typed into. */
+/* Said, but not yet heard. Not dimmed — dim is how a terminal says this may be skipped, and this is
+   the one thing in the pane that has not happened yet. */
+.mock-queued {
+	color: var(--text);
+}
+
+.mock-dots {
+	display: inline-block;
+	width: 1ch;
+	color: var(--cyan);
+}
+
+/* Cyan, as the console draws it when what is typed in it goes to the agent. */
 .mock-prompt {
 	display: flex;
 	align-items: center;
 	gap: 0.55rem;
-	margin: 0 0.75rem;
+	margin: 0 0.75rem 0.75rem;
 	padding: 0.4rem 0.7rem;
 	color: var(--muted);
-	border: 1px solid rgba(143, 217, 168, 0.45);
+	border: 1px solid color-mix(in srgb, var(--cyan) 45%, transparent);
 	border-radius: 5px;
 }
 
 .mock-mark {
-	color: var(--green);
+	color: var(--cyan);
 }
 
+/* A reversed space, which is what the console leaves at the end of the line. */
 .mock-caret {
 	width: 0.48rem;
 	height: 0.95rem;
-	background: var(--green);
+	background: var(--text);
 	opacity: 0.75;
 	animation: blink 1.1s steps(1) infinite;
 }
@@ -752,9 +760,10 @@ button.mock-agent[data-here="true"]:hover .mock-name {
 	color: var(--muted);
 }
 
+/* The key stands out from what it does, because the key is the part being looked for. */
 .mock-keys kbd {
 	font: inherit;
-	color: var(--text);
+	color: var(--cyan);
 }
 
 /* ---------- rules ---------- */

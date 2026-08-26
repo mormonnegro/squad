@@ -2,97 +2,95 @@
 // picture pasted into a browser goes ragged: a proportional fallback for ● ◐ ○ is a cell and a half
 // wide and every border after it moves.
 //
-// The colours are the ones the console actually paints: cyan for the agent being looked at, green
-// for what is up, amber for what is working or nearing its ceiling, and dim for everything that is
-// only there to be read past.
+// Everything else is the console as `console.ts` draws it, because a picture that behaves like the
+// program is worth more than a prettier one: the operator's own line is cyan and everything that
+// arrived from somewhere else wears the channel that carried it, in the yellow the agents column
+// paints a booked wakeup; what the turn is on is the row under the conversation and never the
+// prompt, which is the one row a hand is on; and the tools are not in the chat pane at all, because
+// in the console they are in the feed.
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { useReveal } from "../lib/reveal";
 
 // One agent per job, because that is what a plane looks like: the sidebar is the set of examples,
 // and every case opens with the thing an operator asked for — the part a visitor is deciding about.
-// Under it is one turn of the agent doing it: what woke it, if the ask was a standing one, then the
-// tools it reached for, then what it said back.
 type Use = {
 	name: string;
 	label: string;
-	state: "up" | "thinking" | "stopped";
 	spend: string;
 	// A spend is dim until it is worth reading: amber at four fifths of the ceiling, red at it.
 	heat?: "warn";
-	// The appointment it has booked, when it has one, and how long it has been at this turn.
-	next?: string;
-	wait?: string;
+	// The turn it has booked, counted down: a standing weekday and hour, or a plain offset.
+	next?: string | { day: number; hour: number };
 	model: string;
 	limit: string;
-	// Where the ask arrived from, when it was not typed at this console.
-	from?: string;
+	// The channel the ask arrived by, when it was not typed at this console.
+	via?: string;
 	ask: string;
-	// The event that fired this particular turn, days after the ask.
-	woke?: string;
-	did?: [string, string][];
+	// What fired this particular turn, days after the ask: its own wakeup, or something outside.
+	woke?: [string, string];
+	// What it reached for, as the row under the conversation says it: what it is, and what it is on.
+	steps?: [string, string][];
+	// How long the turn took, for the clock that row carries.
+	took?: number;
+	// Where the answer went, when it went anywhere but this pane.
+	to?: string;
 	reply: string[];
-	// Absent when nothing was woken: a slash command is answered by the plane itself.
-	cost?: string;
+	// Typed at it while it was still working, and waiting where the hand left it.
+	queued?: string;
 };
 
 const USES: [Use, ...Use[]] = [
 	{
 		name: "rival",
 		label: "track a competitor",
-		state: "up",
 		spend: "$1.10",
-		next: "mon 08:00",
+		next: { day: 1, hour: 8 },
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		ask: "every monday at 8, diff the other three's pricing and changelogs and mail me what moved",
-		woke: "wake_me · monday 08:00",
-		did: [
+		woke: ["wake", "monday: diff the three, mail what moved"],
+		steps: [
 			["fetch", "three pricing pages, three changelogs"],
 			["read", "memory/reference/rivals.md"],
 			["write", "memory/reference/rivals.md"],
 			["email", "you · “Monday: two of them moved”"],
 		],
+		took: 192,
+		to: "email",
 		reply: [
 			"Two moved. One put a seat price on the plan that was flat before, at $29; the other took the free tier down to a trial and said so nowhere but the pricing page.",
 		],
-		cost: "3m12s · 210k tokens · $0.04",
 	},
 	{
 		name: "ci",
 		label: "fix a failing check",
-		state: "thinking",
 		spend: "$4.80",
 		heat: "warn",
-		wait: "15m",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		ask: "when checks fail on a pull request, find out why and fix it",
-		woke: "webhook · github · pull_request #212",
-		did: [
+		woke: ["github", "pull_request #212 · checks failed"],
+		steps: [
 			["bash", "pnpm -r test"],
 			["read", "packages/control-plane/src/turn.ts"],
 			["write", "test/turn.test.ts"],
 			["bash", "git commit && git push"],
 		],
+		took: 98,
+		queued: "does the same test fail on main?",
 		reply: [
 			"The new test asserts the error string I changed on Tuesday, not the behaviour. Fixed the assertion, pushed to the branch, and said as much on the pull request.",
 			"The issue body it came from is quoted, never obeyed — nobody who can open a pull request can give me an instruction.",
 		],
-		cost: "1m38s · 91.2k tokens · $0.02",
 	},
 	{
 		name: "desk",
 		label: "connect an MCP",
-		state: "up",
 		spend: "$0.42",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		ask: "/mcp add linear",
-		did: [
-			["ask", "Linear API key · ····································"],
-			["grant", "linear.app · desk only"],
-		],
 		reply: [
 			"Connected. It runs in the sandbox next to notion and playwright, and reaches Linear through the proxy — which is what holds the key. The agent got the tool, never the secret.",
 			"On the shelf: github, sentry, slack, postgres, stripe. Nothing was woken to answer this, and nothing was spent.",
@@ -101,57 +99,85 @@ const USES: [Use, ...Use[]] = [
 	{
 		name: "errand",
 		label: "from your phone",
-		state: "up",
 		spend: "$0.18",
-		next: "in 5m",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
-		from: "telegram · you",
+		via: "telegram",
 		ask: "deploy the site when CI goes green",
-		did: [
-			["wake_me", "in 5m · “check CI again”"],
+		woke: ["wake", "check CI again"],
+		steps: [
 			["bash", "gh run watch"],
 			["bash", "./deploy.sh"],
 		],
+		took: 242,
+		to: "telegram",
 		reply: [
 			"Green at 09:12, and it is live. I answered in the thread you wrote from — anyone else on this bot is heard, not obeyed.",
 		],
-		cost: "4m02s · 38.1k tokens · $0.01",
 	},
 	{
 		name: "ops",
 		label: "ask it anything",
-		state: "up",
 		spend: "$0.06",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		ask: "what is eating the disk on this box",
-		did: [["bash", "df -h && docker system df"]],
+		steps: [["bash", "df -h && docker system df"]],
+		took: 18,
 		reply: [
 			"38 of the 40 GB is /var/lib/docker, and 21 of those are build cache for images nothing tags any more.",
 			"Say the word and I prune it.",
 		],
-		cost: "18s · 9.4k tokens · $0.002",
 	},
 ];
 
-const KEYS: [string, string][] = [
-	["↑↓", "agent"],
-	["^U^D", "scroll"],
-	["tab", "logs"],
-	["/", "commands"],
-	["!", "shell"],
-	["^C", "quit"],
-];
+// Braille, because it turns in place: every frame is one column wide, so the line beside it does
+// not move. The same ten frames the console spins.
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+/** What the working row says of a turn that has not reached its first tool yet. */
+const THINKING = "thinking";
 
 // The clock the pane is printed on, in characters: one unit is one character of a streamed line, a
-// line a person types is charged more per character, and a tool line lands whole after a beat.
+// line a person types is charged more per character, and a line that arrives lands whole after a beat.
 const MS = 6;
 const BEAT = 26;
 const TYPED = 2.4;
 const ALL = Number.POSITIVE_INFINITY;
+/** How many units of that clock one frame of the spinner lasts, so it turns at a terminal's pace. */
+const SPIN = 13;
 
-/** The text up to the cursor, with the rest kept in the layout so nothing moves as it arrives. */
+/**
+ * How long until an instant, in the coarsest unit that still says it — `until` in console.ts, which
+ * is what the column being copied here prints.
+ */
+function until(ms: number): string {
+	const seconds = Math.max(0, Math.round(ms / 1000));
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) return `${minutes}m`;
+	const hours = Math.round(minutes / 60);
+	return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
+/** The next time that weekday comes round at that hour, which for `rival` is really monday at 8. */
+function booked(at: { day: number; hour: number }, now: number): number {
+	const when = new Date(now);
+	when.setHours(at.hour, 0, 0, 0);
+	let days = (at.day - when.getDay() + 7) % 7;
+	if (days === 0 && when.getTime() <= now) days = 7;
+	when.setDate(when.getDate() + days);
+	return when.getTime();
+}
+
+/** What a row says in its wake column, once there is a clock to count a standing turn down from. */
+function wake(next: Use["next"], now: number | null): string | null {
+	if (next === undefined) return null;
+	if (typeof next === "string") return next;
+	return now === null ? null : until(booked(next, now) - now);
+}
+
+/** The text up to the cursor, with the rest still in the markup for whoever has no script running. */
 function Typed({ text, chars }: { text: string; chars: number }) {
 	const at = Math.min(Math.max(Math.floor(chars), 0), text.length);
 	return (
@@ -162,10 +188,28 @@ function Typed({ text, chars }: { text: string; chars: number }) {
 	);
 }
 
+/** A line that did not come from the keyboard, marked for what carried it. It arrives whole. */
+function Came({ via, text, here }: { via: string; text: string; here: boolean }) {
+	return (
+		<p className="mock-came" data-off={here ? undefined : "true"}>
+			<span className="mock-via">‹{via}›</span> <Typed text={text} chars={here ? ALL : 0} />
+		</p>
+	);
+}
+
 export function Console() {
 	const [ref, shown] = useReveal<HTMLDivElement>();
 	const [use, setUse] = useState<Use>(USES[0]);
 	const [n, setN] = useState(0);
+	// The clock the standing appointment is counted down from, read after mounting rather than at
+	// build time: this page is exported once, and the monday it was exported before has gone by.
+	const [now, setNow] = useState<number | null>(null);
+
+	useEffect(() => {
+		setNow(Date.now());
+		const id = setInterval(() => setNow(Date.now()), 30_000);
+		return () => clearInterval(id);
+	}, []);
 
 	const script = useMemo(() => {
 		let at = 0;
@@ -174,16 +218,21 @@ export function Console() {
 			at += cost;
 			return start;
 		};
-		const ask = { text: use.ask, start: take(use.ask.length * TYPED) };
-		const lines = [
-			...(use.woke === undefined
-				? []
-				: [{ verb: "woke", rest: use.woke, woke: true, start: take(BEAT) }]),
-			...(use.did ?? []).map(([verb, rest]) => ({ verb, rest, woke: false, start: take(BEAT) })),
-		];
+		// A line typed at this prompt is typed; one that arrived from somewhere else lands whole.
+		const ask = {
+			text: use.ask,
+			start: take(use.via === undefined ? use.ask.length * TYPED : BEAT),
+		};
+		const woke =
+			use.woke === undefined ? null : { via: use.woke[0], text: use.woke[1], start: take(BEAT) };
+		// Where the turn begins, which is what the clock under the conversation counts from.
+		const from = at;
+		const steps = (use.steps ?? []).map(([action, detail]) => ({
+			text: `${action} ${detail}`,
+			start: take(BEAT),
+		}));
 		const reply = use.reply.map((text) => ({ text, start: take(text.length) }));
-		const cost = use.cost === undefined ? null : { text: use.cost, start: take(BEAT) };
-		return { ask, lines, reply, cost, total: at };
+		return { ask, woke, steps, reply, from, total: at };
 	}, [use]);
 
 	const pick = (next: Use) => {
@@ -208,6 +257,30 @@ export function Console() {
 		return () => cancelAnimationFrame(raf);
 	}, [shown, script]);
 
+	// A turn is being taken while the pane is still printing one, and only where one was woken at all.
+	const busy = use.took !== undefined && n >= script.from && n < script.total;
+	const landed = script.steps.filter((s) => n > s.start);
+	const working = !busy
+		? null
+		: {
+				frame: SPINNER[Math.floor(n / SPIN) % SPINNER.length] ?? SPINNER[0],
+				seconds: Math.floor(((n - script.from) / (script.total - script.from)) * (use.took ?? 0)),
+				step: landed[landed.length - 1]?.text ?? THINKING,
+			};
+
+	const keys: [string, string][] = [
+		["←→", "agent"],
+		["^U^D", "scroll"],
+		["↑↓", "history"],
+		["tab", "logs"],
+		["/", "commands"],
+		["!", "shell"],
+		["^C", "quit"],
+		// Last, so the rest of the row does not move as it comes and goes, and only while there is
+		// something to stop: a hint for a key that does nothing is a hint that lies.
+		...(busy ? ([["esc", "stop"]] as [string, string][]) : []),
+	];
+
 	return (
 		<div className="mock" ref={ref} data-reveal={shown}>
 			<div className="uses">
@@ -228,25 +301,27 @@ export function Console() {
 			<div className="mock-frame">
 				<div className="mock-side">
 					<div className="mock-side-head">agents</div>
-					{USES.map((u, i) => (
-						<button
-							type="button"
-							key={u.name}
-							className="mock-agent mock-in"
-							data-state={u.state}
-							data-here={u === use ? "true" : undefined}
-							style={{ "--i": i } as CSSProperties}
-							onClick={() => pick(u)}
-						>
-							<span className="mock-dot" aria-hidden="true" />
-							<span className="mock-name">{u.name}</span>
-							{u.next === undefined ? null : <span className="mock-next">{u.next}</span>}
-							{u.wait === undefined ? null : <span className="mock-wait">{u.wait}</span>}
-							<span className="mock-spend" data-heat={u.heat}>
-								{u.spend}
-							</span>
-						</button>
-					))}
+					{USES.map((u, i) => {
+						const due = wake(u.next, now);
+						return (
+							<button
+								type="button"
+								key={u.name}
+								className="mock-agent mock-in"
+								data-state={busy && u === use ? "thinking" : "up"}
+								data-here={u === use ? "true" : undefined}
+								style={{ "--i": i } as CSSProperties}
+								onClick={() => pick(u)}
+							>
+								<span className="mock-dot" aria-hidden="true" />
+								<span className="mock-name">{u.name}</span>
+								{due === null ? null : <span className="mock-wake">{due}</span>}
+								<span className="mock-spend" data-heat={u.heat}>
+									{u.spend}
+								</span>
+							</button>
+						);
+					})}
 					<div
 						className="mock-agent mock-new mock-in"
 						style={{ "--i": USES.length } as CSSProperties}
@@ -270,43 +345,54 @@ export function Console() {
 						</span>
 						<span className="mock-title-right">
 							{use.model}{" "}
-							<span className="mock-spend">
+							<span className="mock-spend" data-heat={use.heat}>
 								{use.spend} / {use.limit}
 							</span>
 						</span>
 					</div>
+
+					{/* Resting on the prompt rather than hanging from the top: an answer arrives where the
+					    next question is being typed, instead of at the far end of a pane of blank rows. */}
 					<div className="mock-body">
-						<p className="mock-said">
-							{use.from === undefined ? (
-								<span className="mock-mark">&gt;</span>
-							) : (
-								<span className="mock-via">{use.from}</span>
-							)}{" "}
-							<Typed text={script.ask.text} chars={(n - script.ask.start) / TYPED} />
-						</p>
-						{script.lines.length === 0 ? null : (
-							<div className="mock-did">
-								{script.lines.map((l) => (
-									<p key={l.verb + l.rest}>
-										<span className="mock-verb" data-woke={l.woke}>
-											<Typed text={l.verb} chars={n > l.start ? ALL : 0} />
-										</span>
-										<Typed text={l.rest} chars={n > l.start ? ALL : 0} />
-									</p>
-								))}
-							</div>
+						{use.via === undefined ? (
+							<p className="mock-said">
+								<span className="mock-mark">&gt;</span>{" "}
+								<Typed text={script.ask.text} chars={(n - script.ask.start) / TYPED} />
+							</p>
+						) : (
+							<Came via={use.via} text={script.ask.text} here={n > script.ask.start} />
 						)}
-						{script.reply.map((r) => (
-							<p key={r.text}>
+						{script.woke === null ? null : (
+							<Came via={script.woke.via} text={script.woke.text} here={n > script.woke.start} />
+						)}
+						{script.reply.map((r, i) => (
+							<p key={r.text} data-off={n > r.start ? undefined : "true"}>
+								{use.to === undefined || i > 0 ? null : (
+									<>
+										<span className="mock-via">‹→ {use.to}›</span>{" "}
+									</>
+								)}
 								<Typed text={r.text} chars={n - r.start} />
 							</p>
 						))}
-						{script.cost === null ? null : (
-							<p className="mock-cost">
-								<Typed text={script.cost.text} chars={n > script.cost.start ? ALL : 0} />
-							</p>
-						)}
 					</div>
+
+					{/* Under the conversation and outside the prompt, which is a hand's own row and has to
+					    stay clear enough to type a second question into while the first is being answered. */}
+					{working === null ? null : (
+						<p className="mock-working">
+							<span className="mock-clock">
+								<span className="mock-spin">{working.frame}</span> {working.seconds}s
+							</span>{" "}
+							<span className="mock-step">{working.step}</span>
+						</p>
+					)}
+					{use.queued === undefined || !busy ? null : (
+						<p className="mock-queued">
+							<span className="mock-dots">⋯</span> {use.queued}
+						</p>
+					)}
+
 					<div className="mock-prompt">
 						<span className="mock-mark">&gt;</span>
 						<span className="mock-caret" aria-hidden="true" />
@@ -314,7 +400,7 @@ export function Console() {
 				</div>
 			</div>
 			<div className="mock-keys">
-				{KEYS.map(([key, label]) => (
+				{keys.map(([key, label]) => (
 					<span key={label}>
 						<kbd>{key}</kbd> {label}
 					</span>

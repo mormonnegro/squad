@@ -31,7 +31,7 @@ export function Layout({
 				<noscript>
 					<style>
 						{
-							"body .feed-line,body .mock-in{opacity:1;transform:none}body .mock-off{visibility:visible}"
+							"body .feed-line,body .mock-in{opacity:1;transform:none}body .mock-off{display:inline}body .mock-body [data-off]{display:block}"
 						}
 					</style>
 				</noscript>
