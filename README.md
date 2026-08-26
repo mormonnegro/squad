@@ -644,6 +644,9 @@ mail, with this phrase anywhere in the message:
 
     kqm3nvbh27
 
+Ask for something in that same mail if you like. scout reads whatever the phrase was written
+around, so the first mail takes a turn like any other.
+
 Whoever sends it is the one scout takes instructions from, and the only one: an address
 strangers already have is one where every message read would spend a turn, so everyone
 else's mail is left unread.

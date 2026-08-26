@@ -423,22 +423,30 @@ export class EmailChannel implements Channel {
 
 		const proven = authenticated(results, sender.address);
 		const recipients = RECIPIENT_HEADERS.flatMap((name) => addressesIn(headers[name] ?? ""));
-		const body = withoutTrail(parsed.text ?? readableText(String(parsed.html ?? "")));
+		let body = withoutTrail(parsed.text ?? readableText(String(parsed.html ?? "")));
 		if (body.trim() === "") return this.#drop("nothing in it");
 
+		let mailbox = account;
 		if (account.pairing !== undefined) {
-			return this.#pair(account, sender.address, proven, body);
+			const bound = this.#pair(account, sender.address, proven, body);
+			if (bound === undefined) return;
+			mailbox = bound;
+			// The phrase is spent, and whatever was around it is a first request from somebody who has
+			// just proved they are the operator. Dropping it would make the first mail the one that never
+			// works, and the first mail is the one anybody sends on finishing the instructions.
+			body = withoutPhrase(body, account.pairing);
+			if (body === "") return;
 		}
 
 		// Only the operator. Every message that gets past here spends a turn, and a mailbox is an address
 		// strangers already have — publishing whatever arrives from anyone would put the plane's bill in
 		// the hands of whoever finds it, and now that agents answer, its outgoing mail too.
-		if (!account.operators.includes(sender.address)) return this.#drop("not the operator");
+		if (!mailbox.operators.includes(sender.address)) return this.#drop("not the operator");
 		if (!proven) return this.#drop(`${sender.address} unsigned: DKIM did not vouch for the domain`);
 
-		const tag = agentFor(recipients, account.address);
+		const tag = agentFor(recipients, mailbox.address);
 		const known = this.#agents();
-		const agentId = tag !== undefined && known.includes(tag) ? tag : account.fallback;
+		const agentId = tag !== undefined && known.includes(tag) ? tag : mailbox.fallback;
 		if (!known.includes(agentId)) return this.#drop(`no agent "${agentId}"`);
 
 		const messageId = headers["message-id"];
@@ -468,16 +476,19 @@ export class EmailChannel implements Channel {
 	 * The signature is the whole of it. `From:` is a line of text the sender chose, so a phrase that
 	 * bound whoever put the right address in it would bind whoever could guess it — and what is being
 	 * handed over is every agent on the plane.
+	 *
+	 * Answers with the account it bound, so that the rest of the same mail can go on being read as a
+	 * message from the operator it just made.
 	 */
-	#pair(account: Account, from: string, proven: boolean, body: string): void {
+	#pair(account: Account, from: string, proven: boolean, body: string): Account | undefined {
 		const phrase = account.pairing?.toLowerCase() ?? "";
 		if (!body.toLowerCase().includes(phrase)) {
 			this.#drop("not the phrase");
-			return;
+			return undefined;
 		}
 		if (!proven) {
 			this.#drop(`${from} sent the phrase unsigned, and was not let in`);
-			return;
+			return undefined;
 		}
 
 		// Gone rather than emptied. A phrase left lying about is a second key to the same door, and this
@@ -485,6 +496,7 @@ export class EmailChannel implements Channel {
 		const { pairing: _spent, ...rest } = account;
 		this.#account = { ...rest, operators: [from] };
 		this.#onChange?.(this.#account);
+		return this.#account;
 	}
 
 	#change(part: Partial<Account>): void {
@@ -508,6 +520,20 @@ export class EmailChannel implements Channel {
 		this.#tail = result.catch(() => {});
 		return result;
 	}
+}
+
+/**
+ * The pairing mail with the phrase struck out of it, which leaves whatever else was being said.
+ *
+ * Struck out rather than cut off at, because people write the phrase wherever they read it — on its
+ * own first line, at the end as a signature, in the middle of a sentence about it.
+ */
+function withoutPhrase(body: string, phrase: string): string {
+	const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return body
+		.replace(new RegExp(escaped, "gi"), "")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
 }
 
 /** One agent talking to one person, folded, because a client cases an address however it likes. */

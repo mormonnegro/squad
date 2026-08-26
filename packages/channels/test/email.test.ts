@@ -610,6 +610,43 @@ describe("pairing", () => {
 		expect(dropped.some((one) => one.why.includes("unsigned"))).toBe(true);
 	});
 
+	// The first mail anybody sends is the one they write on finishing the instructions, and it says
+	// the phrase and then asks for something. Binding the operator and losing the question makes the
+	// first mail the one that never works.
+	it("reads the rest of the pairing mail as the new operator's first message", async () => {
+		const { mailbox, publisher } = await running({ account: unpaired });
+
+		mailbox.deliver({
+			uid: 1,
+			from: "nico@example.com",
+			body: "openthedoor\n\ncontame un chiste",
+			results: SIGNED,
+		});
+		await until(() => publisher.published.length > 0, "the message");
+
+		expect(publisher.published[0]).toMatchObject({
+			agentId: "scout",
+			trust: "operator",
+			body: "contame un chiste",
+			replyTo: "nico@example.com",
+		});
+	});
+
+	// People put the phrase where they read it, which is as often under what they wrote as over it.
+	it("strikes the phrase out wherever in the mail it was written", async () => {
+		const { mailbox, publisher } = await running({ account: unpaired });
+
+		mailbox.deliver({
+			uid: 1,
+			from: "nico@example.com",
+			body: "contame un chiste\n\nla frase es Openthedoor",
+			results: SIGNED,
+		});
+		await until(() => publisher.published.length > 0, "the message");
+
+		expect(publisher.published[0]?.body).toBe("contame un chiste\n\nla frase es");
+	});
+
 	it("ignores mail that does not carry the phrase", async () => {
 		const { channel, mailbox, dropped } = await running({ account: unpaired });
 
