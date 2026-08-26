@@ -538,6 +538,9 @@ export class ControlPlane {
 			// Asked at the moment a message arrives rather than held, because a tag is whatever somebody
 			// typed after a `+` and the agent it names may have been made since the mailbox was connected.
 			agents: () => this.#agents.map((agent) => agent.id),
+			// The same file every provider key is typed into. A carrier is paid for out of it rather than
+			// out of the mailbox, so a key retyped at the console is in force on the next message sent.
+			key: (env) => this.#keys.resolve({ ref: env }),
 			onChange: (account) => {
 				void this.#mailbox.save(account).catch((error: Error) => {
 					this.#reportError("email", error);

@@ -1,5 +1,5 @@
 import type { NewAgentEvent } from "@agent-dive/events";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type Account,
 	addressFor,
@@ -587,6 +587,69 @@ describe("writing back", () => {
 		await expect(
 			channel.send({ agentId: "scout", channel: "email:nico@example.com", body: "done" }),
 		).rejects.toThrow(/reading only/);
+	});
+});
+
+describe("writing back through a carrier", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	function carrying(account: Partial<Account>, key?: string): EmailChannel {
+		return new EmailChannel({
+			account: { ...ACCOUNT, ...account },
+			publisher: new RecordingPublisher(),
+			agents: () => ["scout"],
+			open: new FakeMailbox().open,
+			post: new FakeSubmission().open,
+			...(key !== undefined ? { key: async () => key } : {}),
+		});
+	}
+
+	// The whole point of choosing one: the submission server is still there in the account, and nothing
+	// goes near it. What changes about the message is who hands it over, not who it is from.
+	it("hands the message to the carrier and leaves the submission server alone", async () => {
+		const fetched = vi.fn(async () => new Response("{}", { status: 200 }));
+		vi.stubGlobal("fetch", fetched);
+		const channel = carrying({ carrier: { carrier: "resend" } }, "k-1");
+
+		await channel.send({ agentId: "scout", channel: "email:boss@work.com", body: "done" });
+
+		const [url, init] = fetched.mock.calls[0] as unknown as [string, RequestInit];
+		expect(url).toBe("https://api.resend.com/emails");
+		const wrote = JSON.parse(String(init.body)) as Record<string, unknown>;
+		expect(wrote.from).toBe("scout <agents+scout@example.com>");
+		expect(wrote.to).toEqual(["boss@work.com"]);
+	});
+
+	// A carrier is the one part of an account that is chosen rather than discovered, so it is the one
+	// part that can be chosen and then left unpaid for. Better said here than as a 401 from a stranger.
+	it("says the key is missing rather than sending an unauthenticated message", async () => {
+		const channel = carrying({ carrier: { carrier: "resend" } });
+
+		await expect(
+			channel.send({ agentId: "scout", channel: "email:boss@work.com", body: "done" }),
+		).rejects.toThrow(/no RESEND_API_KEY to send with/);
+	});
+
+	it("refuses a carrier that was never told which domain it sends from", async () => {
+		const channel = carrying({ carrier: { carrier: "mailgun" } }, "k-1");
+
+		await expect(
+			channel.send({ agentId: "scout", channel: "email:boss@work.com", body: "done" }),
+		).rejects.toThrow(/told which domain/);
+	});
+
+	it("checks the carrier instead of the submission server when the account has one", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response('{"message":"Forbidden"}', { status: 403 })),
+		);
+		const channel = carrying({}, "k-1");
+
+		expect(await channel.verify({ ...ACCOUNT, carrier: { carrier: "resend" } })).toContain(
+			"Resend refused with 403",
+		);
 	});
 });
 

@@ -31,6 +31,15 @@ export {
 	withoutTrail,
 } from "./mail.ts";
 export { asHtml } from "./markup.ts";
+export {
+	type Call,
+	carry,
+	type Carrier,
+	CARRIERS,
+	type CarrierSpec,
+	type Carrying,
+	resolveCarrier,
+} from "./outbox.ts";
 export { pairingPhrase } from "./phrase.ts";
 export { isFresh, SIGNATURE_HEADER, sign, TIMESTAMP_HEADER, verify } from "./signature.ts";
 export {

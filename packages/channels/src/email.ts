@@ -4,6 +4,7 @@ import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
 import type { Outgoing } from "./autoconfig.ts";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
+import { carry, type CarrierSpec, resolveCarrier } from "./outbox.ts";
 import {
 	addressesIn,
 	agentFor,
@@ -55,6 +56,15 @@ export interface Account {
 	 */
 	readonly outgoing?: Outgoing;
 	/**
+	 * A company that carries the mail out instead of the account's own submission server.
+	 *
+	 * Chosen rather than discovered, and the only half of an account that is: everything else here was
+	 * worked out from the address. Set, it wins over {@link outgoing} — a mailbox that reads over IMAP
+	 * and answers over somebody's API is the ordinary arrangement once a domain of your own is involved,
+	 * because the app password sends as the provider's domain and this sends as yours.
+	 */
+	readonly carrier?: CarrierSpec;
+	/**
 	 * Where mail arriving with no tag on it goes.
 	 *
 	 * Because not every provider does plus-addressing, and on one that does not the bare address would
@@ -102,6 +112,13 @@ export interface EmailChannelOptions {
 	readonly open?: (account: Account) => Session;
 	/** Opens the way out. Given for the same reason, so nothing under test posts a real message. */
 	readonly post?: (account: Account, outgoing: Outgoing) => Post;
+	/**
+	 * The key a carrier is paid with, looked up at the moment it is needed rather than held here.
+	 *
+	 * Asked for by name so that a key retyped at the console takes effect on the next message without
+	 * this channel being told, and so that the one copy of it stays in the file that is mode 0600.
+	 */
+	readonly key?: (env: string) => Promise<string | undefined>;
 }
 
 /**
@@ -199,6 +216,7 @@ export class EmailChannel implements Channel {
 	readonly #sweepMs: number;
 	readonly #open: (account: Account) => Session;
 	readonly #post: (account: Account, outgoing: Outgoing) => Post;
+	readonly #key: ((env: string) => Promise<string | undefined>) | undefined;
 
 	#running = false;
 	#session: Session | undefined;
@@ -227,6 +245,26 @@ export class EmailChannel implements Channel {
 		this.#sweepMs = options.sweepMs ?? SWEEP_MS;
 		this.#open = options.open ?? openImap;
 		this.#post = options.post ?? openSmtp;
+		this.#key = options.key;
+	}
+
+	/**
+	 * The way out this account has, which is a carrier when one was chosen and its own server otherwise.
+	 *
+	 * The refusals are separated because they are different problems with different fixes: a carrier
+	 * nobody has paid for is a key to go and paste, and a mailbox with no submission server is a
+	 * mailbox that was only ever going to read.
+	 */
+	async #way(account: Account): Promise<Post | string> {
+		if (account.carrier !== undefined) {
+			const resolved = resolveCarrier(account.carrier);
+			if (typeof resolved === "string") return resolved;
+			const key = (await this.#key?.(resolved.keyEnv)) ?? "";
+			if (key.length === 0) return `${resolved.title} has no ${resolved.keyEnv} to send with`;
+			return carry(resolved, { key, domain: resolved.domain ?? "" });
+		}
+		if (account.outgoing === undefined) return `${account.address} is connected for reading only`;
+		return this.#post(account, account.outgoing);
 	}
 
 	get account(): Account | undefined {
@@ -282,15 +320,18 @@ export class EmailChannel implements Channel {
 			session.close();
 		}
 
-		if (account.outgoing === undefined) return undefined;
-		const post = this.#post(account, account.outgoing);
+		// A mailbox with nowhere to hand mail in is not a failure to report here: it is the account that
+		// was asked for, and the caller writes it down and says so plainly.
+		if (account.carrier === undefined && account.outgoing === undefined) return undefined;
+		const way = await this.#way(account);
+		if (typeof way === "string") return way;
 		try {
-			await post.verify();
+			await way.verify();
 			return undefined;
 		} catch (error) {
 			return (error as Error).message;
 		} finally {
-			post.close();
+			way.close();
 		}
 	}
 
@@ -307,22 +348,20 @@ export class EmailChannel implements Channel {
 		if (account === undefined) {
 			throw new ChannelError(`Cannot write to ${reply.channel}: no mailbox is connected.`);
 		}
-		if (account.outgoing === undefined) {
-			throw new ChannelError(
-				`Cannot write to ${reply.channel}: ${account.address} is connected for reading only.`,
-			);
-		}
-
 		const to = reply.replyTo ?? reply.channel.slice(reply.channel.indexOf(":") + 1);
 		if (!to.includes("@")) {
 			throw new ChannelError(`Cannot write to ${reply.channel}: there is no address in it.`);
 		}
 
+		const way = await this.#way(account);
+		if (typeof way === "string") throw new ChannelError(`Cannot write to ${reply.channel}: ${way}.`);
+
+		// The address the mail says it is from is the agent's either way. What a carrier changes is who
+		// hands it over, not who it is from — the tag is what brings the answer back to this agent.
 		const from = addressFor(account.address, reply.agentId);
 		const thread = this.#threads.get(threadOf(reply.agentId, to));
-		const post = this.#post(account, account.outgoing);
 		try {
-			await post.sendMail({
+			await way.sendMail({
 				from: `${reply.agentId} <${from}>`,
 				to,
 				replyTo: from,
@@ -340,7 +379,7 @@ export class EmailChannel implements Channel {
 					: {}),
 			});
 		} finally {
-			post.close();
+			way.close();
 		}
 	}
 
