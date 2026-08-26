@@ -76,6 +76,39 @@ const SELF: [string, string][] = [
 	["tools/", "scripts it wrote for itself"],
 ];
 
+const CHANNELS: [string, ReactNode][] = [
+	[
+		"webhook",
+		<>
+			Signed, on the one port that is published. The secret proves which system sent the request,
+			never that a person meant what is inside it.
+		</>,
+	],
+	[
+		"telegram",
+		<>
+			A bot per agent, connected with <code>/telegram</code> and paired by a link. Anyone else who
+			writes to it is heard as a participant.
+		</>,
+	],
+	[
+		"email",
+		<>
+			One mailbox for the whole plane, connected once with <code>/email</code>. Every agent is
+			reached at its own tag — <code>agents+scout@…</code> — and answers in the thread.
+		</>,
+	],
+];
+
+const SLASH: [string, string][] = [
+	["/limit", "what it has spent today, and the ceiling for it"],
+	["/model", "what it thinks with, and what else there is"],
+	["/mcp", "the MCP servers it has, and the shelf to add from"],
+	["/serve", "a port inside it, on the machine you are sitting at"],
+	["/telegram", "the bot it answers on, and how to pair one"],
+	["/email", "the address it is reached at, and how to connect a mailbox"],
+];
+
 const COMMANDS: [string, string][] = [
 	["agent chat demo", "talk to one in the scrollback, turn after turn"],
 	["agent ls", "what each agent is and whether it is up"],
@@ -101,7 +134,10 @@ const PIECES: [string, string][] = [
 		"scheduler",
 		"Cron and one-shot wakeups, persisted, with Vixie cron semantics and DST-correct wall-clock matching",
 	],
-	["channels", "Where events come from and replies go. Ships a signed webhook channel"],
+	[
+		"channels",
+		"Where events come from and replies go: a signed webhook, a Telegram bot per agent, and one mailbox for the whole plane",
+	],
 	["agent-repo", "The agent's own git repository: manifest, soul, skills, memory, tools"],
 	[
 		"control-plane",
@@ -225,6 +261,56 @@ export default function Home() {
 							))}
 						</tbody>
 					</table>
+					<p className="small muted">
+						A line starting with <code>/</code> is a command about the agent rather than something
+						said to it, answered without waking anything. It configures the plane from inside it:
+						nothing here is a file you edit and redeploy.
+					</p>
+					<table className="table table-cmd">
+						<tbody>
+							{SLASH.map(([cmd, what]) => (
+								<tr key={cmd}>
+									<td>{cmd}</td>
+									<td>{what}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<section>
+				<div className="wrap">
+					<span className="eyebrow">Being reached</span>
+					<h2>Three ways in, and only two of them may instruct</h2>
+					<table className="table">
+						<tbody>
+							{CHANNELS.map(([name, what]) => (
+								<tr key={name}>
+									<td>{name}</td>
+									<td>{what}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+					<p>
+						A webhook's secret says which system sent a request. The other two say who: Telegram
+						authenticates the account behind every message, and a mail is judged by the{" "}
+						<code>Authentication-Results</code> header your own provider wrote at delivery, when it
+						checked DKIM and DMARC. So those two can be paired to a person — with a phrase that is
+						spent the moment it is used — and what that person writes is an instruction.
+					</p>
+					<p className="small muted">
+						Neither costs a domain, a certificate or an open port: both reach out rather than being
+						reached. Mail from anyone unpaired is left unread rather than fenced, because an address
+						strangers already have is one where every message read would spend a turn.
+					</p>
+					<p className="small muted">
+						Nothing has to write to it at all. <code>wake_me</code> asks for another turn and leaves
+						the agent a note to be told then — a file the plane reads and removes, not a path out of
+						the sandbox, so it is checked rather than trusted: one appointment at a time, between a
+						second and a month, and never carrying operator trust however it asks.
+					</p>
 				</div>
 			</section>
 
@@ -289,9 +375,10 @@ export default function Home() {
 							because the published pi has no server entry point to run yet.
 						</li>
 						<li>
-							<strong>Channels other than webhooks.</strong> The interface and the router are there,
-							and a reply is routed by the channel of the event that caused it. Slack, email and the
-							rest are adapters that do not exist yet.
+							<strong>Slack, Discord and the rest.</strong> Webhooks, Telegram and mail are there,
+							and a reply is routed by the channel of the event that caused it, so an agent
+							answering a GitHub hook cannot be steered into replying elsewhere by anything in the
+							payload. The others are adapters nobody has written.
 						</li>
 						<li>
 							<strong>Anything multi-tenant.</strong> One config file, one operator, one machine.

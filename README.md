@@ -1344,10 +1344,10 @@ inside the sandbox and relays it out over a Docker exec stream — and it is unu
 and the published `@earendil-works/pi-server` ships no production `PiServerService`. It gets wired
 up when that lands upstream.
 
-**Channels other than webhooks.** The `Channel` interface and router are there and a reply is
-routed by the channel prefix of the event that caused it, so an agent answering a GitHub hook
-cannot be steered into replying in Slack by anything in the payload. Slack, email and the rest are
-adapters that do not exist yet.
+**Slack, Discord and the rest.** Webhooks, Telegram and mail are there, and a reply is routed by
+the channel prefix of the event that caused it, so an agent answering a GitHub hook cannot be
+steered into replying in Telegram by anything in the payload. The others are adapters nobody has
+written.
 
 **Anything multi-tenant.** One config file, one operator, one machine.
 

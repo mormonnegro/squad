@@ -241,6 +241,13 @@ curl -X POST https://your-vps:8787/hooks/ping \\
 						that fails leaves its events queued rather than acknowledging them, so a bad API key
 						costs a retry instead of the message.
 					</p>
+					<p className="small muted">
+						The other two ways in need nothing published at all, because they reach out instead of
+						being reached: <code>/telegram &lt;token&gt;</code> connects a bot to the agent you are
+						looking at, and <code>/email &lt;address&gt;</code> connects one mailbox to every agent
+						on the plane. Both are paired to a person by a phrase, and both may instruct once they
+						are.
+					</p>
 				</div>
 			</section>
 
