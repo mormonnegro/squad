@@ -268,7 +268,7 @@ export interface AgentSummary {
 }
 
 /**
- * The channel an agent's own wakeup arrives on, and answers back to.
+ * The channel a wakeup arrives on when it belongs to no conversation, and answers back to.
  *
  * It is registered rather than left unrouted so that a turn nobody else asked for does not also
  * report a failure to deliver its answer. Nothing is lost by absorbing it: every turn reaches the
@@ -706,7 +706,7 @@ export class ControlPlane {
 				if (result.stopped) this.#reportError(id, new Error("stopped"));
 			},
 			onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
-			onWake: (id, wake) => this.#applyWake(id, wake),
+			onWake: (id, wake, answering) => this.#applyWake(id, wake, answering),
 			onAsked: (id, asked) => this.#applyAsked(id, asked),
 			// Named by destination, not by agent, so an operator waiting on their own reply is not
 			// told that somebody else's channel is the reason.
@@ -1512,7 +1512,7 @@ export class ControlPlane {
 	 * without that, an agent that asks every turn fans out into as many turns as it has asked. The
 	 * existing one goes either way, and only what replaces it differs.
 	 */
-	async #applyWake(agentId: string, wake: WakeChange): Promise<void> {
+	async #applyWake(agentId: string, wake: WakeChange, answering?: string): Promise<void> {
 		try {
 			for (const schedule of await this.scheduler.list(agentId)) {
 				if (schedule.createdBy === "agent") await this.scheduler.remove(schedule.id);
@@ -1533,7 +1533,12 @@ export class ControlPlane {
 				agentId,
 				kind: "once",
 				runAt: new Date(Date.now() + afterSeconds * 1000).toISOString(),
-				channel: WAKE_CHANNEL,
+				// The channel the agent was talking on when it booked, so what it says on waking goes
+				// back to whoever it is talking to. Answering to itself is what a wakeup did before,
+				// and it meant that "un chiste cada un minuto" asked for by mail sent the first joke
+				// by mail and every one after it to a pane nobody was watching. Its own channel is
+				// left for a wakeup that belongs to no conversation.
+				channel: answering ?? WAKE_CHANNEL,
 				body: wake.note,
 				// Never operator, however the agent asks. A single successful injection would otherwise
 				// become permanent: the injected turn books a wakeup that instructs on the next one.

@@ -442,8 +442,11 @@ export interface TurnHandlerOptions {
 	readonly onStart?: (agentId: string) => void;
 	/** The answer as it is written, for whoever is waiting rather than whoever is reading a log. */
 	readonly onSay?: (agentId: string, text: string) => void;
-	/** The next turn the agent asked for, or dropped. Awaited, so it is settled before this one is over. */
-	readonly onWake?: (agentId: string, wake: WakeChange) => Promise<void>;
+	/**
+	 * The next turn the agent asked for, or dropped, and the channel it was asked for on. Awaited, so
+	 * it is settled before this one is over.
+	 */
+	readonly onWake?: (agentId: string, wake: WakeChange, answering?: string) => Promise<void>;
 	/**
 	 * The console commands the turn asked for. Awaited, so a server the agent connected itself to is
 	 * there before the reply goes out saying that it is.
@@ -472,7 +475,11 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		if (result.stopped) return;
 		// Before the reply and after the turn: the appointment is state and the reply is a courtesy, and
 		// a process that stops between the two should have kept the one the agent cannot ask for twice.
-		if (result.wake) await options.onWake?.(agentId, result.wake);
+		// With the channel it was booked on, because an agent asking to be woken is carrying on the
+		// conversation it is in the middle of: somebody who asked by mail for a joke every minute is
+		// owed the second joke where they asked for the first. The last thing said, of a burst that
+		// may have come from several places, is the one the agent was answering when it asked.
+		if (result.wake) await options.onWake?.(agentId, result.wake, events.at(-1)?.channel);
 		// After the wake and before the reply, for both of their reasons: it is state rather than a
 		// courtesy, and what it changes is what the agent has — which whoever reads the reply is about
 		// to be told about.

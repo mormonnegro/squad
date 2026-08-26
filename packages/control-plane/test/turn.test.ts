@@ -599,6 +599,32 @@ describe("createTurnHandler", () => {
 		expect(channels).toEqual(["webhook:deploys", "slack:C1"]);
 	});
 
+	// An agent asking to be woken is carrying on the conversation it is in, so whoever books the turn
+	// has to be told which one that is. Without it, somebody who asked by mail for a joke every minute
+	// is mailed the first joke and no others: every turn after it answers to nowhere.
+	it("hands over the channel it was answering when it booked the next turn", async () => {
+		const booked: Array<string | undefined> = [];
+		const handler = createTurnHandler({
+			runner: {
+				run: async () => ({
+					...answered("dale"),
+					wake: { afterSeconds: 60, note: "el que sigue" },
+				}),
+			},
+			onWake: async (_id, _wake, answering) => {
+				booked.push(answering);
+			},
+		});
+
+		await handler({
+			agentId: "a1",
+			events: [wakeup("cli:abc", "hola"), wakeup("email:vos@example.com", "un chiste por minuto")],
+			prompt: "p",
+		});
+
+		expect(booked).toEqual(["email:vos@example.com"]);
+	});
+
 	it("keeps a taken turn when a channel cannot carry the reply", async () => {
 		// A hook without a reply URL is a legitimate one-way channel, and it used to be fatal: the
 		// send threw, the handler threw, the events were requeued, and the next attempt hit the same

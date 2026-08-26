@@ -761,6 +761,13 @@ rather than a time that means never — the clamp is exactly why there is no suc
 pushing its wakeup a year away to be rid of it has only moved it a month, and left believing
 otherwise.
 
+A wakeup answers where the conversation is. Ask by mail for a joke every minute and the second joke
+arrives by mail like the first: the appointment carries the channel the turn that booked it was
+answering, and so does the appointment that turn books after it. A wakeup used to answer to the
+agent itself, which is why the first joke arrived and the rest were written, paid for, and said to
+nobody. The console shows the turn either way — a pane reads a turn as it is written, rather than by
+way of a channel.
+
 Calling it off drops what the appointment has already produced as well as the appointment, because
 an appointment that has come due is no longer only an appointment. A ten-second wakeup fires while
 a two-minute turn is running and queues behind it — so an agent told halfway through to go and do

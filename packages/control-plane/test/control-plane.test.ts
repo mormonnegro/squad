@@ -604,13 +604,17 @@ describe("a turn that asked for another turn", () => {
 		},
 	});
 
-	const takeTurn = async (plane: ControlPlane, wake?: WakeChange): Promise<void> => {
+	const takeTurn = async (
+		plane: ControlPlane,
+		wake?: WakeChange,
+		from = "cli:test",
+	): Promise<void> => {
 		await plane.attach("scout", asking(wake));
 		await plane.bus.publish({
 			agentId: "scout",
 			source: "channel",
 			trust: "operator",
-			channel: "cli:test",
+			channel: from,
 			body: "have a look at the queue",
 		});
 		await plane.bus.drain();
@@ -627,6 +631,45 @@ describe("a turn that asked for another turn", () => {
 		// The whole reason an agent may schedule itself at all: a turn taken over by something it read
 		// would otherwise book itself operator authority and keep it for good.
 		expect(schedule?.trust).toBe("participant");
+	});
+
+	/**
+	 * The bug this exists to prevent: somebody asked by mail for a joke every minute and got one.
+	 *
+	 * The first joke was mailed, because that turn was answering the mail. Every joke after it came
+	 * from a wakeup, and a wakeup used to arrive on a channel of the agent's own that absorbs whatever
+	 * it is handed — so the answers were written, paid for, and said to nobody.
+	 */
+	it("books the next turn on the channel this one was asked for on", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(
+			plane,
+			{ afterSeconds: 60, note: "el chiste que sigue" },
+			"email:vos@example.com",
+		);
+
+		const [schedule] = await plane.scheduler.list("scout");
+		expect(schedule?.channel).toBe("email:vos@example.com");
+		// Inheriting where to answer is not inheriting what the answer may do.
+		expect(schedule?.trust).toBe("participant");
+	});
+
+	// A cycle is a chain of turns, each one booking the next, and it stays where it began only if every
+	// link keeps the channel. Dropping it on the second turn is the same joke lost, one minute later.
+	it("keeps a cycle on the channel it began on", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", asking({ afterSeconds: 60, note: "y otro" }));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "schedule",
+			trust: "participant",
+			channel: "email:vos@example.com",
+			body: "el chiste que sigue",
+			metadata: { createdBy: "agent" },
+		});
+		await plane.bus.drain();
+
+		expect((await plane.scheduler.list("scout"))[0]?.channel).toBe("email:vos@example.com");
 	});
 
 	it("books nothing for a turn that asked for nothing", async () => {
