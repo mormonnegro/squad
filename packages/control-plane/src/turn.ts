@@ -8,6 +8,7 @@ import {
 	SANDBOX_MCP_FILE,
 	SANDBOX_WAKE_FILE,
 } from "@agent-dive/sandbox";
+import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
@@ -519,7 +520,17 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
  * win that tie, and losing it once loses it for good — every turn after that has only its own note to
  * go by, and books another one exactly like it. A note is what is left when nothing else spoke, and by
  * then it is already carrying the channel of the conversation it came from.
+ *
+ * The console is nowhere at all, and that is not the same as having nothing to inherit: a console
+ * channel names one request, which is answered and gone, so a wakeup booked on it days ago would come
+ * due holding the address of something that stopped existing when the line was answered. The console
+ * needs no address anyway — it is shown every turn as it happens, whoever booked it.
  */
 function answering(events: readonly AgentEvent[]): string | undefined {
-	return (events.findLast((event) => !isOwnNote(event)) ?? events.at(-1))?.channel;
+	const channel = (events.findLast((event) => !isOwnNote(event)) ?? events.at(-1))?.channel;
+	return channel === undefined || isRequest(channel) ? undefined : channel;
+}
+
+function isRequest(channel: string): boolean {
+	return channel === CLI_CHANNEL || channel.startsWith(`${CLI_CHANNEL}:`);
 }

@@ -625,6 +625,28 @@ describe("createTurnHandler", () => {
 		expect(booked).toEqual(["email:vos@example.com"]);
 	});
 
+	// A console channel names one request, which is answered and then gone. Inherited, it puts the
+	// address of something that no longer exists on a wakeup due days from now — and buys nothing,
+	// since the console is shown every turn as it is taken, whoever booked it.
+	it("books on nowhere when the conversation was one console request", async () => {
+		const booked: Array<string | undefined> = [];
+		const handler = createTurnHandler({
+			runner: {
+				run: async () => ({
+					...answered("dale"),
+					wake: { afterSeconds: 60, note: "el que sigue" },
+				}),
+			},
+			onWake: async (_id, _wake, answering) => {
+				booked.push(answering);
+			},
+		});
+
+		await handler({ agentId: "a1", events: [wakeup("cli:40c5abdd", "hola")], prompt: "p" });
+
+		expect(booked).toEqual([undefined]);
+	});
+
 	/**
 	 * The bug this exists to prevent, and it took a second try to find: a wakeup that came due while
 	 * the mail was being written landed last in the same burst, won the tie, and booked the next turn

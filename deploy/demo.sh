@@ -31,6 +31,9 @@ VOLUME=$SANDBOX-self
 EGRESS=agent-dive-demo-egress
 UPLINK=agent-dive-demo-uplink
 HOOK_SECRET=demo-secret-not-for-production
+# The label the sandbox driver puts on an agent's container, and only on those: the plane, the egress
+# and the uplink are this script's own and would answer none of the questions asked of a sandbox.
+AGENT_LABEL=dev.agent-dive.agent-id
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
@@ -189,18 +192,33 @@ reload() {
   # environment the new config changed is replaced here, and its old container is still up until it is.
   wait_for_egress
 
-  say "the plane is new, the agent is the one you had"
-  docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
-  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
+  # Two calls, because filters of different kinds are read as "and": asking for the demo's own name
+  # and for the agent label in one breath asks for containers that are both, and there are none.
+  say "the plane is new, the agents are the ones you had"
+  docker ps --filter "name=agent-dive-demo" --format '  {{.Names}}  {{.Status}}'
+  docker ps --filter "label=$AGENT_LABEL" --format '  {{.Names}}  {{.Status}}'
+
+  # Whichever agent this plane is actually running, rather than the one `up` makes. A reload is for
+  # the plane you have, and on a plane whose agents you named yourself the demo's own sandbox is not
+  # there — which used to be two lines of `No such container` on the end of every reload.
+  local sandbox
+  sandbox=$(a_sandbox)
+  [ -n "$sandbox" ] || { say "no agent to ask; the plane has none running"; return; }
+
+  docker exec "$sandbox" curl -s -o /dev/null -w '  api.deepseek.com (injected)   -> %{http_code}\n' \
     https://api.deepseek.com/models || true
-  probe_search
+  probe_search "$sandbox"
+}
+
+a_sandbox() {
+  docker ps --filter "label=$AGENT_LABEL" --format '{{.Names}}' | head -1
 }
 
 # Deliberately without the search tool: what this asks is whether the tunnel and the injected key
 # work, and the answer to that costs a few tokens rather than the ten dollars a thousand searches do.
 # 401 is a key the operator has to fix and 403 is the proxy, which are the two worth telling apart.
 probe_search() {
-  docker exec "$SANDBOX" curl -s -o /dev/null -w '  api.openai.com (injected)     -> %{http_code}\n' \
+  docker exec "${1:-$SANDBOX}" curl -s -o /dev/null -w '  api.openai.com (injected)     -> %{http_code}\n' \
     https://api.openai.com/v1/responses -H 'Content-Type: application/json' \
     -d '{"model":"gpt-5-mini","input":"hi"}' || true
 }
