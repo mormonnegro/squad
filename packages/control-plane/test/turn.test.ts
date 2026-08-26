@@ -697,6 +697,40 @@ describe("createTurnHandler", () => {
 		expect(undelivered).toEqual([{ channel: "webhook:ping", message: "no reply URL configured" }]);
 	});
 
+	// The answer is written into the conversation here, and an answer that left by mail should say so
+	// there: a pane that shows the agent answering and nothing about the mail reads like no mail went.
+	it("says where the answer is going, along with the turn", async () => {
+		const told: Array<readonly string[]> = [];
+		const handler = createTurnHandler({
+			runner: { run: async () => answered("dale") },
+			router: { send: async () => undefined },
+			onTurn: (_id, _result, to) => told.push(to),
+		});
+
+		await handler({
+			agentId: "a1",
+			events: [wakeup("email:vos@example.com", "un chiste"), wakeup("cli:abc", "y otro")],
+			prompt: "p",
+		});
+
+		expect(told).toEqual([["email:vos@example.com", "cli:abc"]]);
+	});
+
+	// Nothing leaves a turn that was stopped, and an answer marked as sent that was never sent is
+	// worse than an unmarked one: the pane would be the only evidence, and it would be wrong.
+	it("says the answer of a stopped turn is going nowhere", async () => {
+		const told: Array<readonly string[]> = [];
+		const handler = createTurnHandler({
+			runner: { run: async () => ({ ...answered("iba por la mit"), stopped: true as const }) },
+			router: { send: async () => undefined },
+			onTurn: (_id, _result, to) => told.push(to),
+		});
+
+		await handler({ agentId: "a1", events: [wakeup("email:vos@example.com", "x")], prompt: "p" });
+
+		expect(told).toEqual([[]]);
+	});
+
 	it("says nothing when the turn produced nothing", async () => {
 		const sent: string[] = [];
 		const handler = createTurnHandler({

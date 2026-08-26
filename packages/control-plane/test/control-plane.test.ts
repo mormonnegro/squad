@@ -855,6 +855,61 @@ describe("a turn that asked for another turn", () => {
  * nothing run, and the ones that widen anything come back as the exact line to type — in the
  * console, where the person who can type it is already looking.
  */
+/**
+ * An answer, and whether the operator watching it can tell that it also left.
+ *
+ * They asked by mail, and what they saw was the agent answering in the pane — the same picture as an
+ * agent that answered and sent nothing. The words are not the evidence; where they went is.
+ */
+describe("an answer that went somewhere", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-sent-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const answering: TurnRunner = {
+		async run() {
+			return { text: "**Chiste #1:**", exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0 };
+		},
+	};
+
+	const takeTurn = async (plane: ControlPlane, from: string): Promise<void> => {
+		await plane.attach("scout", answering);
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: from,
+			body: "contame un chiste",
+		});
+		await plane.bus.drain();
+	};
+
+	it("writes down the channel it left on", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane, "email:vos@example.com");
+
+		expect(((await plane.transcripts()).scout ?? []).at(-1)).toMatchObject({
+			from: "agent",
+			to: "email",
+		});
+	});
+
+	// An answer to a line typed into the console arrives in the console. Marking that marks every
+	// line most agents ever say, which is the same as marking none of them.
+	it("says nothing about an answer that arrived where it was asked for", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await takeTurn(plane, "cli:test");
+
+		expect(((await plane.transcripts()).scout ?? []).at(-1)?.to).toBeUndefined();
+	});
+});
+
 describe("a turn that asked for a console command", () => {
 	let stateDir: string;
 

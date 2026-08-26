@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type AgentEvent, createEvent } from "@agent-dive/events";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { overheard, Transcript } from "../src/transcript.ts";
+import { overheard, sentTo, Transcript } from "../src/transcript.ts";
 
 const arriving = (input: Parameters<typeof createEvent>[0]): AgentEvent => createEvent(input);
 
@@ -92,6 +92,37 @@ describe("overheard", () => {
 		);
 
 		expect(said).toEqual({ from: "other", via: "webhook:github", text: "ship it" });
+	});
+});
+
+/**
+ * Where an answer went, for a pane that until now only showed that one had been written.
+ *
+ * Somebody who asks for a joke by mail and watches the agent answer in the console has no way of
+ * telling whether the mail went: the text is the same either way, and the sending is the part that
+ * happens somewhere else.
+ */
+describe("sentTo", () => {
+	it("names the channel an answer left on", () => {
+		expect(sentTo(["email:vos@example.com"])).toBe("email");
+	});
+
+	// The console is where it is being read. Marking that is marking every answer most agents give.
+	it("says nothing about an answer that arrived where it was asked for", () => {
+		expect(sentTo(["cli:abc"])).toBeUndefined();
+		expect(sentTo([])).toBeUndefined();
+	});
+
+	// A burst is one turn, so one answer can be owed in two places at once, and both of them got it.
+	it("names every channel it went to, once each", () => {
+		expect(sentTo(["email:vos@example.com", "telegram:42", "email:vos@example.com"])).toBe(
+			"email, telegram",
+		);
+	});
+
+	// The console being one of several is not the console being the only one: the mail still went.
+	it("leaves the console out of a list of somewhere else", () => {
+		expect(sentTo(["cli:abc", "email:vos@example.com"])).toBe("email");
 	});
 });
 

@@ -30,6 +30,15 @@ export interface Utterance {
 	readonly tone?: "bad" | "good";
 	/** How it reached the agent, when that is not the operator typing: a channel, or its own wakeup. */
 	readonly via?: string;
+	/**
+	 * Where the agent's answer went, when it went anywhere but the console it is read in.
+	 *
+	 * Kept apart from `via`, which is how a message arrived. An answer that left by mail and a message
+	 * that came in by mail are the same word for opposite directions, and the reason to write it down
+	 * at all is that they are not the same event: an operator watching the pane sees the agent answer
+	 * either way, and without this has no way of knowing whether the mail they asked from ever went.
+	 */
+	readonly to?: string;
 	/** Written by the transcript, so a caller only has to have the words. */
 	readonly at?: string;
 }
@@ -69,6 +78,21 @@ function carriedBy(channel: string): string | undefined {
 	const colon = channel.indexOf(":");
 	const name = colon === -1 ? channel : channel.slice(0, colon);
 	return name === CLI_CHANNEL ? undefined : name;
+}
+
+/**
+ * Where an answer went, named the way an incoming message is named, or nothing when it stayed here.
+ *
+ * Nothing for the console, on `carriedBy`'s terms: an answer to a line typed into the pane arrives in
+ * the pane, and marking that is marking every answer most agents ever give. Several at once because a
+ * burst is one turn — somebody who wrote by mail while somebody else wrote by Telegram gets the same
+ * answer, and both of them are where it went.
+ */
+export function sentTo(channels: Iterable<string>): string | undefined {
+	const named = [...new Set(channels)]
+		.map(carriedBy)
+		.filter((name): name is string => name !== undefined);
+	return named.length > 0 ? named.join(", ") : undefined;
 }
 
 /**

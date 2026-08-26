@@ -432,7 +432,15 @@ export interface ReplyRouter {
 export interface TurnHandlerOptions {
 	readonly runner: TurnRunner;
 	readonly router?: ReplyRouter;
-	readonly onTurn?: (agentId: string, result: TurnResult) => void;
+	/**
+	 * The turn as it finished, and the channels its answer is about to go out on.
+	 *
+	 * The destinations come with the turn rather than after the sending, because this is where the
+	 * answer is written into the conversation and an answer that left by mail should say so there. A
+	 * turn that was stopped is going nowhere and says so, being the one case where the pane shows an
+	 * answer that nobody outside it will ever read.
+	 */
+	readonly onTurn?: (agentId: string, result: TurnResult, to: readonly string[]) => void;
 	/**
 	 * The turn beginning, for whoever is watching the agent rather than the conversation.
 	 *
@@ -469,7 +477,13 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		const result = await options.runner.run(agentId, prompt, (text) =>
 			options.onSay?.(agentId, text),
 		);
-		options.onTurn?.(agentId, result);
+		// Every channel the turn drew from, which is where the answer is owed — and nowhere at all when
+		// it was stopped or when there is nothing to carry it, because then nothing leaves.
+		const owed =
+			result.stopped || options.router === undefined
+				? []
+				: [...new Set(events.map((event) => event.channel))];
+		options.onTurn?.(agentId, result, owed);
 		// A stopped turn's answer is half of one, and half an answer is worse than none somewhere it
 		// will be read as the whole. Whoever stopped it was watching it being written anyway.
 		if (result.stopped) return;
@@ -489,7 +503,7 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		// the agent has answered; throwing here would queue the events for a retry that costs another
 		// turn and, on a channel that simply cannot carry replies, never stops — one hook without a
 		// reply URL would be enough to make the agent unable to finish a turn ever again.
-		for (const channel of new Set(events.map((event) => event.channel))) {
+		for (const channel of owed) {
 			await options.router
 				.send({ agentId, channel, body: result.text })
 				.catch((error: Error) => options.onUndelivered?.(agentId, channel, error));

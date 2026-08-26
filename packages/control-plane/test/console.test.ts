@@ -66,6 +66,25 @@ describe("transcript", () => {
 		);
 	});
 
+	// Asked for a joke by mail, the operator watched the agent answer in the pane and had no way of
+	// telling whether the mail ever went. The answer is the same either way; where it went is not.
+	it("says where an answer left for, when it left", () => {
+		expect(transcript([{ from: "agent", to: "email", text: "listo" }])[0]).toBe(
+			"\u001b[33m‹→ email›\u001b[39m listo",
+		);
+	});
+
+	// The same word for opposite directions. Marked alike, a question and its answer read as two
+	// messages that arrived, and the one that went is the one worth being able to see go.
+	it("does not mark an answer the way it marks a message that arrived", () => {
+		const [went] = transcript([{ from: "agent", to: "email", text: "listo" }]);
+		const [came] = transcript([{ from: "operator", via: "email", text: "contame un chiste" }]);
+
+		expect(went).toContain("‹→ email›");
+		expect(came).toContain("‹email›");
+		expect(came).not.toContain("→");
+	});
+
 	// A turn that failed said nothing, and the person who asked is owed the reason where they asked.
 	it("says a failure in the conversation it happened in", () => {
 		expect(transcript([{ from: "plane", tone: "bad", text: "exited 1" }])[0]).toBe(

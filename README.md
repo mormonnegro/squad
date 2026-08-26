@@ -433,13 +433,19 @@ cuatro issues abiertos, ninguno bloqueado.
 ‹wake› volver a chequear la cola
 sigue igual.
 ‹email› ¿y el build?
-verde desde anoche.
+‹→ email› verde desde anoche.
 ‹webhook:github› the nightly build failed on main
 ```
 
 Your own mail is marked too, and for the same reason: it is you, and it is not you at this keyboard.
 An agent that answered its mail at four in the morning would otherwise read back, hours later, as
 something you had sat down and typed.
+
+The answer to it carries an arrow, because it is the half that went somewhere. An answer written into
+the pane and an answer also sent are the same words, and without the mark the pane is the same
+picture either way — you asked for something by mail, watched the agent answer, and had no way of
+knowing whether the mail ever left. What you typed here is answered here, and that is left unmarked:
+marking it would mark nearly every line an agent ever says.
 
 The mark is there because the pane gets read back to work out who asked for what, and a line from a
 stranger with a URL drawn the same way as the operator's is the one bug in a chat window that
@@ -709,6 +715,15 @@ providers rewrite a `From` that is not the account they know, which is why the `
 same thing again: between the two, one survives. The subject and the message id of what came in are
 kept, so the answer arrives under the question in a mail client rather than as a new message
 somewhere down an inbox.
+
+It goes out twice over: as the markdown the agent wrote, and as the small piece of HTML that
+markdown describes. A mailbox is not a terminal, and an answer sent as it stands arrives reading
+`**Chiste #1:**` with a row of dashes under it — the punctuation of a format nobody asked to read.
+The drawing is done here rather than by a parser that lets HTML through, and everything is escaped
+on the way: an agent reads its mail, and a mail can tell it to write anything. A message that could
+put a form or a link of its choosing in front of you is one that has phished you with your own
+agent's face on it. Only `http`, `https` and `mailto` become links; anything else is shown as the
+text it is, which loses nothing, since the address is still there to be read.
 
 Reading is the channel and sending is the improvement on it, so a submission server that refuses the
 same password is not a reason to refuse the mailbox. The account is written down with nowhere to

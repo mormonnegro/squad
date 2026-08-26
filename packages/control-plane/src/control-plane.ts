@@ -82,7 +82,7 @@ import { type Served, ServedPorts } from "./ports.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
 import { TelegramBots } from "./telegram.ts";
-import { overheard, Transcript, type Utterance } from "./transcript.ts";
+import { overheard, sentTo, Transcript, type Utterance } from "./transcript.ts";
 import {
 	createTurnHandler,
 	PiTurnRunner,
@@ -684,7 +684,7 @@ export class ControlPlane {
 			runner,
 			router: this.router,
 			onStart: (id) => this.#emit({ kind: "thinking", agentId: id }),
-			onTurn: (id, result) => {
+			onTurn: (id, result, to) => {
 				this.#onTurn?.(id, result);
 				this.#emit({ kind: "turn", agentId: id, result });
 				void this.#spend.record(id, result.costUsd);
@@ -692,7 +692,15 @@ export class ControlPlane {
 				// it got is the one thing that would be left in an emptied pane, and the whole of what a
 				// cleared agent is written down as remembering. The feed above still has it.
 				if (result.text.length > 0 && !this.#clearedMidTurn.has(id)) {
-					void this.#record(id, { from: "agent", text: result.text });
+					// Marked with where it went, so an answer the operator asked for by mail is one they
+					// can see leave. Without it the pane shows the agent answering and says nothing about
+					// the mail, which reads exactly like the mail never went.
+					const went = sentTo(to);
+					void this.#record(id, {
+						from: "agent",
+						text: result.text,
+						...(went !== undefined ? { to: went } : {}),
+					});
 				}
 				// Under the agent's name and a word, so it lands in the log rather than in the
 				// conversation: the agent is already told which servers failed and why, and a plane

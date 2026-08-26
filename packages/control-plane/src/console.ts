@@ -133,6 +133,7 @@ export interface Said {
 	readonly text: string;
 	readonly tone?: Utterance["tone"];
 	readonly via?: string;
+	readonly to?: string;
 }
 
 /** Markdown as the terminal will have it, for a line that arrives whole rather than in pieces. */
@@ -166,6 +167,7 @@ export function shown(said: Utterance, width: number): Said {
 		text: said.from === "agent" ? painted(said.text, width) : said.text,
 		...(said.tone !== undefined ? { tone: said.tone } : {}),
 		...(said.via !== undefined ? { via: said.via } : {}),
+		...(said.to !== undefined ? { to: said.to } : {}),
 	};
 }
 
@@ -216,6 +218,10 @@ function spoken(said: Said): string {
 		if (said.tone === undefined) return said.text;
 		return `${ESC}[${said.tone === "good" ? 32 : 31}m${said.text}${ESC}[39m`;
 	}
+	// The agent's answer, and where it left for. An arrow, because `‹email›` already means a message
+	// that arrived by mail, and the same mark on both is a conversation talking to itself: the pane
+	// would show a question and its answer marked alike, and only one of the two went anywhere.
+	if (said.to !== undefined) return `${ESC}[33m‹→ ${said.to}›${ESC}[39m ${said.text}`;
 	// Yellow, where dim was wrong: a line nobody typed is the one worth finding again on a pane full
 	// of answers, and dim is how a terminal says this may be skipped. Yellow is what the agents column
 	// already paints a booked wakeup in, so the mark here and the clock in the list are one thing.
