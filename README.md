@@ -211,19 +211,18 @@ asking to see the thing, not to be told a fact about it:
 
 The column on the left is the whole of what this console can show, one list top to bottom: every
 agent the plane has — `●` up, `○` stopped, `◐` mid-turn — then the row that makes one, then the log
-feed and the config screen. Up and down move between the agents, which is what those two keys do
-beside a list on every screen that draws one. They stop at the row that makes an agent: `tab` is what
-carries on into the plane's own two rows and back round to the top — `shift` with it for the way
-back — because pressing up from the first agent should land on something you might have been after,
-and a screen of API keys is not it. A click on a row works too, for a hand already on the mouse.
-Thinking gets a mark of its own because with several agents on screen it is the one thing you cannot
-find out by asking again in a second. The row the keyboard is on is its name in the colour
+feed and the config screen. Up and down walk it, which is what those two keys do beside a list on
+every screen that draws one — the whole of it, so carrying on down past the row that makes an agent
+lands on the feed and then on the config screen, and it comes back round to the top. `tab` walks the
+same ring, `shift` with it for the way back, and a click on a row works too for a hand already on the
+mouse. Thinking gets a mark of its own because with several agents on screen it is the one thing you
+cannot find out by asking again in a second. The row the keyboard is on is its name in the colour
 the panel title gives the same name, and not an arrow in a gutter beside the marks: a column whose
 header stands against the border and whose rows all begin two further in reads as a list indented
 under a title it does not belong to. At the foot of the column is `↑↓ moves`, because a list that
 nothing points at does not otherwise say how to walk it. It names whichever key walks the column from
-where the keyboard already is, so on the feed and the config screen — where the arrows belong to the
-scrollback and to the list drawn beside them — it reads `tab moves` instead.
+where the keyboard already is, so on the config screen — where the arrows are that screen's own list's
+until it runs out above the cursor — it reads `tab moves` instead.
 
 The feed and the config screen stand at the foot of the column rather than behind an agent because
 neither is about an agent. The feed is the plane's, one stream with every agent in it — the same feed
@@ -278,11 +277,12 @@ money — nothing is ever cut to a stump, because a `deepseek-v4-fl…` is a fac
 
 `←` and `→` walk back through the lines you have typed at this agent, left for older because left is
 back. Sideways rather than up and down because this prompt takes no cursor: there is no line to walk
-along with those two, so they cost the prompt nothing here, and up and down go to the agents, which
-are the one thing on this screen that is a list. The half-written line you were on when the walk
-began comes back whole at the end of it, so a stray arrow costs you nothing. Over the feed and the
-config screen there is no prompt for them to belong to, so up and down are the list's and the
-scrollback's there. Each agent's history is its own, and it survives the console
+along with those two, so they cost the prompt nothing here, and up and down go to the column, which
+is the one thing on this screen that is a list. The half-written line you were on when the walk
+began comes back whole at the end of it, so a stray arrow costs you nothing. On the config screen up
+and down are that screen's own list's, until it runs out above the cursor and they go back to
+walking the column — so the screen is left by the same key that arrived on it, rather than by a
+press you would have to be told about. Each agent's history is its own, and it survives the console
 being closed, because the lines are read out of the conversation the plane kept.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one

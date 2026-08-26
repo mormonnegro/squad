@@ -284,11 +284,11 @@ describe("the console, pressed at", () => {
 	/**
 	 * Up and down, which is what a list answers to on every screen that draws one.
 	 *
-	 * They stop at the row that makes an agent instead of carrying on into the plane's own two:
-	 * pressing up from the first agent should land on something somebody might have been after, and a
-	 * screen of API keys is not it.
+	 * The whole column, not the agents alone: carrying on down past the row that makes one has to
+	 * reach the feed and the config screen, or those two are reachable only by a key nobody was
+	 * already pressing to get anywhere else on this screen.
 	 */
-	it("moves between the agents on up and down, without reaching the plane's rows", async () => {
+	it("walks the whole column on up and down, past the row that makes an agent", async () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo"), listed("maxi")]);
 		try {
@@ -299,10 +299,49 @@ describe("the console, pressed at", () => {
 			expect(showing(console_.screen())).toBe("new agent");
 
 			await console_.press(DOWN);
-			expect(showing(console_.screen())).toBe("demo");
+			expect(showing(console_.screen())).toBe("logs");
+
+			await console_.press(DOWN);
+			expect(showing(console_.screen())).toBe("config");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** The way back is the same key, so nothing reached with these two is a room without a door. */
+	it("comes back up the column the way it went down", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(DOWN);
+			await console_.press(DOWN);
+			expect(showing(console_.screen())).toBe("logs");
 
 			await console_.press(UP);
 			expect(showing(console_.screen())).toBe("new agent");
+
+			await console_.press(UP);
+			expect(showing(console_.screen())).toBe("demo");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/**
+	 * The config screen draws a list of its own and that list has the arrows, so leaving it upward
+	 * takes as many presses as walking back to the top of it — and then one more, which is the press
+	 * that would otherwise have done nothing at all.
+	 */
+	it("steps off the config screen once its own list runs out above the cursor", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(SHIFT_TAB);
+			expect(showing(console_.screen())).toBe("config");
+
+			await console_.press(UP);
+
+			expect(showing(console_.screen())).toBe("logs");
 		} finally {
 			console_.close();
 		}
@@ -322,8 +361,8 @@ describe("the console, pressed at", () => {
 	});
 
 	/**
-	 * The arrows on the plane's two rows belong to what is drawn beside them — the scrollback and the
-	 * config list — so the column names the key that does still walk it from there.
+	 * On the config screen the arrows are that screen's list's until it runs out, so the column names
+	 * the key that answers there whatever row the cursor is on.
 	 */
 	it("names tab in the column once the arrows belong to the screen beside it", async () => {
 		const { client } = plane();
