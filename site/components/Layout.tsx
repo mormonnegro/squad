@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { ReactNode } from "react";
 import { REPO, TITLE } from "../lib/site";
+import { Mark } from "./Mark";
 
 export function Layout({
 	children,
@@ -39,6 +40,7 @@ export function Layout({
 
 			<nav className="nav">
 				<Link href="/" className="nav-brand">
+					<Mark />
 					squad
 				</Link>
 				<div className="nav-links">
