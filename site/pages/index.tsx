@@ -142,6 +142,10 @@ const PIECES: [string, string][] = [
 		"control-plane",
 		"Wires it together, takes turns by running pi in the sandbox, and reads a YAML config",
 	],
+	[
+		"client",
+		"The agent you install: picks where the plane lives, puts one there, and dials it — over a socket here or ssh vps agent relay",
+	],
 ];
 
 export default function Home() {
@@ -160,7 +164,7 @@ export default function Home() {
 						</Link>
 					</div>
 					<div className="hero-meta">
-						<span>On a server of your own</span>
+						<span>On a machine of your own</span>
 						<span>Wakes on its own</span>
 						<span>Writes back on Telegram</span>
 					</div>

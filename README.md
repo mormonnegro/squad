@@ -66,6 +66,7 @@ operator answers them in the config file the agent cannot reach.
 | `channels` | Where events come from and replies go. Ships a signed webhook channel, a Telegram bot and an IMAP mailbox |
 | `agent-repo` | The agent's own git repository: manifest, soul, skills, memory, tools |
 | `control-plane` | Wires it together, takes turns by running pi in the sandbox, and reads a YAML config |
+| `client` | The `agent` you install: picks where the plane lives, puts one there, and dials it — over a socket here or `ssh vps agent relay` |
 
 ## Trust
 
@@ -108,44 +109,49 @@ want after changing the code, and it works because the new plane adopts the sand
 
 ## Running it
 
-From the computer you are sitting at:
+Two halves: the console you type at, and the plane the agents live in. Install the first, on the
+computer you are sitting at:
 
 ```sh
-npx agent-dive
+npm install -g agent-dive
+agent
 ```
 
-It asks which machine your agents should live on and does the rest over the SSH you already have to
-it: Docker installed if there is none, the repository in `/opt/agent-dive`, a config with one agent
-and a ceiling of five dollars a day, the plane started, and `agent` on the PATH there and here. It
-ends on the console. Running it again is the update: it pulls, rebuilds and swaps the plane in, and
-never touches `config.yaml` or `.env`.
+The first `agent` asks the one question the halves differ on — **on this computer**, or **on a
+server** you have SSH to — and puts a plane there. On this computer that means Docker and a state
+directory under `~/.agent-dive`. On a server it means the install running down the SSH connection
+you already have, so there is nothing to open there and nothing new to log into. Either way it ends
+on the console, the answer is remembered, and `agent connect` moves it.
 
-It asks for no keys, because down a pipe the installer has no terminal to read one from; they are
-given later on the config screen in `agent`. The npm name is not settled yet.
+Everything after that question is the same program. A plane answers the same protocol whether its
+socket is in a directory here or at the far end of `ssh vps agent relay`, so `agent ls`, the log
+feed, the console and a port forwarded out of a sandbox all run on this computer and reach the
+agents wherever they are. That is also why a port you expose from an agent opens on the machine your
+browser is on, which is the one place it is of any use.
 
-The machine at the far end needs a Linux with SSH on it and nothing else — the installer brings
-Docker. One vCPU, a gigabyte of memory and ten gigabytes of disk runs a few agents, which is the
-bottom of every provider's list at around five dollars a month, and an old laptop under the desk
-does just as well.
+It asks for no keys. Every one of them is given later on the config screen in `agent`, because three
+secrets in the first minute is a worse first minute than an empty setup screen in the second. The
+npm name is not settled yet.
 
-Nothing of that package stays on either machine. It pipes the two shell scripts below to the two
-ends of an SSH connection, and each of them stands alone:
+A server needs a Linux with SSH on it and nothing else — the installer brings Docker. One vCPU, a
+gigabyte of memory and ten gigabytes of disk runs a few agents, which is the bottom of every
+provider's list at around five dollars a month, and an old laptop under the desk does just as well.
+
+Nothing of the console stays on that machine. It pipes one shell script to it, and that script
+stands alone:
 
 ```sh
-# on the machine the agents live on
 curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
-
-# on the computer you drive from, once
-curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/connect.sh | sh
 ```
 
-Run at a terminal rather than down a pipe, the installer asks for the keys the proxy will hold as it
-goes. The second leaves `agent` on this computer — not a second copy of anything, but the ssh that
-reaches the first one, so the console still runs on the machine the agents are on and there is no
-version to keep in step. Its first run asks which machine your plane is on and writes the answer to
-`~/.agent-dive/plane`; a connection that never opened is treated as a typo rather than saved, and
-`agent connect user@host` points it somewhere else. The installer on the VPS prints the line with
-your own address already in it.
+It installs Docker if there is none, puts the repository in `/opt/agent-dive`, writes a config with
+one agent and a ceiling of five dollars a day, starts the plane, and leaves `agent` on that
+machine's PATH — the same commands typed there, and the door the console here comes through. Run at
+a terminal rather than down a pipe, it asks for the keys the proxy will hold as it goes.
+`AGENT_DIVE_DIR`, `AGENT_DIVE_STATE` and `AGENT_DIVE_SHIM` are the three things the console
+overrides when the plane is going to live alongside it, which is the whole of the difference between
+a laptop and a VPS. Running it again is the update: it pulls, rebuilds and swaps the plane in, and
+never touches `config.yaml` or `.env`.
 
 By hand, which is the same thing without the questions:
 
@@ -181,7 +187,8 @@ boundary is the sandbox around the agent, not the process managing it.
 
 ## Driving it
 
-A running plane listens on a unix socket in its state directory. That is the whole control surface:
+A running plane listens on a unix socket in its state directory. That is the whole control surface,
+and these are typed on your own computer whichever machine the plane is on:
 
 ```sh
 agent                                    the console: every agent, its turns and its logs
@@ -191,6 +198,7 @@ agent ls                                 what each agent is and whether it is up
 agent wake "check the open issues"       take one turn, and wait for the answer
 agent logs                               follow what every agent runs, answers and spends
 agent rm demo [--purge]                  take the sandbox away, and with --purge the repository
+agent connect                            ask again where the agents should live
 agent help                               the rest
 ```
 

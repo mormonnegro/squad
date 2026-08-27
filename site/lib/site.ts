@@ -6,11 +6,8 @@ export const REPO = "https://github.com/agent-dive/agent-dive";
 // a `curl | sh` pointing at somebody else's fork is the worst thing on it.
 const RAW = `${REPO.replace("github.com", "raw.githubusercontent.com")}/main/deploy`;
 
-/** On the machine the agents will live on. */
+/** On the machine the agents will live on, whether that is a server or this computer. */
 export const INSTALL = `${RAW}/install.sh`;
-
-/** On the computer you drive from. */
-export const CONNECT = `${RAW}/connect.sh`;
 
 // The npm name, which is not settled and is not the repository's to assume. Written once so the
 // day it changes is one edit here and not a hunt through the pages for a command people copy.

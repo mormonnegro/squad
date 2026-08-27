@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Code } from "../components/Code";
 import { Layout } from "../components/Layout";
-import { CONNECT, INSTALL, PACKAGE, REPO } from "../lib/site";
+import { INSTALL, PACKAGE, REPO } from "../lib/site";
 
 const ASKS: [string, string][] = [
 	["Docker", "installed from get.docker.com if the machine has none"],
@@ -32,17 +32,17 @@ export default function Install() {
 	return (
 		<Layout
 			title="install"
-			description="One command from the computer you are sitting at. Then you drive it by typing agent, over the SSH connection you already have."
+			description="Install the console on the computer you are sitting at. It asks where the agents should live — here, or on a server you have SSH to — and puts a plane there."
 		>
 			<section className="hero">
 				<div className="wrap">
 					<h1>Install</h1>
 					<p className="lede">
-						One machine with a shell on it. The agents live there; you stay where you are and reach
-						them the way you already reach the machine.
+						Two halves: the console you type at, and the plane the agents live in. You install the
+						console, and it asks the one question the halves differ on.
 					</p>
 					<div className="hero-meta">
-						<span>One command</span>
+						<span>One question</span>
 						<span>~1 GB of RAM</span>
 						<span>No database, no account</span>
 					</div>
@@ -54,31 +54,41 @@ export default function Install() {
 					<span className="eyebrow">From your computer</span>
 					<h2>One command, and it asks one thing</h2>
 					<Code label="on your laptop">{`
-$ npx ${PACKAGE}
+$ npm install -g ${PACKAGE}
+$ agent
 `}</Code>
 					<p>
-						The thing it asks is which machine your agents should live on. Everything after that
-						goes down the SSH you already have to it: Docker installed if there is none, the
-						repository in <code>/opt/agent-dive</code>, a config with one agent and a ceiling of
-						five dollars a day, the plane started, and <code>agent</code> left on the PATH — there,
-						and here. It ends on the console.
+						The thing it asks is where your agents should live: <strong>on this computer</strong>,
+						which means Docker and a state directory under <code>~/.agent-dive</code>, or{" "}
+						<strong>on a server</strong> you have SSH to, which means the install running down the
+						connection you already have. Either way the same thing lands there — Docker if there is
+						none, the repository, a config with one agent and a ceiling of five dollars a day, and
+						the plane started — and either way it ends on the console. The answer is remembered, and{" "}
+						<code>agent connect</code> moves it.
+					</p>
+					<p>
+						Everything after that question is the same program. A plane answers the same protocol
+						whether its socket is in a directory here or at the far end of{" "}
+						<code>ssh vps agent relay</code>, so the agent list, the log feed, the console and a
+						port forwarded out of a sandbox all run on this computer and reach the agents wherever
+						they are. That is also why a port you expose from an agent opens on the machine your
+						browser is on, which is the one place it is of any use.
 					</p>
 					<p className="small muted">
-						It asks for no keys. Down a pipe the installer has no terminal to read one from, so
-						every key is given later on the setup screen in <code>agent</code> and the install is
-						never held up by a key you have to go and find. Run the same command again any time and
-						it becomes the update: it pulls, rebuilds, swaps the plane in, and leaves{" "}
-						<code>config.yaml</code> and <code>.env</code> alone — the second run is the one that
-						would quietly undo a grant somebody added.
+						It asks for no keys. Every one of them is given later on the config screen in{" "}
+						<code>agent</code>, because three secrets in the first minute is a worse first minute
+						than an empty setup screen in the second. Run the install again any time and it becomes
+						the update: it pulls, rebuilds, swaps the plane in, and leaves <code>config.yaml</code>{" "}
+						and <code>.env</code> alone — the second run is the one that would quietly undo a grant
+						somebody added.
 					</p>
 					<div className="note">
 						<p>
-							<strong>Nothing of it stays.</strong> The package chooses a machine and pipes two
-							shell scripts — <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a>{" "}
-							and <a href={`${REPO}/blob/main/deploy/connect.sh`}>deploy/connect.sh</a> — to the two
-							ends of an SSH connection, and neither end is left holding it. Both halves stand alone
-							and are below; <a href="#by-hand">the same install by hand</a> is at the bottom of
-							this page.
+							<strong>Nothing of the console stays on the server.</strong> It pipes one shell script
+							— <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a> — down the SSH
+							connection, and that script stands alone: it is below, and it is the same one that
+							runs when you pick this computer. <a href="#by-hand">The same install by hand</a> is
+							at the bottom of this page.
 						</p>
 					</div>
 				</div>
@@ -118,8 +128,8 @@ $ npx ${PACKAGE}
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">Or the two halves, yourself</span>
-					<h2>What it runs, at each end</h2>
+					<span className="eyebrow">Or the far half, yourself</span>
+					<h2>What it runs on the machine the agents get</h2>
 					<p>
 						Run at a terminal instead of down a pipe, the installer asks for the keys as it goes.
 						That is the whole difference — same script, and the questions exist only because there
@@ -143,17 +153,19 @@ $ curl -fsSL ${INSTALL} | sh
 						the agents cannot reach. Every one can be skipped and given later on the setup screen.
 						Nothing else is asked.
 					</p>
-					<Code label="on your laptop" wrap>{`
-$ curl -fsSL ${CONNECT} | sh
-`}</Code>
 					<p className="small muted">
-						That is the other half, and it leaves <code>agent</code> on this computer. It is not a
-						second copy of anything — it is the ssh that reaches the first one, under the name you
-						would have given the alias. The first run asks which machine your plane is on, writes
-						the answer to <code>~/.agent-dive/plane</code>, and never asks again; a connection that
-						never opened is treated as a typo rather than saved.{" "}
-						<code>agent connect user@host</code> points it somewhere else, and the installer on the
-						VPS prints that line with your own address already in it.
+						It leaves <code>agent</code> on that machine's PATH too — the same commands typed there,
+						and the door the console here comes through. Three environment variables are what the
+						console overrides when the plane is going to live beside it instead:{" "}
+						<code>AGENT_DIVE_DIR</code>, <code>AGENT_DIVE_STATE</code> and{" "}
+						<code>AGENT_DIVE_SHIM</code>. That is the whole of the difference between a laptop and a
+						VPS.
+					</p>
+					<p className="small muted">
+						Whichever end you ran it at, the console is the npm package above and this machine is an
+						answer it keeps — in <code>~/.agent-dive/plane.json</code>, written once and never asked
+						again. <code>agent connect</code> asks again, and the installer prints your own address
+						when it finishes so there is nothing to go and look up.
 					</p>
 				</div>
 			</section>
@@ -164,9 +176,10 @@ $ curl -fsSL ${CONNECT} | sh
 					<h2>Then you type its name</h2>
 					<p>
 						The control surface is a unix socket inside the state directory and it never leaves the
-						machine. There is no port to open, no token to issue and nothing to log into: SSH
-						already decides who may touch that host, and touching that host is what holding the
-						socket means.
+						machine. There is no port to open, no token to issue and nothing to log into: when the
+						plane is on a server, SSH already decides who may touch that host, and touching that
+						host is what holding the socket means. <code>agent relay</code> is the console's way in
+						— the same socket on a pair of pipes, run over the connection you already have.
 					</p>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,
