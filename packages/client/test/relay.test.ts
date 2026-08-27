@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Transform } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
 	ControlClient,
@@ -8,7 +9,7 @@ import {
 	ControlPlane,
 	ControlServer,
 } from "@agent-dive/control-plane";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dialCommand, relayOverSsh } from "../src/ssh.ts";
 
 const BIN = fileURLToPath(new URL("../../control-plane/bin/agent.mjs", import.meta.url));
@@ -34,6 +35,7 @@ describe("reaching a plane by running a relay", () => {
 	});
 
 	afterEach(async () => {
+		vi.restoreAllMocks();
 		await server.close();
 		await plane.bus.drain();
 		await rm(stateDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
@@ -89,6 +91,68 @@ describe("reaching a plane by running a relay", () => {
 		await client.connect();
 		try {
 			expect((await client.agents()).map((agent) => agent.id)).toEqual(["scout", "scribe"]);
+		} finally {
+			client.close();
+		}
+	});
+
+	/**
+	 * The one thing on this road that is not lines of JSON.
+	 *
+	 * A page an agent serves reaches a browser here by travelling this, as bytes: a newline in them is
+	 * a newline and not a frame boundary, and a zero byte is a zero byte. The relay is the half most
+	 * likely to get that wrong, because everything else it carries is text with the newlines meaning
+	 * something.
+	 */
+	it("carries a forwarded port's bytes, newlines and zeroes and all", async () => {
+		const echo = new Transform({
+			transform(chunk: Buffer, _encoding, done) {
+				done(null, chunk);
+			},
+		});
+		vi.spyOn(plane, "forward").mockResolvedValue(echo);
+
+		const client = new ControlClient(relay());
+		await client.connect();
+		try {
+			const stream = await client.forward("scout", 3002);
+			const sent = Buffer.from([0x00, 0x0a, 0xff, 0x7b, 0x0a, 0x00, 0x7d]);
+			const heard = new Promise<Buffer>((resolve) => {
+				let seen = Buffer.alloc(0);
+				stream.on("data", (chunk: Buffer) => {
+					seen = Buffer.concat([seen, chunk]);
+					if (seen.byteLength >= sent.byteLength) resolve(seen);
+				});
+			});
+			// It arrives paused, holding whatever came in behind the answer; piping is what resumes one
+			// of these in real life, and a listener on its own does not.
+			stream.resume();
+			stream.write(sent);
+			expect(await heard).toEqual(sent);
+			stream.destroy();
+		} finally {
+			client.close();
+		}
+	});
+
+	// A connection of its own per forward is what keeps a page from blocking the console, and over
+	// this road each one is another relay. So the console has to still answer with one open.
+	it("leaves the console's own connection alone while a port is open", async () => {
+		vi.spyOn(plane, "forward").mockResolvedValue(
+			new Transform({
+				transform(chunk: Buffer, _encoding, done) {
+					done(null, chunk);
+				},
+			}),
+		);
+
+		const client = new ControlClient(relay());
+		await client.connect();
+		try {
+			const stream = await client.forward("scout", 3002);
+			stream.write("hola");
+			expect((await client.agents()).map((agent) => agent.id)).toEqual(["scout", "scribe"]);
+			stream.destroy();
 		} finally {
 			client.close();
 		}
