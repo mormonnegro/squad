@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { App, bare, type Talk } from "../src/console.ts";
 import type { ControlClient } from "../src/control-client.ts";
 import type { AgentSummary, PlaneEvent } from "../src/control-plane.ts";
+import type { GrantStanding } from "../src/grants.ts";
 import type { MailStanding } from "../src/mailbox.ts";
 import type { McpServer, ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer, ModelSpec, ModelStanding, ProviderStanding } from "../src/models.ts";
@@ -91,6 +92,8 @@ function plane(
 		completes?: readonly string[];
 		paysSearch?: boolean;
 		shelf?: readonly ServerStanding[];
+		reaches?: readonly GrantStanding[];
+		refusesGrant?: string;
 		posts?: MailStanding;
 		refusesMail?: string;
 	} = {},
@@ -107,6 +110,8 @@ function plane(
 	const shelved: [string, McpServer][] = [];
 	const handed: [string, string, boolean][] = [];
 	const unshelved: string[] = [];
+	const opened: string[] = [];
+	const closed: string[] = [];
 	const offered: string[] = [];
 	const connected: [string, string][] = [];
 	const carried: (CarrierSpec | undefined)[] = [];
@@ -119,6 +124,9 @@ function plane(
 	// The mail the same way: named through the client, read back off the plane. Naming a carrier
 	// changes what the next `mail()` says, so the screen can be asserted on rather than the keyboard.
 	let posted: MailStanding = options.posts ?? NO_MAIL;
+	// Read back off the plane the way the search is: a host opened at the keyboard is on the list the
+	// next time the screen asks, so what is asserted is what the plane says rather than what was typed.
+	let reached: readonly GrantStanding[] = options.reaches ?? [];
 	let finish: (agent: AgentSummary) => void = () => {};
 	let feed: (event: PlaneEvent) => void = () => {};
 	let fail: (error: Error) => void = () => {};
@@ -187,6 +195,16 @@ function plane(
 			aimed.push(spec);
 		},
 		servers: async () => options.shelf ?? [],
+		grants: async () => reached,
+		addGrant: async (host: string) => {
+			opened.push(host);
+			if (options.refusesGrant !== undefined) throw new Error(options.refusesGrant);
+			reached = [...reached, { id: `reach:${host}`, host, origin: "here" as const }];
+		},
+		dropGrant: async (host: string) => {
+			closed.push(host);
+			reached = reached.filter((grant) => grant.host !== host);
+		},
 		addServer: async (name: string, server: McpServer) => {
 			shelved.push([name, server]);
 		},
@@ -250,6 +268,8 @@ function plane(
 		shelved,
 		handed,
 		unshelved,
+		opened,
+		closed,
 		offered,
 		connected,
 		carried,
@@ -1014,7 +1034,7 @@ describe("/config, typed at an agent", () => {
 		try {
 			await screen.press("/co");
 
-			expect(screen.screen()).toContain("/config [models|search|mcp|email]");
+			expect(screen.screen()).toContain("/config [models|search|grants|mcp|email]");
 		} finally {
 			screen.close();
 		}
@@ -1225,7 +1245,7 @@ describe("the config screen, pressed at", () => {
 			await screen.press(DOWN);
 			await screen.press(RIGHT);
 
-			expect(screen.screen()).toContain("+ a server");
+			expect(screen.screen()).toContain("+ a host");
 		} finally {
 			screen.close();
 		}
@@ -1706,6 +1726,176 @@ describe("the config screen, pressed at", () => {
 	 * What cannot be drawn is that a URL typed here lands on the shelf and nowhere else: the pane one
 	 * `tab` away is a chat, and a half-written server falling into it would be said to an agent.
 	 */
+	/**
+	 * The section that exists so nobody has to open the config file to let an agent reach a host.
+	 *
+	 * One box, one word: what is typed here becomes reach and nothing else, so there is no id to
+	 * invent, no method to pick, and nowhere for a key to go in.
+	 */
+	describe("the grants section", () => {
+		/** Opens the config screen with the grants already open, which is the third row. */
+		async function reached(options: Parameters<typeof plane>[0] = { pays, thinks }) {
+			const screen = await config(options);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			return screen;
+		}
+
+		it("opens on the row that adds one, when nothing was opened here yet", async () => {
+			const screen = await reached();
+			try {
+				expect(screen.screen()).toContain("+ a host");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("opens a host on one word and nothing else", async () => {
+			const screen = await reached();
+			try {
+				await screen.press(ENTER);
+				await screen.press("api.chess.com");
+				expect(screen.screen()).toContain("api.chess.com");
+
+				await screen.press(ENTER);
+				expect(screen.opened).toEqual(["api.chess.com"]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		/**
+		 * Sent as it was typed, URL and all, because the plane is where a host is read out of a line —
+		 * the console checking first would be a second answer to get right before the first one works.
+		 */
+		it("hands the line to the plane rather than reading it here", async () => {
+			const screen = await reached();
+			try {
+				await screen.press(ENTER);
+				await screen.press("https://api.chess.com/pub/player/x");
+				await screen.press(ENTER);
+
+				expect(screen.opened).toEqual(["https://api.chess.com/pub/player/x"]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("says what was wrong with a line rather than leaving the box empty", async () => {
+			const screen = await reached({
+				pays,
+				thinks,
+				refusesGrant: '"api.chess.com and the rest" is more than one word — a host is one',
+			});
+			try {
+				await screen.press(ENTER);
+				await screen.press("api.chess.com and the rest");
+				await screen.press(ENTER);
+
+				expect(screen.screen()).toContain("more than one word");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("gives up on a host without opening it", async () => {
+			const screen = await reached();
+			try {
+				await screen.press(ENTER);
+				await screen.press("api.chess.com");
+				await screen.press(ESCAPE);
+
+				expect(screen.opened).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The plane refuses what the file already grants, and the console says so where it was typed
+		// rather than writing a second row that changes nothing.
+		it("says why the plane would not open it", async () => {
+			const screen = await reached({
+				pays,
+				thinks,
+				refusesGrant: '"api.chess.com" is already open, from the config file',
+			});
+			try {
+				await screen.press(ENTER);
+				await screen.press("api.chess.com");
+				await screen.press(ENTER);
+
+				expect(screen.screen()).toContain("already open");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Closing is wider than the row it is pressed on — it comes off every agent — so it is asked
+		// before it happens, and answered by one key the way the rest of this screen is.
+		it("asks before closing a host, and closes it when the answer is yes", async () => {
+			const screen = await reached({
+				pays,
+				thinks,
+				reaches: [{ id: "reach:api.chess.com", host: "api.chess.com", origin: "here" }],
+			});
+			try {
+				await screen.press(BACKSPACE);
+				expect(screen.screen()).toContain("y close");
+				expect(screen.closed).toEqual([]);
+
+				await screen.press("y");
+				expect(screen.closed).toEqual(["api.chess.com"]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("keeps a host when the answer is anything else", async () => {
+			const screen = await reached({
+				pays,
+				thinks,
+				reaches: [{ id: "reach:api.chess.com", host: "api.chess.com", origin: "here" }],
+			});
+			try {
+				await screen.press(BACKSPACE);
+				await screen.press(ENTER);
+
+				expect(screen.closed).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		/**
+		 * Three of the four lists on this screen are not this console's to take back, and the refusal
+		 * arrives on the key rather than after a question — a `y` that then did nothing would be worse
+		 * than a key that says where the row is actually changed.
+		 */
+		it("refuses to close what another list decides, and says which", async () => {
+			const screen = await reached({
+				pays,
+				thinks,
+				reaches: [
+					{ id: "github", host: "api.github.com", origin: "file", carries: "GITHUB_TOKEN" },
+					{ id: "model:mini", host: "api.openai.com", origin: "model" },
+				],
+			});
+			try {
+				await screen.press(BACKSPACE);
+				expect(screen.screen()).toContain("is the file's — close it there");
+				expect(screen.closed).toEqual([]);
+
+				await screen.press(DOWN);
+				await screen.press(BACKSPACE);
+				expect(screen.screen()).toContain("a model brings it");
+				expect(screen.closed).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+	});
+
 	describe("the mcp section", () => {
 		const shelf = [
 			{
@@ -1716,9 +1906,10 @@ describe("the config screen, pressed at", () => {
 			},
 		];
 
-		/** Opens the config screen with the shelf already open, which is the third row. */
+		/** Opens the config screen with the shelf already open, which is the fourth row. */
 		async function shelved(options: Parameters<typeof plane>[0] = { pays, thinks, shelf }) {
 			const screen = await config(options);
+			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(ENTER);
@@ -1864,6 +2055,7 @@ describe("the config screen, pressed at", () => {
 				posts,
 				...(refusesMail !== undefined ? { refusesMail } : {}),
 			});
+			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);

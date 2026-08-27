@@ -354,16 +354,16 @@ the plane without waking anything — a turn spent reading a settings change is 
 slash opens the list of what there is, over the prompt, filtered by whatever is typed after it:
 
 ```
- ▸ /limit [<amount>|off]              what it has spent today, and the ceiling for it
-   /model [<name>]                    what it thinks with, and what else there is
-   /mcp [<name>|add …|login …]        the MCP servers it has, and the shelf to add from
-   /serve [<port>|stop <port>]        open a port inside it on the machine you are sitting at
-   /telegram [<token>|off]            the Telegram bot it answers on, and how to pair one
-   /email [<address>|<password>|off]  the address it is reached at, and how to connect a mailbox
-   /clear                             forget the conversation, and start it again on nothing
-   /delete                            delete this agent, after asking whether you meant it
-   /config [models|search|mcp|email]  the whole plane's screen: its keys, models, shelf and mailbox
-   /help                              every command there is
+ ▸ /limit [<amount>|off]                     what it has spent today, and the ceiling for it
+   /model [<name>]                           what it thinks with, and what else there is
+   /mcp [<name>|add …|login …]               the MCP servers it has, and the shelf to add from
+   /serve [<port>|stop <port>]               open a port inside it on the machine you are sitting at
+   /telegram [<token>|off]                   the Telegram bot it answers on, and how to pair one
+   /email [<address>|<password>|off]         the address it is reached at, and how to connect a mailbox
+   /clear                                    forget the conversation, and start it again on nothing
+   /delete                                   delete this agent, after asking whether you meant it
+   /config [models|search|grants|mcp|email]  the whole plane's screen: its keys, models, reach and mailbox
+   /help                                     every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
 ╰──────────────────────────────────────────────────────────────────────╯
@@ -1090,9 +1090,10 @@ things are rather than on any of them:
 │ ○ scout              ││                                                                │
 │                      ││                                                                │
 │ + new agent          ││ Everything this plane can be given is here: the keys it pays   │
-│                      ││ with, what its agents think with, where they search from, and  │
-│ logs                 ││ the mailbox they are written to at.                            │
-│ config               ││                                                                │
+│                      ││ with, what its agents think with, where they search from,      │
+│ logs                 ││ everywhere they may reach, and the mailbox they are written    │
+│ config               ││ to at.                                                         │
+│                      ││                                                                │
 │                      ││ All of it is kept beside deploy/config.yaml rather than in it  │
 │                      ││ — what that file declares is read here and changed only there  │
 │                      ││ — and all of it holds from the next turn, with nothing         │
@@ -1100,6 +1101,7 @@ things are rather than on any of them:
 │                      ││                                                                │
 │                      ││ ● models    the providers this plane can pay, and what its ag… │
 │                      ││ ○ search    where web_search goes, and what a search costs     │
+│                      ││ ● grants    the hosts the agents may reach, and what they car… │
 │                      ││ ● mcp       the servers on the shelf, and which agents hold t… │
 │                      ││ ○ email     the mailbox agents are reached at, and who carrie… │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
@@ -1120,14 +1122,14 @@ of each: a hand already on the arrows never leaves them, and a hand coming out o
 `⏎` and `esc` and would have to go looking. Only into a section, though — the rows inside one open a
 box to type in or a question to answer, which is `⏎`'s and not a level to walk into.
 
-One list at a time rather than all four down one screen: what they share is the file they are kept
+One list at a time rather than all five down one screen: what they share is the file they are kept
 in and nothing else, and a single list of everything would be a screen to scroll rather than a
 screen to read.
 
 There are two ways in. The column is one of them — the screen is its last row, so `shift-tab` from
 the first agent arrives in a single press — and [`/config`](#driving-it) is the other, typed from
 wherever the hand already is. `/config email` skips this list and lands in that section, which is
-the shorter road when you already know which of the four you came for.
+the shorter road when you already know which of the five you came for.
 
 A model is three lines of configuration and one exported variable, and the variable is the half that
 is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
@@ -1291,6 +1293,45 @@ request over the open grant, so the model's key goes to the model and nowhere el
 still crosses the proxy, is still matched, and still lands in the audit log with the host and path it
 went to. Delete the `web` grant and the plane is deny-by-default again, host by host, exactly as it
 was.
+
+Host by host is a fine way to run this, and it stops being one the moment a host has to be added by
+editing a file on the server and putting the plane back up. What that costs is not the minute: it is
+that the refusal arrives in an agent's turn, hours after the file was last thought about, and the
+answer to it is a deploy. So the hosts are on the config screen, under `grants`:
+
+```
+╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
+│ agents               ││ config                                                         │
+│                      ││                                                                │
+│ ● demo         $0.42 ││ An agent has no route out of its own: the sandbox sits on a    │
+│ ○ scout              ││ network with nowhere to go, and every request it makes is one  │
+│                      ││ the proxy was told beforehand to allow. A host that is not on  │
+│ + new agent          ││ this list is a connection refused.                             │
+│                      ││                                                                │
+│ logs                 ││ A host opened here carries nothing. Keys are attached by name, │
+│ config               ││ in deploy/config.yaml, and that is the half of a grant this    │
+│                      ││ screen has no box for — so what is added here widens where an  │
+│                      ││ agent may go and not one thing about what it may spend.        │
+│                      ││                                                                │
+│                      ││ ● api.anthropic.com                       with a model         │
+│                      ││ ● api.openai.com     /v1/responses  POST  for searching        │
+│                      ││ ● api.github.com                          from the file        │
+│                      ││ ● api.chess.com                           opened here          │
+│                      ││ + a host                                                       │
+│                      ││ ╭────────────────────────────────────────────────────────────╮ │
+│                      ││ │ carries nothing   opened here   ⌫ closes it                │ │
+│ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
+╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ ↑↓ move   ⌫ close host   ← esc back   tab demo   ^C quit
+```
+
+One box and one word: `api.chess.com`, or the URL you were looking at when the refusal happened —
+the host is read out of it, because what a person has to hand at that moment is the address in the
+error and not the host in it. There is no field for a path, a method, an id, or a key. The last of
+those is the point: this screen writes `injection: { kind: none }` and has nowhere to express
+anything else, so the console can widen where an agent goes and can never decide what it spends.
+That half stays in the file, which is also why three of the four rows above refuse `⌫` and say which
+list to change them on instead.
 
 What this does not claim: an agent that can run code in a sandbox and reach the internet can send
 what it read to somewhere you did not choose. That was already true of any grant broad enough to be

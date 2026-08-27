@@ -60,6 +60,14 @@ import {
 	withoutSecrets,
 } from "./commands.ts";
 import { ExecStream } from "./exec-stream.ts";
+import {
+	AddedGrants,
+	carriedBy,
+	type GrantStanding,
+	originOf,
+	reachId,
+	readHost,
+} from "./grants.ts";
 import { ProviderKeys } from "./keys.ts";
 import { MailboxStore, type MailStanding } from "./mailbox.ts";
 import { hostOf, type McpServer, McpShelf, readName, type ServerStanding } from "./mcp.ts";
@@ -402,6 +410,8 @@ export class ControlPlane {
 	/** The ones the operator's file declared. The console adds to these; it never rewrites them. */
 	readonly #declaredModels: readonly Model[];
 	readonly #addedModels: AddedModels;
+	/** The hosts opened at the console, on top of the ones the file grants every agent. */
+	readonly #addedGrants: AddedGrants;
 	readonly #choices: ModelChoices;
 	/**
 	 * The same store the broker resolves grants against, kept so the plane can ask whether a key is
@@ -476,6 +486,7 @@ export class ControlPlane {
 		this.#served = new ServedPorts(join(this.#stateDir, "served.json"));
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
+		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
 		this.#keys = new ProviderKeys(
 			join(this.#stateDir, "keys.json"),
@@ -861,6 +872,73 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Everywhere every agent may go, in the order the proxy tries them.
+	 *
+	 * The screen this answers is the one somebody arrives at after an agent said it could not reach a
+	 * host: the list is the whole answer, and each row says which of the four places it came from, so
+	 * the reach that comes with a model is not mistaken for something to add or drop here.
+	 *
+	 * A grant written under one agent in the file is that agent's alone and is not on this list. What
+	 * an agent earned by logging into a server is not either — that is the shelf's screen, and it goes
+	 * away when the server does.
+	 */
+	async grants(): Promise<readonly GrantStanding[]> {
+		const declared = this.#defaults?.grants ?? [];
+		const standing = [
+			...declared.map((grant) => ({ grant, origin: originOf(grant.id) })),
+			...(await this.#thinking(declared)).map((grant) => ({ grant, origin: "model" as const })),
+			...(await this.#searching(declared)).map((grant) => ({ grant, origin: "search" as const })),
+			...(await this.#reached(declared)).map((grant) => ({ grant, origin: "here" as const })),
+		];
+		return standing.map(({ grant, origin }) => {
+			const carries = carriedBy(grant.injection);
+			return {
+				id: grant.id,
+				host: grant.host,
+				...(grant.pathPrefix !== undefined ? { pathPrefix: grant.pathPrefix } : {}),
+				...(grant.methods !== undefined ? { methods: grant.methods } : {}),
+				origin,
+				...(carries !== undefined ? { carries } : {}),
+			};
+		});
+	}
+
+	/**
+	 * Opens a host to every agent, with nothing to edit and nothing to restart.
+	 *
+	 * The widening this system is most careful about, and the one it could least do without: an agent
+	 * denied a host it needs reads the refusal as the internet being down, and the way out of that was
+	 * SSH, YAML and a redeploy. What keeps it safe is that a console may only grant *reach* — the
+	 * grant this builds has no field to put a credential in, so the boundary that was ever
+	 * load-bearing, the one around the secrets, is exactly where it was.
+	 */
+	async addGrant(said: string): Promise<string> {
+		const read = readHost(said);
+		if ("refused" in read) throw new Error(read.refused);
+		// Said here rather than left to be a silent no-op: a row that appeared under a host already
+		// open is a row somebody would later drop, expecting the reach to go with it.
+		const already = (this.#defaults?.grants ?? []).find(
+			(grant) =>
+				grant.host === read.host && grant.pathPrefix === undefined && grant.methods === undefined,
+		);
+		if (already !== undefined) {
+			throw new Error(`"${read.host}" is already open, from the config file`);
+		}
+		await this.#addedGrants.add(read.host);
+		await this.#reregisterAll();
+		return read.host;
+	}
+
+	/** Closes one opened here. One the file grants is refused, the way a declared model is. */
+	async dropGrant(host: string): Promise<void> {
+		if ((this.#defaults?.grants ?? []).some((grant) => grant.id === reachId(host))) {
+			throw new Error(`"${host}" is granted in the config file, so it is not ours to change`);
+		}
+		if (!(await this.#addedGrants.drop(host))) throw new Error(`No host "${host}" was opened here`);
+		await this.#reregisterAll();
+	}
+
+	/**
 	 * Which of the configured models an agent is on.
 	 *
 	 * Chosen at the keyboard wins over the one in the config, on the same terms as a spending
@@ -1038,18 +1116,6 @@ export class ControlPlane {
 	 */
 	async #grantsFor(agentId: string): Promise<readonly Grant[]> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.grants ?? [];
-		// Derived here rather than folded in when the file was read, because the list can grow at the
-		// console now. Behind the declared ones, so a hand-written grant for the same host still wins.
-		const thinking = modelGrants(await this.#addedModels.all()).filter(
-			(grant) => !declared.some((own) => own.id === grant.id),
-		);
-		// The one grant the search tool needs, on the same terms as the model grants: derived rather
-		// than written down, so that choosing a search provider at the config screen is the whole of
-		// setting one up. Behind the declared ones, so the hand-written `search` grant older
-		// configurations still carry is the one that matches first and nothing changes under them.
-		const searching = [searchGrant(await this.search())].filter(
-			(grant) => !declared.some((own) => own.id === grant.id),
-		);
 		const earned: Grant[] = [];
 		for (const { name, server } of await this.#mcp.attached(agentId)) {
 			const host = hostOf(server);
@@ -1063,7 +1129,44 @@ export class ControlPlane {
 				injection: { kind: "bearer", token: oauthRef(name) },
 			});
 		}
-		return [...declared, ...thinking, ...searching, ...earned];
+		// The hosts opened at the console go last, behind everything carrying a credential. They are the
+		// only grants here with no key on them, so a tie they won would be a request going out bare to a
+		// host something of the operator's was meant to be attached for.
+		return [
+			...declared,
+			...(await this.#thinking(declared)),
+			...(await this.#searching(declared)),
+			...earned,
+			...(await this.#reached(declared)),
+		];
+	}
+
+	/**
+	 * Derived here rather than folded in when the file was read, because the list can grow at the
+	 * console now. Behind the declared ones, so a hand-written grant for the same host still wins.
+	 */
+	async #thinking(declared: readonly Grant[]): Promise<readonly Grant[]> {
+		return modelGrants(await this.#addedModels.all()).filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
+	}
+
+	/**
+	 * The one grant the search tool needs, on the same terms as the model grants: derived rather than
+	 * written down, so that choosing a search provider at the config screen is the whole of setting one
+	 * up. Behind the declared ones, so the hand-written `search` grant older configurations still carry
+	 * is the one that matches first and nothing changes under them.
+	 */
+	async #searching(declared: readonly Grant[]): Promise<readonly Grant[]> {
+		return [searchGrant(await this.search())].filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
+	}
+
+	async #reached(declared: readonly Grant[]): Promise<readonly Grant[]> {
+		return (await this.#addedGrants.all()).filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
 	}
 
 	/**

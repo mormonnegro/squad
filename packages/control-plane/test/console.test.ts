@@ -43,6 +43,7 @@ import {
 	walked,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
+import type { GrantStanding } from "../src/grants.ts";
 import type { MailStanding } from "../src/mailbox.ts";
 import type { ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer } from "../src/models.ts";
@@ -1574,11 +1575,30 @@ describe("Config", () => {
 		writes: true,
 		trouble: undefined,
 	};
+	const reach: readonly GrantStanding[] = [
+		{
+			id: "model:sonnet",
+			host: "api.anthropic.com",
+			origin: "model",
+			carries: "ANTHROPIC_API_KEY",
+		},
+		{
+			id: "search:openai",
+			host: "api.openai.com",
+			pathPrefix: "/v1/responses",
+			methods: ["POST"],
+			origin: "search",
+			carries: "OPENAI_API_KEY",
+		},
+		{ id: "github", host: "api.github.com", origin: "file", carries: "GITHUB_TOKEN" },
+		{ id: "reach:api.chess.com", host: "api.chess.com", origin: "here" },
+	];
 	/** Every one of these is about the models section, which is where this screen's lists are. */
 	const pane = (props: {
 		section?: Section | undefined;
 		search?: SearchStanding | undefined;
 		servers?: readonly ServerStanding[];
+		grants?: readonly GrantStanding[];
 		mail?: MailStanding | undefined;
 		mailing?: { field: MailField; text: string } | undefined;
 		cursor?: number;
@@ -1586,7 +1606,9 @@ describe("Config", () => {
 		secret?: string;
 		adding?: string | undefined;
 		shelving?: string | undefined;
+		opening?: string | undefined;
 		forgetting?: string | undefined;
+		dropping?: string | undefined;
 		offers?: readonly ModelOffer[] | undefined;
 		choosing?: { what: string; among: readonly string[] } | undefined;
 		pick?: number;
@@ -1601,6 +1623,7 @@ describe("Config", () => {
 				models,
 				search: searching,
 				servers: shelf,
+				grants: reach,
 				mail: post,
 				cursor: 0,
 				typing: undefined,
@@ -1841,8 +1864,8 @@ describe("Config", () => {
 		// A shelf nobody was given anything off is a shelf doing nothing, which is the count worth
 		// having: how many are on it says less than how many are reaching anything.
 		it("counts the shelf, and how much of it anybody has", () => {
-			expect(list({ cursor: 2 })).toContain("2 on the shelf, 1 of them given to somebody");
-			expect(list({ cursor: 2, servers: [] })).toContain("nothing on the shelf yet");
+			expect(list({ cursor: 3 })).toContain("2 on the shelf, 1 of them given to somebody");
+			expect(list({ cursor: 3, servers: [] })).toContain("nothing on the shelf yet");
 		});
 	});
 
@@ -1957,6 +1980,87 @@ describe("Config", () => {
 			expect(shelved({ cursor: 0, forgetting: "linear" })).toContain(
 				"comes off every agent holding it",
 			);
+		});
+	});
+
+	/**
+	 * Everywhere the agents may go, from all four places that decide it.
+	 *
+	 * The question this screen answers is "can it reach that", and the answer does not depend on which
+	 * list a grant came off — so they are one list, with a column saying where each is changed.
+	 */
+	describe("the grants section", () => {
+		const reached = (props: Parameters<typeof pane>[0] = {}) =>
+			pane({ section: "grants", columns: 90, ...props });
+
+		it("lists every host anything may reach, whichever list it came off", () => {
+			const drawn = reached();
+
+			expect(drawn).toContain("api.anthropic.com");
+			expect(drawn).toContain("api.github.com");
+			expect(drawn).toContain("api.chess.com");
+		});
+
+		// Three of the four lists refuse the key that closes a row, so the row says which it is. A list
+		// that looked uniform would be a list where that refusal arrives as a surprise.
+		it("says on each row which list decides it", () => {
+			const rows = reached().split("\n");
+
+			expect(rows.find((row) => row.includes("api.anthropic.com"))).toContain("with a model");
+			expect(rows.find((row) => row.includes("api.github.com"))).toContain("from the file");
+			expect(rows.find((row) => row.includes("api.chess.com"))).toContain("opened here");
+		});
+
+		it("says how narrow a grant is, when it is narrower than the host", () => {
+			const rows = reached().split("\n");
+
+			expect(rows.find((row) => row.includes("api.openai.com"))).toContain("/v1/responses");
+			expect(rows.find((row) => row.includes("api.openai.com"))).toContain("POST");
+		});
+
+		// What is attached on the way out is the fact a host cannot show, and the one that decides
+		// whether the row under the cursor is worth being careful about.
+		it("names what rides along, on the row it is standing on", () => {
+			expect(reached({ cursor: 0 })).toContain("carries ANTHROPIC_API_KEY");
+		});
+
+		/**
+		 * The whole of why this section is allowed to write anything. A host opened here is reach and
+		 * nothing else, and the row says so where the others name a key.
+		 */
+		it("says a host opened here carries nothing", () => {
+			expect(reached({ cursor: 3 })).toContain("carries nothing");
+		});
+
+		it("says where a grant it will not close is closed instead", () => {
+			expect(reached({ cursor: 0 })).toContain("change it in the models section");
+			expect(reached({ cursor: 1 })).toContain("change it in the search section");
+			expect(reached({ cursor: 2 })).toContain("deploy/config.yaml");
+		});
+
+		it("ends in the row that opens one, and says what may be typed there", () => {
+			const drawn = reached({ cursor: 4 });
+
+			expect(drawn).toContain("+ a host");
+			expect(drawn).toContain("api.chess.com");
+			expect(drawn).toContain("* for the whole web");
+		});
+
+		it("shows the host being written out", () => {
+			expect(reached({ cursor: 4, opening: "api.chess" })).toContain("api.chess");
+		});
+
+		// Closing is wider than the row it is pressed on: the grant is the plane's, not one agent's.
+		it("asks before closing, and says nothing reaches it after", () => {
+			expect(reached({ cursor: 3, dropping: "api.chess.com" })).toContain(
+				"no agent reaches it after",
+			);
+		});
+
+		// A plane that grants nothing refuses every request an agent makes, which is a thing to say
+		// outright rather than leave as an empty list somebody reads as "not set up yet".
+		it("says an empty list is a plane that refuses everything", () => {
+			expect(reached({ grants: [] })).toContain("+ a host");
 		});
 	});
 

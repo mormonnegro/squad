@@ -33,6 +33,7 @@ import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LocalDoors, wanted } from "./doors.ts";
 import { LogFeed } from "./feed.ts";
+import type { GrantOrigin, GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
 import { MarkdownStream } from "./markdown.ts";
 import { readName, readServer, type ServerStanding, written } from "./mcp.ts";
@@ -1263,7 +1264,7 @@ const SEARCHING = [
  * exists for: none of this is a file on the host to edit and nothing here is a reason to restart.
  */
 const PLACES = [
-	"Everything this plane can be given is here: the keys it pays with, what its agents think with, where they search from, and the mailbox they are written to at.",
+	"Everything this plane can be given is here: the keys it pays with, what its agents think with, where they search from, everywhere they may reach, and the mailbox they are written to at.",
 	"",
 	"All of it is kept beside deploy/config.yaml rather than in it — what that file declares is read here and changed only there — and all of it holds from the next turn, with nothing restarted.",
 ];
@@ -1293,6 +1294,45 @@ const MAIL = [
 	"Reading is IMAP, which wants no domain and nothing open on this machine. Sending is either the mailbox's own server, or a company that carries mail for a domain of yours and says whether it landed.",
 ];
 
+/**
+ * What a grant is, above the list of the ones there are.
+ *
+ * The second paragraph is the whole of why this section is allowed to exist. Everywhere else this
+ * console is careful never to widen what an agent may reach, and a screen with a box that opens hosts
+ * looks exactly like the place that rule was dropped — so it says what the box can and cannot do:
+ * reach, never a credential, and still through the proxy and still in the log.
+ */
+const REACH = [
+	"An agent has no route out of its own: the sandbox sits on a network with nowhere to go, and every request it makes is one the proxy was told beforehand to allow. A host that is not on this list is a connection refused.",
+	"",
+	"A host opened here carries nothing. Keys are attached by name, in deploy/config.yaml, and that is the half of a grant this screen has no box for — so what is added here widens where an agent may go and not one thing about what it may spend.",
+];
+
+/** The part of a grant that is narrower than its host, or nothing when it is the whole of it. */
+function under(grant: GrantStanding): string {
+	return [grant.pathPrefix ?? "", (grant.methods ?? []).join(" ")]
+		.filter((part) => part.length > 0)
+		.join("  ");
+}
+
+/** Which of the four lists a row came off, in the column that says so. */
+const WHENCE: Readonly<Record<GrantOrigin, string>> = {
+	file: "from the file",
+	here: "opened here",
+	model: "with a model",
+	search: "for searching",
+};
+
+/** The same fact under the cursor, said as where it is changed instead of where it came from. */
+const LEDGER: Readonly<Record<GrantOrigin, string>> = {
+	file: "declared in deploy/config.yaml",
+	here: "opened here   ⌫ closes it",
+	// Short enough that the half worth having survives a narrow terminal: what brings a grant is
+	// already in the column above, and where it is changed is the only part that is not.
+	model: "a model brings it — change it in the models section",
+	search: "the search brings it — change it in the search section",
+};
+
 /** A part of this plane with something to set, which is one row of the list this screen opens on. */
 export type Section = (typeof CONFIG_SECTIONS)[number];
 
@@ -1304,6 +1344,7 @@ const SECTIONS: Readonly<
 > = {
 	models: { does: "the providers this plane can pay, and what its agents think with", said: KEYS },
 	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
+	grants: { does: "the hosts the agents may reach, and what they carry there", said: REACH },
 	mcp: { does: "the servers on the shelf, and which agents hold them", said: SERVERS },
 	email: { does: "the mailbox agents are reached at, and who carries their answers", said: MAIL },
 };
@@ -1332,6 +1373,8 @@ export type ConfigRow =
 	| { readonly kind: "search"; readonly field: (typeof SEARCH_FIELDS)[number] }
 	| { readonly kind: "server"; readonly server: ServerStanding }
 	| { readonly kind: "add-server" }
+	| { readonly kind: "grant"; readonly grant: GrantStanding }
+	| { readonly kind: "add-grant" }
 	| { readonly kind: "mail"; readonly field: "mailbox" | "carrier" | "domain" | "key" };
 
 /**
@@ -1351,6 +1394,7 @@ export function configRows(
 	providers: readonly ProviderStanding[],
 	models: readonly ModelStanding[],
 	servers: readonly ServerStanding[],
+	grants: readonly GrantStanding[],
 	mail?: MailStanding | undefined,
 ): readonly ConfigRow[] {
 	if (section === undefined) {
@@ -1375,6 +1419,12 @@ export function configRows(
 		return [
 			...servers.map((server) => ({ kind: "server", server }) as const),
 			{ kind: "add-server" } as const,
+		];
+	}
+	if (section === "grants") {
+		return [
+			...grants.map((grant) => ({ kind: "grant", grant }) as const),
+			{ kind: "add-grant" } as const,
 		];
 	}
 	return [
@@ -1419,6 +1469,8 @@ export function Config({
 	search,
 	/** Every server on the shelf, with who holds each. */
 	servers,
+	/** Everywhere every agent may go, in the order the proxy tries them. */
+	grants,
 	/** The mailbox and the way its mail leaves, or nothing while the plane is still being asked. */
 	mail,
 	/** The one line of the mailbox being typed out, and which of the three it is. */
@@ -1431,8 +1483,12 @@ export function Config({
 	adding,
 	/** The server being shelved, as far as it has been typed, or nothing when none is. */
 	shelving,
+	/** The host being opened, as far as it has been typed, or nothing when none is. */
+	opening,
 	/** The server a forget was asked about, while the answer is still being waited for. */
 	forgetting,
+	/** The model or host a drop was asked about, while the answer is still being waited for. */
+	dropping,
 	/** Everything the keys this plane holds could buy, or nothing while the providers are being asked. */
 	offers,
 	/** One of a short list being picked off it — a search provider, or one of its models. */
@@ -1449,6 +1505,7 @@ export function Config({
 	readonly models: readonly ModelStanding[];
 	readonly search: SearchStanding | undefined;
 	readonly servers: readonly ServerStanding[];
+	readonly grants: readonly GrantStanding[];
 	readonly mail?: MailStanding | undefined;
 	readonly mailing?: { readonly field: MailField; readonly text: string } | undefined;
 	readonly cursor: number;
@@ -1456,7 +1513,9 @@ export function Config({
 	readonly secret: string;
 	readonly adding: string | undefined;
 	readonly shelving?: string | undefined;
+	readonly opening?: string | undefined;
 	readonly forgetting?: string | undefined;
+	readonly dropping?: string | undefined;
 	readonly offers?: readonly ModelOffer[] | undefined;
 	readonly choosing?: { readonly what: string; readonly among: readonly string[] } | undefined;
 	readonly pick?: number;
@@ -1471,7 +1530,7 @@ export function Config({
 	const widestProvider = Math.max(0, ...models.map((model) => model.provider.length));
 	const dim = (line: string): string => (line === "" ? "" : `${ESC}[2m${line}${ESC}[22m`);
 	const said = (section === undefined ? PLACES : SECTIONS[section].said).map(dim);
-	const walked = configRows(section, providers, models, servers, mail);
+	const walked = configRows(section, providers, models, servers, grants, mail);
 	const row = walked[Math.min(cursor, walked.length - 1)];
 	// Above the list, because it is why the list says what it says — and when the plane refused to
 	// answer at all, it is the only thing standing between an empty screen and a wrong conclusion.
@@ -1585,7 +1644,9 @@ export function Config({
 						? search?.held === true
 						: one === "email"
 							? mail?.mailbox !== undefined
-							: servers.some((server) => server.agents.length > 0);
+							: one === "grants"
+								? grants.length > 0
+								: servers.some((server) => server.agents.length > 0);
 			const mark = ready ? MARKS.running : MARKS.stopped;
 			if (index === cursor) at = listed.length;
 			listed.push(
@@ -1622,11 +1683,15 @@ export function Config({
 								? servers.length === 0
 									? "nothing on the shelf yet"
 									: `${servers.length} on the shelf, ${servers.filter((server) => server.agents.length > 0).length} of them given to somebody`
-								: search === undefined
-									? "asking the plane…"
-									: search.held
-										? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
-										: `${search.keyEnv}   no key, refused at the proxy`,
+								: which === "grants"
+									? grants.length === 0
+										? "nowhere at all — every request an agent makes is refused"
+										: `${grants.length} hosts, ${grants.filter((grant) => grant.origin === "here").length} opened here`
+									: search === undefined
+										? "asking the plane…"
+										: search.held
+											? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
+											: `${search.keyEnv}   no key, refused at the proxy`,
 			},
 			boxed,
 			rows,
@@ -1828,6 +1893,63 @@ export function Config({
 			columns,
 		});
 	}
+	if (section === "grants") {
+		const widestHost = Math.max(0, ...grants.map((grant) => grant.host.length));
+		const widestUnder = Math.max(0, ...grants.map((grant) => under(grant).length));
+		for (const [index, grant] of grants.entries()) {
+			if (index === cursor) at = listed.length;
+			listed.push(
+				h(
+					Text,
+					{ key: `grant-${grant.id}`, wrap: "truncate" },
+					// Filled on every row, because every row is a grant in force: this list is the answer to
+					// "can it reach that", and a mark that varied would be a second question over the first.
+					h(Text, { color: MARKS.running.color }, MARKS.running.glyph),
+					h(Text, pointed(index === cursor, true), ` ${grant.host.padEnd(widestHost + 2)}`),
+					h(Text, { dimColor: true }, under(grant).padEnd(widestUnder + 2)),
+					// Which of the four lists it came off, said on the row rather than only under it: three
+					// of the four refuse the key that drops one, and a list that looked uniform would be a
+					// list where that refusal arrives as a surprise.
+					h(Text, { dimColor: true }, WHENCE[grant.origin]),
+				),
+			);
+		}
+		if (grants.length === cursor) at = listed.length;
+		listed.push(
+			h(
+				Text,
+				{ key: "add-grant", wrap: "truncate" },
+				h(Text, { dimColor: true }, "+"),
+				h(Text, pointed(grants.length === cursor, false), " a host"),
+			),
+		);
+		const standing = row?.kind === "grant" ? row.grant : undefined;
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt:
+				opening !== undefined
+					? { kind: "typed", mark: "host  ", text: opening, secret: false }
+					: dropping !== undefined
+						? // What it takes away rather than what it is called: this comes off every agent, and
+							// the row under the cursor is the plane's list rather than one agent's.
+							{ kind: "dim", text: `close "${dropping}"? no agent reaches it after — y or n` }
+						: {
+								kind: "dim",
+								// What is attached on the way out, which is the fact the host cannot carry and the
+								// one that decides whether this row is worth being careful about.
+								text:
+									standing === undefined
+										? "a host every agent may reach, like api.chess.com — or * for the whole web"
+										: `${standing.carries === undefined ? "carries nothing" : `carries ${standing.carries}`}   ${LEDGER[standing.origin]}`,
+							},
+			boxed,
+			rows,
+			columns,
+		});
+	}
 	listed.push(heading("providers"));
 	// The same marks the agents column uses, and they mean the same thing here: a dot that is filled
 	// in is something this plane can actually use right now.
@@ -1904,11 +2026,15 @@ export function Config({
 		trouble,
 		said,
 		prompt:
-			typing === undefined
-				? { kind: "dim", text: from }
-				: // Never the characters. A key is read off a screen by whoever is behind the person typing
+			typing !== undefined
+				? // Never the characters. A key is read off a screen by whoever is behind the person typing
 					// it, and this is a terminal that keeps its own scrollback.
-					{ kind: "typed", mark: `key for ${typing}  `, text: secret, secret: true },
+					{ kind: "typed", mark: `key for ${typing}  `, text: secret, secret: true }
+				: dropping !== undefined
+					? // The question where the answer is typed, the way every other one on this screen is
+						// asked: the keys are in the prompt, and nothing else has them while it is open.
+						{ kind: "dim", text: `drop "${dropping}"? no agent thinks with it after — y or n` }
+					: { kind: "dim", text: from },
 		boxed,
 		rows,
 		columns,
@@ -2115,6 +2241,7 @@ export function App({
 	const [models, setModels] = useState<readonly ModelStanding[]>([]);
 	const [search, setSearch] = useState<SearchStanding | undefined>(undefined);
 	const [servers, setServers] = useState<readonly ServerStanding[]>([]);
+	const [grants, setGrants] = useState<readonly GrantStanding[]>([]);
 	// Which section of the config screen is open, or nothing while the list of them is. One at a time,
 	// because what these have in common is where they are kept and nothing else — and the cursor is
 	// theirs, so it starts at the top of whichever list was just opened.
@@ -2138,6 +2265,9 @@ export function App({
 	const [adding, setAdding] = useState<string | undefined>(undefined);
 	// The server being written out, kept apart from the draft for the same reason as the model above.
 	const [shelving, setShelving] = useState<string | undefined>(undefined);
+	// The host being opened, kept apart for the same reason. One line and one word: everything else a
+	// grant has is the half this console does not write.
+	const [opening, setOpening] = useState<string | undefined>(undefined);
 	// The server a forget was asked about, while the console waits to hear it was meant. Its own
 	// question rather than the model's, because what it takes away is every agent's and not one row's.
 	// The email section asks the same question about its mailbox, and holds the address here.
@@ -2151,7 +2281,8 @@ export function App({
 	// Fetched when the row that adds a model is entered rather than with the screen, because it is a
 	// round trip to every provider at once and most visits here are about a key.
 	const [offers, setOffers] = useState<readonly ModelOffer[] | undefined>(undefined);
-	// The model a drop was asked about, while the console waits to hear it was meant.
+	// The model, or the host, a drop was asked about while the console waits to hear it was meant. One
+	// state for both because they are one question asked in two sections, and never both at once.
 	const [dropping, setDropping] = useState<string | undefined>(undefined);
 	// Where the panel actually is, measured rather than worked out: which row a click landed on is a
 	// question about the layout Ink just did, and every arithmetic answer to it was off by a border.
@@ -2170,7 +2301,7 @@ export function App({
 	const selected = agents[spot];
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
-	const walk = configRows(section, providers, models, servers, mail);
+	const walk = configRows(section, providers, models, servers, grants, mail);
 	const onRow = Math.min(where, walk.length - 1);
 	const configRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
@@ -2379,13 +2510,15 @@ export function App({
 			client.models(),
 			client.search(),
 			client.servers(),
+			client.grants(),
 			client.mail(),
 		])
-			.then(([keys, thinking, searching, shelf, post]) => {
+			.then(([keys, thinking, searching, shelf, reach, post]) => {
 				setProviders(keys);
 				setModels(thinking);
 				setSearch(searching);
 				setServers(shelf);
+				setGrants(reach);
 				setMail(post);
 				setUnanswered(undefined);
 			})
@@ -2457,6 +2590,23 @@ export function App({
 
 	const forget = useCallback(
 		async (modelId: string): Promise<void> => say(() => client.dropModel(modelId)),
+		[client, say],
+	);
+
+	/**
+	 * Opens a host to every agent, which is the whole of a grant this console may write.
+	 *
+	 * One word rather than a form, because the other four fields of a grant are the half that is not
+	 * offered here: a path and a method narrow something, and a credential is the thing the file keeps.
+	 * The plane reads the host out of whatever was pasted, so a URL copied out of a refusal is a host.
+	 */
+	const openHost = useCallback(
+		async (host: string): Promise<void> => say(() => client.addGrant(host)),
+		[client, say],
+	);
+
+	const closeHost = useCallback(
+		async (host: string): Promise<void> => say(() => client.dropGrant(host)),
 		[client, say],
 	);
 
@@ -2826,11 +2976,14 @@ export function App({
 			if (input === "y" || input === "Y") void ask(deleting, `/delete ${deleting}`, "say");
 			return;
 		}
-		// The same question, about a model, and modal for the same reason: it is asked with the cursor
-		// already standing on the row, so the hand is on the keys that would answer it by accident.
+		// The same question, about a model or a host, and modal for the same reason: it is asked with the
+		// cursor already standing on the row, so the hand is on the keys that would answer it by
+		// accident. Told apart by the section it was asked in, the way the one below is.
 		if (dropping !== undefined) {
 			setDropping(undefined);
-			if (input === "y" || input === "Y") void forget(dropping);
+			if (input === "y" || input === "Y") {
+				void (section === "grants" ? closeHost(dropping) : forget(dropping));
+			}
 			return;
 		}
 		// And about a server, which is asked apart from the model's because what it takes away is wider:
@@ -3014,6 +3167,39 @@ export function App({
 				return;
 			}
 			entered(mailing.text + first);
+			return;
+		}
+		/**
+		 * A host is being typed, and until it is entered or given up on nothing else has the keyboard.
+		 *
+		 * Here with the other boxes rather than below the panes, because what is being typed is a URL as
+		 * often as a host — pasted straight out of the refusal that sent somebody to this screen — and a
+		 * branch below would read the `/` in it as the start of a command.
+		 */
+		if (opening !== undefined) {
+			const entered = (value: string): void => {
+				setOpening(undefined);
+				if (value.trim().length > 0) void openHost(value);
+			};
+			if (key.escape) {
+				setOpening(undefined);
+				return;
+			}
+			if (key.return) {
+				entered(opening);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setOpening((prev) => (prev ?? "").slice(0, -1));
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			if (rest.length === 0) {
+				setOpening((prev) => (prev ?? "") + first);
+				return;
+			}
+			entered(opening + first);
 			return;
 		}
 		if (shelving !== undefined) {
@@ -3201,6 +3387,7 @@ export function App({
 					void look();
 				}
 				if (configRow.kind === "add-server") setShelving("");
+				if (configRow.kind === "add-grant") setOpening("");
 				// Which agent has it, which is the only thing about a server there is to decide here: what
 				// it is was decided when it was found, and the list of who could have it is the column on
 				// the left. Toggling, because the same row means both — a name on the list that already has
@@ -3268,6 +3455,14 @@ export function App({
 				// question that was never asked.
 				if (configRow.model.added) setDropping(configRow.model.id);
 				else setUnanswered(`"${configRow.model.id}" is the file's — drop it there`);
+			}
+			// The same key on the same terms, and the same three refusals said here rather than after the
+			// question: one of these lists is the file's and two of them belong to a section above.
+			if ((key.backspace || key.delete) && configRow?.kind === "grant") {
+				const { origin, host } = configRow.grant;
+				if (origin === "here") setDropping(host);
+				else if (origin === "file") setUnanswered(`"${host}" is the file's — close it there`);
+				else setUnanswered(`"${host}" ${LEDGER[origin]}`);
 			}
 			return;
 		}
@@ -3471,6 +3666,7 @@ export function App({
 								models,
 								search,
 								servers,
+								grants,
 								mail,
 								mailing,
 								cursor: Math.max(0, onRow),
@@ -3478,7 +3674,9 @@ export function App({
 								secret,
 								adding,
 								shelving,
+								opening,
 								forgetting,
+								dropping,
 								offers,
 								choosing,
 								pick,
@@ -3543,7 +3741,7 @@ export function App({
 							["esc", "cancel"],
 							["^C", "quit"],
 						]
-					: shelving !== undefined
+					: shelving !== undefined || opening !== undefined
 						? // A line with nothing to pick off, so the arrows are not named: there is no list here.
 							[
 								["⏎", "add"],
@@ -3559,7 +3757,7 @@ export function App({
 								]
 							: dropping !== undefined
 								? [
-										["y", "drop"],
+										["y", section === "grants" ? "close" : "drop"],
 										["n", "cancel"],
 										["^C", "quit"],
 									]
@@ -3616,9 +3814,18 @@ export function App({
 																							? [["⌫", "disconnect"]]
 																							: []),
 																					]
-																				: configRow?.model.added === true
-																					? [["⌫", "drop model"]]
-																					: []),
+																				: configRow?.kind === "add-grant"
+																					? [["⏎", "open host"]]
+																					: configRow?.kind === "grant"
+																						? // Only the ones this console wrote: the other three lists
+																							// refuse this key, and a hint for a key that is refused is
+																							// the same lie as a hint for a key that does nothing.
+																							configRow.grant.origin === "here"
+																							? [["⌫", "close host"]]
+																							: []
+																						: configRow?.kind === "model" && configRow.model.added
+																							? [["⌫", "drop model"]]
+																							: []),
 													// Only where there is one to leave, because a key named on a row it does nothing
 													// on is the same lie as a key named for nothing at all. Both keys named, the way
 													// `^U^D` names two: a hand on the arrows and a hand coming from a text box are

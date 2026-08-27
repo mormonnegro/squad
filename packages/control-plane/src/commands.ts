@@ -221,7 +221,7 @@ export interface Command {
  * Here rather than only on the screen because the command that opens it has to say what it takes,
  * and a menu row offering an argument the screen has since renamed is worse than offering none.
  */
-export const CONFIG_SECTIONS = ["models", "search", "mcp", "email"] as const;
+export const CONFIG_SECTIONS = ["models", "search", "grants", "mcp", "email"] as const;
 
 /**
  * Every command there is, in one list rather than in a paragraph.
@@ -268,7 +268,7 @@ export const COMMANDS: readonly Command[] = [
 	{
 		name: "/config",
 		takes: `[${CONFIG_SECTIONS.join("|")}]`,
-		does: "the whole plane's screen: its keys, models, shelf and mailbox",
+		does: "the whole plane's screen: its keys, models, reach and mailbox",
 	},
 	{ name: "/help", takes: "", does: "every command there is" },
 ] as const;

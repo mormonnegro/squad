@@ -5,6 +5,7 @@ import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
+import type { GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
@@ -199,6 +200,22 @@ export class ControlClient {
 
 	async dropModel(modelId: string): Promise<void> {
 		await this.#once({ op: "drop-model", modelId });
+	}
+
+	/** Everywhere every agent may go, and which of the four lists each of them came off. */
+	async grants(): Promise<readonly GrantStanding[]> {
+		const response = await this.#once({ op: "grants" });
+		if ("grants" in response) return response.grants;
+		throw new ControlError("unexpected answer to grants");
+	}
+
+	/** Opens a host to every agent, from the next request out, with nothing restarted. */
+	async addGrant(host: string): Promise<void> {
+		await this.#once({ op: "add-grant", host });
+	}
+
+	async dropGrant(host: string): Promise<void> {
+		await this.#once({ op: "drop-grant", host });
 	}
 
 	/** Where the web_search tool goes, what it drives, and whether this plane can pay for it. */

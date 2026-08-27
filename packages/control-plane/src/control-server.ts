@@ -6,6 +6,7 @@ import type { Duplex } from "node:stream";
 import type { CarrierSpec, Channel, Reply } from "@squad/channels";
 import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
@@ -73,6 +74,18 @@ export type ControlRequest =
 	 */
 	| { readonly id: string; readonly op: "add-model"; readonly spec: ModelSpec }
 	| { readonly id: string; readonly op: "drop-model"; readonly modelId: string }
+	/** Everywhere every agent may go, and which of the four lists each of them came off. */
+	| { readonly id: string; readonly op: "grants" }
+	/**
+	 * A host opened at a console, which is the widest thing this socket can be asked for.
+	 *
+	 * It arrives here and nowhere else for the reason adding a model does, and it is narrower than it
+	 * looks: what a console may grant is reach, never a credential. Nothing of the operator's is
+	 * attached to a request that goes out through one of these, and every one of them still crosses
+	 * the proxy and still lands in the audit log.
+	 */
+	| { readonly id: string; readonly op: "add-grant"; readonly host: string }
+	| { readonly id: string; readonly op: "drop-grant"; readonly host: string }
 	/** What every provider this plane holds a key for says it will answer to. */
 	| { readonly id: string; readonly op: "offers" }
 	/** Which provider the web_search tool goes through, and whether this plane can pay for it. */
@@ -161,6 +174,7 @@ export type ControlResponse =
 			readonly providers: readonly ProviderStanding[];
 	  }
 	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
+	| { readonly id: string; readonly ok: true; readonly grants: readonly GrantStanding[] }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
@@ -409,6 +423,16 @@ export class ControlServer {
 			} else if (request.op === "drop-model") {
 				await this.#plane.dropModel(request.modelId);
 				this.#write(socket, { id: request.id, ok: true, text: request.modelId });
+			} else if (request.op === "grants") {
+				this.#write(socket, { id: request.id, ok: true, grants: await this.#plane.grants() });
+			} else if (request.op === "add-grant") {
+				// The host that was read out of what was typed, rather than what was typed: a URL pasted
+				// into that box is a host here, and the screen should show the thing it actually opened.
+				const host = await this.#plane.addGrant(request.host);
+				this.#write(socket, { id: request.id, ok: true, text: host });
+			} else if (request.op === "drop-grant") {
+				await this.#plane.dropGrant(request.host);
+				this.#write(socket, { id: request.id, ok: true, text: request.host });
 			} else if (request.op === "offers") {
 				this.#write(socket, { id: request.id, ok: true, catalog: await this.#plane.offers() });
 			} else if (request.op === "search") {

@@ -39,6 +39,15 @@ export {
 	controlSocketPath,
 } from "./control-server.ts";
 export { LogFeed } from "./feed.ts";
+export {
+	AddedGrants,
+	type GrantOrigin,
+	type GrantStanding,
+	originOf,
+	reachGrant,
+	reachId,
+	readHost,
+} from "./grants.ts";
 export { ProviderKeys } from "./keys.ts";
 export {
 	hostOf,

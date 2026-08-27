@@ -420,6 +420,143 @@ describe("a model added at the console", () => {
 });
 
 /**
+ * A host opened at the console, which is the one grant this plane will write for itself.
+ *
+ * The boundary these keep honest: what the console adds is reach and never spend. There is no field
+ * to put a credential in and no store to keep one, so the rule holds by shape rather than by check.
+ */
+describe("a host opened at the console", () => {
+	let stateDir: string;
+	const defaults = {
+		grants: [
+			{
+				id: "github",
+				host: "api.github.com",
+				injection: { kind: "bearer", token: { ref: "GITHUB_TOKEN" } },
+			},
+		],
+	} as const;
+	const planeWith = () => new ControlPlane({ agents: [{ id: "scout" }], stateDir, defaults });
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "squad-grants-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const listed = async (plane: ControlPlane, host: string) =>
+		(await plane.grants()).find((grant) => grant.host === host);
+
+	it("joins the ones the file declared, on one list", async () => {
+		const plane = planeWith();
+
+		await plane.addGrant("api.chess.com");
+
+		expect((await plane.grants()).map((grant) => grant.host)).toContain("api.github.com");
+		expect((await plane.grants()).map((grant) => grant.host)).toContain("api.chess.com");
+	});
+
+	/**
+	 * Last, behind everything carrying a credential. These are the only grants here with no key on
+	 * them, and the proxy hands a tie to whichever came first — so a tie one of these won would be a
+	 * request going out bare to a host something of the operator's was meant to be attached for.
+	 */
+	it("goes behind the grants that carry something", async () => {
+		const plane = planeWith();
+
+		// The search's own grant is narrower than the host, so opening the host is not a second way of
+		// saying the same thing — it is a wider one, and the narrow one has to keep going first.
+		await plane.addGrant("api.openai.com");
+
+		const both = (await plane.grants()).filter((grant) => grant.host === "api.openai.com");
+		expect(both.map((grant) => grant.origin)).toEqual(["search", "here"]);
+	});
+
+	it("says which list each came off, so the screen knows what it may do to it", async () => {
+		const plane = planeWith();
+		await plane.addGrant("api.chess.com");
+
+		expect(await listed(plane, "api.github.com")).toMatchObject({ origin: "file" });
+		expect(await listed(plane, "api.chess.com")).toMatchObject({ origin: "here" });
+	});
+
+	// Named rather than counted, because a row that said "carries a credential" is a row you have to
+	// go and look something up about.
+	it("names what rides along, and says when nothing does", async () => {
+		const plane = planeWith();
+		await plane.addGrant("api.chess.com");
+
+		expect(await listed(plane, "api.github.com")).toMatchObject({ carries: "GITHUB_TOKEN" });
+		expect(await listed(plane, "api.chess.com")).not.toHaveProperty("carries");
+	});
+
+	it("reads the host out of whatever was pasted, because a refusal shows a URL", async () => {
+		const plane = planeWith();
+
+		expect(await plane.addGrant("https://api.chess.com/pub/player/x")).toBe("api.chess.com");
+		expect(await listed(plane, "api.chess.com")).toBeDefined();
+	});
+
+	it("says what was wrong with a line rather than opening something", async () => {
+		await expect(planeWith().addGrant("api.chess.com and the rest")).rejects.toThrow(
+			/more than one word/,
+		);
+	});
+
+	// The whole reason this is worth doing at the console: a host that needed a redeploy to be
+	// reachable is a host you may as well have written into the file.
+	it("is something the agents may reach, without anything being restarted", async () => {
+		const plane = planeWith();
+		const before = (await plane.agents()).find((agent) => agent.id === "scout")?.grants ?? 0;
+
+		await plane.addGrant("api.chess.com");
+
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(before + 1);
+	});
+
+	it("outlives the plane it was typed at", async () => {
+		await planeWith().addGrant("api.chess.com");
+
+		expect((await planeWith().grants()).map((grant) => grant.host)).toContain("api.chess.com");
+	});
+
+	it("goes away again, and takes the reach with it", async () => {
+		const plane = planeWith();
+		await plane.addGrant("api.chess.com");
+		const reaching = (await plane.agents()).find((agent) => agent.id === "scout")?.grants ?? 0;
+
+		await plane.dropGrant("api.chess.com");
+
+		expect((await plane.grants()).map((grant) => grant.host)).not.toContain("api.chess.com");
+		expect((await plane.agents()).find((agent) => agent.id === "scout")?.grants).toBe(reaching - 1);
+	});
+
+	it("says so rather than pretending, when no such host was opened here", async () => {
+		await expect(planeWith().dropGrant("api.chess.com")).rejects.toThrow(/No host "api.chess.com"/);
+	});
+
+	/**
+	 * The file stays the operator's, the same way it does for models. A second row for a host it
+	 * already grants would be a row that changes nothing and can be closed at the keyboard, which
+	 * reads as taking away a grant that is still in force.
+	 */
+	it("will not stand in for one the file declared, or take it away", async () => {
+		const plane = new ControlPlane({
+			agents: [{ id: "scout" }],
+			stateDir,
+			defaults: {
+				grants: [{ id: "reach:api.chess.com", host: "api.chess.com", injection: { kind: "none" } }],
+			},
+		});
+
+		await expect(plane.addGrant("api.chess.com")).rejects.toThrow(/already open, from the config/);
+		await expect(plane.dropGrant("api.chess.com")).rejects.toThrow(/not ours to change/);
+	});
+});
+
+/**
  * What an agent inherits, and what it does not.
  *
  * The rule these keep honest: a grant is only ever something the operator wrote. Defaults are how
