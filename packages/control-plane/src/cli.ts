@@ -1,7 +1,13 @@
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { ConfigError, loadConfig } from "./config.ts";
-import { ControlClient, ControlError, dialLocal } from "./control-client.ts";
+import {
+	ControlClient,
+	ControlError,
+	type Dial,
+	dialLocal,
+	RELAY_HELLO,
+} from "./control-client.ts";
 import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
 import { runningPlanes } from "./control-relay.ts";
 import { ControlServer, controlSocketPath } from "./control-server.ts";
@@ -32,12 +38,29 @@ Commands other than "run" talk to a running plane over a socket in its state
 directory: --state <dir>, or AGENT_DIVE_STATE, defaulting to ${DEFAULT_STATE_DIR}.
 Told nothing, they look for the plane that is actually running.`;
 
+/**
+ * A plane that is not on this machine, and how to reach it.
+ *
+ * Every command here is written against a `ControlClient`, and a client is the same object whether
+ * its bytes go down a socket in a directory or down an SSH connection. So the console package hands
+ * one of these in and the commands do not change: `agent ls` against a VPS is this process, running
+ * the same code, dialling further.
+ *
+ * `at` is what the operator called the machine, and it is only ever printed. Nothing here should
+ * decide anything from it.
+ */
+export interface Remote {
+	readonly at: string;
+	readonly dial: Dial;
+}
+
 interface Args {
 	readonly stateDir: string;
 	/** Whether the operator named the directory, rather than it being the default. */
 	readonly named: boolean;
 	readonly purge: boolean;
 	readonly rest: readonly string[];
+	readonly remote?: Remote;
 }
 
 export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): Args {
@@ -114,8 +137,8 @@ async function run(path: string): Promise<number> {
 	return 0;
 }
 
-async function open(stateDir: string): Promise<ControlClient> {
-	const client = new ControlClient(stateDir);
+async function open(args: Args): Promise<ControlClient> {
+	const client = new ControlClient(args.remote?.dial ?? args.stateDir);
 	await client.connect();
 	return client;
 }
@@ -127,25 +150,28 @@ async function open(stateDir: string): Promise<ControlClient> {
  * or a checkout the default knows nothing about — and "no plane where you did not look" is the
  * least useful way to say so.
  */
-async function candidates(stateDir: string): Promise<string> {
-	const elsewhere = (await runningPlanes().catch(() => [])).filter((dir) => dir !== stateDir);
+async function candidates(args: Args): Promise<string> {
+	// A plane running on this machine is not an alternative to one the operator asked for on another
+	// machine; it is a different deployment that happens to be nearby.
+	if (args.remote !== undefined) return "";
+	const elsewhere = (await runningPlanes().catch(() => [])).filter((dir) => dir !== args.stateDir);
 	if (elsewhere.length === 0) return "";
 	const lines = elsewhere.map((dir) => `  agent --state ${dir}`).join("\n");
 	return `${elsewhere.length === 1 ? "A plane is" : "Planes are"} running elsewhere:\n${lines}\n`;
 }
 
-async function connect(stateDir: string): Promise<ControlClient> {
+async function connect(args: Args): Promise<ControlClient> {
 	try {
-		return await open(stateDir);
+		return await open(args);
 	} catch (error) {
 		if (!(error instanceof ControlError)) throw error;
-		const found = await candidates(stateDir);
+		const found = await candidates(args);
 		throw new ControlError(found.length > 0 ? `${error.message}\n\n${found}` : error.message);
 	}
 }
 
 async function ls(args: Args): Promise<number> {
-	const client = await connect(args.stateDir);
+	const client = await connect(args);
 	try {
 		const summaries = await client.agents();
 		if (summaries.length === 0) process.stdout.write("no agents\n");
@@ -164,7 +190,7 @@ async function ls(args: Args): Promise<number> {
  * tools it wrote with it. Typing the name is the confirmation, so a reflexive "y" cannot do it.
  */
 async function rm(args: Args): Promise<number> {
-	const client = await connect(args.stateDir);
+	const client = await connect(args);
 	try {
 		const agent = await pickAgent(client, args.rest[0], "rm");
 		if (args.purge) {
@@ -233,7 +259,7 @@ async function console_(args: Args): Promise<number> {
 
 	let client: ControlClient;
 	try {
-		client = await open(args.stateDir);
+		client = await open(args);
 	} catch (error) {
 		if (!(error instanceof ControlError)) throw error;
 		return status(args);
@@ -258,12 +284,15 @@ async function console_(args: Args): Promise<number> {
  * this socket, and what travels it is the protocol a console on this machine already speaks, so the
  * two roads differ in nothing past the first byte.
  *
- * Nothing is printed here, ever: stdout is the plane's for the length of the connection, and a
- * courtesy line on it would arrive at the far end as a malformed response. What goes wrong is said
- * on stderr, which ssh keeps on a channel of its own.
+ * One line is printed, and only after the socket is open: the mark that says the protocol starts
+ * here, so a login shell that greets its sessions is bytes the console throws away rather than the
+ * first response failing to parse. Nothing else is ever written to stdout — it is the plane's for
+ * the length of the connection. What goes wrong is said on stderr, which ssh keeps on a channel of
+ * its own, and it is said instead of the mark rather than after it.
  */
 async function relay(args: Args): Promise<number> {
 	const socket = await dialLocal(args.stateDir)();
+	process.stdout.write(`${RELAY_HELLO}\n`);
 	process.stdin.pipe(socket);
 	socket.pipe(process.stdout);
 	return new Promise<number>((resolve) => {
@@ -283,21 +312,26 @@ async function relay(args: Args): Promise<number> {
  * listening in.
  */
 async function status(args: Args): Promise<number> {
-	const { stateDir } = args;
-	process.stdout.write(`state   ${stateDir}\n`);
+	// Which machine, always, and before anything else. Once the plane can be somewhere other than
+	// here, every line under this one is about a computer the reader has to be told the name of.
+	process.stdout.write(
+		args.remote !== undefined ? `at      ${args.remote.at}\n` : `state   ${args.stateDir}\n`,
+	);
 
 	let client: ControlClient;
 	try {
-		client = await open(stateDir);
+		client = await open(args);
 	} catch (error) {
 		if (!(error instanceof ControlError)) throw error;
 		process.stdout.write(`plane   not running\n\n${error.message}\n\n`);
 		// Pointing at a plane that is up beats suggesting they start another one.
-		const found = await candidates(stateDir);
+		const found = await candidates(args);
 		process.stdout.write(
 			found.length > 0
 				? found
-				: "  agent run <config.yaml>   start one\n" +
+				: args.remote !== undefined
+					? "  agent connect             put a plane on a machine, or choose another one\n"
+					: "  agent run <config.yaml>   start one\n" +
 						"  ./deploy/demo.sh up       or watch the whole thing run on throwaway names\n",
 		);
 		return 1;
@@ -550,7 +584,7 @@ async function say(
  * trust. pi keeps a session per agent, so the agent remembers the previous line.
  */
 async function chat(args: Args): Promise<number> {
-	const client = await connect(args.stateDir);
+	const client = await connect(args);
 	try {
 		const agent = await reach(client, args.rest[0]);
 		if (agent === undefined) return 1;
@@ -598,13 +632,13 @@ async function chat(args: Args): Promise<number> {
 }
 
 async function wake(args: Args): Promise<number> {
-	const { stateDir, rest } = args;
+	const { rest } = args;
 	if (rest.length === 0) {
 		process.stderr.write("usage: agent wake [name] <text>\n");
 		return 1;
 	}
 
-	const client = await connect(stateDir);
+	const client = await connect(args);
 	let stop = (): void => {};
 	try {
 		// Resolved here rather than left to the plane, which queues an event for an agent it does not
@@ -621,7 +655,7 @@ async function wake(args: Args): Promise<number> {
 }
 
 async function logs(args: Args): Promise<number> {
-	const client = await connect(args.stateDir);
+	const client = await connect(args);
 	client.logs(feed());
 	await new Promise<void>((resolve) => {
 		process.once("SIGINT", () => resolve());
@@ -631,15 +665,18 @@ async function logs(args: Args): Promise<number> {
 	return 0;
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+async function main(argv: readonly string[], remote?: Remote): Promise<number> {
 	// Flags are taken out before the command is chosen, so `agent --state <dir>` on its own is the
 	// status of that directory rather than an unknown command.
-	const parsed = parseArgs(argv);
+	const parsed = { ...parseArgs(argv), ...(remote !== undefined ? { remote } : {}) };
 	const [command, ...words] = parsed.rest;
 
-	// `run` is told where its state goes; the commands that talk to a plane have to find it.
+	// `run` is told where its state goes; the commands that talk to a plane have to find it. Given a
+	// remote there is nothing to find: the plane is the one the console was pointed at, and looking
+	// at this machine's containers would answer about a different deployment.
 	const connects =
-		command === undefined || ["ls", "chat", "wake", "logs", "rm", "relay"].includes(command);
+		remote === undefined &&
+		(command === undefined || ["ls", "chat", "wake", "logs", "rm", "relay"].includes(command));
 	const args: Args = connects
 		? { ...(await resolveStateDir(parsed)), rest: words }
 		: { ...parsed, rest: words };
@@ -664,6 +701,13 @@ async function main(argv: readonly string[]): Promise<number> {
 		case "rm":
 			return rm(args);
 		case "relay":
+			// The door onto this machine's plane, so it cannot be held open on somebody else's behalf.
+			if (args.remote !== undefined) {
+				process.stderr.write(
+					`relay is a door onto a plane here, and yours is on ${args.remote.at}\n`,
+				);
+				return 1;
+			}
 			return relay(args);
 		case undefined:
 			return console_(args);
@@ -689,9 +733,9 @@ async function main(argv: readonly string[]): Promise<number> {
  * about the operator's situation rather than a defect, and a stack trace above them would bury the
  * one line that says what to do.
  */
-export async function cli(argv: readonly string[]): Promise<void> {
+export async function cli(argv: readonly string[], remote?: Remote): Promise<void> {
 	try {
-		process.exitCode = await main(argv);
+		process.exitCode = await main(argv, remote);
 	} catch (error) {
 		if (error instanceof ConfigError || error instanceof ControlError) {
 			process.stderr.write(`${error.message}\n`);

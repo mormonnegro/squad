@@ -64,6 +64,16 @@ function firstLine(stream: Duplex): Promise<Buffer> {
 export type Dial = () => Promise<Duplex>;
 
 /**
+ * The first line `agent relay` writes, and the mark where the protocol starts.
+ *
+ * Because the relay is reached by running a command over SSH, and the far end's stdout is not
+ * only the relay's: a login shell that greets its non-interactive sessions writes its greeting
+ * onto the same stream, ahead of everything. A line to look for turns that from a parse error on
+ * the first response into bytes discarded before the first one.
+ */
+export const RELAY_HELLO = "agent-dive relay 1";
+
+/**
  * The way to a plane on this machine: its socket, and failing that the same socket from inside its
  * container.
  *

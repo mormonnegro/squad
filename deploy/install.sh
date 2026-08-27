@@ -36,6 +36,11 @@ STATE=${AGENT_DIVE_STATE:-/var/lib/agent-dive}
 # already the client that ran this, and a shim written over it would take the console away from the
 # thing that opened it.
 SHIM=${AGENT_DIVE_SHIM:-yes}
+# Whether there is anyone to ask. Piped into a VPS there is no terminal and this is already no; on
+# the laptop the terminal is right there, and it belongs to the client that started this. That
+# client has a setup screen for the keys, so it says no here — three secrets in the first minute is
+# a worse first minute than an empty setup screen in the second one.
+ASK=${AGENT_DIVE_ASK:-yes}
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -53,7 +58,7 @@ quietly() {
 
 # Opened rather than tested for. A container has a /dev/tty that stats like any other device and
 # fails at open with ENXIO, so the readable ones and the usable ones are not the same set.
-have_tty() { (true >/dev/tty) 2>/dev/null; }
+have_tty() { [ "$ASK" = yes ] && (true >/dev/tty) 2>/dev/null; }
 
 # Asked on the terminal even when stdin is the script. Nothing is echoed back, because the two
 # things this ever asks for are API keys and a VPS scrolls its terminal into a log somewhere.

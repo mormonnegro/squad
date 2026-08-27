@@ -15,7 +15,13 @@ export {
 	shellScript,
 } from "./commands.ts";
 export { ConfigError, type LoadedConfig, loadConfig, parseConfig } from "./config.ts";
-export { ControlClient, ControlError, type Dial, dialLocal } from "./control-client.ts";
+export {
+	ControlClient,
+	ControlError,
+	type Dial,
+	dialLocal,
+	RELAY_HELLO,
+} from "./control-client.ts";
 export {
 	type AgentConfig,
 	type AgentSummary,

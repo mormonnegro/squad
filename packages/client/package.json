@@ -1,0 +1,23 @@
+{
+	"name": "agent-dive",
+	"version": "0.0.0",
+	"description": "The console for self-hosted cloud agents. Picks where the agents live, and drives them once they do.",
+	"type": "module",
+	"license": "MIT",
+	"engines": {
+		"node": ">=22.18"
+	},
+	"bin": {
+		"agent": "./bin/agent.mjs"
+	},
+	"files": [
+		"bin",
+		"src"
+	],
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json"
+	},
+	"dependencies": {
+		"@agent-dive/control-plane": "workspace:*"
+	}
+}

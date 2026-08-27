@@ -1,0 +1,158 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+	ControlClient,
+	ControlError,
+	ControlPlane,
+	ControlServer,
+} from "@agent-dive/control-plane";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { dialCommand, relayOverSsh } from "../src/ssh.ts";
+
+const BIN = fileURLToPath(new URL("../../control-plane/bin/agent.mjs", import.meta.url));
+
+/**
+ * The road a console takes to a plane that is not on this computer, walked without an SSH server.
+ *
+ * SSH is not what makes it work: `agent relay` puts the plane's control socket on a pair of pipes,
+ * and anything that carries a pair of pipes to another machine is the same road. So the test runs
+ * that command directly, and what it proves — the mark, the protocol behind it, the failures —
+ * holds for the SSH connection it is reached through in real life.
+ */
+describe("reaching a plane by running a relay", () => {
+	let stateDir: string;
+	let plane: ControlPlane;
+	let server: ControlServer;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-relay-"));
+		plane = new ControlPlane({ agents: [{ id: "scout" }, { id: "scribe" }], stateDir });
+		server = new ControlServer({ plane });
+		await server.listen();
+	});
+
+	afterEach(async () => {
+		await server.close();
+		await plane.bus.drain();
+		await rm(stateDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+	});
+
+	const relay = (...before: string[]) =>
+		dialCommand(
+			before.length > 0
+				? [
+						"sh",
+						"-c",
+						`${before.join("; ")}; exec "$0" "$@"`,
+						process.execPath,
+						BIN,
+						"relay",
+						"--state",
+						stateDir,
+					]
+				: [process.execPath, BIN, "relay", "--state", stateDir],
+			"root@example.test",
+		);
+
+	it("answers the same questions as the socket it stands in front of", async () => {
+		const client = new ControlClient(relay());
+		await client.connect();
+		try {
+			expect((await client.agents()).map((agent) => agent.id)).toEqual(["scout", "scribe"]);
+		} finally {
+			client.close();
+		}
+	});
+
+	// Every forwarded port is a connection of its own, so the road has to be walkable more than once.
+	it("can be walked again for a second connection", async () => {
+		const dial = relay();
+		const first = new ControlClient(dial);
+		const second = new ControlClient(dial);
+		await first.connect();
+		await second.connect();
+		try {
+			expect(await first.agents()).toHaveLength(2);
+			expect(await second.agents()).toHaveLength(2);
+		} finally {
+			first.close();
+			second.close();
+		}
+	});
+
+	// A login shell that sources an rc file prints from it, onto the same stdout the protocol is on.
+	// The far end cannot know that happened, so the console is the half that skips it.
+	it("reads past whatever the far end's shell printed first", async () => {
+		const client = new ControlClient(relay("echo 'Welcome to Ubuntu 24.04 LTS'", "echo"));
+		await client.connect();
+		try {
+			expect((await client.agents()).map((agent) => agent.id)).toEqual(["scout", "scribe"]);
+		} finally {
+			client.close();
+		}
+	});
+
+	// The likeliest real failure: the SSH connection works and the machine has no plane on it.
+	it("says what to do when there is no agent at the far end", async () => {
+		const dial = dialCommand(
+			["sh", "-c", "echo 'sh: 1: agent: not found' >&2; exit 127"],
+			"root@example.test",
+		);
+		await expect(dial()).rejects.toThrow(/no agent on it/);
+		await expect(dial()).rejects.toBeInstanceOf(ControlError);
+	});
+
+	it("passes ssh's own complaint through, because it is the useful one", async () => {
+		const dial = dialCommand(
+			["sh", "-c", "echo 'Permission denied (publickey).' >&2; exit 255"],
+			"root@example.test",
+		);
+		await expect(dial()).rejects.toThrow("Permission denied (publickey).");
+	});
+
+	it("refuses something that answers but is not a relay", async () => {
+		const dial = dialCommand(["sh", "-c", "echo hello"], "root@example.test");
+		await expect(dial()).rejects.toThrow(/before the relay answered/);
+	});
+});
+
+describe("the command that reaches a plane over SSH", () => {
+	const argv = relayOverSsh("me@vps", "/home/me/.agent-dive");
+
+	// A pty rewrites the bytes of the protocol on the way past: newlines are the frame boundary.
+	it("asks for no terminal", () => {
+		expect(argv).toContain("-T");
+	});
+
+	// Not an optimisation: a page with six forwarded ports would otherwise be six SSH handshakes.
+	it("multiplexes over one connection, kept in the client's own directory", () => {
+		expect(argv).toContain("ControlMaster=auto");
+		expect(argv).toContainEqual(
+			expect.stringMatching(/^ControlPath=\/home\/me\/\.agent-dive\/ssh-[0-9a-f]{12}$/),
+		);
+	});
+
+	// A unix socket path is capped at a hundred-odd bytes, and ssh refuses the connection rather than
+	// truncating. So the length is the client's promise to keep, not something to find out about on a
+	// machine with a long name.
+	it("keeps the socket short enough to be a socket", () => {
+		const path = relayOverSsh("someone@a-very-long-hostname.example.test", "/home/me/.agent-dive")
+			.find((argument) => argument.startsWith("ControlPath="))
+			?.slice("ControlPath=".length);
+		expect(path?.length).toBeLessThan(104);
+	});
+
+	it("tells two machines apart", () => {
+		const path = (target: string) =>
+			relayOverSsh(target, "/h").find((argument) => argument.startsWith("ControlPath="));
+		expect(path("me@one")).not.toBe(path("me@two"));
+		expect(path("me@one")).toBe(path("me@one"));
+	});
+
+	it("runs the plane's own relay, and nothing else", () => {
+		expect(argv[0]).toBe("ssh");
+		expect(argv.slice(-2)).toEqual(["me@vps", "agent relay"]);
+	});
+});
