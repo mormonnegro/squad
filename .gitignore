@@ -9,3 +9,8 @@ dist/
 .pki/
 .deploy-itest/
 .demo/
+
+# One developer's own tools, and a lock a crashed process leaves behind. A
+# .claude/settings.json meant for everyone is still committable.
+.claude/settings.local.json
+.claude/*.lock
