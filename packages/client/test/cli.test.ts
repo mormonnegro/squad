@@ -77,7 +77,8 @@ describe("the console, driving the plane this operator chose", () => {
 	 * A first run with nothing to ask on.
 	 *
 	 * `agent ls | tee` and a cron line both arrive here, and the question they would be asked has no
-	 * terminal to be asked on. Saying which command has none beats a raw-mode error from a stream.
+	 * terminal to be asked on. Saying which command has none beats a raw-mode error from a stream —
+	 * and it is said instead of the question, not after it.
 	 */
 	it("says to come back to a terminal rather than asking a pipe", async () => {
 		// Stated rather than assumed: the runner's stdin is already a pipe, and a suite that passes
@@ -85,6 +86,7 @@ describe("the console, driving the plane this operator chose", () => {
 		Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
 		await cli(["ls"]);
 		expect(err).toContain("terminal");
+		expect(out).not.toContain("Where should your agents live?");
 		expect(process.exitCode).toBe(1);
 	});
 });

@@ -33,9 +33,11 @@ function note(text: string): void {
  * anything else reads the terminal, and ^C leaves — which is the only key that always works here
  * and so the only one not worth listing.
  */
+const NOBODY = new ControlError("Nothing to ask on. Run `agent` in a terminal.");
+
 async function oneOf(keys: readonly string[]): Promise<string> {
 	const stdin = process.stdin;
-	if (stdin.isTTY !== true) throw new ControlError("Nothing to ask on. Run `agent` in a terminal.");
+	if (stdin.isTTY !== true) throw NOBODY;
 
 	stdin.setRawMode(true);
 	stdin.resume();
@@ -117,6 +119,10 @@ async function dockerIsUp(): Promise<boolean> {
  * the same protocol either way, which is why this is the only place that has to know.
  */
 export async function pickPlane(home: string): Promise<Plane> {
+	// Before it is drawn rather than after: piped into anything, `agent` would otherwise print a
+	// question, two doors and a prompt, and then say there was nobody there to answer it.
+	if (process.stdin.isTTY !== true) throw NOBODY;
+
 	process.stdout.write(
 		`\n${bold("Where should your agents live?")}\n\n` +
 			`  ${bold("1")}  On this computer   ${dim("a container here, and Docker is what runs it")}\n` +
