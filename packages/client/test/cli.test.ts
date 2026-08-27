@@ -1,11 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ControlPlane, ControlServer } from "@squad/control-plane";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/cli.ts";
 import { writePlane } from "../src/plane.ts";
-import { remoteInstall, settle } from "../src/setup.ts";
+import { authorizeKey, remoteInstall, settle } from "../src/setup.ts";
 
 describe("the console, driving the plane this operator chose", () => {
 	let home: string;
@@ -123,6 +124,71 @@ describe("the install, as the far end is told to run it", () => {
 	it("says nothing about where things go on that machine", () => {
 		const said = remoteInstall({ SQUAD_DIR: "/tmp/here", SQUAD_STATE: "/tmp/state" });
 		expect(said).toBe("sh -s");
+	});
+});
+
+/**
+ * The one time a password is typed.
+ *
+ * A server bought this morning has a root password in an email and no key on it. What goes down
+ * that connection is this, and it is worth running rather than reading: the file it writes is the
+ * one sshd reads, and a mode it gets wrong is a machine that goes on asking for the password.
+ */
+describe("putting a key on a machine that has none", () => {
+	let home: string;
+
+	beforeEach(async () => {
+		home = await mkdtemp(join(tmpdir(), "squad-authorized-"));
+	});
+
+	afterEach(async () => {
+		await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+	});
+
+	const put = (key: string): Promise<number> =>
+		new Promise((resolve, reject) => {
+			const child = spawn("sh", ["-s"], {
+				env: { ...process.env, HOME: home },
+				stdio: ["pipe", "ignore", "ignore"],
+			});
+			child.once("error", reject);
+			child.once("close", (code) => resolve(code ?? 1));
+			child.stdin?.end(authorizeKey(key));
+		});
+
+	const authorized = (): Promise<string> => readFile(join(home, ".ssh/authorized_keys"), "utf8");
+
+	it("writes the key where sshd looks for it, modes and all", async () => {
+		expect(await put("ssh-ed25519 AAAAC3Nz me@laptop")).toBe(0);
+		expect(await authorized()).toBe("ssh-ed25519 AAAAC3Nz me@laptop\n");
+		expect((await stat(join(home, ".ssh"))).mode & 0o777).toBe(0o700);
+		expect((await stat(join(home, ".ssh/authorized_keys"))).mode & 0o777).toBe(0o600);
+	});
+
+	// Setting up the same machine twice is a thing an operator does, and the second time it should
+	// cost a connection and change nothing.
+	it("leaves a key that is already up there where it is", async () => {
+		await put("ssh-ed25519 AAAAC3Nz me@laptop");
+		expect(await put("ssh-ed25519 AAAAC3Nz me@laptop")).toBe(0);
+		expect(await authorized()).toBe("ssh-ed25519 AAAAC3Nz me@laptop\n");
+	});
+
+	// Somebody else's file, and this has no business rewriting it.
+	it("keeps what was already in the file", async () => {
+		await mkdir(join(home, ".ssh"), { recursive: true });
+		await writeFile(join(home, ".ssh/authorized_keys"), "ssh-rsa AAAAB3 someone@else\n");
+		await put("ssh-ed25519 AAAAC3Nz me@laptop");
+		expect(await authorized()).toBe(
+			"ssh-rsa AAAAB3 someone@else\nssh-ed25519 AAAAC3Nz me@laptop\n",
+		);
+	});
+
+	// The comment at the end of a public key is whatever ssh-keygen was told, and it is on its way
+	// into a shell. One word is what it has to stay.
+	it("keeps the key one line, whatever its comment holds", async () => {
+		const key = "ssh-ed25519 AAAAC3Nz me@laptop'; rm -rf ~; echo '";
+		expect(await put(key)).toBe(0);
+		expect(await authorized()).toBe(`${key}\n`);
 	});
 });
 

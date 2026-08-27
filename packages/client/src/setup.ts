@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { mkdir, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -123,6 +125,163 @@ export function remoteInstall(env: NodeJS.ProcessEnv = process.env): string {
 	return [...carried, "sh -s"].join(" ");
 }
 
+/**
+ * The options that let ssh try the key and nothing else.
+ *
+ * Every connection this makes is opened with them, so that a machine which has the key never asks
+ * for anything, and a machine which has not is refused rather than left waiting on a prompt this
+ * would have to answer once per connection for as long as the console is open.
+ */
+const KEY_ONLY = [
+	"-o",
+	"PasswordAuthentication=no",
+	"-o",
+	"KbdInteractiveAuthentication=no",
+] as const;
+
+/** Whether what ssh said is a machine turning the key down, as against one that is not there. */
+const turnedDown = (said: string): boolean => said.includes("Permission denied");
+
+/** What a process said, laid under a sentence of ours. */
+const beneath = (said: string): string =>
+	said
+		.trim()
+		.split("\n")
+		.map((line) => `  ${line}`)
+		.join("\n");
+
+/**
+ * One connection, and what came of it.
+ *
+ * stdin is this terminal because a machine whose host key has never been seen has a question to ask
+ * before anything else happens. stderr is held rather than printed: ssh writes its whole diagnosis
+ * there, and that is worth showing when the connection fails and noise when it does not.
+ */
+async function reach(
+	target: string,
+	options: readonly string[],
+): Promise<{ code: number; said: string }> {
+	const child = spawn(
+		"ssh",
+		["-o", "ConnectTimeout=20", ...options, target, "command -v squad >/dev/null 2>&1"],
+		{ stdio: ["inherit", "ignore", "pipe"] },
+	);
+	let said = "";
+	child.stderr?.setEncoding("utf8");
+	child.stderr?.on("data", (text: string) => {
+		said += text;
+	});
+	return { code: await ran(child), said };
+}
+
+/** What a program printed, or nothing at all if it would not run or did not succeed. */
+async function output(program: string, argv: readonly string[]): Promise<string> {
+	const child = spawn(program, argv as string[], { stdio: ["ignore", "pipe", "ignore"] });
+	let text = "";
+	child.stdout?.setEncoding("utf8");
+	child.stdout?.on("data", (chunk: string) => {
+		text += chunk;
+	});
+	const code = await ran(child).catch(() => 1);
+	return code === 0 ? text : "";
+}
+
+/**
+ * A public key of this computer's, made if there is none.
+ *
+ * The agent is asked first because a key held there is the one ssh would offer, and on the machines
+ * where that is a hardware token or a password manager there is no file to find. Making one is the
+ * last resort and not an unusual one: a computer that has never spoken SSH has no key, and being
+ * told to go and run ssh-keygen is a precondition rather than an answer.
+ */
+async function publicKey(): Promise<string> {
+	const held = (await output("ssh-add", ["-L"]))
+		.split("\n")
+		.find((line) => line.startsWith("ssh-") || line.startsWith("ecdsa-"));
+	if (held !== undefined) return held.trim();
+
+	const dir = join(homedir(), ".ssh");
+	for (const name of ["id_ed25519", "id_ecdsa", "id_rsa"]) {
+		const text = await readFile(join(dir, `${name}.pub`), "utf8").catch(() => "");
+		if (text.trim().length > 0) return text.trim();
+	}
+
+	const path = join(dir, "id_ed25519");
+	await mkdir(dir, { recursive: true, mode: 0o700 });
+	// A private key with no public one beside it is a file that ssh-keygen would rather ask about
+	// than overwrite, and an unanswered question here is a hung install. Its public half is derived
+	// from it instead, which is the one thing that cannot go wrong.
+	const derived = await output("ssh-keygen", ["-y", "-f", path]);
+	if (derived.trim().length > 0) return derived.trim();
+
+	note(`No key on this computer, so one was made at ${path}.`);
+	const made = await output("ssh-keygen", [
+		"-q",
+		"-t",
+		"ed25519",
+		"-N",
+		"",
+		"-C",
+		"squad",
+		"-f",
+		path,
+	]);
+	if (made === "" && (await readFile(`${path}.pub`, "utf8").catch(() => "")).trim().length === 0) {
+		throw new ControlError("There is no SSH key here and ssh-keygen would not make one.");
+	}
+	return (await readFile(`${path}.pub`, "utf8")).trim();
+}
+
+/**
+ * The far end of putting a key up, with the key already in it.
+ *
+ * Written to be run twice: a key that is already in the file is left where it is, so a second setup
+ * against the same machine costs a connection and changes nothing. The modes are set every time
+ * because sshd ignores the file when they are wrong, and a directory made by something else is the
+ * likeliest way for them to be.
+ */
+export function authorizeKey(key: string): string {
+	return [
+		"set -e",
+		"umask 077",
+		'mkdir -p "$HOME/.ssh"',
+		'touch "$HOME/.ssh/authorized_keys"',
+		`key=${quoted(key.trim())}`,
+		'grep -qxF "$key" "$HOME/.ssh/authorized_keys" ||',
+		'  printf \'%s\\n\' "$key" >> "$HOME/.ssh/authorized_keys"',
+		'chmod 700 "$HOME/.ssh"',
+		'chmod 600 "$HOME/.ssh/authorized_keys"',
+	].join("\n");
+}
+
+/**
+ * The one time a password is typed, and what it buys.
+ *
+ * A server bought this morning has a root password in an email and no key on it, which is the only
+ * thing standing between an operator and a plane. The key goes up on the same connection the
+ * password opens, so this is asked once and never again — by the install that follows it, by the
+ * console, or by any of the forwarded ports the console opens later.
+ *
+ * The key is turned off for this one connection on purpose: an operator carrying several would
+ * otherwise have them all refused in turn, and a server that stops after a few tries would hang up
+ * before the password was ever offered.
+ */
+async function authorize(target: string): Promise<void> {
+	const key = await publicKey();
+	step(`${target} would not take a key, so it is asking for the password`);
+	note("Typed once. Your key goes up with it, and nothing after this asks again.");
+	const code = await pipe(authorizeKey(key), [
+		"ssh",
+		"-o",
+		"ConnectTimeout=20",
+		"-o",
+		"PubkeyAuthentication=no",
+		target,
+		"sh -s",
+	]);
+	if (code !== 0) throw new ControlError(`Could not put a key on ${target}.`);
+}
+
 async function dockerIsUp(): Promise<boolean> {
 	const child = spawn("docker", ["info"], { stdio: "ignore" });
 	return (await ran(child).catch(() => 1)) === 0;
@@ -192,8 +351,9 @@ async function here(home: string): Promise<Plane> {
 /**
  * The plane on a machine at the end of an SSH connection, installed over that same connection.
  *
- * Nothing is opened on the server and nothing new is logged into. The install goes down the
- * connection the operator already has, and so does everything after it.
+ * Nothing is opened on the server and no account is made on it. The install goes down the
+ * connection the operator already has, and so does everything after it — and where there is no
+ * such connection yet, the password buys one and is then done with.
  */
 async function there(): Promise<Plane> {
 	process.stdout.write(
@@ -225,14 +385,27 @@ async function there(): Promise<Plane> {
 	// One connection that both proves the address and says whether there is anything to install, so
 	// a machine that already has a plane costs a second rather than a rebuild.
 	step(`Reaching ${target}`);
-	const probe = await ran(
-		spawn("ssh", ["-o", "ConnectTimeout=20", target, "command -v squad >/dev/null 2>&1"], {
-			stdio: ["inherit", "ignore", "inherit"],
-		}),
-	);
-	if (probe === 255) throw new ControlError(`Could not open an SSH connection to ${target}.`);
+	let reached = await reach(target, KEY_ONLY);
 
-	if (probe === 0) {
+	// A refused key is the one failure with something to do about it. Anything else the connection
+	// could die of — a name that does not resolve, a host key that changed — is the operator's to
+	// look at, and asking them for a password would only bury what ssh already said.
+	if (reached.code === 255 && turnedDown(reached.said)) {
+		await authorize(target);
+		reached = await reach(target, KEY_ONLY);
+		if (reached.code === 255) {
+			throw new ControlError(
+				`The key went up, but ${target} still will not take it.\n${beneath(reached.said)}`,
+			);
+		}
+	}
+	if (reached.code === 255) {
+		throw new ControlError(
+			`Could not open an SSH connection to ${target}.\n${beneath(reached.said)}`,
+		);
+	}
+
+	if (reached.code === 0) {
 		note("a plane is already there, so nothing was rebuilt");
 	} else {
 		step(`Installing the plane on ${target}`);
