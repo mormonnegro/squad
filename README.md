@@ -289,8 +289,11 @@ is the one thing on this screen that is a list. The half-written line you were o
 began comes back whole at the end of it, so a stray arrow costs you nothing. On the config screen up
 and down are that screen's own list's, until it runs out above the cursor and they go back to
 walking the column — so the screen is left by the same key that arrived on it, rather than by a
-press you would have to be told about. Each agent's history is its own, and it survives the console
-being closed, because the lines are read out of the conversation the plane kept.
+press you would have to be told about. `←` is back there rather than history, out of an open section
+and onto the list of sections, which is what left means in every column of lists — a hand that walked
+in on the arrows does not let go of them to find `esc` across the keyboard. Each agent's history is
+its own, and it survives the console being closed, because the lines are read out of the conversation
+the plane kept.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
 to stop, since a hint for a key that does nothing is a hint that lies. What stops is the process
@@ -874,7 +877,7 @@ message over HTTP, and which one is a row on the config screen's `email` section
 │                      ││ │ imap.fastmail.com   ⌫ disconnects it                       │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ connect   ⌫ disconnect   esc back   tab demo   ^C quit
+ ↑↓ move   ⏎ connect   ⌫ disconnect   ← esc back   tab demo   ^C quit
 ```
 
 There is a dot for each half because the two halves fail for unrelated reasons. A mailbox nobody
@@ -1102,8 +1105,9 @@ every row of to find the one you came here for. The dot is the agents column's, 
 thing: filled in is something this plane could use right now. The line under the list is how that
 section actually stands — `1 of 4 providers paid for`, `2 on the shelf, 1 of them given to
 somebody`, the address the mail comes to — which is the fact a row saying what it is for cannot
-carry, and is usually the reason you are here. `⏎` opens one, `esc` comes back to standing on the
-row you left.
+carry, and is usually the reason you are here. `⏎` opens one, and `←` or `esc` comes back to
+standing on the row you left — two keys for the one move because a hand deep in a list is on the
+arrows and a hand coming out of a text box is on `esc`, and the row at the foot names both.
 
 One list at a time rather than all four down one screen: what they share is the file they are kept
 in and nothing else, and a single list of everything would be a screen to scroll rather than a
@@ -1141,7 +1145,7 @@ is running and configured and refused at the proxy, with turns dying over a host
 │                      ││ │ ANTHROPIC_API_KEY   no key, refused at the proxy           │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ set key   esc back   tab demo   ^C quit
+ ↑↓ move   ⏎ set key   ← esc back   tab demo   ^C quit
 ```
 
 `●` is something this plane can use right now and `○` one it cannot, which is the same mark the
@@ -1311,7 +1315,7 @@ setting it up:
 │                      ││ │ 2 to search with   $0.010 a search here                    │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ change   esc back   tab demo   ^C quit
+ ↑↓ move   ⏎ change   ← esc back   tab demo   ^C quit
 ```
 
 Where that provider lives, the one endpoint on it that searches, the variable its key is read from
@@ -1408,7 +1412,7 @@ once rather than one agent's share of it:
 │                      ││ │ scout   (logged in)                                        │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ give   ⌫ forget   esc back   tab demo   ^C quit
+ ↑↓ move   ⏎ give   ⌫ forget   ← esc back   tab demo   ^C quit
 ```
 
 The dot means what it means in the agents column: something that is actually reaching anything. A

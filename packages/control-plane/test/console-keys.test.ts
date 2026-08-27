@@ -1151,6 +1151,65 @@ describe("the config screen, pressed at", () => {
 		}
 	});
 
+	// Left is back, which is what left is in every column of lists. It matters more than a second way
+	// of doing something usually would: a hand that walked in on the arrows never lets go of them, and
+	// escape is across the keyboard from where that hand is.
+	it("goes back to the sections on a left arrow, standing on the one it left", async () => {
+		const screen = await models();
+		try {
+			await screen.press(LEFT);
+			expect(screen.screen()).toContain("⏎ open");
+
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+
+			expect(screen.screen()).toContain("OPENAI_API_KEY");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Deep in a section the arrows belong to that section's list, and left has to reach past however
+	// far down it the cursor has walked — otherwise it is a way back that stops working where it is
+	// most wanted.
+	it("goes back from any row of a section, not only its first", async () => {
+		const screen = await models();
+		try {
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(LEFT);
+
+			expect(screen.screen()).toContain("⏎ open");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Nothing to leave, and nothing to do: the column is already what is being walked, and a left that
+	// stepped off the screen would be the arrows meaning somewhere else on the row they were pressed.
+	it("does nothing on a left arrow at the list of sections", async () => {
+		const screen = await config();
+		try {
+			await screen.press(LEFT);
+
+			expect(showing(screen.screen())).toBe("config");
+			expect(screen.screen()).toContain("⏎ open");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Both named, because a hand coming out of a text box reaches for escape and a hand on the arrows
+	// reaches for left, and a key that works and is not written down is a key nobody presses.
+	it("names both ways back on the row that says what the keys do", async () => {
+		const screen = await models();
+		try {
+			expect(screen.screen()).toContain("← esc back");
+		} finally {
+			screen.close();
+		}
+	});
+
 	// The same walk backwards, on the key that walks the list: one press per level, and the press
 	// after the last one steps off the screen entirely.
 	it("walks up out of a section before it walks off the screen", async () => {

@@ -3132,6 +3132,10 @@ export function App({
 		// Back through what was already sent, and forward again. Left is older because left is back.
 		if (key.leftArrow || key.rightArrow) {
 			if (panel === "chat" && menu.length === 0) step(key.leftArrow ? 1 : -1);
+			// Left is back here too, on a screen where a section is a list opened out of a list. Escape
+			// still does it and so does walking up off the top, because these are three hands reaching for
+			// the same move: the one already on the arrows should not have to find another key.
+			else if (panel === "config" && key.leftArrow && section !== undefined) leave();
 			return;
 		}
 		if (panel === "config") {
@@ -3606,8 +3610,10 @@ export function App({
 																					? [["⌫", "drop model"]]
 																					: []),
 													// Only where there is one to leave, because a key named on a row it does nothing
-													// on is the same lie as a key named for nothing at all.
-													...(section === undefined ? [] : [["esc", "back"]]),
+													// on is the same lie as a key named for nothing at all. Both keys named, the way
+													// `^U^D` names two: a hand on the arrows and a hand coming from a text box are
+													// looking for different ones, and the row is where either of them finds it.
+													...(section === undefined ? [] : [["← esc", "back"]]),
 													["tab", nextRow(spot, agents)],
 													["^C", "quit"],
 												]
