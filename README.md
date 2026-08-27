@@ -290,10 +290,11 @@ began comes back whole at the end of it, so a stray arrow costs you nothing. On 
 and down are that screen's own list's, until it runs out above the cursor and they go back to
 walking the column — so the screen is left by the same key that arrived on it, rather than by a
 press you would have to be told about. `←` is back there rather than history, out of an open section
-and onto the list of sections, which is what left means in every column of lists — a hand that walked
-in on the arrows does not let go of them to find `esc` across the keyboard. Each agent's history is
-its own, and it survives the console being closed, because the lines are read out of the conversation
-the plane kept.
+and onto the list of sections, and `→` is in, so on that screen the four arrows are the whole of
+moving about it: two for the list you are on, two for which list that is. It is what left and right
+mean in every column of lists, and a hand that walked in on the arrows should not have to let go of
+them to find `esc` across the keyboard. Each agent's history is its own, and it survives the console
+being closed, because the lines are read out of the conversation the plane kept.
 
 `esc` stops the turn the selected agent is taking, and is offered in the row only while there is one
 to stop, since a hint for a key that does nothing is a hint that lies. What stops is the process
@@ -1097,7 +1098,7 @@ things are rather than on any of them:
 │                      ││ │ 3 to think with, 1 of 4 providers paid for                 │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
 ╰──────────────────────╯╰────────────────────────────────────────────────────────────────╯
- ↑↓ move   ⏎ open   tab demo   ^C quit
+ ↑↓ move   → ⏎ open   tab demo   ^C quit
 ```
 
 Each row says what its section is for, because a column of bare nouns is a screen you have to open
@@ -1105,9 +1106,11 @@ every row of to find the one you came here for. The dot is the agents column's, 
 thing: filled in is something this plane could use right now. The line under the list is how that
 section actually stands — `1 of 4 providers paid for`, `2 on the shelf, 1 of them given to
 somebody`, the address the mail comes to — which is the fact a row saying what it is for cannot
-carry, and is usually the reason you are here. `⏎` opens one, and `←` or `esc` comes back to
-standing on the row you left — two keys for the one move because a hand deep in a list is on the
-arrows and a hand coming out of a text box is on `esc`, and the row at the foot names both.
+carry, and is usually the reason you are here. `→` or `⏎` opens one, and `←` or `esc` comes back to
+standing on the row you left. Two keys for each of the two moves, and the row at the foot names both
+of each: a hand already on the arrows never leaves them, and a hand coming out of a text box is on
+`⏎` and `esc` and would have to go looking. Only into a section, though — the rows inside one open a
+box to type in or a question to answer, which is `⏎`'s and not a level to walk into.
 
 One list at a time rather than all four down one screen: what they share is the file they are kept
 in and nothing else, and a single list of everything would be a screen to scroll rather than a

@@ -2674,6 +2674,12 @@ export function App({
 			if (section !== undefined) setWhere(Math.max(0, SECTION_ORDER.indexOf(section)));
 			setSection(undefined);
 		};
+		// And into one, at the top of it rather than at whatever row number the cursor happened to be
+		// on: the count belongs to the list, and the lists are not the same length.
+		const enter = (into: Section): void => {
+			setSection(into);
+			setWhere(0);
+		};
 		// Measured on the keystroke rather than kept in state: the conversation is re-wrapped as it
 		// arrives and the feed grows between one key and the next, so a page is only ever a page now.
 		const scroll = (by: number, pages: number): void => {
@@ -3136,18 +3142,20 @@ export function App({
 			// still does it and so does walking up off the top, because these are three hands reaching for
 			// the same move: the one already on the arrows should not have to find another key.
 			else if (panel === "config" && key.leftArrow && section !== undefined) leave();
+			// And right is in, so the four arrows are the whole of moving about this screen: two for the
+			// list you are on and two for which list that is. Only into a section — the rows inside one
+			// open a box to type in or a question to answer, which is what return is for and not a level
+			// to walk into, and an arrow that sometimes opened a text box would be an arrow to be wary of.
+			else if (panel === "config" && key.rightArrow && configRow?.kind === "section") {
+				enter(configRow.section);
+			}
 			return;
 		}
 		if (panel === "config") {
 			// Everything this screen does is about the row the arrows are standing on, which is why there
 			// is nothing here to type into until one of these is pressed.
 			if (key.return && configRow !== undefined) {
-				// Opening a section puts the cursor at the top of it rather than at whatever row number it
-				// happened to be on: the count belongs to the list, and the lists are not the same length.
-				if (configRow.kind === "section") {
-					setSection(configRow.section);
-					setWhere(0);
-				}
+				if (configRow.kind === "section") enter(configRow.section);
 				if (configRow.kind === "provider") {
 					setTyping(configRow.provider.keyEnv);
 					setSecret("");
@@ -3578,7 +3586,9 @@ export function App({
 												[
 													["↑↓", "move"],
 													...(configRow?.kind === "section"
-														? [["⏎", "open"]]
+														? // Both, the way the row back names both: the arrows are the whole of moving
+															// about this screen once you know that, and the way to know it is to read it.
+															[["→ ⏎", "open"]]
 														: configRow?.kind === "provider"
 															? [["⏎", "set key"]]
 															: configRow?.kind === "add"

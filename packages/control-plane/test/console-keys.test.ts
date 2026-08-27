@@ -1210,6 +1210,42 @@ describe("the config screen, pressed at", () => {
 		}
 	});
 
+	// The other half of the same idea: with right going in, the four arrows are the whole of moving
+	// about this screen — two for the list you are on, two for which list that is.
+	it("opens the section under the cursor on a right arrow", async () => {
+		const screen = await config();
+		try {
+			expect(screen.screen()).toContain("→ ⏎ open");
+
+			await screen.press(RIGHT);
+			expect(screen.screen()).toContain("DEEPSEEK_API_KEY");
+
+			await screen.press(LEFT);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(RIGHT);
+
+			expect(screen.screen()).toContain("+ a server");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Right does not stand in for return once a section is open. The rows in there open a box to type
+	// a key into or a question to answer, and an arrow that sometimes opened a text box is an arrow
+	// nobody presses freely — which would cost the three that only ever move.
+	it("does nothing on a right arrow inside a section", async () => {
+		const screen = await models();
+		try {
+			await screen.press(RIGHT);
+
+			expect(screen.screen()).not.toContain("key for");
+			expect(screen.screen()).toContain("⏎ set key");
+		} finally {
+			screen.close();
+		}
+	});
+
 	// The same walk backwards, on the key that walks the list: one press per level, and the press
 	// after the last one steps off the screen entirely.
 	it("walks up out of a section before it walks off the screen", async () => {
