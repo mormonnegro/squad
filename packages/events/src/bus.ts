@@ -102,6 +102,17 @@ export class EventBus {
 		for (const agentId of await this.#store.agentsWithWork()) await this.#schedule(agentId);
 	}
 
+	/**
+	 * Whether a turn is already running for this agent, which is what makes the next event wait.
+	 *
+	 * Asked from `onAccepted`, where the answer is still about the event being accepted: the queue is
+	 * only ever a queue from the outside, and nothing else can tell a message that will be answered in
+	 * a second from one that will be answered in ten minutes.
+	 */
+	busy(agentId: string): boolean {
+		return this.#running.has(agentId);
+	}
+
 	/** Resolves once no turn is in flight. Exists so callers and tests can await quiescence. */
 	async drain(): Promise<void> {
 		while (this.#running.size > 0 || this.#pendingRuns.size > 0) await this.#idle;

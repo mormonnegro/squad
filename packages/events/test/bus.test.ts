@@ -79,6 +79,35 @@ describe("EventBus", () => {
 		expect(turns.length).toBeLessThan(3);
 	});
 
+	/**
+	 * What a console needs to tell a message that will be answered in a second from one that will be
+	 * answered in ten minutes. Asked from inside `onAccepted`, which is the only moment the answer is
+	 * about the message being accepted rather than about whatever ran after it.
+	 */
+	it("says whether the agent it accepted an event for was already mid-turn", async () => {
+		const waited: boolean[] = [];
+		let release = (): void => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const bus = new EventBus({
+			onAccepted: (event) => {
+				waited.push(bus.busy(event.agentId));
+			},
+		});
+
+		await bus.register("a1", async () => {
+			await gate;
+		});
+
+		await bus.publish({ ...base, body: "one" });
+		await bus.publish({ ...base, body: "two" });
+		release();
+		await bus.drain();
+
+		expect(waited).toEqual([false, true]);
+	});
+
 	it("never runs two turns for one agent at the same time", async () => {
 		const bus = new EventBus();
 		let active = 0;
