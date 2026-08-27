@@ -14,7 +14,10 @@ const PUBLIC_IP = "1.1.1.1";
 const REACH_CMD = `curl -sS --max-time 4 -o /dev/null http://${PUBLIC_IP}/ && echo REACHED || echo BLOCKED`;
 
 const engine = new DockerEngine();
-const dockerUp = await engine.isAvailable();
+// The image these run in is built by hand, so a daemon being up is not enough to run them.
+const dockerUp =
+	(await engine.isAvailable()) &&
+	(await new DockerSandboxManager(engine).imageId(IMAGE)) !== undefined;
 const suite = dockerUp ? describe : describe.skip;
 
 /** Host directory for the mounted CA. Kept inside the repo because Docker Desktop shares /Users. */

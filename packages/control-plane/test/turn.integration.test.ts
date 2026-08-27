@@ -10,7 +10,11 @@ const AGENT_ID = "turn-itest";
 const TEST_NETWORK = "agent-dive-test-turn";
 
 const engine = new DockerEngine();
-const dockerUp = await engine.isAvailable();
+// A daemon that is up is not a daemon that can run these. The sandbox image is built by hand, and
+// on a machine without it every test below fails at its first container instead of standing aside.
+const dockerUp =
+	(await engine.isAvailable()) &&
+	(await new DockerSandboxManager(engine).imageId(IMAGE)) !== undefined;
 const suite = dockerUp ? describe : describe.skip;
 
 const pkiDir = join(process.cwd(), ".pki");

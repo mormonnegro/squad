@@ -10,7 +10,10 @@ const TEST_NETWORK = "agent-dive-test-relay";
 const SOCKET_PATH = "/home/agent/.run/echo.sock";
 
 const engine = new DockerEngine();
-const dockerUp = await engine.isAvailable();
+// The image these run in is built by hand, so a daemon being up is not enough to run them.
+const dockerUp =
+	(await engine.isAvailable()) &&
+	(await new DockerSandboxManager(engine).imageId(IMAGE)) !== undefined;
 const suite = dockerUp ? describe : describe.skip;
 
 /**

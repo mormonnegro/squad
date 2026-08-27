@@ -9,7 +9,14 @@ const DECLARED_ID = "declared-itest";
 const NETWORK = "agent-dive-created-itest";
 
 const engine = new DockerEngine();
-const suite = (await engine.isAvailable()) ? describe : describe.skip;
+// The image the plane puts an agent in when it is not told otherwise, and one that is built by
+// hand — so a daemon being up is not enough to run these.
+const IMAGE = "agent-dive/sandbox:dev";
+const suite =
+	(await engine.isAvailable()) &&
+	(await new DockerSandboxManager(engine).imageId(IMAGE)) !== undefined
+		? describe
+		: describe.skip;
 
 /** Under the working tree, because the daemon resolves the CA's bind source on the host. */
 const stateDir = join(process.cwd(), ".created-itest");
