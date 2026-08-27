@@ -10,13 +10,17 @@ services:
     labels:
       # How `agent` finds this container when it cannot open the socket directly, which is every
       # machine where Docker runs in a VM. The value is the state directory it serves.
-      agent-dive.state: /var/lib/agent-dive
+      agent-dive.state: ${AGENT_DIVE_STATE:-/var/lib/agent-dive}
     volumes:
       # The daemon resolves bind sources on the host, so the path the control plane uses to mount
       # the CA into a sandbox has to mean the same thing in both places. Mounting the state
       # directory at its own name is what makes that true; a convenient container path would
       # produce mounts the daemon cannot find.
-      - /var/lib/agent-dive:/var/lib/agent-dive
+      #
+      # A variable because /var/lib is a server's answer. Docker Desktop shares /Users and not that,
+      # so a plane installed alongside the console keeps its state under $HOME, and the installer
+      # writes the choice into .env where compose reads it.
+      - ${AGENT_DIVE_STATE:-/var/lib/agent-dive}:${AGENT_DIVE_STATE:-/var/lib/agent-dive}
       # Sandboxes are containers, so managing them is root on the host. This is the trust boundary
       # of the whole system: the sandbox contains the agent, not this process.
       - /var/run/docker.sock:/var/run/docker.sock

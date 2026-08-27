@@ -1,12 +1,18 @@
 #!/bin/sh
 #
-# Puts agent-dive on a machine that has nothing on it yet:
+# Puts a plane on a machine that has nothing on it yet:
 #
 #   curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
 #
 # Installs Docker if there is none, puts the repository in /opt/agent-dive, asks for the keys the
 # proxy will hold, writes a config that already works, starts the plane, and leaves `agent` on the
 # PATH so the machine is driven by typing its name.
+#
+# This is the server half, and it does not know which machine it landed on: a VPS reached over SSH
+# and the laptop the operator is sitting at run the same script. What differs is where things go,
+# and that is three variables — AGENT_DIVE_DIR, AGENT_DIVE_STATE, and AGENT_DIVE_SHIM for whether
+# to take the name `agent` on this PATH. The client passes them when the plane is going to live
+# alongside it; a server takes the defaults.
 #
 # Everything it asks is read from /dev/tty, not stdin: arriving down a pipe, stdin is this script.
 # With no terminal at all it takes the keys from the environment and goes on without the ones that
@@ -21,8 +27,15 @@ set -eu
 DIR=${AGENT_DIVE_DIR:-/opt/agent-dive}
 REPO=${AGENT_DIVE_REPO:-https://github.com/agent-dive/agent-dive.git}
 BRANCH=${AGENT_DIVE_BRANCH:-main}
-STATE=/var/lib/agent-dive
-CONNECT=https://raw.githubusercontent.com/agent-dive/agent-dive/$BRANCH/deploy/connect.sh
+# Mounted into the plane at its own name, so this path means the same thing on both sides of the
+# daemon. /var/lib is right for a server and wrong for a laptop: Docker Desktop shares /Users and
+# not that, so a state directory there is a bind mount the daemon resolves inside its own VM.
+STATE=${AGENT_DIVE_STATE:-/var/lib/agent-dive}
+# Whether to leave `agent` on this machine's PATH. On a server it is how the machine is driven, and
+# it is the door a console elsewhere comes through. On the computer the operator sits at, `agent` is
+# already the client that ran this, and a shim written over it would take the console away from the
+# thing that opened it.
+SHIM=${AGENT_DIVE_SHIM:-yes}
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -64,10 +77,23 @@ ask_yes() {
 	case "$reply" in [nN]*) return 1 ;; *) return 0 ;; esac
 }
 
-# Root, or root by way of sudo. Both the state directory and the Docker socket are root's, so there
-# is no version of this that runs as an ordinary user without one or the other.
+# The nearest ancestor of a path that exists, which is the one that decides whether it can be made.
+nearest() {
+	found=$1
+	while [ ! -e "$found" ] && [ "$found" != "/" ] && [ "$found" != "." ]; do
+		found=$(dirname "$found")
+	done
+	printf '%s' "$found"
+}
+
+# Root for what the paths need, rather than for its own sake.
+#
+# On a server everything here is root's: /opt, /var/lib and the Docker socket. On a laptop, with the
+# directories under $HOME and a Docker that answers to this user, none of it is — and a password
+# prompt in front of an install that does not need one is a precondition invented for nothing.
 SUDO=
-if [ "$(id -u)" -ne 0 ]; then
+if [ "$(id -u)" -ne 0 ] &&
+	! { [ -w "$(nearest "$DIR")" ] && [ -w "$(nearest "$STATE")" ] && docker info >/dev/null 2>&1; }; then
 	command -v sudo >/dev/null 2>&1 || die "Run this as root, or install sudo."
 	SUDO=sudo
 	sudo -v || die "Run this as root, or as a user sudo will let through."
@@ -166,6 +192,10 @@ OPENAI_API_KEY=${OPENAI_API_KEY:-}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 # Verifies the signature on POST /hooks/ping, and signs replies back.
 HOOK_SECRET=$HOOK_SECRET
+# Where the state lives, which compose reads from here to know what to mount and what to label the
+# plane with. It is also handed to the plane, so \`agent\` inside the container looks where the
+# socket actually is rather than where a server would have put it.
+AGENT_DIVE_STATE=$STATE
 ENV
 	$SUDO chmod 600 "$DIR/deploy/.env"
 	umask 022
@@ -175,14 +205,18 @@ fi
 # would be an update quietly taking capabilities away.
 if [ ! -f "$DIR/deploy/config.yaml" ]; then
 	step "What the agents may reach"
-	$SUDO tee "$DIR/deploy/config.yaml" >/dev/null <<'YAML'
+	# Two writes because only the first line of this file depends on the machine, and the rest is
+	# full of backticks and dollars that an expanding heredoc would eat.
+	$SUDO tee "$DIR/deploy/config.yaml" >/dev/null <<CONFIG
 # Every capability an agent has is in this file. Nothing here is a secret — the tokens are named,
 # not written — so commit it and review changes to it: a grant nobody noticed being added is the
 # whole failure mode.
 #
 # deploy/config.example.yaml has the rest of what can go here, commented.
 
-stateDir: /var/lib/agent-dive
+stateDir: $STATE
+CONFIG
+	$SUDO tee -a "$DIR/deploy/config.yaml" >/dev/null <<'YAML'
 
 # Everything the agents here may think with. Naming a provider is the whole of configuring it:
 # where it lives and what its key is called are facts about the provider, not decisions. The key
@@ -260,12 +294,21 @@ quietly $SUDO docker build -t agent-dive/sandbox:dev "$DIR/packages/sandbox/imag
 note "the control plane"
 $SUDO mkdir -p "$STATE"
 cd "$DIR/deploy"
-quietly $SUDO docker compose up -d --build || die "The control plane would not start."
+# Exported as well as written into .env, because an .env from an older install has no line for it
+# and the mount it would fall back to is not the one this run just made.
+quietly $SUDO env AGENT_DIVE_STATE="$STATE" docker compose up -d --build ||
+	die "The control plane would not start."
 
-# The reason the machine is driven by typing `agent`. The control surface is a unix socket inside
-# the state directory and there is nothing to authenticate to, so reaching it is exactly holding a
-# file root owns — which is what being on this machine already means.
-$SUDO tee /usr/local/bin/agent >/dev/null <<SHIM
+# The reason the machine is driven by typing `agent`, and the door a console on another computer
+# comes through: `ssh vps agent relay` lands here. The control surface is a unix socket inside the
+# state directory and there is nothing to authenticate to, so reaching it is exactly holding a file
+# root owns — which is what being on this machine already means.
+#
+# Skipped where the client that ran this is already the local `agent`. Writing over it there would
+# leave a shim that reaches this plane by name in place of the command that knows about every plane
+# the operator has.
+if [ "$SHIM" = "yes" ]; then
+	$SUDO tee /usr/local/bin/agent >/dev/null <<AGENT
 #!/bin/sh
 # Written by agent-dive's installer. The console, the log feed and every subcommand come through
 # here; it is the same line you would otherwise type by hand.
@@ -276,11 +319,13 @@ cd "$DIR/deploy" || exit 1
 # question that matters, and it costs nothing.
 [ -r /var/run/docker.sock ] || AS_ROOT=sudo
 # Without a terminal there is nothing to allocate one for, and asking for one anyway is what makes
-# \`ssh vps agent ls\` fail where \`ssh -t vps agent\` works.
+# \`ssh vps agent ls\` fail where \`ssh -t vps agent\` works. It is also what \`agent relay\` needs:
+# a pty would rewrite the bytes of the protocol on their way past.
 [ -t 0 ] || NO_TTY=-T
 exec \${AS_ROOT:-} docker compose exec \${NO_TTY:-} control-plane agent "\$@"
-SHIM
-$SUDO chmod 755 /usr/local/bin/agent
+AGENT
+	$SUDO chmod 755 /usr/local/bin/agent
+fi
 
 step "Up"
 $SUDO docker ps --filter label=com.docker.compose.project=agent-dive \
@@ -290,16 +335,19 @@ ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
 [ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
 [ -n "$ADDR" ] || ADDR=$(hostname 2>/dev/null || echo your-vps)
 
-step "Driving it"
-note "agent                    on this machine, the console"
-note "agent ls                 what each agent is and whether it is up"
-note "agent logs               what every agent runs, answers and spends"
-printf '\n'
-note "From your own computer, one line, and then \`agent\` there means the console here:"
-note "  curl -fsSL $CONNECT | sh -s $(id -un)@$ADDR"
-printf '\n'
-note "It travels the connection you already have to this machine, so there is nothing to open"
-note "and nothing to log into. Without the address it asks for one the first time."
+if [ "$SHIM" = "yes" ]; then
+	step "Driving it"
+	note "agent                    on this machine, the console"
+	note "agent ls                 what each agent is and whether it is up"
+	note "agent logs               what every agent runs, answers and spends"
+	printf '\n'
+	note "From your own computer, the console is a package and this machine is an answer it keeps:"
+	note "  npm install -g agent-dive && agent"
+	printf '\n'
+	note "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
+	note "that travels the SSH connection you already have here, so there is nothing to open on"
+	note "this machine and nothing new to log into."
+fi
 
 step "Where things are"
 note "$DIR/deploy/config.yaml   what each agent may reach"
