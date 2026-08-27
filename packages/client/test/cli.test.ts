@@ -5,7 +5,7 @@ import { ControlPlane, ControlServer } from "@agent-dive/control-plane";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/cli.ts";
 import { writePlane } from "../src/plane.ts";
-import { settle } from "../src/setup.ts";
+import { remoteInstall, settle } from "../src/setup.ts";
 
 describe("the console, driving the plane this operator chose", () => {
 	let home: string;
@@ -88,6 +88,41 @@ describe("the console, driving the plane this operator chose", () => {
 		expect(err).toContain("terminal");
 		expect(out).not.toContain("Where should your agents live?");
 		expect(process.exitCode).toBe(1);
+	});
+});
+
+/**
+ * What the far end is told to run.
+ *
+ * The script goes down stdin, but the tree it installs is cloned there — and `ssh host sh` carries
+ * no environment, so without this a machine reached over SSH could only ever be given the published
+ * main. Which is also what makes a fork, or a branch, installable on a server at all.
+ */
+describe("the install, as the far end is told to run it", () => {
+	it("is the script on stdin and nothing else, by default", () => {
+		expect(remoteInstall({})).toBe("sh -s");
+	});
+
+	it("carries where the tree comes from, when this machine was told", () => {
+		expect(remoteInstall({ AGENT_DIVE_REPO: "https://example.test/fork.git" })).toBe(
+			"AGENT_DIVE_REPO='https://example.test/fork.git' sh -s",
+		);
+		expect(remoteInstall({ AGENT_DIVE_BRANCH: "next" })).toBe("AGENT_DIVE_BRANCH='next' sh -s");
+	});
+
+	// It is the operator's own environment and not a stranger's, but it is still a string on its way
+	// into a shell, and one word is what it has to stay.
+	it("keeps a value one word, whatever is in it", () => {
+		expect(remoteInstall({ AGENT_DIVE_BRANCH: "a branch'; rm -rf /" })).toBe(
+			`AGENT_DIVE_BRANCH='a branch'\\''; rm -rf /' sh -s`,
+		);
+	});
+
+	// Where things go is the server's own business: a state directory that suits this laptop is the
+	// wrong one there, and the script's defaults are the right ones.
+	it("says nothing about where things go on that machine", () => {
+		const said = remoteInstall({ AGENT_DIVE_DIR: "/tmp/here", AGENT_DIVE_STATE: "/tmp/state" });
+		expect(said).toBe("sh -s");
 	});
 });
 

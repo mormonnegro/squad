@@ -106,6 +106,24 @@ async function installer(): Promise<string> {
 	return response.text();
 }
 
+/** One sh word, whatever is in it. */
+const quoted = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+
+/**
+ * The install, as the far end has to be told to run it.
+ *
+ * The script arrives on stdin but the tree it installs is cloned at the far end, and `ssh host sh`
+ * carries no environment — so a machine reached this way could only ever be given the published
+ * main. These two say where the tree comes from, and are the only ones worth carrying: everything
+ * else the script reads is about where things go, which is the server's own business.
+ */
+export function remoteInstall(env: NodeJS.ProcessEnv = process.env): string {
+	const carried = ["AGENT_DIVE_REPO", "AGENT_DIVE_BRANCH"]
+		.filter((name) => (env[name] ?? "").length > 0)
+		.map((name) => `${name}=${quoted(env[name] as string)}`);
+	return [...carried, "sh -s"].join(" ");
+}
+
 async function dockerIsUp(): Promise<boolean> {
 	const child = spawn("docker", ["info"], { stdio: "ignore" });
 	return (await ran(child).catch(() => 1)) === 0;
@@ -220,7 +238,7 @@ async function there(): Promise<Plane> {
 	} else {
 		step(`Installing the plane on ${target}`);
 		note("Docker if it has none, the images, and the plane. This takes a few minutes.");
-		const code = await pipe(await installer(), ["ssh", target, "sh -s"]);
+		const code = await pipe(await installer(), ["ssh", target, remoteInstall()]);
 		if (code !== 0) throw new ControlError("The install did not finish. What it printed is above.");
 	}
 
