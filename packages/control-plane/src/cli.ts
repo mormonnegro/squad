@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { ConfigError, loadConfig } from "./config.ts";
-import { ControlClient, ControlError } from "./control-client.ts";
+import { ControlClient, ControlError, dialLocal } from "./control-client.ts";
 import { type AgentSummary, ControlPlane, type PlaneEvent } from "./control-plane.ts";
 import { runningPlanes } from "./control-relay.ts";
 import { ControlServer, controlSocketPath } from "./control-server.ts";
@@ -23,6 +23,8 @@ const USAGE = `agent - run self-hosted cloud agents
   agent rm <name> [--purge]    take the sandbox away, and with --purge its
                                repository: soul, memory, skills, tools
   agent run <config.yaml>      start the control plane
+  agent relay                  this plane's control socket, on stdin and stdout: the
+                               door a console on another computer comes through
   agent help                   this
 
 The configuration names its secrets; their values come from the environment.
@@ -247,6 +249,30 @@ async function console_(args: Args): Promise<number> {
 	} finally {
 		client.close();
 	}
+}
+
+/**
+ * The plane's control socket, on this process's stdin and stdout.
+ *
+ * The door a console on another computer comes through. `ssh vps agent relay` is a connection to
+ * this socket, and what travels it is the protocol a console on this machine already speaks, so the
+ * two roads differ in nothing past the first byte.
+ *
+ * Nothing is printed here, ever: stdout is the plane's for the length of the connection, and a
+ * courtesy line on it would arrive at the far end as a malformed response. What goes wrong is said
+ * on stderr, which ssh keeps on a channel of its own.
+ */
+async function relay(args: Args): Promise<number> {
+	const socket = await dialLocal(args.stateDir)();
+	process.stdin.pipe(socket);
+	socket.pipe(process.stdout);
+	return new Promise<number>((resolve) => {
+		socket.once("error", (error: Error) => {
+			process.stderr.write(`${error.message}\n`);
+			resolve(1);
+		});
+		socket.once("close", () => resolve(0));
+	});
 }
 
 /**
@@ -612,7 +638,8 @@ async function main(argv: readonly string[]): Promise<number> {
 	const [command, ...words] = parsed.rest;
 
 	// `run` is told where its state goes; the commands that talk to a plane have to find it.
-	const connects = command === undefined || ["ls", "chat", "wake", "logs", "rm"].includes(command);
+	const connects =
+		command === undefined || ["ls", "chat", "wake", "logs", "rm", "relay"].includes(command);
 	const args: Args = connects
 		? { ...(await resolveStateDir(parsed)), rest: words }
 		: { ...parsed, rest: words };
@@ -636,6 +663,8 @@ async function main(argv: readonly string[]): Promise<number> {
 			return logs(args);
 		case "rm":
 			return rm(args);
+		case "relay":
+			return relay(args);
 		case undefined:
 			return console_(args);
 		case "help":

@@ -54,21 +54,58 @@ function firstLine(stream: Duplex): Promise<Buffer> {
 }
 
 /**
- * Talks to a running control plane over its unix socket.
+ * One fresh connection to a plane's control surface.
+ *
+ * A function rather than a socket because this class opens more than one: every forwarded port is a
+ * connection of its own, so the way to a plane has to be something that can be walked again. It is
+ * also the only thing that differs between a plane in a container on this machine and a plane on a
+ * server — everything past the first byte is the same protocol either way.
+ */
+export type Dial = () => Promise<Duplex>;
+
+/**
+ * The way to a plane on this machine: its socket, and failing that the same socket from inside its
+ * container.
+ *
+ * Both are the one control surface. Which one works is a property of the machine, not of the
+ * deployment: on Linux the bind-mounted socket opens, and on Docker Desktop it is visible in the
+ * directory but unreachable across the VM boundary.
+ */
+export function dialLocal(stateDir: string): Dial {
+	const socketPath = controlSocketPath(stateDir);
+	return async () => {
+		try {
+			const socket = net.createConnection(socketPath);
+			await new Promise<void>((resolve, reject) => {
+				socket.once("connect", resolve);
+				socket.once("error", reject);
+			});
+			return socket;
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT" && code !== "ECONNREFUSED") throw error;
+			return relayToPlane(stateDir).catch((relayError: Error) => {
+				throw new ControlError(relayError.message);
+			});
+		}
+	};
+}
+
+/**
+ * Talks to a running control plane over its control socket.
  *
  * Requests are numbered because `logs` streams: responses for it keep arriving while another
  * request is answered, and the id is what tells them apart.
  */
 export class ControlClient {
-	readonly #stateDir: string;
-	readonly #socketPath: string;
+	readonly #dial: Dial;
 	#socket: Duplex | undefined;
 	#nextId = 1;
 	readonly #handlers = new Map<string, (response: ControlResponse) => void>();
 
-	constructor(stateDir: string) {
-		this.#stateDir = stateDir;
-		this.#socketPath = controlSocketPath(stateDir);
+	/** A state directory for the plane on this machine, or a way to reach one that is not. */
+	constructor(plane: string | Dial) {
+		this.#dial = typeof plane === "string" ? dialLocal(plane) : plane;
 	}
 
 	async connect(): Promise<void> {
@@ -103,28 +140,8 @@ export class ControlClient {
 		this.#socket = undefined;
 	}
 
-	/**
-	 * Opens the socket, and failing that reaches the same socket from inside the plane's container.
-	 *
-	 * Both are the one control surface. Which one works is a property of the machine, not of the
-	 * deployment: on Linux the bind-mounted socket opens, and on Docker Desktop it is visible in the
-	 * directory but unreachable across the VM boundary.
-	 */
 	async #open(): Promise<Duplex> {
-		try {
-			const socket = net.createConnection(this.#socketPath);
-			await new Promise<void>((resolve, reject) => {
-				socket.once("connect", resolve);
-				socket.once("error", reject);
-			});
-			return socket;
-		} catch (error) {
-			const code = (error as NodeJS.ErrnoException).code;
-			if (code !== "ENOENT" && code !== "ECONNREFUSED") throw error;
-			return relayToPlane(this.#stateDir).catch((relayError: Error) => {
-				throw new ControlError(relayError.message);
-			});
-		}
+		return this.#dial();
 	}
 
 	async agents(): Promise<readonly AgentSummary[]> {
