@@ -350,6 +350,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
    /email [<address>|<password>|off]  the address it is reached at, and how to connect a mailbox
    /clear                             forget the conversation, and start it again on nothing
    /delete                            delete this agent, after asking whether you meant it
+   /config [models|search|mcp|email]  the whole plane's screen: its keys, models, shelf and mailbox
    /help                              every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
@@ -388,6 +389,20 @@ sitting on the return that sends the line.
 
 Every command is written down once, as the list this menu and `/help` are both drawn from. A
 command documented in only one of those two places is a command half its users never find.
+
+One row on that list is not about the agent whose prompt it was typed at. `/config` opens [the
+plane's own screen](#the-keys-the-plane-pays-with), and naming a section — `/config email` — lands
+inside it, past both the walk down the column and the list of sections. Nothing goes down the socket:
+it is answered by moving the column, because a sentence about the keys every agent is paid for with,
+filed under one agent's conversation, is exactly the confusion that putting those rows at the foot of
+the column was meant to end. The sentence in the menu says whose screen it is before it says what is
+on it, for the same reason. A word that is not one of the four is not swallowed — it goes down like
+any other command and comes back naming the four that would have worked.
+
+An agent may not run it, and not for the reason it may not run `/telegram`: nothing here widens what
+it can reach. It is that a screen is drawn on the terminal an operator is sitting at, and there is no
+terminal where the agent is. The refusal says whose screen it is and prints the line, since an agent
+that asked is usually an agent missing a key.
 
 ```
 > /limit
@@ -1094,6 +1109,11 @@ One list at a time rather than all four down one screen: what they share is the 
 in and nothing else, and a single list of everything would be a screen to scroll rather than a
 screen to read.
 
+There are two ways in. The column is one of them — the screen is its last row, so `shift-tab` from
+the first agent arrives in a single press — and [`/config`](#driving-it) is the other, typed from
+wherever the hand already is. `/config email` skips this list and lands in that section, which is
+the shorter road when you already know which of the four you came for.
+
 A model is three lines of configuration and one exported variable, and the variable is the half that
 is not in the file — so it is the half that gets forgotten. The failure that produces is a plane that
 is running and configured and refused at the proxy, with turns dying over a host nobody typed. Open
@@ -1586,7 +1606,8 @@ operator. So does pasting back an address of its own — the trip home from a co
 person's, or the screen was never in it. So does clearing its own conversation, which is the test at
 its plainest: the conversation is the record of how the agent got here, whatever put it up to asking
 included, and an agent that could clear its own is one that can be talked into erasing the evidence
-of being talked into things.
+of being talked into things. So does `/config`, for the one reason on this list that has nothing to
+do with reach: it opens a screen, and a screen is drawn on a terminal the agent does not have.
 
 A refusal is not a dead end. It prints the line the operator would have typed:
 

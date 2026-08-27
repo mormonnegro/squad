@@ -216,6 +216,14 @@ export interface Command {
 }
 
 /**
+ * The parts of this plane the config screen is divided into, in the order it walks them.
+ *
+ * Here rather than only on the screen because the command that opens it has to say what it takes,
+ * and a menu row offering an argument the screen has since renamed is worse than offering none.
+ */
+export const CONFIG_SECTIONS = ["models", "search", "mcp", "email"] as const;
+
+/**
  * Every command there is, in one list rather than in a paragraph.
  *
  * Written down as data because two things read it: the help, which is prose, and the menu the
@@ -255,6 +263,13 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{ name: "/clear", takes: "", does: "forget the conversation, and start it again on nothing" },
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
+	// The one row here that is not about the agent whose prompt it was typed at, which is why the
+	// sentence says whose it is before it says what is on it.
+	{
+		name: "/config",
+		takes: `[${CONFIG_SECTIONS.join("|")}]`,
+		does: "the whole plane's screen: its keys, models, shelf and mailbox",
+	},
 	{ name: "/help", takes: "", does: "every command there is" },
 ] as const;
 
@@ -1309,6 +1324,13 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "delete") return remove(rest, context);
 	if (name === "clear") return clear(rest, context);
 
+	// The console opens the screen itself and sends nothing down, so the only `/config` that gets this
+	// far is one naming a part of the plane that is not one — which is a typo, answered with the words
+	// that would have worked rather than with the whole help.
+	if (name === "config") {
+		return `"${argument}" is not a part of this plane. /config takes ${CONFIG_SECTIONS.join(", ")}, or nothing at all for the list of them.`;
+	}
+
 	if (name === "limit") {
 		if (argument === "") return spentAgainst(await context.account());
 		if (argument === "off" || argument === "none") {
@@ -1395,6 +1417,13 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 		// agent on the plane, so an address the agent was handed by something it read is not a mistake
 		// about this agent — it is a stranger reading and answering the mail of all of them.
 		return "This agent asked about email. That one stays with you: /email connects the mailbox every agent here is reached at, and decides whose mail is read as instructions.";
+	}
+
+	// Not a widening and not destructive, and still not the agent's to ask for: the screen is drawn on
+	// the operator's terminal and nothing said in a conversation can put a key into it. An agent that
+	// asked is an agent missing something, so the line it wanted is printed under the reason.
+	if (name === "config") {
+		return "This agent asked for the config screen. It is a screen rather than a command, and it is the whole plane's rather than this agent's — the keys every agent is paid for with, and the mailbox all of them are reached at: /config, to see what it was after.";
 	}
 
 	if (name === "mcp") {

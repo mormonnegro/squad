@@ -963,6 +963,96 @@ describe("the model menu, pressed at", () => {
 });
 
 /**
+ * The second way into the config screen: typed, from wherever the hand already is.
+ *
+ * The first way is the column, and it is two moves — down to the last row, then into the section. The
+ * word is one, and it is the same word every other console spells the same way. Only true as
+ * keystrokes: what makes this the screen and not a command is that nothing goes down the socket.
+ */
+describe("/config, typed at an agent", () => {
+	const chatting = () => {
+		const it_ = plane({ has: [listed("demo")] });
+		return { ...it_, ...open(it_.client, [listed("demo")]) };
+	};
+
+	// The whole of the confusion this has to avoid: the line is typed at `demo`, and what it opens is
+	// not `demo`'s. The column is what says so, by highlighting the plane's row instead of the agent's.
+	it("opens the plane's screen rather than answering in the agent's conversation", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/config");
+			await screen.press(ENTER);
+
+			expect(showing(screen.screen())).toBe("config");
+			expect(screen.screen()).toContain("⏎ open");
+			expect(screen.commanded).toEqual([]);
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The point of taking an argument at all: the column walk and the section list are both skipped,
+	// and one line gets from talking to an agent to the mailbox every agent is reached at.
+	it("lands inside the section it names, past the list of them", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/config email");
+			await screen.press(ENTER);
+
+			expect(showing(screen.screen())).toBe("config");
+			expect(screen.screen()).toContain("mailbox");
+			expect(screen.screen()).not.toContain("⏎ open");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// With the sections spelled out on the row, because that is what makes the argument typeable on the
+	// first go: a word you have to open the screen to learn is a word the menu might as well not take.
+	it("offers it in the menu under a slash, with the sections it takes", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/co");
+
+			expect(screen.screen()).toContain("/config [models|search|mcp|email]");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// A typo is left to go down rather than swallowed. The console can only act on a word it knows, and
+	// silently opening the list on the wrong one reads as a command that worked and landed elsewhere.
+	it("sends a word that is not a section to the plane, and stays where it was", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("/config emial");
+			await screen.press(ENTER);
+
+			expect(screen.commanded).toEqual(["/config emial"]);
+			expect(showing(screen.screen())).toBe("demo");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// The prompt is the sandbox's in shell mode, where a slash starts a path: `/config` is a directory
+	// that may well exist, and taking it for the screen would be the mode not holding.
+	it("is a path and not a screen at a shell prompt", async () => {
+		const screen = chatting();
+		try {
+			await screen.press("!");
+			await screen.press("/config");
+			await screen.press(ENTER);
+
+			expect(screen.shelled).toEqual(["/config"]);
+			expect(showing(screen.screen())).toBe("demo");
+		} finally {
+			screen.close();
+		}
+	});
+});
+
+/**
  * The screen where a key is given, which only exists as keystrokes.
  *
  * A provider row is drawn in `console.test.ts`. What cannot be drawn is that the letters of an API

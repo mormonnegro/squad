@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	agentMayNot,
 	COMMANDS,
+	CONFIG_SECTIONS,
 	type CommandContext,
 	completions,
 	type EmailOffer,
@@ -591,6 +592,32 @@ describe("/clear", () => {
 
 		expect(answer).toContain("is not something /clear takes");
 		expect(cleared).toEqual([]);
+	});
+});
+
+/**
+ * The one command the plane barely handles, because the console handles it: `/config` and `/config
+ * email` open a screen and are never sent down. What arrives here is a section that is not one, so
+ * the whole job is naming the words that would have worked.
+ */
+describe("/config", () => {
+	it("names the sections rather than printing the whole help", async () => {
+		const answer = await runCommand("/config emial", context().context);
+
+		expect(answer).toContain('"emial" is not a part of this plane');
+		expect(answer).toContain("models, search, mcp, email");
+		// The help lists every command there is, and a mistyped word is not a person who is lost.
+		expect(answer).not.toContain("/serve");
+	});
+
+	// The menu row is the only place the sections are written down outside the screen itself, so a
+	// section added to one and not the other is an argument the menu offers and nothing accepts.
+	it("offers in the menu exactly the sections it takes", () => {
+		const row = COMMANDS.find((command) => command.name === "/config");
+
+		expect(row?.takes).toBe(`[${CONFIG_SECTIONS.join("|")}]`);
+		// Whose screen it is, said before what is on it: this is the row read at an agent's prompt.
+		expect(row?.does).toContain("plane's");
 	});
 });
 
@@ -1764,6 +1791,25 @@ describe("agentMayNot", () => {
 
 	it("refuses closing an account the operator opened", () => {
 		expect(agentMayNot("/mcp logout ahrefs", scout)).toContain("/mcp logout ahrefs");
+	});
+
+	/**
+	 * Refused for a reason none of the others are: not that it would widen anything, but that it is a
+	 * screen and there is no screen where the agent is. The refusal has to say whose screen, because
+	 * `/config` typed at an agent is the one line here that looks like it would be about that agent.
+	 */
+	it("refuses the config screen, and says it belongs to the plane", () => {
+		const refusal = agentMayNot("/config", scout);
+
+		expect(refusal).toContain("whole plane's");
+		expect(refusal).toContain("/config");
+		expect(agentMayNot("/config email", scout)).toContain("whole plane's");
+	});
+
+	// Whatever the agent put after the word stays out of the operator's console. A section name is
+	// harmless, but it is still a string the agent chose, and the refusal reads the same without it.
+	it("refuses it without repeating the section it asked for", () => {
+		expect(agentMayNot("/config drop everything", scout)).not.toContain("drop everything");
 	});
 
 	/**

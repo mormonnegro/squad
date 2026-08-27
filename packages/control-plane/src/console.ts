@@ -21,7 +21,14 @@ import {
 } from "react";
 import wrapAnsi from "wrap-ansi";
 import { copied, osc52 } from "./clipboard.ts";
-import { type Command, completions, isCommand, isShell, money } from "./commands.ts";
+import {
+	CONFIG_SECTIONS,
+	type Command,
+	completions,
+	isCommand,
+	isShell,
+	money,
+} from "./commands.ts";
 import type { ControlClient } from "./control-client.ts";
 import type { AgentSummary } from "./control-plane.ts";
 import { LocalDoors, wanted } from "./doors.ts";
@@ -1287,10 +1294,10 @@ const MAIL = [
 ];
 
 /** A part of this plane with something to set, which is one row of the list this screen opens on. */
-export type Section = "models" | "search" | "mcp" | "email";
+export type Section = (typeof CONFIG_SECTIONS)[number];
 
 /** In the order they are walked, which is the order they are usually needed in. */
-const SECTION_ORDER: readonly Section[] = ["models", "search", "mcp", "email"];
+const SECTION_ORDER: readonly Section[] = CONFIG_SECTIONS;
 
 const SECTIONS: Readonly<
 	Record<Section, { readonly does: string; readonly said: readonly string[] }>
@@ -3298,6 +3305,21 @@ export function App({
 				setDeleting(selected.id);
 				void ask(selected.id, "/delete", "say");
 				return;
+			}
+			// Answered by moving the column rather than by sending anything down. What that screen holds
+			// belongs to the plane and not to the agent whose prompt this is, and an answer about the keys
+			// every agent is paid for with, written into one agent's conversation, is exactly the confusion
+			// that putting those rows at the foot of the column was meant to end. Naming a section skips the
+			// list; naming something that is not one is left to go down, where the plane says what there is.
+			if (!shell && text.split(/\s+/)[0] === "/config") {
+				const named = text.split(/\s+/).slice(1).join(" ").toLowerCase();
+				const opening = SECTION_ORDER.find((one) => one === named);
+				if (named === "" || opening !== undefined) {
+					setSpot(agents.length + PLANE_ROWS);
+					setSection(opening);
+					setWhere(0);
+					return;
+				}
 			}
 			// Deliberately not awaited: the turn runs while the console keeps taking keys, which is what
 			// lets an agent be asked something and another one be watched while it thinks.
