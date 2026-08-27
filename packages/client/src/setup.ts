@@ -181,10 +181,28 @@ async function here(home: string): Promise<Plane> {
 async function there(): Promise<Plane> {
 	process.stdout.write(
 		`\n${bold("Which machine?")}\n` +
-			`  ${dim("Anything ssh can reach. The prompt already reads root@, so a bare host finishes it.")}\n\n`,
+			`  ${dim("Anything ssh can reach. The prompt already reads root@, so a bare host finishes it.")}\n` +
+			`  ${dim("An empty line says you have not got one yet.")}\n\n`,
 	);
-	const typed = await askLine("  root@");
-	if (typed.trim().length === 0) throw new ControlError("No address, so nothing to set up.");
+
+	let typed = await askLine("  root@");
+	// The door for whoever picked this one without the machine it needs. The other door has the same
+	// thing when Docker is not running, and an operator who is one purchase away from a plane is
+	// owed the same as one who is one daemon away from it.
+	if (typed.trim().length === 0) {
+		process.stdout.write(
+			`\n  ${bold("Any Linux with SSH on it, and the bottom of every list runs a few agents.")}\n` +
+				`  ${dim("One vCPU, a gigabyte of memory, ten gigabytes of disk. The install brings Docker.")}\n\n` +
+				`  hetzner.com/cloud         ${dim("the most machine for the money, in Europe and the US")}\n` +
+				`  vultr.com/pricing         ${dim("from about $5, and in more places than the other two")}\n` +
+				`  digitalocean.com/pricing  ${dim("a few dollars more, and the most written about")}\n\n` +
+				`  ${dim("An old laptop under the desk does just as well, and so does a machine at work.")}\n\n`,
+		);
+		typed = await askLine("  root@");
+	}
+	if (typed.trim().length === 0) {
+		throw new ControlError("No machine, so nothing to set up. `agent connect` asks again.");
+	}
 	const target = normalizeTarget(typed);
 
 	// One connection that both proves the address and says whether there is anything to install, so
