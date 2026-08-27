@@ -941,11 +941,11 @@ export class ControlPlane {
 
 		// A model already configured is not on offer: picking it again would be an id collision, and
 		// the point of the list is what is not on the screen behind it yet.
-		const taken = new Set(configured.map((model) => `${model.provider} ${model.model}`));
+		const taken = new Set(configured.map((model) => `${model.provider}\u0000${model.model}`));
 		const offers: ModelOffer[] = [];
 		for (const answer of asked) {
 			for (const offer of answer.offers) {
-				if (!taken.has(`${offer.provider} ${offer.id}`)) offers.push(offer);
+				if (!taken.has(`${offer.provider}\u0000${offer.id}`)) offers.push(offer);
 			}
 		}
 		return { offers, trouble: asked.flatMap((answer) => answer.trouble) };
