@@ -5,13 +5,13 @@
 #   curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh
 #
 # Installs Docker if there is none, puts the repository in /opt/squad, asks for the keys the
-# proxy will hold, writes a config that already works, starts the plane, and leaves `agent` on the
+# proxy will hold, writes a config that already works, starts the plane, and leaves `squad` on the
 # PATH so the machine is driven by typing its name.
 #
 # This is the server half, and it does not know which machine it landed on: a VPS reached over SSH
 # and the laptop the operator is sitting at run the same script. What differs is where things go,
 # and that is three variables — SQUAD_DIR, SQUAD_STATE, and SQUAD_SHIM for whether
-# to take the name `agent` on this PATH. The client passes them when the plane is going to live
+# to take the name `squad` on this PATH. The client passes them when the plane is going to live
 # alongside it; a server takes the defaults.
 #
 # Everything it asks is read from /dev/tty, not stdin: arriving down a pipe, stdin is this script.
@@ -31,8 +31,8 @@ BRANCH=${SQUAD_BRANCH:-main}
 # daemon. /var/lib is right for a server and wrong for a laptop: Docker Desktop shares /Users and
 # not that, so a state directory there is a bind mount the daemon resolves inside its own VM.
 STATE=${SQUAD_STATE:-/var/lib/squad}
-# Whether to leave `agent` on this machine's PATH. On a server it is how the machine is driven, and
-# it is the door a console elsewhere comes through. On the computer the operator sits at, `agent` is
+# Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
+# it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
 # already the client that ran this, and a shim written over it would take the console away from the
 # thing that opened it.
 SHIM=${SQUAD_SHIM:-yes}
@@ -230,7 +230,7 @@ CONFIG
 #
 # Every model on this list is reachable by every agent, which is what makes `/model` in the console
 # a choice rather than a grant. A model whose key this plane does not hold is listed and refused at
-# the proxy until it does: the setup screen in `agent` says which of these are waiting on one, and
+# the proxy until it does: the setup screen in `squad` says which of these are waiting on one, and
 # takes it.
 #
 # That screen adds models as well, and keeps them beside this file rather than in it. So this is
@@ -304,16 +304,16 @@ cd "$DIR/deploy"
 quietly $SUDO env SQUAD_STATE="$STATE" docker compose up -d --build ||
 	die "The control plane would not start."
 
-# The reason the machine is driven by typing `agent`, and the door a console on another computer
-# comes through: `ssh vps agent relay` lands here. The control surface is a unix socket inside the
+# The reason the machine is driven by typing `squad`, and the door a console on another computer
+# comes through: `ssh vps squad relay` lands here. The control surface is a unix socket inside the
 # state directory and there is nothing to authenticate to, so reaching it is exactly holding a file
 # root owns — which is what being on this machine already means.
 #
-# Skipped where the client that ran this is already the local `agent`. Writing over it there would
+# Skipped where the client that ran this is already the local `squad`. Writing over it there would
 # leave a shim that reaches this plane by name in place of the command that knows about every plane
 # the operator has.
 if [ "$SHIM" = "yes" ]; then
-	$SUDO tee /usr/local/bin/agent >/dev/null <<AGENT
+	$SUDO tee /usr/local/bin/squad >/dev/null <<SQUAD
 #!/bin/sh
 # Written by squad's installer. The console, the log feed and every subcommand come through
 # here; it is the same line you would otherwise type by hand.
@@ -324,12 +324,12 @@ cd "$DIR/deploy" || exit 1
 # question that matters, and it costs nothing.
 [ -r /var/run/docker.sock ] || AS_ROOT=sudo
 # Without a terminal there is nothing to allocate one for, and asking for one anyway is what makes
-# \`ssh vps agent ls\` fail where \`ssh -t vps agent\` works. It is also what \`agent relay\` needs:
+# \`ssh vps squad ls\` fail where \`ssh -t vps squad\` works. It is also what \`squad relay\` needs:
 # a pty would rewrite the bytes of the protocol on their way past.
 [ -t 0 ] || NO_TTY=-T
-exec \${AS_ROOT:-} docker compose exec \${NO_TTY:-} control-plane agent "\$@"
-AGENT
-	$SUDO chmod 755 /usr/local/bin/agent
+exec \${AS_ROOT:-} docker compose exec \${NO_TTY:-} control-plane squad "\$@"
+SQUAD
+	$SUDO chmod 755 /usr/local/bin/squad
 fi
 
 step "Up"
@@ -342,12 +342,12 @@ ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
 
 if [ "$SHIM" = "yes" ]; then
 	step "Driving it"
-	note "agent                    on this machine, the console"
-	note "agent ls                 what each agent is and whether it is up"
-	note "agent logs               what every agent runs, answers and spends"
+	note "squad                    on this machine, the console"
+	note "squad ls                 what each agent is and whether it is up"
+	note "squad logs               what every agent runs, answers and spends"
 	printf '\n'
 	note "From your own computer, the console is a package and this machine is an answer it keeps:"
-	note "  npm install -g squad && agent"
+	note "  npm install -g squad && squad"
 	printf '\n'
 	note "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
 	note "that travels the SSH connection you already have here, so there is nothing to open on"

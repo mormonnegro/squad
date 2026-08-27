@@ -51,7 +51,7 @@ wait_for_egress() {
 }
 
 down() {
-  # Whatever ended up on the demo's network, not only what this script started: `agent chat <name>`
+  # Whatever ended up on the demo's network, not only what this script started: `squad chat <name>`
   # makes agents nothing here ever named, and they are the demo's to clean up too.
   for made in $(docker ps -aq --filter "network=$EGRESS" 2>/dev/null); do
     local name
@@ -110,7 +110,7 @@ models:
   - id: sonnet
     provider: anthropic
     model: claude-sonnet-4-6
-# What every agent starts from, including one made later with \`agent chat <name>\`.
+# What every agent starts from, including one made later with \`squad chat <name>\`.
 defaults:
   # One of the ids above. \`/model\` moves a single agent off it without touching this file.
   model: deepseek-v4-flash
@@ -177,7 +177,7 @@ reload() {
 
   # Read back off the running container, so a reload never asks for the keys again. A key in the
   # environment wins, which is how one gets added without going through `up` and losing the agent —
-  # though the setup screen in `agent` is the shorter way, and does not cost a reload.
+  # though the setup screen in `squad` is the shorter way, and does not cost a reload.
   local env key search anthropic
   env=$(docker inspect "$PLANE" --format '{{range .Config.Env}}{{println .}}{{end}}')
   key=$(printf '%s\n' "$env" | sed -n 's/^DEEPSEEK_API_KEY=//p')
@@ -272,7 +272,7 @@ up() {
   say "starting the control plane"
   # Empty when there is none, never a stand-in string. A plane holding "no-key-configured" reports a
   # key it has, spends a turn getting a 401 out of the provider, and sends whoever reads it looking
-  # for the wrong thing. Empty is the truth, the setup screen in `agent` says which are missing, and
+  # for the wrong thing. Empty is the truth, the setup screen in `squad` says which are missing, and
   # a key pasted there holds on the next turn.
   start_plane "${DEEPSEEK_API_KEY:-}" "${OPENAI_API_KEY:-}" "${ANTHROPIC_API_KEY:-}"
 
@@ -291,7 +291,7 @@ up() {
   # From the host, over the control socket in $STATE, which the plane's container shares at the same
   # path. Where the share cannot carry a socket, the CLI finds the container by its label instead.
   say "asking the plane from outside the container"
-  node packages/control-plane/bin/agent.mjs ls --state "$STATE" | sed 's/^/  /'
+  node packages/control-plane/bin/squad.mjs ls --state "$STATE" | sed 's/^/  /'
 
   say "what the agent can reach"
   docker exec "$SANDBOX" curl -s -o /dev/null -w '  example.com (granted)         -> %{http_code}\n' https://example.com/ || true
@@ -324,7 +324,7 @@ up() {
   docker logs "$PLANE" 2>&1 | tail -20
 
   say "next"
-  local cli="node packages/control-plane/bin/agent.mjs"
+  local cli="node packages/control-plane/bin/squad.mjs"
   echo "  $cli chat $AGENT --state $STATE"
   echo "      talk to it, turn after turn"
   echo "  $cli chat maxi --state $STATE"

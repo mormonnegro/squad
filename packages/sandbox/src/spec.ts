@@ -15,7 +15,7 @@ export const SANDBOX_HOME = "/home/agent";
  *
  * Its own volume rather than a directory under the home, because only a volume survives the
  * container being replaced, and a container is replaced every time the image is rebuilt. Work that
- * evaporates on the next `agent up` is work nobody would leave here.
+ * evaporates on the next `squad up` is work nobody would leave here.
  */
 export const SANDBOX_WORKSPACE_PATH = `${SANDBOX_HOME}/workspace`;
 

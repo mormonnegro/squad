@@ -55,7 +55,7 @@ export default function Install() {
 					<h2>One command, and it asks one thing</h2>
 					<Code label="on your laptop">{`
 $ npm install -g ${PACKAGE}
-$ agent
+$ squad
 `}</Code>
 					<p>
 						The thing it asks is where your agents should live: <strong>on this computer</strong>,
@@ -64,19 +64,19 @@ $ agent
 						connection you already have. Either way the same thing lands there — Docker if there is
 						none, the repository, a config with one agent and a ceiling of five dollars a day, and
 						the plane started — and either way it ends on the console. The answer is remembered, and{" "}
-						<code>agent connect</code> moves it.
+						<code>squad connect</code> moves it.
 					</p>
 					<p>
 						Everything after that question is the same program. A plane answers the same protocol
 						whether its socket is in a directory here or at the far end of{" "}
-						<code>ssh vps agent relay</code>, so the agent list, the log feed, the console and a
+						<code>ssh vps squad relay</code>, so the agent list, the log feed, the console and a
 						port forwarded out of a sandbox all run on this computer and reach the agents wherever
 						they are. That is also why a port you expose from an agent opens on the machine your
 						browser is on, which is the one place it is of any use.
 					</p>
 					<p className="small muted">
 						It asks for no keys. Every one of them is given later on the config screen in{" "}
-						<code>agent</code>, because three secrets in the first minute is a worse first minute
+						<code>squad</code>, because three secrets in the first minute is a worse first minute
 						than an empty setup screen in the second. Run the install again any time and it becomes
 						the update: it pulls, rebuilds, swaps the plane in, and leaves <code>config.yaml</code>{" "}
 						and <code>.env</code> alone — the second run is the one that would quietly undo a grant
@@ -154,7 +154,7 @@ $ curl -fsSL ${INSTALL} | sh
 						Nothing else is asked.
 					</p>
 					<p className="small muted">
-						It leaves <code>agent</code> on that machine's PATH too — the same commands typed there,
+						It leaves <code>squad</code> on that machine's PATH too — the same commands typed there,
 						and the door the console here comes through. Three environment variables are what the
 						console overrides when the plane is going to live beside it instead:{" "}
 						<code>SQUAD_DIR</code>, <code>SQUAD_STATE</code> and <code>SQUAD_SHIM</code>. That is
@@ -163,7 +163,7 @@ $ curl -fsSL ${INSTALL} | sh
 					<p className="small muted">
 						Whichever end you ran it at, the console is the npm package above and this machine is an
 						answer it keeps — in <code>~/.squad/plane.json</code>, written once and never asked
-						again. <code>agent connect</code> asks again, and the installer prints your own address
+						again. <code>squad connect</code> asks again, and the installer prints your own address
 						when it finishes so there is nothing to go and look up.
 					</p>
 				</div>
@@ -177,7 +177,7 @@ $ curl -fsSL ${INSTALL} | sh
 						The control surface is a unix socket inside the state directory and it never leaves the
 						machine. There is no port to open, no token to issue and nothing to log into: when the
 						plane is on a server, SSH already decides who may touch that host, and touching that
-						host is what holding the socket means. <code>agent relay</code> is the console's way in
+						host is what holding the socket means. <code>squad relay</code> is the console's way in
 						— the same socket on a pair of pipes, run over the connection you already have.
 					</p>
 					<p>
@@ -261,7 +261,7 @@ defaults:
 						All three are listed whether or not this plane holds their keys, because listing one is
 						the approval and the key is only what makes it answer. A model missing its key is
 						refused at the proxy until somebody supplies one, and the setup screen in{" "}
-						<code>agent</code> — <code>tab</code> past logs — is the list of which ones are waiting,
+						<code>squad</code> — <code>tab</code> past logs — is the list of which ones are waiting,
 						and where a key is pasted in. It holds from the next turn, with nothing restarted and
 						this file untouched.
 					</p>
@@ -377,8 +377,8 @@ $ docker compose up -d --build
 					<p className="small muted">
 						<code>config.example.yaml</code> is the reference, with every option commented, and its
 						example agent reaches hosts that are not yours — read it through before starting rather
-						than after. Without the installer there is no <code>agent</code> on the PATH either, so
-						the console is <code>docker compose exec control-plane agent</code>.
+						than after. Without the installer there is no <code>squad</code> on the PATH either, so
+						the console is <code>docker compose exec control-plane squad</code>.
 					</p>
 				</div>
 			</section>

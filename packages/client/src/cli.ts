@@ -12,23 +12,23 @@ import { dialOverSsh } from "./ssh.ts";
  * plane answers the same protocol however far away it is.
  */
 function usage(plane: Plane | undefined): string {
-	return `agent - the console for self-hosted cloud agents
+	return `squad - the console for self-hosted cloud agents
 
-  agent                        the console: every agent, its turns and its logs on
+  squad                        the console: every agent, its turns and its logs on
                                one screen
-  agent chat [name]            talk to one agent in the scrollback, turn after turn.
+  squad chat [name]            talk to one agent in the scrollback, turn after turn.
                                A name no agent answers to offers to make one
-  agent ls                     what each agent is and whether it is up
-  agent wake [name] <text>     take one turn, as the operator
-  agent logs                   follow what every agent runs, answers and spends
-  agent rm <name> [--purge]    take the sandbox away, and with --purge its
+  squad ls                     what each agent is and whether it is up
+  squad wake [name] <text>     take one turn, as the operator
+  squad logs                   follow what every agent runs, answers and spends
+  squad rm <name> [--purge]    take the sandbox away, and with --purge its
                                repository: soul, memory, skills, tools
-  agent connect                where the agents live: a plane on this computer, or
+  squad connect                where the agents live: a plane on this computer, or
                                one on a machine you have SSH to. Asked on the first
                                run and remembered — run it again to move
-  agent help                   this
+  squad help                   this
 
-${plane === undefined ? "Nowhere yet: the first `agent` asks where." : `Your plane is ${describePlane(plane)}.`}`;
+${plane === undefined ? "Nowhere yet: the first `squad` asks where." : `Your plane is ${describePlane(plane)}.`}`;
 }
 
 function dialFor(plane: Plane, home: string): Dial {

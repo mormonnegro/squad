@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     env_file: .env
     labels:
-      # How `agent` finds this container when it cannot open the socket directly, which is every
+      # How `squad` finds this container when it cannot open the socket directly, which is every
       # machine where Docker runs in a VM. The value is the state directory it serves.
       squad.state: ${SQUAD_STATE:-/var/lib/squad}
     volumes:

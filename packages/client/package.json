@@ -8,7 +8,7 @@
 		"node": ">=22.18"
 	},
 	"bin": {
-		"agent": "./bin/agent.mjs"
+		"squad": "./bin/squad.mjs"
 	},
 	"files": [
 		"bin",

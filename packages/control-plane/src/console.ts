@@ -3695,7 +3695,7 @@ export function resume(kept: Record<string, readonly Utterance[]>, width: number
 }
 
 /**
- * The console, which is what `agent` on its own opens.
+ * The console, which is what `squad` on its own opens.
  *
  * It holds the one connection for everything: the feed streams on it while turns are taken on it,
  * which the protocol already allows because every request carries an id. That matters more than it

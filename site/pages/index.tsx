@@ -109,11 +109,11 @@ const SLASH: [string, string][] = [
 ];
 
 const COMMANDS: [string, string][] = [
-	["agent chat demo", "talk to one in the scrollback, turn after turn"],
-	["agent ls", "what each agent is and whether it is up"],
-	['agent wake "check the open issues"', "take one turn, and wait for the answer"],
-	["agent logs", "follow what every agent runs, answers and spends"],
-	["agent rm demo --purge", "the sandbox, and with --purge the repository inside it"],
+	["squad chat demo", "talk to one in the scrollback, turn after turn"],
+	["squad ls", "what each agent is and whether it is up"],
+	['squad wake "check the open issues"', "take one turn, and wait for the answer"],
+	["squad logs", "follow what every agent runs, answers and spends"],
+	["squad rm demo --purge", "the sandbox, and with --purge the repository inside it"],
 ];
 
 const PIECES: [string, string][] = [
@@ -144,7 +144,7 @@ const PIECES: [string, string][] = [
 	],
 	[
 		"client",
-		"The agent you install: picks where the plane lives, puts one there, and dials it — over a socket here or ssh vps agent relay",
+		"The squad you install: picks where the plane lives, puts one there, and dials it — over a socket here or ssh vps squad relay",
 	],
 ];
 
@@ -207,7 +207,7 @@ export default function Home() {
 				<div className="wrap-wide">
 					<Feed rows={FEED} />
 					<p className="caption">
-						<code>agent logs</code> — what every agent runs, answers and spends.
+						<code>squad logs</code> — what every agent runs, answers and spends.
 					</p>
 				</div>
 			</section>
@@ -223,7 +223,7 @@ export default function Home() {
 						in that carries operator trust.
 					</p>
 					<p>
-						<code>agent</code> on its own opens the console, because someone typing the command with
+						<code>squad</code> on its own opens the console, because someone typing the command with
 						nothing after it is asking to see the thing, not to be told a fact about it.
 					</p>
 					<p className="small muted">

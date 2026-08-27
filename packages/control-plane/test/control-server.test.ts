@@ -260,7 +260,7 @@ describe("the control socket", () => {
 	});
 
 	it("refuses to remove an agent this plane does not run", async () => {
-		// Named, not matched loosely: `agent rm` takes a name, and the one thing worse than refusing a
+		// Named, not matched loosely: `squad rm` takes a name, and the one thing worse than refusing a
 		// typo is destroying something else that answered to it.
 		await expect(client.remove("scou", false)).rejects.toThrow(/No agent "scou"/);
 	});

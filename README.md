@@ -66,7 +66,7 @@ operator answers them in the config file the agent cannot reach.
 | `channels` | Where events come from and replies go. Ships a signed webhook channel, a Telegram bot and an IMAP mailbox |
 | `agent-repo` | The agent's own git repository: manifest, soul, skills, memory, tools |
 | `control-plane` | Wires it together, takes turns by running pi in the sandbox, and reads a YAML config |
-| `client` | The `agent` you install: picks where the plane lives, puts one there, and dials it — over a socket here or `ssh vps agent relay` |
+| `client` | The `squad` you install: picks where the plane lives, puts one there, and dials it — over a socket here or `ssh vps squad relay` |
 
 ## Trust
 
@@ -114,22 +114,22 @@ computer you are sitting at:
 
 ```sh
 npm install -g squad
-agent
+squad
 ```
 
-The first `agent` asks the one question the halves differ on — **on this computer**, or **on a
+The first `squad` asks the one question the halves differ on — **on this computer**, or **on a
 server** you have SSH to — and puts a plane there. On this computer that means Docker and a state
 directory under `~/.squad`. On a server it means the install running down the SSH connection
 you already have, so there is nothing to open there and nothing new to log into. Either way it ends
-on the console, the answer is remembered, and `agent connect` moves it.
+on the console, the answer is remembered, and `squad connect` moves it.
 
 Everything after that question is the same program. A plane answers the same protocol whether its
-socket is in a directory here or at the far end of `ssh vps agent relay`, so `agent ls`, the log
+socket is in a directory here or at the far end of `ssh vps squad relay`, so `squad ls`, the log
 feed, the console and a port forwarded out of a sandbox all run on this computer and reach the
 agents wherever they are. That is also why a port you expose from an agent opens on the machine your
 browser is on, which is the one place it is of any use.
 
-It asks for no keys. Every one of them is given later on the config screen in `agent`, because three
+It asks for no keys. Every one of them is given later on the config screen in `squad`, because three
 secrets in the first minute is a worse first minute than an empty setup screen in the second. The
 npm name is not settled yet.
 
@@ -145,7 +145,7 @@ curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/insta
 ```
 
 It installs Docker if there is none, puts the repository in `/opt/squad`, writes a config with
-one agent and a ceiling of five dollars a day, starts the plane, and leaves `agent` on that
+one agent and a ceiling of five dollars a day, starts the plane, and leaves `squad` on that
 machine's PATH — the same commands typed there, and the door the console here comes through. Run at
 a terminal rather than down a pipe, it asks for the keys the proxy will hold as it goes.
 `SQUAD_DIR`, `SQUAD_STATE` and `SQUAD_SHIM` are the three things the console
@@ -191,18 +191,18 @@ A running plane listens on a unix socket in its state directory. That is the who
 and these are typed on your own computer whichever machine the plane is on:
 
 ```sh
-agent                                    the console: every agent, its turns and its logs
-agent chat demo                          talk to one in the scrollback, turn after turn
-agent chat maxi                          a name nothing answers to: it offers to make one
-agent ls                                 what each agent is and whether it is up
-agent wake "check the open issues"       take one turn, and wait for the answer
-agent logs                               follow what every agent runs, answers and spends
-agent rm demo [--purge]                  take the sandbox away, and with --purge the repository
-agent connect                            ask again where the agents should live
-agent help                               the rest
+squad                                    the console: every agent, its turns and its logs
+squad chat demo                          talk to one in the scrollback, turn after turn
+squad chat maxi                          a name nothing answers to: it offers to make one
+squad ls                                 what each agent is and whether it is up
+squad wake "check the open issues"       take one turn, and wait for the answer
+squad logs                               follow what every agent runs, answers and spends
+squad rm demo [--purge]                  take the sandbox away, and with --purge the repository
+squad connect                            ask again where the agents should live
+squad help                               the rest
 ```
 
-`agent` on its own opens the console, because someone typing the command with nothing after it is
+`squad` on its own opens the console, because someone typing the command with nothing after it is
 asking to see the thing, not to be told a fact about it:
 
 ```
@@ -241,7 +241,7 @@ until it runs out above the cursor — it reads `tab moves` instead.
 
 The feed and the config screen stand at the foot of the column rather than behind an agent because
 neither is about an agent. The feed is the plane's, one stream with every agent in it — the same feed
-`agent logs` prints, running the whole time either way — and the config screen is everything the
+`squad logs` prints, running the whole time either way — and the config screen is everything the
 plane itself was given. They used to be panels you reached by tabbing inside an agent, which meant
 picking an agent first and then ignoring which one you had picked, and the panel title carried a
 `chat · logs · setup` breadcrumb that was a second copy of a selection the column was already
@@ -575,11 +575,11 @@ for the channel it came in on. A turn that failed says so in the same place, in 
 only in a log nobody has open.
 
 The console needs a terminal it can take over and a plane to open on. Missing either — a pipe, a CI
-job, no plane running — it prints what `agent` used to print: where the state is and what is in it.
-So `agent | grep` keeps working and nothing has to know which case it is in.
+job, no plane running — it prints what `squad` used to print: where the state is and what is in it.
+So `squad | grep` keeps working and nothing has to know which case it is in.
 
 The name is needed only when there is a choice to make: a
-plane running one agent already knows which one is meant. So `agent wake "check the open issues"`
+plane running one agent already knows which one is meant. So `squad wake "check the open issues"`
 works, and a first word that names an agent addresses it instead — which costs an agent called
 `hola` the ability to be greeted by that word alone, and saves everyone else from quoting.
 
@@ -620,7 +620,7 @@ matter used to be buried in. A request that was denied, or came back 401 or 429,
 it happens, because it is the reason the agent is about to misbehave.
 
 Told nothing, it looks for the plane that is running rather than the one that would be there in a
-deployment: planes label their container with the directory they serve, so `agent` in a checkout
+deployment: planes label their container with the directory they serve, so `squad` in a checkout
 finds the demo instead of reporting that `/var/lib/squad` is empty.
 
 Each takes `--state <dir>`, or reads `SQUAD_STATE`, defaulting to `/var/lib/squad`. The
@@ -628,10 +628,10 @@ state directory is bind-mounted at the same path on the host, so these run outsi
 against the plane inside it. Where Docker runs in a VM — Docker Desktop, so every Mac — the shared
 directory shows the socket but will not carry a connection through it, and the CLI reaches the same
 socket from inside the container it labels `squad.state=<dir>`. Either way it is one control
-surface, and `docker compose exec control-plane agent` is the same command from the other side.
+surface, and `docker compose exec control-plane squad` is the same command from the other side.
 
-From a checkout, `pnpm link --global` in `packages/control-plane` puts `agent` on the path;
-`node packages/control-plane/bin/agent.mjs` is the same command without installing anything.
+From a checkout, `pnpm link --global` in `packages/control-plane` puts `squad` on the path;
+`node packages/control-plane/bin/squad.mjs` is the same command without installing anything.
 
 There is no password because there is nothing to authenticate: the socket is `0600`, and reaching
 it already means holding a file the operator owns. That is also why this socket is the only way
@@ -1520,7 +1520,7 @@ is still as unrouted as it was.
 ```
 
 The plane keeps the record and the console opens the listener, and those are usually not the same
-computer. Agents run where the Docker daemon is — a VPS — and the console is the `agent` on your own
+computer. Agents run where the Docker daemon is — a VPS — and the console is the `squad` on your own
 PATH, over SSH or against a socket bind-mounted from a container. So the port comes out on *your*
 loopback, over the control socket the console was already talking on. Nothing is published on the
 server, no firewall rule changes, and the link dies when you close the console rather than staying

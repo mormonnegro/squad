@@ -62,7 +62,7 @@ describe("the CLI given somewhere else to talk to", () => {
 		expect(process.exitCode).toBe(0);
 	});
 
-	// The first line of `agent` alone, because every line under it is about another computer.
+	// The first line of `squad` alone, because every line under it is about another computer.
 	it("names the machine before saying anything about it", async () => {
 		await cli([], remote(dialLocal(stateDir)));
 		expect(out.split("\n")[0]).toBe("at      root@example.test");
@@ -76,8 +76,8 @@ describe("the CLI given somewhere else to talk to", () => {
 		try {
 			await cli([], remote(dialLocal(nowhere)));
 			expect(out).toContain("plane   not running");
-			expect(out).toContain("agent connect");
-			expect(out).not.toContain("agent run");
+			expect(out).toContain("squad connect");
+			expect(out).not.toContain("squad run");
 			expect(process.exitCode).toBe(1);
 		} finally {
 			await rm(nowhere, { recursive: true, force: true });

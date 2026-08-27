@@ -57,15 +57,15 @@ describe("the console, driving the plane this operator chose", () => {
 	it("offers the commands an operator has, and not the ones a host has", async () => {
 		await writePlane(home, { kind: "server", target: "me@vps" });
 		await cli(["help"]);
-		expect(out).toContain("agent chat");
-		expect(out).toContain("agent connect");
-		expect(out).not.toMatch(/^\s+agent (run|relay)\b/m);
+		expect(out).toContain("squad chat");
+		expect(out).toContain("squad connect");
+		expect(out).not.toMatch(/^\s+squad (run|relay)\b/m);
 	});
 
 	// Which machine, on the screen that lists what can be done to it.
 	it("says where the agents live, or that nowhere is the answer yet", async () => {
 		await cli(["help"]);
-		expect(out).toContain("the first `agent` asks where");
+		expect(out).toContain("the first `squad` asks where");
 
 		out = "";
 		await writePlane(home, { kind: "server", target: "me@vps" });
@@ -76,7 +76,7 @@ describe("the console, driving the plane this operator chose", () => {
 	/**
 	 * A first run with nothing to ask on.
 	 *
-	 * `agent ls | tee` and a cron line both arrive here, and the question they would be asked has no
+	 * `squad ls | tee` and a cron line both arrive here, and the question they would be asked has no
 	 * terminal to be asked on. Saying which command has none beats a raw-mode error from a stream —
 	 * and it is said instead of the question, not after it.
 	 */

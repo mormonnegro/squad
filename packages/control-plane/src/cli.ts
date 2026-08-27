@@ -16,22 +16,22 @@ import { MarkdownStream } from "./markdown.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/squad";
 
-const USAGE = `agent - run self-hosted cloud agents
+const USAGE = `squad - run self-hosted cloud agents
 
-  agent                        the console: every agent, its turns and its logs on
+  squad                        the console: every agent, its turns and its logs on
                                one screen. With no terminal to take over, says where
                                the state is and what is running in it
-  agent chat [name]            talk to one agent in the scrollback, turn after turn.
+  squad chat [name]            talk to one agent in the scrollback, turn after turn.
                                A name no agent answers to offers to make one
-  agent ls                     what each agent is and whether it is up
-  agent wake [name] <text>     take one turn, as the operator
-  agent logs                   follow what every agent runs, answers and spends
-  agent rm <name> [--purge]    take the sandbox away, and with --purge its
+  squad ls                     what each agent is and whether it is up
+  squad wake [name] <text>     take one turn, as the operator
+  squad logs                   follow what every agent runs, answers and spends
+  squad rm <name> [--purge]    take the sandbox away, and with --purge its
                                repository: soul, memory, skills, tools
-  agent run <config.yaml>      start the control plane
-  agent relay                  this plane's control socket, on stdin and stdout: the
+  squad run <config.yaml>      start the control plane
+  squad relay                  this plane's control socket, on stdin and stdout: the
                                door a console on another computer comes through
-  agent help                   this
+  squad help                   this
 
 The configuration names its secrets; their values come from the environment.
 Commands other than "run" talk to a running plane over a socket in its state
@@ -43,7 +43,7 @@ Told nothing, they look for the plane that is actually running.`;
  *
  * Every command here is written against a `ControlClient`, and a client is the same object whether
  * its bytes go down a socket in a directory or down an SSH connection. So the console package hands
- * one of these in and the commands do not change: `agent ls` against a VPS is this process, running
+ * one of these in and the commands do not change: `squad ls` against a VPS is this process, running
  * the same code, dialling further.
  *
  * `at` is what the operator called the machine, and it is only ever printed. Nothing here should
@@ -156,7 +156,7 @@ async function candidates(args: Args): Promise<string> {
 	if (args.remote !== undefined) return "";
 	const elsewhere = (await runningPlanes().catch(() => [])).filter((dir) => dir !== args.stateDir);
 	if (elsewhere.length === 0) return "";
-	const lines = elsewhere.map((dir) => `  agent --state ${dir}`).join("\n");
+	const lines = elsewhere.map((dir) => `  squad --state ${dir}`).join("\n");
 	return `${elsewhere.length === 1 ? "A plane is" : "Planes are"} running elsewhere:\n${lines}\n`;
 }
 
@@ -245,7 +245,7 @@ function describeAgent(agent: AgentSummary): string {
 }
 
 /**
- * What `agent` alone does: open the console on the plane it finds.
+ * What `squad` alone does: open the console on the plane it finds.
  *
  * The first thing an operator types is the command with nothing after it, and what they want then
  * is to be in front of the thing rather than to be told about it. Everything the console does is
@@ -267,7 +267,7 @@ async function console_(args: Args): Promise<number> {
 
 	try {
 		// Imported here rather than at the top so React and Ink are loaded by the one command that
-		// draws a screen. `agent run` is the plane itself, and it has no business paying for a
+		// draws a screen. `squad run` is the plane itself, and it has no business paying for a
 		// renderer — in startup time or in what ends up resident in the process holding the Docker
 		// socket.
 		const { openConsole } = await import("./console.ts");
@@ -280,7 +280,7 @@ async function console_(args: Args): Promise<number> {
 /**
  * The plane's control socket, on this process's stdin and stdout.
  *
- * The door a console on another computer comes through. `ssh vps agent relay` is a connection to
+ * The door a console on another computer comes through. `ssh vps squad relay` is a connection to
  * this socket, and what travels it is the protocol a console on this machine already speaks, so the
  * two roads differ in nothing past the first byte.
  *
@@ -307,7 +307,7 @@ async function relay(args: Args): Promise<number> {
 /**
  * Where the state is, whether a plane is up, and what is in it — in text, on the way past.
  *
- * This is what `agent` alone used to do, and it is still what it does wherever the console cannot
+ * This is what `squad` alone used to do, and it is still what it does wherever the console cannot
  * run: piped into another program, redirected into a file, or pointed at a directory no plane is
  * listening in.
  */
@@ -330,8 +330,8 @@ async function status(args: Args): Promise<number> {
 			found.length > 0
 				? found
 				: args.remote !== undefined
-					? "  agent connect             put a plane on a machine, or choose another one\n"
-					: "  agent run <config.yaml>   start one\n" +
+					? "  squad connect             put a plane on a machine, or choose another one\n"
+					: "  squad run <config.yaml>   start one\n" +
 						"  ./deploy/demo.sh up       or watch the whole thing run on throwaway names\n",
 		);
 		return 1;
@@ -343,8 +343,8 @@ async function status(args: Args): Promise<number> {
 		if (summaries.length === 0) process.stdout.write("no agents\n");
 		for (const agent of summaries) process.stdout.write(`${describeAgent(agent)}\n`);
 		process.stdout.write(
-			"\n  agent chat                talk to it\n" +
-				"  agent logs                watch what it runs, answers and spends\n",
+			"\n  squad chat                talk to it\n" +
+				"  squad logs                watch what it runs, answers and spends\n",
 		);
 		return 0;
 	} finally {
@@ -372,7 +372,7 @@ async function pickAgent(
 		}
 		return found;
 	}
-	return theOnlyOne(summaries, (agent) => `  agent ${command} ${agent.id}`);
+	return theOnlyOne(summaries, (agent) => `  squad ${command} ${agent.id}`);
 }
 
 function theOnlyOne(
@@ -406,11 +406,11 @@ export async function addressee(
 	const named = summaries.find((agent) => agent.id === first);
 	if (named === undefined) {
 		const body = rest.join(" ");
-		return { agent: theOnlyOne(summaries, (a) => `  agent wake ${a.id} "${body}"`), body };
+		return { agent: theOnlyOne(summaries, (a) => `  squad wake ${a.id} "${body}"`), body };
 	}
 
 	const body = words.join(" ");
-	if (body.length === 0) throw new ControlError(`usage: agent wake ${named.id} <text>`);
+	if (body.length === 0) throw new ControlError(`usage: squad wake ${named.id} <text>`);
 	return { agent: named, body };
 }
 
@@ -634,7 +634,7 @@ async function chat(args: Args): Promise<number> {
 async function wake(args: Args): Promise<number> {
 	const { rest } = args;
 	if (rest.length === 0) {
-		process.stderr.write("usage: agent wake [name] <text>\n");
+		process.stderr.write("usage: squad wake [name] <text>\n");
 		return 1;
 	}
 
@@ -666,7 +666,7 @@ async function logs(args: Args): Promise<number> {
 }
 
 async function main(argv: readonly string[], remote?: Remote): Promise<number> {
-	// Flags are taken out before the command is chosen, so `agent --state <dir>` on its own is the
+	// Flags are taken out before the command is chosen, so `squad --state <dir>` on its own is the
 	// status of that directory rather than an unknown command.
 	const parsed = { ...parseArgs(argv), ...(remote !== undefined ? { remote } : {}) };
 	const [command, ...words] = parsed.rest;
@@ -685,7 +685,7 @@ async function main(argv: readonly string[], remote?: Remote): Promise<number> {
 		case "run": {
 			const path = words[0];
 			if (path === undefined) {
-				process.stderr.write("usage: agent run <config.yaml>\n");
+				process.stderr.write("usage: squad run <config.yaml>\n");
 				return 1;
 			}
 			return run(path);

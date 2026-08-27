@@ -33,7 +33,7 @@ interface ContainerSummary {
 /**
  * The state directories of every plane running on this machine, read off their containers.
  *
- * So that `agent` typed with nothing after it can answer about the plane that is actually up. A
+ * So that `squad` typed with nothing after it can answer about the plane that is actually up. A
  * default state directory nobody is using is a worse answer than the truth, and the truth is
  * already labelled on the container.
  */

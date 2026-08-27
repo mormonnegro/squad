@@ -57,16 +57,16 @@ describe("who the words after `wake` are for", () => {
 	});
 
 	it("gives the name the collision, and says so by asking for the text", async () => {
-		// `agent wake hola` on a plane with an agent called "hola" is a greeting nobody can send. The
+		// `squad wake hola` on a plane with an agent called "hola" is a greeting nobody can send. The
 		// alternative is a message that silently goes to the wrong agent, which is the worse half.
 		await expect(addressee(plane("hola", "demo"), ["hola"])).rejects.toThrow(
-			"usage: agent wake hola <text>",
+			"usage: squad wake hola <text>",
 		);
 	});
 
 	it("refuses to guess when there is more than one agent and no name", async () => {
 		await expect(addressee(plane("demo", "scout"), ["hola"])).rejects.toThrow(
-			/More than one agent[\s\S]*agent wake demo "hola"[\s\S]*agent wake scout "hola"/,
+			/More than one agent[\s\S]*squad wake demo "hola"[\s\S]*squad wake scout "hola"/,
 		);
 	});
 

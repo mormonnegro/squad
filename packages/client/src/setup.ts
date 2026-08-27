@@ -32,7 +32,7 @@ function note(text: string): void {
  * anything else reads the terminal, and ^C leaves — which is the only key that always works here
  * and so the only one not worth listing.
  */
-const NOBODY = new ControlError("Nothing to ask on. Run `agent` in a terminal.");
+const NOBODY = new ControlError("Nothing to ask on. Run `squad` in a terminal.");
 
 async function oneOf(keys: readonly string[]): Promise<string> {
 	const stdin = process.stdin;
@@ -136,7 +136,7 @@ async function dockerIsUp(): Promise<boolean> {
  * the same protocol either way, which is why this is the only place that has to know.
  */
 export async function pickPlane(home: string): Promise<Plane> {
-	// Before it is drawn rather than after: piped into anything, `agent` would otherwise print a
+	// Before it is drawn rather than after: piped into anything, `squad` would otherwise print a
 	// question, two doors and a prompt, and then say there was nobody there to answer it.
 	if (process.stdin.isTTY !== true) throw NOBODY;
 
@@ -178,7 +178,7 @@ async function here(home: string): Promise<Plane> {
 	const code = await pipe(await installer(), ["sh", "-s"], {
 		SQUAD_DIR: join(home, "src"),
 		SQUAD_STATE: stateDir,
-		// `agent` on this machine is the client that is running right now. A shim written over it
+		// `squad` on this machine is the client that is running right now. A shim written over it
 		// would take the console away from the thing that opened it.
 		SQUAD_SHIM: "no",
 		// The keys have a screen of their own in the console, and this has a terminal it could ask on.
@@ -218,7 +218,7 @@ async function there(): Promise<Plane> {
 		typed = await askLine("  root@");
 	}
 	if (typed.trim().length === 0) {
-		throw new ControlError("No machine, so nothing to set up. `agent connect` asks again.");
+		throw new ControlError("No machine, so nothing to set up. `squad connect` asks again.");
 	}
 	const target = normalizeTarget(typed);
 
@@ -226,7 +226,7 @@ async function there(): Promise<Plane> {
 	// a machine that already has a plane costs a second rather than a rebuild.
 	step(`Reaching ${target}`);
 	const probe = await ran(
-		spawn("ssh", ["-o", "ConnectTimeout=20", target, "command -v agent >/dev/null 2>&1"], {
+		spawn("ssh", ["-o", "ConnectTimeout=20", target, "command -v squad >/dev/null 2>&1"], {
 			stdio: ["inherit", "ignore", "inherit"],
 		}),
 	);

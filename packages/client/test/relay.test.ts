@@ -7,12 +7,12 @@ import { ControlClient, ControlError, ControlPlane, ControlServer } from "@squad
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dialCommand, relayOverSsh } from "../src/ssh.ts";
 
-const BIN = fileURLToPath(new URL("../../control-plane/bin/agent.mjs", import.meta.url));
+const BIN = fileURLToPath(new URL("../../control-plane/bin/squad.mjs", import.meta.url));
 
 /**
  * The road a console takes to a plane that is not on this computer, walked without an SSH server.
  *
- * SSH is not what makes it work: `agent relay` puts the plane's control socket on a pair of pipes,
+ * SSH is not what makes it work: `squad relay` puts the plane's control socket on a pair of pipes,
  * and anything that carries a pair of pipes to another machine is the same road. So the test runs
  * that command directly, and what it proves — the mark, the protocol behind it, the failures —
  * holds for the SSH connection it is reached through in real life.
@@ -154,12 +154,12 @@ describe("reaching a plane by running a relay", () => {
 	});
 
 	// The likeliest real failure: the SSH connection works and the machine has no plane on it.
-	it("says what to do when there is no agent at the far end", async () => {
+	it("says what to do when there is no squad at the far end", async () => {
 		const dial = dialCommand(
-			["sh", "-c", "echo 'sh: 1: agent: not found' >&2; exit 127"],
+			["sh", "-c", "echo 'sh: 1: squad: not found' >&2; exit 127"],
 			"root@example.test",
 		);
-		await expect(dial()).rejects.toThrow(/no agent on it/);
+		await expect(dial()).rejects.toThrow(/no squad on it/);
 		await expect(dial()).rejects.toBeInstanceOf(ControlError);
 	});
 
@@ -212,6 +212,6 @@ describe("the command that reaches a plane over SSH", () => {
 
 	it("runs the plane's own relay, and nothing else", () => {
 		expect(argv[0]).toBe("ssh");
-		expect(argv.slice(-2)).toEqual(["me@vps", "agent relay"]);
+		expect(argv.slice(-2)).toEqual(["me@vps", "squad relay"]);
 	});
 });

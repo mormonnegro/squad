@@ -14,7 +14,7 @@ stateDir: /var/lib/squad
 # What stops one agent thinking expensively is its ceiling, which is per agent and below.
 #
 # A model this plane holds no key for is listed and refused at the proxy until it does. The setup
-# screen in `agent` says which of these are waiting on one, and takes it without touching this file.
+# screen in `squad` says which of these are waiting on one, and takes it without touching this file.
 #
 # That screen adds models too, keeping them beside this file rather than in it, and it does not ask
 # for a name: every provider it holds a key for is asked what it answers to, and the answer is a list
@@ -43,7 +43,7 @@ models:
   #   host: models.acme.internal
   #   keyEnv: GATEWAY_TOKEN
 
-# What every agent starts from, and the whole of what an agent made later is. `agent chat <name>`
+# What every agent starts from, and the whole of what an agent made later is. `squad chat <name>`
 # offers to create a name no agent answers to, and this is the operator's answer, given in advance,
 # to what that agent may reach — because nothing said to an agent in a chat pane may widen it.
 #

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //
-//   agent
+//   squad
 //
 // The console, and on the first run the one question it needs answered: which machine the agents
 // should live on. Everything past that question is the same program either way — a plane answers
@@ -12,7 +12,7 @@
 // with a message about an unknown file extension, which says nothing about what to do.
 if (!process.features.typescript) {
 	process.stderr.write(
-		"agent runs its own TypeScript, which needs Node 22.18 or 23.6 or newer.\n" +
+		"squad runs its own TypeScript, which needs Node 22.18 or 23.6 or newer.\n" +
 			`This is Node ${process.versions.node}.\n`,
 	);
 	process.exit(1);

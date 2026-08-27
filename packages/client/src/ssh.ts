@@ -34,14 +34,14 @@ export function relayOverSsh(target: string, home: string): string[] {
 		"ControlPersist=60",
 		"-T",
 		target,
-		"agent relay",
+		"squad relay",
 	];
 }
 
 /**
  * The way to a plane on a machine this computer has SSH to.
  *
- * `agent relay` at the far end is the plane's own control socket on a pair of pipes, so what
+ * `squad relay` at the far end is the plane's own control socket on a pair of pipes, so what
  * travels this is byte for byte what travels the socket when the plane is here. Nothing is opened
  * on the server and nothing new is logged into: the authentication is the SSH connection the
  * operator already has, and the authorisation is that reaching the socket means holding a file on
@@ -141,8 +141,8 @@ function trouble(target: string, complaint: string, error: Error): ControlError 
 	const said = complaint.trim();
 	if (/not found|No such file/.test(said)) {
 		return new ControlError(
-			`${target} answered, but has no agent on it.\n\n` +
-				"  agent connect             put a plane there, or point this somewhere else\n",
+			`${target} answered, but has no squad on it.\n\n` +
+				"  squad connect             put a plane there, or point this somewhere else\n",
 		);
 	}
 	if (said.length > 0) return new ControlError(said);

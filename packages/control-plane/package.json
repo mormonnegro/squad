@@ -11,7 +11,7 @@
 		"./console": "./src/console.ts"
 	},
 	"bin": {
-		"agent": "./bin/agent.mjs"
+		"squad": "./bin/squad.mjs"
 	},
 	"scripts": {
 		"typecheck": "tsc -p tsconfig.json"

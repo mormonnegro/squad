@@ -64,7 +64,7 @@ function firstLine(stream: Duplex): Promise<Buffer> {
 export type Dial = () => Promise<Duplex>;
 
 /**
- * The first line `agent relay` writes, and the mark where the protocol starts.
+ * The first line `squad relay` writes, and the mark where the protocol starts.
  *
  * Because the relay is reached by running a command over SSH, and the far end's stdout is not
  * only the relay's: a login shell that greets its non-interactive sessions writes its greeting
