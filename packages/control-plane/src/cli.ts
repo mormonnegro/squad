@@ -14,7 +14,7 @@ import { ControlServer, controlSocketPath } from "./control-server.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
 
-const DEFAULT_STATE_DIR = "/var/lib/agent-dive";
+const DEFAULT_STATE_DIR = "/var/lib/squad";
 
 const USAGE = `agent - run self-hosted cloud agents
 
@@ -35,7 +35,7 @@ const USAGE = `agent - run self-hosted cloud agents
 
 The configuration names its secrets; their values come from the environment.
 Commands other than "run" talk to a running plane over a socket in its state
-directory: --state <dir>, or AGENT_DIVE_STATE, defaulting to ${DEFAULT_STATE_DIR}.
+directory: --state <dir>, or SQUAD_STATE, defaulting to ${DEFAULT_STATE_DIR}.
 Told nothing, they look for the plane that is actually running.`;
 
 /**
@@ -78,7 +78,7 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = proc
 		} else if (argument !== undefined) rest.push(argument);
 	}
 
-	const named = stateDir ?? env.AGENT_DIVE_STATE;
+	const named = stateDir ?? env.SQUAD_STATE;
 	return { stateDir: named ?? DEFAULT_STATE_DIR, named: named !== undefined, purge, rest };
 }
 
@@ -121,7 +121,7 @@ async function run(path: string): Promise<number> {
 	await plane.start();
 	// Counted after starting, not from the config: the agents made from the CLI in an earlier life
 	// are not in that file, and a plane that reports fewer agents than it runs is worse than silence.
-	process.stdout.write(`agent-dive running with ${(await plane.agents()).length} agent(s)\n`);
+	process.stdout.write(`squad running with ${(await plane.agents()).length} agent(s)\n`);
 
 	await new Promise<void>((resolve) => {
 		const shutdown = (): void => {

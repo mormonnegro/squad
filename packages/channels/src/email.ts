@@ -1,4 +1,4 @@
-import type { NewAgentEvent } from "@agent-dive/events";
+import type { NewAgentEvent } from "@squad/events";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";

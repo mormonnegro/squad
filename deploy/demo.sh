@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Runs agent-dive end to end on this machine, on throwaway names, and wakes the agent with a signed
-# webhook. Everything it creates is prefixed "agent-dive-demo" and removed by `demo.sh down`.
+# Runs squad end to end on this machine, on throwaway names, and wakes the agent with a signed
+# webhook. Everything it creates is prefixed "squad-demo" and removed by `demo.sh down`.
 #
 # This is not the deployment. deploy/compose.yaml is. The difference is that state lives under the
 # working tree here, because /var/lib needs root and is not shared with Docker Desktop on macOS.
@@ -21,19 +21,19 @@ ROOT="$PWD"
 STATE="$ROOT/.demo"
 
 AGENT=demo
-PLANE=agent-dive-demo-plane
-SANDBOX=agent-dive-$AGENT
+PLANE=squad-demo-plane
+SANDBOX=squad-$AGENT
 # Both names are the sandbox driver's to choose, and this script only echoes them: the container is
-# `agent-dive-<id>` and the volume that holds the agent is that name with `-self` after it. They were
+# `squad-<id>` and the volume that holds the agent is that name with `-self` after it. They were
 # assumed equal here once, so every `docker volume rm` was a no-op that `|| true` hid, and a `down`
 # that said it had removed the agent had left it on disk.
 VOLUME=$SANDBOX-self
-EGRESS=agent-dive-demo-egress
-UPLINK=agent-dive-demo-uplink
+EGRESS=squad-demo-egress
+UPLINK=squad-demo-uplink
 HOOK_SECRET=demo-secret-not-for-production
 # The label the sandbox driver puts on an agent's container, and only on those: the plane, the egress
 # and the uplink are this script's own and would answer none of the questions asked of a sandbox.
-AGENT_LABEL=dev.agent-dive.agent-id
+AGENT_LABEL=dev.squad.agent-id
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
@@ -78,7 +78,7 @@ start_plane() {
 
   docker run -d --name "$PLANE" \
     --network "$UPLINK" \
-    --label "agent-dive.state=$STATE" \
+    --label "squad.state=$STATE" \
     -e DEEPSEEK_API_KEY="$1" \
     -e SEARCH_KEY="$2" \
     -e ANTHROPIC_API_KEY="${3:-}" \
@@ -87,7 +87,7 @@ start_plane() {
     -v /var/run/docker.sock:/var/run/docker.sock \
     -p 8787:8787 \
     -p 127.0.0.1:8788:8788 \
-    agent-dive/control-plane:dev run "$STATE/config.yaml" >/dev/null
+    squad/control-plane:dev run "$STATE/config.yaml" >/dev/null
   docker network connect --alias egress "$EGRESS" "$PLANE"
 }
 
@@ -171,8 +171,8 @@ reload() {
   # shipped in there, and a reload that rebuilt only the plane would leave every agent without them.
   # The new plane replaces a sandbox that is not running what the tag points at now.
   say "rebuilding the images"
-  docker build -q -t agent-dive/sandbox:dev packages/sandbox/image >/dev/null
-  docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev . >/dev/null
+  docker build -q -t squad/sandbox:dev packages/sandbox/image >/dev/null
+  docker build -q -f deploy/Dockerfile -t squad/control-plane:dev . >/dev/null
   write_config
 
   # Read back off the running container, so a reload never asks for the keys again. A key in the
@@ -195,7 +195,7 @@ reload() {
   # Two calls, because filters of different kinds are read as "and": asking for the demo's own name
   # and for the agent label in one breath asks for containers that are both, and there are none.
   say "the plane is new, the agents are the ones you had"
-  docker ps --filter "name=agent-dive-demo" --format '  {{.Names}}  {{.Status}}'
+  docker ps --filter "name=squad-demo" --format '  {{.Names}}  {{.Status}}'
   docker ps --filter "label=$AGENT_LABEL" --format '  {{.Names}}  {{.Status}}'
 
   # Whichever agent this plane is actually running, rather than the one `up` makes. A reload is for
@@ -256,8 +256,8 @@ up() {
   # one, and a demo that silently runs last week's code is worse than one that takes a minute. The
   # layer cache makes this nearly free when nothing has changed.
   say "building the images"
-  docker build -q -t agent-dive/sandbox:dev packages/sandbox/image
-  docker build -q -f deploy/Dockerfile -t agent-dive/control-plane:dev .
+  docker build -q -t squad/sandbox:dev packages/sandbox/image
+  docker build -q -f deploy/Dockerfile -t squad/control-plane:dev .
 
   down >/dev/null 2>&1 || true
   mkdir -p "$STATE"
@@ -286,7 +286,7 @@ up() {
   wait_for_egress
 
   say "the agent is up"
-  docker ps --filter "name=agent-dive-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
+  docker ps --filter "name=squad-demo" --filter "name=$SANDBOX" --format '  {{.Names}}  {{.Status}}'
 
   # From the host, over the control socket in $STATE, which the plane's container shares at the same
   # path. Where the share cannot carry a socket, the CLI finds the container by its label instead.
@@ -311,8 +311,8 @@ up() {
   say "waking the agent with a signed webhook"
   curl -sS -w '  POST /hooks/ping -> %{http_code}\n' -o /dev/null \
     -X POST http://localhost:8787/hooks/ping \
-    -H "x-agent-dive-timestamp: $ts" \
-    -H "x-agent-dive-signature: $sig" \
+    -H "x-squad-timestamp: $ts" \
+    -H "x-squad-signature: $sig" \
     -d "$body"
 
   echo "  (an unsigned request should be refused:)"

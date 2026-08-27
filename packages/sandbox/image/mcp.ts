@@ -13,7 +13,7 @@ import { type Reply, readReply } from "./http-reply.ts";
  * whose only road out is the egress proxy, and a remote one is reached down that same road, so
  * whatever key either of them needs is one the proxy writes onto the request.
  */
-const MCP_FILE = process.env.AGENT_DIVE_MCP_FILE ?? "/home/agent/.run/mcp.json";
+const MCP_FILE = process.env.SQUAD_MCP_FILE ?? "/home/agent/.run/mcp.json";
 
 /**
  * The handshake happens before pi has asked the model anything, so this is time the agent spends
@@ -450,7 +450,7 @@ async function shakeHands(connection: Connection): Promise<readonly Listed[]> {
 			// Nothing offered, so nothing is asked of us mid-turn. An agent taking one turn at a time
 			// has no way to answer a server that wants a model called on its behalf.
 			capabilities: {},
-			clientInfo: { name: "agent-dive", version: "1" },
+			clientInfo: { name: "squad", version: "1" },
 		},
 		CONNECT_MS,
 	);

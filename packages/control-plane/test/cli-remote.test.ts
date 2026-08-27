@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EnvSecretStore } from "@agent-dive/proxy";
+import { EnvSecretStore } from "@squad/proxy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli, type Remote } from "../src/cli.ts";
 import { type Dial, dialLocal } from "../src/control-client.ts";
@@ -26,7 +26,7 @@ describe("the CLI given somewhere else to talk to", () => {
 	const remote = (dial: Dial): Remote => ({ at: "root@example.test", dial });
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-remote-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-remote-"));
 		plane = new ControlPlane({
 			agents: [{ id: "scout" }, { id: "scribe" }],
 			stateDir,
@@ -72,7 +72,7 @@ describe("the CLI given somewhere else to talk to", () => {
 
 	// Told to start one here, the operator would be starting a second plane on the wrong machine.
 	it("offers a machine to fix rather than a plane to start", async () => {
-		const nowhere = await mkdtemp(join(tmpdir(), "agent-dive-empty-"));
+		const nowhere = await mkdtemp(join(tmpdir(), "squad-empty-"));
 		try {
 			await cli([], remote(dialLocal(nowhere)));
 			expect(out).toContain("plane   not running");

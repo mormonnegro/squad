@@ -1,5 +1,5 @@
-import { EventBus } from "@agent-dive/events";
-import { type ExecResult, SANDBOX_EXTENSIONS } from "@agent-dive/sandbox";
+import { EventBus } from "@squad/events";
+import { type ExecResult, SANDBOX_EXTENSIONS } from "@squad/sandbox";
 import { describe, expect, it } from "vitest";
 import type { NamedServer } from "../src/mcp.ts";
 import {
@@ -133,7 +133,7 @@ describe("PiTurnRunner", () => {
 			"--mode",
 			"json",
 			"--session-id",
-			"agent-dive-a1",
+			"squad-a1",
 			"--session-dir",
 			"/home/agent/.self/.sessions",
 			"--append-system-prompt",
@@ -143,13 +143,13 @@ describe("PiTurnRunner", () => {
 			"--skill",
 			"/home/agent/.self/skills",
 			"--extension",
-			"/usr/local/lib/agent-dive/extensions/wake.ts",
+			"/usr/local/lib/squad/extensions/wake.ts",
 			"--extension",
-			"/usr/local/lib/agent-dive/extensions/search.ts",
+			"/usr/local/lib/squad/extensions/search.ts",
 			"--extension",
-			"/usr/local/lib/agent-dive/extensions/mcp.ts",
+			"/usr/local/lib/squad/extensions/mcp.ts",
 			"--extension",
-			"/usr/local/lib/agent-dive/extensions/console.ts",
+			"/usr/local/lib/squad/extensions/console.ts",
 		]);
 	});
 
@@ -269,7 +269,7 @@ describe("PiTurnRunner", () => {
 
 	it("keeps every wakeup in one session per agent", () => {
 		const runner = new PiTurnRunner({ sandbox: new StubSandbox() });
-		expect(runner.sessionId("a1")).toBe("agent-dive-a1");
+		expect(runner.sessionId("a1")).toBe("squad-a1");
 		expect(runner.sessionId("a2")).not.toBe(runner.sessionId("a1"));
 	});
 
@@ -384,7 +384,7 @@ describe("PiTurnRunner", () => {
 
 	it("forgets the session pi keeps for the agent", async () => {
 		const sandbox = new StubSandbox();
-		sandbox.sessions = ["2026-08-25T05-09-25-472Z_agent-dive-scout.jsonl"];
+		sandbox.sessions = ["2026-08-25T05-09-25-472Z_squad-scout.jsonl"];
 
 		expect(await new PiTurnRunner({ sandbox }).forget("scout")).toBe(true);
 		expect(sandbox.sessions).toEqual([]);
@@ -394,8 +394,8 @@ describe("PiTurnRunner", () => {
 	// things. The underscore pi writes between the timestamp and the id is what keeps them apart.
 	it("leaves alone an agent whose name ends in the one being forgotten", async () => {
 		const sandbox = new StubSandbox();
-		const neighbour = "2026-08-25T05-09-25-472Z_agent-dive-my-agent-dive-scout.jsonl";
-		sandbox.sessions = [neighbour, "2026-08-25T06-00-00-000Z_agent-dive-scout.jsonl"];
+		const neighbour = "2026-08-25T05-09-25-472Z_squad-my-squad-scout.jsonl";
+		sandbox.sessions = [neighbour, "2026-08-25T06-00-00-000Z_squad-scout.jsonl"];
 
 		await new PiTurnRunner({ sandbox }).forget("scout");
 

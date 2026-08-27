@@ -59,7 +59,7 @@ $ agent
 `}</Code>
 					<p>
 						The thing it asks is where your agents should live: <strong>on this computer</strong>,
-						which means Docker and a state directory under <code>~/.agent-dive</code>, or{" "}
+						which means Docker and a state directory under <code>~/.squad</code>, or{" "}
 						<strong>on a server</strong> you have SSH to, which means the install running down the
 						connection you already have. Either way the same thing lands there — Docker if there is
 						none, the repository, a config with one agent and a ceiling of five dollars a day, and
@@ -121,7 +121,7 @@ $ agent
 						the shape of the bill: the machine is a flat monthly number, and the only other cost is
 						what the agents think with, which is metered by whichever model provider you give a key
 						to and capped by <code>limitUsd</code> at five dollars a day per agent until you say
-						otherwise. There is nothing to pay for agent-dive itself.
+						otherwise. There is nothing to pay for squad itself.
 					</p>
 				</div>
 			</section>
@@ -157,13 +157,12 @@ $ curl -fsSL ${INSTALL} | sh
 						It leaves <code>agent</code> on that machine's PATH too — the same commands typed there,
 						and the door the console here comes through. Three environment variables are what the
 						console overrides when the plane is going to live beside it instead:{" "}
-						<code>AGENT_DIVE_DIR</code>, <code>AGENT_DIVE_STATE</code> and{" "}
-						<code>AGENT_DIVE_SHIM</code>. That is the whole of the difference between a laptop and a
-						VPS.
+						<code>SQUAD_DIR</code>, <code>SQUAD_STATE</code> and <code>SQUAD_SHIM</code>. That is
+						the whole of the difference between a laptop and a VPS.
 					</p>
 					<p className="small muted">
 						Whichever end you ran it at, the console is the npm package above and this machine is an
-						answer it keeps — in <code>~/.agent-dive/plane.json</code>, written once and never asked
+						answer it keeps — in <code>~/.squad/plane.json</code>, written once and never asked
 						again. <code>agent connect</code> asks again, and the installer prints your own address
 						when it finishes so there is nothing to go and look up.
 					</p>
@@ -216,10 +215,10 @@ $ curl -fsSL ${INSTALL} | sh
 					<span className="eyebrow">The one file to edit</span>
 					<h2>Say what an agent may reach</h2>
 					<p>
-						<code>/opt/agent-dive/deploy/config.yaml</code> is the whole surface: agents, what each
-						may reach, which models there are to think with, when each wakes up, which webhooks
-						exist, and — under <code>defaults</code> — what an agent made later at the keyboard
-						starts from. The installer writes a working one; this is the shape of it.
+						<code>/opt/squad/deploy/config.yaml</code> is the whole surface: agents, what each may
+						reach, which models there are to think with, when each wakes up, which webhooks exist,
+						and — under <code>defaults</code> — what an agent made later at the keyboard starts
+						from. The installer writes a working one; this is the shape of it.
 					</p>
 					<Code label="deploy/config.yaml">{`
 models:
@@ -283,8 +282,7 @@ defaults:
 					</p>
 					<p className="small muted">
 						It is read when the plane starts, so an edit takes hold on{" "}
-						<code>docker compose restart control-plane</code> from{" "}
-						<code>/opt/agent-dive/deploy</code>.
+						<code>docker compose restart control-plane</code> from <code>/opt/squad/deploy</code>.
 					</p>
 					<div className="note warn">
 						<p>
@@ -316,8 +314,8 @@ TS=$(date +%s)
 SIG="sha256=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$HOOK_SECRET" -r | cut -d' ' -f1)"
 
 curl -X POST https://your-vps:8787/hooks/ping \\
-  -H "x-agent-dive-timestamp: $TS" \\
-  -H "x-agent-dive-signature: $SIG" \\
+  -H "x-squad-timestamp: $TS" \\
+  -H "x-squad-signature: $SIG" \\
   -d "$BODY"
 `}</Code>
 					<p className="small muted">
@@ -348,7 +346,7 @@ curl -X POST https://your-vps:8787/hooks/ping \\
 					</p>
 					<Code>{`
 $ git clone ${REPO}
-$ cd agent-dive
+$ cd squad
 $ ./deploy/demo.sh up
 `}</Code>
 					<p className="small muted">
@@ -369,8 +367,8 @@ $ ./deploy/demo.sh up
 						above still applies — this is only the part that fetches and starts.
 					</p>
 					<Code>{`
-$ git clone ${REPO} /opt/agent-dive && cd /opt/agent-dive
-$ docker build -t agent-dive/sandbox:dev packages/sandbox/image
+$ git clone ${REPO} /opt/squad && cd /opt/squad
+$ docker build -t squad/sandbox:dev packages/sandbox/image
 $ cd deploy
 $ cp .env.example .env                # the keys the proxy injects
 $ cp config.example.yaml config.yaml  # what each agent may reach

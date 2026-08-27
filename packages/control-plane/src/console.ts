@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
-import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
-import { CARRIERS } from "@agent-dive/channels";
+import { SANDBOX_REPO_PATH } from "@squad/agent-repo";
+import { CARRIERS } from "@squad/channels";
 import {
 	Box,
 	type DOMElement,

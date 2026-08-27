@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
+import { AGENT_NAME_PATTERN, SANDBOX_REPO_PATH } from "@squad/agent-repo";
 import {
 	type Account,
 	addressFor,
@@ -23,8 +23,8 @@ import {
 	startLink,
 	TelegramChannel,
 	WebhookChannel,
-} from "@agent-dive/channels";
-import { EventBus, FileEventStore, isOwnNote } from "@agent-dive/events";
+} from "@squad/channels";
+import { EventBus, FileEventStore, isOwnNote } from "@squad/events";
 import {
 	type AuditEntry,
 	EgressBroker,
@@ -39,9 +39,9 @@ import {
 	reachability,
 	type SecretStore,
 	StaticAgentDirectory,
-} from "@agent-dive/proxy";
-import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
-import { FileScheduleStore, type NewSchedule, Scheduler } from "@agent-dive/scheduler";
+} from "@squad/proxy";
+import { DockerEngine, DockerSandboxManager } from "@squad/sandbox";
+import { FileScheduleStore, type NewSchedule, Scheduler } from "@squad/scheduler";
 import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
@@ -336,8 +336,8 @@ function standingOf(bot: Bot): TelegramStanding {
  */
 const FORWARD_CONNECT_MS = 3000;
 
-const DEFAULT_IMAGE = "agent-dive/sandbox:dev";
-const DEFAULT_NETWORK = "agent-dive-egress";
+const DEFAULT_IMAGE = "squad/sandbox:dev";
+const DEFAULT_NETWORK = "squad-egress";
 const DEFAULT_PROXY_PORT = 8080;
 const DEFAULT_WEBHOOK_PORT = 8787;
 

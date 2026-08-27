@@ -1,5 +1,5 @@
 {
-	"name": "@agent-dive/control-plane",
+	"name": "@squad/control-plane",
 	"version": "0.0.0",
 	"type": "module",
 	"license": "MIT",
@@ -17,12 +17,12 @@
 		"typecheck": "tsc -p tsconfig.json"
 	},
 	"dependencies": {
-		"@agent-dive/agent-repo": "workspace:*",
-		"@agent-dive/channels": "workspace:*",
-		"@agent-dive/events": "workspace:*",
-		"@agent-dive/proxy": "workspace:*",
-		"@agent-dive/sandbox": "workspace:*",
-		"@agent-dive/scheduler": "workspace:*",
+		"@squad/agent-repo": "workspace:*",
+		"@squad/channels": "workspace:*",
+		"@squad/events": "workspace:*",
+		"@squad/proxy": "workspace:*",
+		"@squad/sandbox": "workspace:*",
+		"@squad/scheduler": "workspace:*",
 		"ink": "^7.1.1",
 		"react": "^19.2.8",
 		"string-width": "^8.2.2",

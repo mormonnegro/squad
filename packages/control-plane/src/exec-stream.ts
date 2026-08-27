@@ -1,5 +1,5 @@
 import { Duplex } from "node:stream";
-import { FrameSplitter, type HijackedStream, STDERR } from "@agent-dive/sandbox";
+import { FrameSplitter, type HijackedStream, STDERR } from "@squad/sandbox";
 
 /**
  * A `docker exec` stream as an ordinary duplex, with the daemon's framing removed in the reading

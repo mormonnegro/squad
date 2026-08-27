@@ -1,6 +1,6 @@
 import net from "node:net";
 import type { Duplex } from "node:stream";
-import type { CarrierSpec } from "@agent-dive/channels";
+import type { CarrierSpec } from "@squad/channels";
 import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
@@ -71,7 +71,7 @@ export type Dial = () => Promise<Duplex>;
  * onto the same stream, ahead of everything. A line to look for turns that from a parse error on
  * the first response into bytes discarded before the first one.
  */
-export const RELAY_HELLO = "agent-dive relay 1";
+export const RELAY_HELLO = "squad relay 1";
 
 /**
  * The way to a plane on this machine: its socket, and failing that the same socket from inside its

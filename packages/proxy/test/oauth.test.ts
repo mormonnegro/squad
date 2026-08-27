@@ -76,7 +76,7 @@ async function serve(
 }
 
 async function stateDir(): Promise<string> {
-	return mkdtemp(join(tmpdir(), "agent-dive-oauth-"));
+	return mkdtemp(join(tmpdir(), "squad-oauth-"));
 }
 
 describe("reading a refusal", () => {

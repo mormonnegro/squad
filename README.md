@@ -1,10 +1,10 @@
-# agent-dive
+# squad
 
 Self-hosted cloud agents. An agent here is a container that stays running, wakes up when something
 happens, and reaches the outside world only through credentials it never sees.
 
 It is a runtime, not a harness. The thinking is done by [pi](https://github.com/earendil-works/pi);
-agent-dive gives it a machine to live on, a way to be woken, and a boundary to work inside.
+squad gives it a machine to live on, a way to be woken, and a boundary to work inside.
 
 Requires Docker and Node 22 or newer. One VPS is enough.
 
@@ -113,13 +113,13 @@ Two halves: the console you type at, and the plane the agents live in. Install t
 computer you are sitting at:
 
 ```sh
-npm install -g agent-dive
+npm install -g squad
 agent
 ```
 
 The first `agent` asks the one question the halves differ on — **on this computer**, or **on a
 server** you have SSH to — and puts a plane there. On this computer that means Docker and a state
-directory under `~/.agent-dive`. On a server it means the install running down the SSH connection
+directory under `~/.squad`. On a server it means the install running down the SSH connection
 you already have, so there is nothing to open there and nothing new to log into. Either way it ends
 on the console, the answer is remembered, and `agent connect` moves it.
 
@@ -141,14 +141,14 @@ Nothing of the console stays on that machine. It pipes one shell script to it, a
 stands alone:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh
 ```
 
-It installs Docker if there is none, puts the repository in `/opt/agent-dive`, writes a config with
+It installs Docker if there is none, puts the repository in `/opt/squad`, writes a config with
 one agent and a ceiling of five dollars a day, starts the plane, and leaves `agent` on that
 machine's PATH — the same commands typed there, and the door the console here comes through. Run at
 a terminal rather than down a pipe, it asks for the keys the proxy will hold as it goes.
-`AGENT_DIVE_DIR`, `AGENT_DIVE_STATE` and `AGENT_DIVE_SHIM` are the three things the console
+`SQUAD_DIR`, `SQUAD_STATE` and `SQUAD_SHIM` are the three things the console
 overrides when the plane is going to live alongside it, which is the whole of the difference between
 a laptop and a VPS. Running it again is the update: it pulls, rebuilds and swaps the plane in, and
 never touches `config.yaml` or `.env`.
@@ -156,8 +156,8 @@ never touches `config.yaml` or `.env`.
 By hand, which is the same thing without the questions:
 
 ```sh
-git clone https://github.com/agent-dive/agent-dive /opt/agent-dive && cd /opt/agent-dive
-docker build -t agent-dive/sandbox:dev packages/sandbox/image
+git clone https://github.com/mormonnegro/squad /opt/squad && cd /opt/squad
+docker build -t squad/sandbox:dev packages/sandbox/image
 
 cd deploy
 cp .env.example .env          # fill in the values
@@ -621,13 +621,13 @@ it happens, because it is the reason the agent is about to misbehave.
 
 Told nothing, it looks for the plane that is running rather than the one that would be there in a
 deployment: planes label their container with the directory they serve, so `agent` in a checkout
-finds the demo instead of reporting that `/var/lib/agent-dive` is empty.
+finds the demo instead of reporting that `/var/lib/squad` is empty.
 
-Each takes `--state <dir>`, or reads `AGENT_DIVE_STATE`, defaulting to `/var/lib/agent-dive`. The
+Each takes `--state <dir>`, or reads `SQUAD_STATE`, defaulting to `/var/lib/squad`. The
 state directory is bind-mounted at the same path on the host, so these run outside the container
 against the plane inside it. Where Docker runs in a VM — Docker Desktop, so every Mac — the shared
 directory shows the socket but will not carry a connection through it, and the CLI reaches the same
-socket from inside the container it labels `agent-dive.state=<dir>`. Either way it is one control
+socket from inside the container it labels `squad.state=<dir>`. Either way it is one control
 surface, and `docker compose exec control-plane agent` is the same command from the other side.
 
 From a checkout, `pnpm link --global` in `packages/control-plane` puts `agent` on the path;
@@ -664,8 +664,8 @@ TS=$(date +%s)
 SIG="sha256=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$DEPLOY_HOOK_SECRET" -r | cut -d' ' -f1)"
 
 curl -X POST http://localhost:8787/hooks/deploys \
-  -H "x-agent-dive-timestamp: $TS" \
-  -H "x-agent-dive-signature: $SIG" \
+  -H "x-squad-timestamp: $TS" \
+  -H "x-squad-signature: $SIG" \
   -d "$BODY"
 ```
 
@@ -880,7 +880,7 @@ message over HTTP, and which one is a row on the config screen's `email` section
 │                      ││                                                                │
 │                      ││ ● mailbox   agents@fastmail.com                                │
 │                      ││ ● carrier   Mailgun                                            │
-│                      ││ ● domain    agent-dive.dev                                     │
+│                      ││ ● domain    squad.dev                                     │
 │                      ││ ● key       MAILGUN_API_KEY                                    │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ imap.fastmail.com   ⌫ disconnects it                       │ │
@@ -1652,8 +1652,8 @@ pnpm typecheck
 Node runs the TypeScript directly. There is no build step, and `typecheck` is what a build would
 have caught.
 
-Some tests need live Docker and the `agent-dive/sandbox:dev` image; the deployment test also needs
-`agent-dive/control-plane:dev` (`docker build -f deploy/Dockerfile -t agent-dive/control-plane:dev .`).
+Some tests need live Docker and the `squad/sandbox:dev` image; the deployment test also needs
+`squad/control-plane:dev` (`docker build -f deploy/Dockerfile -t squad/control-plane:dev .`).
 They skip rather than fail when those are missing.
 
 ## What is deliberately missing

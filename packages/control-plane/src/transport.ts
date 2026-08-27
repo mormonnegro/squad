@@ -1,5 +1,5 @@
 import type { Duplex } from "node:stream";
-import { FrameSplitter, STDERR } from "@agent-dive/sandbox";
+import { FrameSplitter, STDERR } from "@squad/sandbox";
 
 /**
  * pi's client transport contract, restated structurally.

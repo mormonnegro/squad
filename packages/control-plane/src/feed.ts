@@ -1,4 +1,4 @@
-import type { AuditEntry } from "@agent-dive/proxy";
+import type { AuditEntry } from "@squad/proxy";
 import { money } from "./commands.ts";
 import type { PlaneEvent } from "./control-plane.ts";
 import type { AgentStep } from "./pi-output.ts";

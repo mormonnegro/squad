@@ -20,7 +20,7 @@ const plane = (...ids: string[]) => ({ agents: async () => ids.map(summary) });
 
 describe("parseArgs", () => {
 	it("prefers the named directory over the environment", () => {
-		const args = parseArgs(["ls", "--state", "/tmp/here"], { AGENT_DIVE_STATE: "/tmp/there" });
+		const args = parseArgs(["ls", "--state", "/tmp/here"], { SQUAD_STATE: "/tmp/there" });
 		expect(args).toMatchObject({ stateDir: "/tmp/here", named: true, rest: ["ls"] });
 	});
 

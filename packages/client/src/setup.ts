@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import { ControlError, type Dial } from "@agent-dive/control-plane";
+import { ControlError, type Dial } from "@squad/control-plane";
 import { localStateDir, normalizeTarget, type Plane } from "./plane.ts";
 
 /**
@@ -12,8 +12,7 @@ import { localStateDir, normalizeTarget, type Plane } from "./plane.ts";
  * pipe it by hand still can. This runs the same one.
  */
 const BASE =
-	process.env.AGENT_DIVE_BASE ??
-	"https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy";
+	process.env.SQUAD_BASE ?? "https://raw.githubusercontent.com/mormonnegro/squad/main/deploy";
 
 const bold = (text: string): string => (process.stdout.isTTY ? `\u001b[1m${text}\u001b[0m` : text);
 const dim = (text: string): string => (process.stdout.isTTY ? `\u001b[2m${text}\u001b[0m` : text);
@@ -118,7 +117,7 @@ const quoted = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
  * else the script reads is about where things go, which is the server's own business.
  */
 export function remoteInstall(env: NodeJS.ProcessEnv = process.env): string {
-	const carried = ["AGENT_DIVE_REPO", "AGENT_DIVE_BRANCH"]
+	const carried = ["SQUAD_REPO", "SQUAD_BRANCH"]
 		.filter((name) => (env[name] ?? "").length > 0)
 		.map((name) => `${name}=${quoted(env[name] as string)}`);
 	return [...carried, "sh -s"].join(" ");
@@ -177,13 +176,13 @@ async function here(home: string): Promise<Plane> {
 	note(dim(`Everything it writes goes under ${home}.`));
 
 	const code = await pipe(await installer(), ["sh", "-s"], {
-		AGENT_DIVE_DIR: join(home, "src"),
-		AGENT_DIVE_STATE: stateDir,
+		SQUAD_DIR: join(home, "src"),
+		SQUAD_STATE: stateDir,
 		// `agent` on this machine is the client that is running right now. A shim written over it
 		// would take the console away from the thing that opened it.
-		AGENT_DIVE_SHIM: "no",
+		SQUAD_SHIM: "no",
 		// The keys have a screen of their own in the console, and this has a terminal it could ask on.
-		AGENT_DIVE_ASK: "no",
+		SQUAD_ASK: "no",
 	});
 	if (code !== 0) throw new ControlError("The install did not finish. What it printed is above.");
 

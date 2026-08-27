@@ -1,7 +1,7 @@
-import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
+import { SANDBOX_REPO_PATH } from "@squad/agent-repo";
 
 /** Where the egress proxy's root certificate is mounted inside the sandbox. */
-export const CA_CERT_PATH = "/etc/agent-dive/ca.crt";
+export const CA_CERT_PATH = "/etc/squad/ca.crt";
 
 export const SANDBOX_HOME = "/home/agent";
 
@@ -23,10 +23,10 @@ export const SANDBOX_WORKSPACE_PATH = `${SANDBOX_HOME}/workspace`;
 export const SANDBOX_USER = "1000:1000";
 
 /** The extension that gives the agent a way to ask for its next turn. Shipped in the image. */
-export const SANDBOX_WAKE_EXTENSION = "/usr/local/lib/agent-dive/extensions/wake.ts";
+export const SANDBOX_WAKE_EXTENSION = "/usr/local/lib/squad/extensions/wake.ts";
 
 /** The extension that gives the agent a way to reach the web. Shipped in the image. */
-export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/agent-dive/extensions/search.ts";
+export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/squad/extensions/search.ts";
 
 /**
  * The extension that gives the agent the tools the operator connected it to. Shipped in the image.
@@ -34,7 +34,7 @@ export const SANDBOX_SEARCH_EXTENSION = "/usr/local/lib/agent-dive/extensions/se
  * pi has no MCP of its own and says so on purpose, pointing at extensions as the way to add it. So
  * this is not configuration being passed along: it is a whole MCP client, and it is ours.
  */
-export const SANDBOX_MCP_EXTENSION = "/usr/local/lib/agent-dive/extensions/mcp.ts";
+export const SANDBOX_MCP_EXTENSION = "/usr/local/lib/squad/extensions/mcp.ts";
 
 /**
  * The extension that lets an agent ask for the console commands that concern itself. Shipped in the
@@ -44,7 +44,7 @@ export const SANDBOX_MCP_EXTENSION = "/usr/local/lib/agent-dive/extensions/mcp.t
  * something — which is how an agent that needed one server ends up blocked for a day on a line
  * nobody was there to read.
  */
-export const SANDBOX_CONSOLE_EXTENSION = "/usr/local/lib/agent-dive/extensions/console.ts";
+export const SANDBOX_CONSOLE_EXTENSION = "/usr/local/lib/squad/extensions/console.ts";
 
 /**
  * Every extension the plane hands the agent, which is a list because there is more than one and
@@ -118,7 +118,7 @@ export interface SandboxSpec {
 }
 
 export function containerName(agentId: string): string {
-	return `agent-dive-${agentId}`;
+	return `squad-${agentId}`;
 }
 
 /**
@@ -132,13 +132,13 @@ export function containerName(agentId: string): string {
 export function buildEnv(spec: SandboxSpec): string[] {
 	const env: Record<string, string> = {
 		HOME: SANDBOX_HOME,
-		AGENT_DIVE_AGENT_ID: spec.agentId,
-		AGENT_DIVE_REPO: SANDBOX_REPO_PATH,
-		AGENT_DIVE_WORKSPACE: SANDBOX_WORKSPACE_PATH,
-		AGENT_DIVE_WAKE_FILE: SANDBOX_WAKE_FILE,
-		AGENT_DIVE_MCP_FILE: SANDBOX_MCP_FILE,
-		AGENT_DIVE_SEARCH_FILE: SANDBOX_SEARCH_FILE,
-		AGENT_DIVE_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
+		SQUAD_AGENT_ID: spec.agentId,
+		SQUAD_REPO: SANDBOX_REPO_PATH,
+		SQUAD_WORKSPACE: SANDBOX_WORKSPACE_PATH,
+		SQUAD_WAKE_FILE: SANDBOX_WAKE_FILE,
+		SQUAD_MCP_FILE: SANDBOX_MCP_FILE,
+		SQUAD_SEARCH_FILE: SANDBOX_SEARCH_FILE,
+		SQUAD_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,
 		http_proxy: spec.proxyUrl,
@@ -173,8 +173,8 @@ export function buildContainerConfig(spec: SandboxSpec): ContainerConfig {
 		WorkingDir: SANDBOX_HOME,
 		...(spec.cmd !== undefined ? { Cmd: spec.cmd } : {}),
 		Labels: {
-			"dev.agent-dive.agent-id": spec.agentId,
-			"dev.agent-dive.managed": "true",
+			"dev.squad.agent-id": spec.agentId,
+			"dev.squad.managed": "true",
 		},
 		HostConfig: {
 			Binds: [
@@ -209,7 +209,7 @@ export function buildNetworkConfig(networkName: string): Record<string, unknown>
 		Driver: "bridge",
 		Internal: true,
 		CheckDuplicate: true,
-		Labels: { "dev.agent-dive.managed": "true" },
+		Labels: { "dev.squad.managed": "true" },
 	};
 }
 
@@ -217,8 +217,8 @@ export function buildVolumeConfig(volumeName: string, agentId: string): Record<s
 	return {
 		Name: volumeName,
 		Labels: {
-			"dev.agent-dive.agent-id": agentId,
-			"dev.agent-dive.managed": "true",
+			"dev.squad.agent-id": agentId,
+			"dev.squad.managed": "true",
 		},
 	};
 }

@@ -153,7 +153,7 @@ export default function Home() {
 		<Layout description={TAGLINE}>
 			<section className="hero">
 				<div className="wrap">
-					<h1>agent-dive</h1>
+					<h1>squad</h1>
 					<p className="lede">{TAGLINE}</p>
 					<div className="jump-row">
 						<Link href="/install" className="jump jump-lead">
@@ -335,7 +335,7 @@ export default function Home() {
 					<span className="eyebrow">The pieces</span>
 					<h2>Seven packages, no build step</h2>
 					<p>
-						It is a runtime, not a harness. The thinking is done by <a href={PI}>pi</a> — agent-dive
+						It is a runtime, not a harness. The thinking is done by <a href={PI}>pi</a> — squad
 						gives it a machine to live on, a way to be woken, and a boundary to work inside.
 					</p>
 					<table className="table">

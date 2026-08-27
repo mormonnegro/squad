@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EventBus, type NewAgentEvent } from "@agent-dive/events";
+import { EventBus, type NewAgentEvent } from "@squad/events";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Schedule } from "../src/schedule.ts";
 import { Scheduler } from "../src/scheduler.ts";
@@ -203,7 +203,7 @@ describe("FileScheduleStore", () => {
 	let directory: string;
 
 	beforeEach(async () => {
-		directory = await mkdtemp(join(tmpdir(), "agent-dive-schedules-"));
+		directory = await mkdtemp(join(tmpdir(), "squad-schedules-"));
 	});
 
 	afterEach(async () => {

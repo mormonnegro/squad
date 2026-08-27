@@ -1,13 +1,13 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DockerEngine, DockerSandboxManager, SandboxTimeoutError } from "@agent-dive/sandbox";
+import { DockerEngine, DockerSandboxManager, SandboxTimeoutError } from "@squad/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ensureSelfRepo } from "../src/self.ts";
 import { PiTurnRunner, TurnError } from "../src/turn.ts";
 
-const IMAGE = "agent-dive/sandbox:dev";
+const IMAGE = "squad/sandbox:dev";
 const AGENT_ID = "turn-itest";
-const TEST_NETWORK = "agent-dive-test-turn";
+const TEST_NETWORK = "squad-test-turn";
 
 const engine = new DockerEngine();
 // A daemon that is up is not a daemon that can run these. The sandbox image is built by hand, and

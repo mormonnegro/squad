@@ -24,7 +24,7 @@ export type Plane =
  * running them.
  */
 export function clientHome(env: NodeJS.ProcessEnv = process.env): string {
-	return env.AGENT_DIVE_HOME ?? join(homedir(), ".agent-dive");
+	return env.SQUAD_HOME ?? join(homedir(), ".squad");
 }
 
 export function planePath(home: string): string {

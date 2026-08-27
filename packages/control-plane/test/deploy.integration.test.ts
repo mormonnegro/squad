@@ -1,15 +1,15 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
+import { DockerEngine, DockerSandboxManager } from "@squad/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ControlClient } from "../src/control-client.ts";
 import { CONTROL_PLANE_LABEL } from "../src/control-relay.ts";
 
-const CONTROL_PLANE_IMAGE = "agent-dive/control-plane:dev";
+const CONTROL_PLANE_IMAGE = "squad/control-plane:dev";
 const AGENT_ID = "deploy-itest";
-const EGRESS_NETWORK = "agent-dive-itest-egress";
-const UPLINK_NETWORK = "agent-dive-itest-uplink";
-const PLANE_CONTAINER = "agent-dive-itest-plane";
+const EGRESS_NETWORK = "squad-itest-egress";
+const UPLINK_NETWORK = "squad-itest-uplink";
+const PLANE_CONTAINER = "squad-itest-plane";
 
 const engine = new DockerEngine();
 const dockerUp = await engine.isAvailable();
@@ -41,7 +41,7 @@ suite("a control plane deployed inside the sandbox network", () => {
 				"curl",
 				"-sS",
 				"--cacert",
-				"/etc/agent-dive/ca.crt",
+				"/etc/squad/ca.crt",
 				"-o",
 				"/dev/null",
 				"-w",

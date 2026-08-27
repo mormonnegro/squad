@@ -1,4 +1,4 @@
-import type { AuditEntry } from "@agent-dive/proxy";
+import type { AuditEntry } from "@squad/proxy";
 import { describe, expect, it } from "vitest";
 import type { PlaneEvent } from "../src/control-plane.ts";
 import { LogFeed } from "../src/feed.ts";

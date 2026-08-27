@@ -3,12 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Transform } from "node:stream";
 import { fileURLToPath } from "node:url";
-import {
-	ControlClient,
-	ControlError,
-	ControlPlane,
-	ControlServer,
-} from "@agent-dive/control-plane";
+import { ControlClient, ControlError, ControlPlane, ControlServer } from "@squad/control-plane";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dialCommand, relayOverSsh } from "../src/ssh.ts";
 
@@ -28,7 +23,7 @@ describe("reaching a plane by running a relay", () => {
 	let server: ControlServer;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-relay-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-relay-"));
 		plane = new ControlPlane({ agents: [{ id: "scout" }, { id: "scribe" }], stateDir });
 		server = new ControlServer({ plane });
 		await server.listen();
@@ -183,7 +178,7 @@ describe("reaching a plane by running a relay", () => {
 });
 
 describe("the command that reaches a plane over SSH", () => {
-	const argv = relayOverSsh("me@vps", "/home/me/.agent-dive");
+	const argv = relayOverSsh("me@vps", "/home/me/.squad");
 
 	// A pty rewrites the bytes of the protocol on the way past: newlines are the frame boundary.
 	it("asks for no terminal", () => {
@@ -194,7 +189,7 @@ describe("the command that reaches a plane over SSH", () => {
 	it("multiplexes over one connection, kept in the client's own directory", () => {
 		expect(argv).toContain("ControlMaster=auto");
 		expect(argv).toContainEqual(
-			expect.stringMatching(/^ControlPath=\/home\/me\/\.agent-dive\/ssh-[0-9a-f]{12}$/),
+			expect.stringMatching(/^ControlPath=\/home\/me\/\.squad\/ssh-[0-9a-f]{12}$/),
 		);
 	});
 
@@ -202,7 +197,7 @@ describe("the command that reaches a plane over SSH", () => {
 	// truncating. So the length is the client's promise to keep, not something to find out about on a
 	// machine with a long name.
 	it("keeps the socket short enough to be a socket", () => {
-		const path = relayOverSsh("someone@a-very-long-hostname.example.test", "/home/me/.agent-dive")
+		const path = relayOverSsh("someone@a-very-long-hostname.example.test", "/home/me/.squad")
 			.find((argument) => argument.startsWith("ControlPath="))
 			?.slice("ControlPath=".length);
 		expect(path?.length).toBeLessThan(104);

@@ -1,4 +1,4 @@
-import type { NewAgentEvent } from "@agent-dive/events";
+import type { NewAgentEvent } from "@squad/events";
 import { advance, createSchedule, type NewSchedule, type Schedule } from "./schedule.ts";
 import { MemoryScheduleStore, type ScheduleStore } from "./store.ts";
 

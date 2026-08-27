@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export const SIGNATURE_HEADER = "x-agent-dive-signature";
-export const TIMESTAMP_HEADER = "x-agent-dive-timestamp";
+export const SIGNATURE_HEADER = "x-squad-signature";
+export const TIMESTAMP_HEADER = "x-squad-timestamp";
 
 /**
  * Signs the timestamp together with the body.

@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream";
-import { CARRIERS, type CarrierSpec } from "@agent-dive/channels";
+import { CARRIERS, type CarrierSpec } from "@squad/channels";
 import { render } from "ink";
 import { createElement as h } from "react";
 import { describe, expect, it } from "vitest";
@@ -213,8 +213,8 @@ function plane(
 		},
 		connectMail: async (agentId: string, password: string) => {
 			connected.push([agentId, password]);
-			posted = { ...posted, mailbox: "desk@agent-dive.dev", host: "imap.fastmail.com" };
-			return "desk@agent-dive.dev";
+			posted = { ...posted, mailbox: "desk@squad.dev", host: "imap.fastmail.com" };
+			return "desk@squad.dev";
 		},
 		setCarrier: async (spec: CarrierSpec | undefined) => {
 			carried.push(spec);
@@ -1851,7 +1851,7 @@ describe("the config screen, pressed at", () => {
 	describe("the email section", () => {
 		const reading: MailStanding = {
 			...NO_MAIL,
-			mailbox: "desk@agent-dive.dev",
+			mailbox: "desk@squad.dev",
 			host: "imap.fastmail.com",
 			writes: true,
 		};
@@ -1874,7 +1874,7 @@ describe("the config screen, pressed at", () => {
 		it("shows the mailbox and who takes the mail out", async () => {
 			const screen = await mailed();
 			try {
-				expect(screen.screen()).toContain("desk@agent-dive.dev");
+				expect(screen.screen()).toContain("desk@squad.dev");
 				expect(screen.screen()).toContain("carrier");
 				expect(screen.screen()).toContain("the mailbox's own server");
 			} finally {
@@ -1890,10 +1890,10 @@ describe("the config screen, pressed at", () => {
 				expect(screen.screen()).toContain("nothing connected");
 
 				await screen.press(ENTER);
-				await screen.press("desk@agent-dive.dev");
+				await screen.press("desk@squad.dev");
 				await screen.press(ENTER);
 
-				expect(screen.offered).toEqual(["desk@agent-dive.dev"]);
+				expect(screen.offered).toEqual(["desk@squad.dev"]);
 				expect(screen.screen()).toContain("password");
 
 				await screen.press("kwil-brac-nemo-shad");
@@ -1912,7 +1912,7 @@ describe("the config screen, pressed at", () => {
 			const screen = await mailed(NO_MAIL);
 			try {
 				await screen.press(ENTER);
-				await screen.press("desk@agent-dive.dev\n");
+				await screen.press("desk@squad.dev\n");
 				await screen.press("kwil brac nemo shad\n");
 
 				expect(screen.connected).toEqual([["demo", "kwil brac nemo shad"]]);
@@ -1970,12 +1970,12 @@ describe("the config screen, pressed at", () => {
 
 				await screen.press(DOWN);
 				await screen.press(ENTER);
-				await screen.press("agent-dive.dev");
+				await screen.press("squad.dev");
 				await screen.press(ENTER);
 
 				expect(screen.carried).toEqual([
 					{ carrier: "mailgun", domain: "" },
-					{ carrier: "mailgun", domain: "agent-dive.dev" },
+					{ carrier: "mailgun", domain: "squad.dev" },
 				]);
 			} finally {
 				screen.close();
@@ -2022,12 +2022,12 @@ describe("the config screen, pressed at", () => {
 			const screen = await mailed();
 			try {
 				await screen.press(BACKSPACE);
-				expect(screen.screen()).toContain("forget the mailbox at desk@agent-dive.dev");
+				expect(screen.screen()).toContain("forget the mailbox at desk@squad.dev");
 				expect(screen.screen()).toContain("y forget");
 				expect(screen.unmailed).toEqual([]);
 
 				await screen.press("y");
-				expect(screen.unmailed).toEqual(["desk@agent-dive.dev"]);
+				expect(screen.unmailed).toEqual(["desk@squad.dev"]);
 			} finally {
 				screen.close();
 			}

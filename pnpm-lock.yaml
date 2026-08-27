@@ -8,7 +8,7 @@ importers:
 
   .:
     devDependencies:
-      '@agent-dive/control-plane':
+      '@squad/control-plane':
         specifier: workspace:*
         version: link:packages/control-plane
       '@biomejs/biome':
@@ -32,7 +32,7 @@ importers:
 
   packages/channels:
     dependencies:
-      '@agent-dive/events':
+      '@squad/events':
         specifier: workspace:*
         version: link:../events
       imapflow:
@@ -54,28 +54,28 @@ importers:
 
   packages/client:
     dependencies:
-      '@agent-dive/control-plane':
+      '@squad/control-plane':
         specifier: workspace:*
         version: link:../control-plane
 
   packages/control-plane:
     dependencies:
-      '@agent-dive/agent-repo':
+      '@squad/agent-repo':
         specifier: workspace:*
         version: link:../agent-repo
-      '@agent-dive/channels':
+      '@squad/channels':
         specifier: workspace:*
         version: link:../channels
-      '@agent-dive/events':
+      '@squad/events':
         specifier: workspace:*
         version: link:../events
-      '@agent-dive/proxy':
+      '@squad/proxy':
         specifier: workspace:*
         version: link:../proxy
-      '@agent-dive/sandbox':
+      '@squad/sandbox':
         specifier: workspace:*
         version: link:../sandbox
-      '@agent-dive/scheduler':
+      '@squad/scheduler':
         specifier: workspace:*
         version: link:../scheduler
       ink:
@@ -112,13 +112,13 @@ importers:
 
   packages/sandbox:
     dependencies:
-      '@agent-dive/agent-repo':
+      '@squad/agent-repo':
         specifier: workspace:*
         version: link:../agent-repo
 
   packages/scheduler:
     dependencies:
-      '@agent-dive/events':
+      '@squad/events':
         specifier: workspace:*
         version: link:../events
 

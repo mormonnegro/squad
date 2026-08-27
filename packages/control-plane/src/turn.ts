@@ -1,6 +1,6 @@
-import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@agent-dive/agent-repo";
-import type { Reply } from "@agent-dive/channels";
-import { type AgentEvent, isOwnNote, type WakeupHandler } from "@agent-dive/events";
+import { SANDBOX_REPO_PATH, SKILLS_DIR, SOUL_FILE } from "@squad/agent-repo";
+import type { Reply } from "@squad/channels";
+import { type AgentEvent, isOwnNote, type WakeupHandler } from "@squad/events";
 import {
 	type ExecResult,
 	SANDBOX_CONSOLE_FILE,
@@ -9,7 +9,7 @@ import {
 	SANDBOX_SEARCH_FILE,
 	SANDBOX_WAKE_FILE,
 	SANDBOX_WORKSPACE_PATH,
-} from "@agent-dive/sandbox";
+} from "@squad/sandbox";
 import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
@@ -242,7 +242,7 @@ export class PiTurnRunner {
 	}
 
 	sessionId(agentId: string): string {
-		return `agent-dive-${agentId}`;
+		return `squad-${agentId}`;
 	}
 
 	/**
@@ -299,7 +299,7 @@ export class PiTurnRunner {
 	 *
 	 * pi names its file `{when}_{session}.jsonl`, so the id is matched inside the name rather than
 	 * being the whole of it. The underscore is part of the pattern and not decoration: an agent may be
-	 * called `my-agent-dive-scout`, and matching on the id alone would have clearing `scout` take that
+	 * called `my-squad-scout`, and matching on the id alone would have clearing `scout` take that
 	 * agent's conversation too, since one name ends in the other. No agent name may hold an underscore,
 	 * so the one pi writes is the only one there is and it anchors the match.
 	 *

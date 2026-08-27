@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Duplex, Transform } from "node:stream";
-import { EnvSecretStore } from "@agent-dive/proxy";
+import { EnvSecretStore } from "@squad/proxy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ControlClient, ControlError } from "../src/control-client.ts";
 import { ControlPlane, type PlaneEvent } from "../src/control-plane.ts";
@@ -32,7 +32,7 @@ describe("the control socket", () => {
 	};
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-control-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-control-"));
 		plane = new ControlPlane({
 			agents: [{ id: "scout", grants: [], schedules: [] }, { id: "scribe" }],
 			stateDir,
@@ -437,7 +437,7 @@ describe("the control socket", () => {
 
 describe("the control client without a plane", () => {
 	it("says nothing is listening instead of hanging", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "agent-dive-empty-"));
+		const dir = await mkdtemp(join(tmpdir(), "squad-empty-"));
 		try {
 			await expect(new ControlClient(dir).connect()).rejects.toThrow(ControlError);
 		} finally {

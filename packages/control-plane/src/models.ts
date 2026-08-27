@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Grant, Injection } from "@agent-dive/proxy";
+import type { Grant, Injection } from "@squad/proxy";
 
 /** What pi is told to think with: whose API to go through, and which model to ask it for. */
 export interface ModelChoice {

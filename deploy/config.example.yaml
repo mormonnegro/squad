@@ -1,7 +1,7 @@
 # Every capability an agent has is in this file. Nothing here is a secret, so commit it and review
 # changes to it: a grant nobody noticed being added is the whole failure mode.
 
-stateDir: /var/lib/agent-dive
+stateDir: /var/lib/squad
 
 # Everything the agents here may think with. Naming a provider is the whole of configuring it: where
 # it lives, what its key is called and how the key is attached are facts about the provider, not

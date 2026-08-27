@@ -39,7 +39,7 @@ export function Layout({
 
 			<nav className="nav">
 				<Link href="/" className="nav-brand">
-					agent-dive
+					squad
 				</Link>
 				<div className="nav-links">
 					<Link href="/" data-current={pathname === "/"}>
@@ -59,7 +59,7 @@ export function Layout({
 					<span>
 						MIT. One config file, one operator, one machine — see <a href={REPO}>the repository</a>.
 					</span>
-					<span>agent-dive</span>
+					<span>squad</span>
 				</div>
 			</footer>
 		</div>

@@ -1,12 +1,12 @@
-import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
+import { DockerEngine, DockerSandboxManager } from "@squad/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PiSessionChannel, RELAY_PATH } from "../src/pi-session.ts";
 import { type ByteTransportHandlers, createExecTransportFactory } from "../src/transport.ts";
 
-const IMAGE = "agent-dive/sandbox:dev";
+const IMAGE = "squad/sandbox:dev";
 const AGENT_ID = "relay-itest";
 /** Distinct per suite: test files run in parallel and tear their own network down. */
-const TEST_NETWORK = "agent-dive-test-relay";
+const TEST_NETWORK = "squad-test-relay";
 const SOCKET_PATH = "/home/agent/.run/echo.sock";
 
 const engine = new DockerEngine();

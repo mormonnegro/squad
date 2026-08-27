@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { isTrustLevel, type TrustLevel } from "@agent-dive/events";
+import { isTrustLevel, type TrustLevel } from "@squad/events";
 import { nextRun } from "./cron.ts";
 
 export type ScheduleKind = "cron" | "once";

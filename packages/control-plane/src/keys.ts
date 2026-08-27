@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { SecretRef, SecretStore } from "@agent-dive/proxy";
+import type { SecretRef, SecretStore } from "@squad/proxy";
 
 /**
  * The provider keys typed at the console, over the ones the plane was started with.

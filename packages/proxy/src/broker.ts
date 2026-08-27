@@ -41,7 +41,7 @@ interface TunnelContext {
 	readonly port: number;
 }
 
-const TUNNEL_CONTEXT = Symbol("agent-dive.tunnelContext");
+const TUNNEL_CONTEXT = Symbol("squad.tunnelContext");
 
 function flattenHeaders(headers: http.IncomingHttpHeaders): Record<string, string> {
 	const result: Record<string, string> = {};
@@ -164,7 +164,7 @@ export class EgressBroker {
 				reason: "unauthenticated",
 			});
 			socket.end(
-				'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="agent-dive"\r\n\r\n',
+				'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="squad"\r\n\r\n',
 			);
 			return;
 		}
@@ -223,7 +223,7 @@ export class EgressBroker {
 				outcome: "denied",
 				reason: "unauthenticated",
 			});
-			res.writeHead(407, { "proxy-authenticate": 'Basic realm="agent-dive"' }).end();
+			res.writeHead(407, { "proxy-authenticate": 'Basic realm="squad"' }).end();
 			return;
 		}
 

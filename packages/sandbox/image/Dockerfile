@@ -17,22 +17,22 @@ RUN npm install -g @earendil-works/pi-coding-agent@0.84.2 && npm cache clean --f
 # repository or anything it builds on first boot.
 RUN userdel -r node \
     && useradd --uid 1000 --user-group --create-home --home-dir /home/agent --shell /bin/bash agent \
-    && mkdir -p /etc/agent-dive /home/agent/.self /home/agent/.run /home/agent/workspace \
+    && mkdir -p /etc/squad /home/agent/.self /home/agent/.run /home/agent/workspace \
     && chown -R agent:agent /home/agent
 
-COPY relay.mjs /usr/local/lib/agent-dive/relay.mjs
+COPY relay.mjs /usr/local/lib/squad/relay.mjs
 
 # The plane's own extensions, kept here rather than in the agent's repository: that repository is
 # written once and is the agent's from then on, so anything shipped into it could never be fixed.
 # The first three are imported by the extensions below rather than registered themselves, which is what
 # lets them be tested: neither reaches for pi or typebox, so vitest can load them outside the image.
-COPY http-reply.ts /usr/local/lib/agent-dive/extensions/http-reply.ts
-COPY appointment.ts /usr/local/lib/agent-dive/extensions/appointment.ts
-COPY commands.ts /usr/local/lib/agent-dive/extensions/commands.ts
-COPY wake.ts /usr/local/lib/agent-dive/extensions/wake.ts
-COPY search.ts /usr/local/lib/agent-dive/extensions/search.ts
-COPY mcp.ts /usr/local/lib/agent-dive/extensions/mcp.ts
-COPY console.ts /usr/local/lib/agent-dive/extensions/console.ts
+COPY http-reply.ts /usr/local/lib/squad/extensions/http-reply.ts
+COPY appointment.ts /usr/local/lib/squad/extensions/appointment.ts
+COPY commands.ts /usr/local/lib/squad/extensions/commands.ts
+COPY wake.ts /usr/local/lib/squad/extensions/wake.ts
+COPY search.ts /usr/local/lib/squad/extensions/search.ts
+COPY mcp.ts /usr/local/lib/squad/extensions/mcp.ts
+COPY console.ts /usr/local/lib/squad/extensions/console.ts
 
 USER agent
 WORKDIR /home/agent

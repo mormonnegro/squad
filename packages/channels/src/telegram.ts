@@ -1,4 +1,4 @@
-import type { NewAgentEvent, TrustLevel } from "@agent-dive/events";
+import type { NewAgentEvent, TrustLevel } from "@squad/events";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
 
 /**
@@ -132,7 +132,7 @@ interface Polling {
  *
  * Long polling rather than a webhook, because a webhook needs a public address with a certificate on
  * it, and the machine this is meant to run on is a small VPS behind whatever its provider gave it.
- * Polling reaches Telegram from the inside, so an agent-dive that can make outbound requests can be
+ * Polling reaches Telegram from the inside, so an squad that can make outbound requests can be
  * spoken to, with no DNS record, no port open and nothing to point at it.
  *
  * Trust is a list of user ids per bot, unlike a webhook, which may never carry operator trust. The

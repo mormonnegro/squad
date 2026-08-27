@@ -7,7 +7,7 @@ import { withDefaults } from "../src/control-plane.ts";
 const EXAMPLE = fileURLToPath(new URL("../../../deploy/config.example.yaml", import.meta.url));
 
 const MINIMAL = `
-stateDir: /var/lib/agent-dive
+stateDir: /var/lib/squad
 agents:
   - id: scout
 `;
@@ -16,7 +16,7 @@ describe("parseConfig", () => {
 	it("reads the agents an operator declared", () => {
 		const config = parseConfig(MINIMAL, {});
 
-		expect(config.stateDir).toBe("/var/lib/agent-dive");
+		expect(config.stateDir).toBe("/var/lib/squad");
 		expect(config.agents.map((agent) => agent.id)).toEqual(["scout"]);
 	});
 

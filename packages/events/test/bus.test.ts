@@ -265,7 +265,7 @@ describe("FileEventStore", () => {
 	let directory: string;
 
 	beforeEach(async () => {
-		directory = await mkdtemp(join(tmpdir(), "agent-dive-events-"));
+		directory = await mkdtemp(join(tmpdir(), "squad-events-"));
 	});
 
 	afterEach(async () => {

@@ -15,8 +15,8 @@ export interface CertificateAuthority {
 }
 
 const CA_ATTRS: forge.pki.CertificateField[] = [
-	{ name: "commonName", value: "agent-dive local egress CA" },
-	{ name: "organizationName", value: "agent-dive" },
+	{ name: "commonName", value: "squad local egress CA" },
+	{ name: "organizationName", value: "squad" },
 ];
 
 function randomSerial(): string {

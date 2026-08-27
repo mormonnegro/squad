@@ -5,10 +5,10 @@ import { DockerEngine } from "../src/engine.ts";
 import { DockerSandboxManager, volumeName } from "../src/sandbox.ts";
 import { containerName } from "../src/spec.ts";
 
-const IMAGE = "agent-dive/sandbox:dev";
+const IMAGE = "squad/sandbox:dev";
 const AGENT_ID = "itest";
-const CONTROL_CONTAINER = "agent-dive-itest-control";
-const TEST_NETWORK = "agent-dive-test-egress";
+const CONTROL_CONTAINER = "squad-itest-control";
+const TEST_NETWORK = "squad-test-egress";
 /** Dialled by IP so a failure means "no route", not "no DNS". */
 const PUBLIC_IP = "1.1.1.1";
 const REACH_CMD = `curl -sS --max-time 4 -o /dev/null http://${PUBLIC_IP}/ && echo REACHED || echo BLOCKED`;
@@ -75,7 +75,7 @@ suite("Docker sandbox against a live daemon", () => {
 		]);
 		expect(mounted.stdout).toContain("OK");
 
-		const ca = await manager.exec(AGENT_ID, ["cat", "/etc/agent-dive/ca.crt"]);
+		const ca = await manager.exec(AGENT_ID, ["cat", "/etc/squad/ca.crt"]);
 		expect(ca.stdout).toContain("BEGIN CERTIFICATE");
 	}, 30_000);
 
@@ -85,7 +85,7 @@ suite("Docker sandbox against a live daemon", () => {
 	}, 30_000);
 
 	it("exposes the agent identity to the process", async () => {
-		const result = await manager.exec(AGENT_ID, ["sh", "-c", "echo $AGENT_DIVE_AGENT_ID"]);
+		const result = await manager.exec(AGENT_ID, ["sh", "-c", "echo $SQUAD_AGENT_ID"]);
 		expect(result.stdout.trim()).toBe(AGENT_ID);
 	}, 30_000);
 

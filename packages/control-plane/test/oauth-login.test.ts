@@ -4,7 +4,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OAuthLogins } from "@agent-dive/proxy";
+import { OAuthLogins } from "@squad/proxy";
 import { afterEach, describe, expect, it } from "vitest";
 import { LoginDesk } from "../src/oauth-login.ts";
 
@@ -82,7 +82,7 @@ async function authorizationServer(options: { register?: boolean } = {}): Promis
 }
 
 async function desk(): Promise<{ desk: LoginDesk; logins: OAuthLogins; opened: string[] }> {
-	const path = join(await mkdtemp(join(tmpdir(), "agent-dive-login-")), "oauth.json");
+	const path = join(await mkdtemp(join(tmpdir(), "squad-login-")), "oauth.json");
 	const logins = new OAuthLogins(path);
 	const opened: string[] = [];
 	const made = new LoginDesk(logins, (url) => opened.push(url));

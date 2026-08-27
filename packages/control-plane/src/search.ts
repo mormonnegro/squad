@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Grant } from "@agent-dive/proxy";
+import type { Grant } from "@squad/proxy";
 
 /**
  * How the answer comes back, which is the one thing about a search provider that is not a string.

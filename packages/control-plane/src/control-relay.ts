@@ -1,5 +1,5 @@
 import type { Duplex } from "node:stream";
-import { DockerEngine } from "@agent-dive/sandbox";
+import { DockerEngine } from "@squad/sandbox";
 import { controlSocketPath } from "./control-server.ts";
 import { ExecStream } from "./exec-stream.ts";
 
@@ -10,7 +10,7 @@ import { ExecStream } from "./exec-stream.ts";
  * written `docker run` all name the container differently, and the state directory is the one thing
  * the operator and the plane already agree on.
  */
-export const CONTROL_PLANE_LABEL = "agent-dive.state";
+export const CONTROL_PLANE_LABEL = "squad.state";
 
 /**
  * Connects to the plane's socket from inside its own container and pipes it to this process.

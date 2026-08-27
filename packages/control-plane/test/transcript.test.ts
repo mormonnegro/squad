@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AgentEvent, createEvent } from "@agent-dive/events";
+import { type AgentEvent, createEvent } from "@squad/events";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { overheard, sentTo, Transcript } from "../src/transcript.ts";
 
@@ -130,7 +130,7 @@ describe("Transcript", () => {
 	let dir: string;
 
 	beforeEach(async () => {
-		dir = await mkdtemp(join(tmpdir(), "agent-dive-transcript-"));
+		dir = await mkdtemp(join(tmpdir(), "squad-transcript-"));
 	});
 
 	afterEach(async () => {

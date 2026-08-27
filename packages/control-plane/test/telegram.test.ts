@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Bot } from "@agent-dive/channels";
+import type { Bot } from "@squad/channels";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TelegramBots } from "../src/telegram.ts";
 

@@ -3,7 +3,7 @@ import {
 	SANDBOX_REPO_PATH,
 	type ScaffoldFile,
 	scaffoldAgentRepo,
-} from "@agent-dive/agent-repo";
+} from "@squad/agent-repo";
 import type { TurnSandbox } from "./turn.ts";
 
 export interface EnsureSelfRepoOptions {
@@ -46,7 +46,7 @@ export async function ensureSelfRepo(options: EnsureSelfRepoOptions): Promise<bo
 		[
 			"sh",
 			"-c",
-			'cd "$1" && git init -q && git config user.name "$2" && git config user.email "$2@agent-dive.local" && git add -A && git commit -qm "scaffold"',
+			'cd "$1" && git init -q && git config user.name "$2" && git config user.email "$2@squad.local" && git add -A && git commit -qm "scaffold"',
 			"sh",
 			root,
 			agentId,

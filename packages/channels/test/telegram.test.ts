@@ -1,4 +1,4 @@
-import type { NewAgentEvent } from "@agent-dive/events";
+import type { NewAgentEvent } from "@squad/events";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChannelRouter } from "../src/channel.ts";
 import { pairingPhrase } from "../src/phrase.ts";

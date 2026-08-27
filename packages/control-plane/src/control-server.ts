@@ -3,7 +3,7 @@ import { chmod, unlink } from "node:fs/promises";
 import net from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import type { CarrierSpec, Channel, Reply } from "@agent-dive/channels";
+import type { CarrierSpec, Channel, Reply } from "@squad/channels";
 import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
 import type { MailStanding } from "./mailbox.ts";

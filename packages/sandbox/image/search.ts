@@ -43,7 +43,7 @@ const FALLBACK: Chosen = {
 	rate: { input: 0.25, output: 2 },
 };
 
-const CHOSEN_FILE = process.env.AGENT_DIVE_SEARCH_FILE ?? "";
+const CHOSEN_FILE = process.env.SQUAD_SEARCH_FILE ?? "";
 
 async function chosen(): Promise<Chosen> {
 	if (CHOSEN_FILE.length === 0) return FALLBACK;

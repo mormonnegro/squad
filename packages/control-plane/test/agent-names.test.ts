@@ -10,7 +10,7 @@ describe("the agent names the plane wrote down, because the config could not be"
 	let store: AgentNameStore;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-created-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-created-"));
 		path = join(stateDir, "agents.json");
 		store = new AgentNameStore(path, "createdAt");
 	});

@@ -1,17 +1,17 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { DockerEngine, DockerSandboxManager } from "@agent-dive/sandbox";
+import { DockerEngine, DockerSandboxManager } from "@squad/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ControlPlane } from "../src/control-plane.ts";
 
 const AGENT_ID = "created-itest";
 const DECLARED_ID = "declared-itest";
-const NETWORK = "agent-dive-created-itest";
+const NETWORK = "squad-created-itest";
 
 const engine = new DockerEngine();
 // The image the plane puts an agent in when it is not told otherwise, and one that is built by
 // hand — so a daemon being up is not enough to run these.
-const IMAGE = "agent-dive/sandbox:dev";
+const IMAGE = "squad/sandbox:dev";
 const suite =
 	(await engine.isAvailable()) &&
 	(await new DockerSandboxManager(engine).imageId(IMAGE)) !== undefined

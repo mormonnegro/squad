@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Bot } from "@agent-dive/channels";
+import type { Bot } from "@squad/channels";
 
 interface Book {
 	readonly bots: Record<string, Bot>;

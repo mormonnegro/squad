@@ -1,4 +1,4 @@
-import type { NewAgentEvent } from "@agent-dive/events";
+import type { NewAgentEvent } from "@squad/events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type Account,

@@ -16,7 +16,7 @@ describe("the plane this operator chose", () => {
 	let home: string;
 
 	beforeEach(async () => {
-		home = await mkdtemp(join(tmpdir(), "agent-dive-client-"));
+		home = await mkdtemp(join(tmpdir(), "squad-client-"));
 	});
 
 	afterEach(async () => {
@@ -56,7 +56,7 @@ describe("the plane this operator chose", () => {
 
 	// The client's own directory, which the tests need somewhere that is not the operator's.
 	it("keeps its answer where it was told to", () => {
-		expect(clientHome({ AGENT_DIVE_HOME: "/tmp/elsewhere" })).toBe("/tmp/elsewhere");
+		expect(clientHome({ SQUAD_HOME: "/tmp/elsewhere" })).toBe("/tmp/elsewhere");
 		expect(planePath("/tmp/elsewhere")).toBe("/tmp/elsewhere/plane.json");
 	});
 });

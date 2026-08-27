@@ -60,7 +60,7 @@ interface ContainerInspect {
 }
 
 export function volumeName(agentId: string): string {
-	return `agent-dive-${agentId}-self`;
+	return `squad-${agentId}-self`;
 }
 
 /**
@@ -71,7 +71,7 @@ export function volumeName(agentId: string): string {
  * into the repository would arrive in the diff of who the agent is.
  */
 export function workspaceVolumeName(agentId: string): string {
-	return `agent-dive-${agentId}-work`;
+	return `squad-${agentId}-work`;
 }
 
 /** Docker reports the environment as `NAME=value` strings, where the value may itself hold `=`. */
@@ -97,7 +97,7 @@ export class DockerSandboxManager {
 	private readonly engine: DockerEngine;
 	private readonly networkName: string;
 
-	constructor(engine: DockerEngine = new DockerEngine(), networkName = "agent-dive-egress") {
+	constructor(engine: DockerEngine = new DockerEngine(), networkName = "squad-egress") {
 		this.engine = engine;
 		this.networkName = networkName;
 	}

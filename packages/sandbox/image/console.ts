@@ -13,7 +13,7 @@ import { type Asked, alreadyAsked, askFor } from "./commands.ts";
  * Named by the plane, with the literal repeated here because a container that predates the variable
  * is still running the agent that needs this.
  */
-const CONSOLE_FILE = process.env.AGENT_DIVE_CONSOLE_FILE ?? "/home/agent/.run/console.json";
+const CONSOLE_FILE = process.env.SQUAD_CONSOLE_FILE ?? "/home/agent/.run/console.json";
 
 /** The queue as the plane will find it, since the file is the whole of what passes between them. */
 function ask(line: string): Asked {

@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import type { DockerSandboxManager } from "@agent-dive/sandbox";
+import type { DockerSandboxManager } from "@squad/sandbox";
 import { type ByteTransportFactory, createExecTransportFactory } from "./transport.ts";
 
 /** Where the in-container pi server binds. Inside the sandbox only; never published to the host. */
 export const PI_SOCKET_PATH = "/home/agent/.run/pi.sock";
 
-export const RELAY_PATH = "/usr/local/lib/agent-dive/relay.mjs";
+export const RELAY_PATH = "/usr/local/lib/squad/relay.mjs";
 
 const TOKEN_PATH = "/home/agent/.run/pi.token";
 

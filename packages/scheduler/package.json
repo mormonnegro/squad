@@ -1,5 +1,5 @@
 {
-	"name": "@agent-dive/scheduler",
+	"name": "@squad/scheduler",
 	"version": "0.0.0",
 	"type": "module",
 	"license": "MIT",
@@ -12,6 +12,6 @@
 		"typecheck": "tsc -p tsconfig.json"
 	},
 	"dependencies": {
-		"@agent-dive/events": "workspace:*"
+		"@squad/events": "workspace:*"
 	}
 }

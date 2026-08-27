@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { LoginStatus, Reachability } from "@agent-dive/proxy";
+import type { LoginStatus, Reachability } from "@squad/proxy";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
 import { type Served, servedAt, unservable } from "./ports.ts";

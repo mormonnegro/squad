@@ -11,7 +11,7 @@ import {
 	type OAuthLogin,
 	type OAuthLogins,
 	registerClient,
-} from "@agent-dive/proxy";
+} from "@squad/proxy";
 
 /**
  * The half of OAuth that needs a human, which is the half the plane cannot do on its own.

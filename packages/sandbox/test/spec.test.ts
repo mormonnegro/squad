@@ -1,4 +1,4 @@
-import { SANDBOX_REPO_PATH } from "@agent-dive/agent-repo";
+import { SANDBOX_REPO_PATH } from "@squad/agent-repo";
 import { describe, expect, it } from "vitest";
 import {
 	buildContainerConfig,
@@ -12,17 +12,17 @@ import {
 
 const spec: SandboxSpec = {
 	agentId: "emma",
-	image: "agent-dive/sandbox:latest",
-	volumeName: "agent-dive-emma-self",
-	workspaceVolumeName: "agent-dive-emma-work",
-	networkName: "agent-dive-egress",
+	image: "squad/sandbox:latest",
+	volumeName: "squad-emma-self",
+	workspaceVolumeName: "squad-emma-work",
+	networkName: "squad-egress",
 	proxyUrl: "http://emma:tok@egress:8080",
 	caCertHostPath: "/host/pki/ca.crt",
 };
 
 describe("network containment", () => {
 	it("is internal, so the proxy is the only route off-host", () => {
-		expect(buildNetworkConfig("agent-dive-egress")).toMatchObject({
+		expect(buildNetworkConfig("squad-egress")).toMatchObject({
 			Internal: true,
 		});
 	});
@@ -41,7 +41,7 @@ describe("container hardening", () => {
 	});
 
 	it("joins the internal network rather than the default bridge", () => {
-		expect(config.HostConfig.NetworkMode).toBe("agent-dive-egress");
+		expect(config.HostConfig.NetworkMode).toBe("squad-egress");
 	});
 
 	it("caps process count", () => {
@@ -70,7 +70,7 @@ describe("mounts", () => {
 	const binds = buildContainerConfig(spec).HostConfig.Binds as string[];
 
 	it("mounts the agent repository volume at the sandbox repo path", () => {
-		expect(binds).toContain(`agent-dive-emma-self:${SANDBOX_REPO_PATH}`);
+		expect(binds).toContain(`squad-emma-self:${SANDBOX_REPO_PATH}`);
 	});
 
 	/**
@@ -79,7 +79,7 @@ describe("mounts", () => {
 	 * is a place nobody would put work.
 	 */
 	it("mounts the workspace volume beside it, so what the agent builds outlives the container", () => {
-		expect(binds).toContain(`agent-dive-emma-work:${SANDBOX_WORKSPACE_PATH}`);
+		expect(binds).toContain(`squad-emma-work:${SANDBOX_WORKSPACE_PATH}`);
 	});
 
 	it("mounts the proxy CA read-only", () => {
@@ -114,13 +114,13 @@ describe("environment", () => {
 	});
 
 	it("exposes the repo path to the agent", () => {
-		expect(env.get("AGENT_DIVE_REPO")).toBe(SANDBOX_REPO_PATH);
-		expect(env.get("AGENT_DIVE_AGENT_ID")).toBe("emma");
+		expect(env.get("SQUAD_REPO")).toBe(SANDBOX_REPO_PATH);
+		expect(env.get("SQUAD_AGENT_ID")).toBe("emma");
 	});
 
 	/** So a script the agent writes can name the place without hard-coding somebody's home directory. */
 	it("exposes the workspace path too", () => {
-		expect(env.get("AGENT_DIVE_WORKSPACE")).toBe(SANDBOX_WORKSPACE_PATH);
+		expect(env.get("SQUAD_WORKSPACE")).toBe(SANDBOX_WORKSPACE_PATH);
 	});
 
 	it("lets callers add variables but not override containment", () => {
@@ -131,6 +131,6 @@ describe("environment", () => {
 
 describe("naming", () => {
 	it("namespaces containers by agent", () => {
-		expect(containerName("emma")).toBe("agent-dive-emma");
+		expect(containerName("emma")).toBe("squad-emma");
 	});
 });

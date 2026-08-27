@@ -1,4 +1,4 @@
-import type { ExecResult } from "@agent-dive/sandbox";
+import type { ExecResult } from "@squad/sandbox";
 import { describe, expect, it } from "vitest";
 import { ensureSelfRepo } from "../src/self.ts";
 import type { TurnSandbox } from "../src/turn.ts";

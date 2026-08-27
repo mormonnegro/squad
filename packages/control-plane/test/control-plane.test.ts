@@ -4,9 +4,9 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewAgentEvent } from "@agent-dive/events";
-import { EnvSecretStore } from "@agent-dive/proxy";
-import type { ExecResult } from "@agent-dive/sandbox";
+import type { NewAgentEvent } from "@squad/events";
+import { EnvSecretStore } from "@squad/proxy";
+import type { ExecResult } from "@squad/sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type AgentConfig,
@@ -26,7 +26,7 @@ describe("ControlPlane", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-plane-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-plane-"));
 	});
 
 	afterEach(async () => {
@@ -103,7 +103,7 @@ describe("the model an agent was moved onto", () => {
 		new ControlPlane({ agents: [{ id: "scout", model: "flash" }], stateDir, models });
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-model-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-model-"));
 	});
 
 	afterEach(async () => {
@@ -167,7 +167,7 @@ describe("provider keys", () => {
 		});
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-keys-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-keys-"));
 	});
 
 	afterEach(async () => {
@@ -254,7 +254,7 @@ describe("a model added at the console", () => {
 		});
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-models-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-models-"));
 	});
 
 	afterEach(async () => {
@@ -583,7 +583,7 @@ describe("a turn that asked for another turn", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-wake-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-wake-"));
 	});
 
 	afterEach(async () => {
@@ -865,7 +865,7 @@ describe("an answer that went somewhere", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-sent-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-sent-"));
 	});
 
 	afterEach(async () => {
@@ -914,7 +914,7 @@ describe("a turn that asked for a console command", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-asked-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-asked-"));
 	});
 
 	afterEach(async () => {
@@ -1058,7 +1058,7 @@ describe("what an agent was told, and what it said", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-talk-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-talk-"));
 	});
 
 	afterEach(async () => {
@@ -1231,7 +1231,7 @@ describe("a turn that was stopped", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-stop-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-stop-"));
 	});
 
 	afterEach(async () => {
@@ -1308,7 +1308,7 @@ describe("a conversation thrown away", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-clear-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-clear-"));
 	});
 
 	afterEach(async () => {
@@ -1546,7 +1546,7 @@ describe("what an agent may spend", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-spend-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-spend-"));
 	});
 
 	afterEach(async () => {
@@ -1722,7 +1722,7 @@ describe("a command run in the agent's box", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-shell-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-shell-"));
 	});
 
 	afterEach(async () => {
@@ -1832,7 +1832,7 @@ describe("a command run in the agent's box", () => {
 	it("says a command that could not run at all, rather than throwing", async () => {
 		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
 		plane.sandboxes.run = async () => {
-			throw new Error("No such container: agent-dive-scout");
+			throw new Error("No such container: squad-scout");
 		};
 
 		expect((await plane.shell("scout", "ls")).text).toContain("No such container");
@@ -1857,7 +1857,7 @@ describe("what a login lets an agent reach", () => {
 	let stateDir: string;
 
 	beforeEach(async () => {
-		stateDir = await mkdtemp(join(tmpdir(), "agent-dive-login-grant-"));
+		stateDir = await mkdtemp(join(tmpdir(), "squad-login-grant-"));
 	});
 
 	afterEach(async () => {

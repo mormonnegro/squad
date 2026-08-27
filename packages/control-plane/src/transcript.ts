@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentEvent, isOwnNote } from "@agent-dive/events";
+import { type AgentEvent, isOwnNote } from "@squad/events";
 import { CLI_CHANNEL } from "./control-server.ts";
 
 /**

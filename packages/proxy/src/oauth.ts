@@ -33,7 +33,7 @@ const EXPIRY_SKEW_MS = 60_000;
 /** Discovery and token calls are quick or they are wrong. The operator is waiting at a prompt. */
 const REACH_MS = 15_000;
 
-const CLIENT_NAME = "agent-dive";
+const CLIENT_NAME = "squad";
 
 export interface OAuthEndpoints {
 	readonly authorizationUrl: string;

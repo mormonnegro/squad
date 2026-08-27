@@ -2,7 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { Duplex, type Readable } from "node:stream";
-import { ControlError, type Dial, RELAY_HELLO } from "@agent-dive/control-plane";
+import { ControlError, type Dial, RELAY_HELLO } from "@squad/control-plane";
 
 const MARK = Buffer.from(`${RELAY_HELLO}\n`);
 

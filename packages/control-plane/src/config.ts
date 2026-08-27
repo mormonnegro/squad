@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { AGENT_NAME_PATTERN } from "@agent-dive/agent-repo";
-import type { Hook } from "@agent-dive/channels";
-import { ANY_HOST } from "@agent-dive/proxy";
+import { AGENT_NAME_PATTERN } from "@squad/agent-repo";
+import type { Hook } from "@squad/channels";
+import { ANY_HOST } from "@squad/proxy";
 import { parse as parseYaml } from "yaml";
 import type { AgentConfig, AgentDefaults, ControlPlaneOptions } from "./control-plane.ts";
 import { type Model, modelEnv, modelGrants, PROVIDERS, resolveModel } from "./models.ts";

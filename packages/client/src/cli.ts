@@ -1,5 +1,5 @@
-import { ControlError, type Dial, dialLocal } from "@agent-dive/control-plane";
-import { cli as planeCli } from "@agent-dive/control-plane/cli";
+import { ControlError, type Dial, dialLocal } from "@squad/control-plane";
+import { cli as planeCli } from "@squad/control-plane/cli";
 import { clientHome, describePlane, type Plane, readPlane, writePlane } from "./plane.ts";
 import { pickPlane, settle } from "./setup.ts";
 import { dialOverSsh } from "./ssh.ts";

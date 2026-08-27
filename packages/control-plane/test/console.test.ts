@@ -1564,10 +1564,10 @@ describe("Config", () => {
 		},
 	];
 	const post: MailStanding = {
-		mailbox: "desk@agent-dive.dev",
+		mailbox: "desk@squad.dev",
 		host: "imap.fastmail.com",
 		carrier: "mailgun",
-		domain: "agent-dive.dev",
+		domain: "squad.dev",
 		keyEnv: "MAILGUN_API_KEY",
 		held: true,
 		here: false,
@@ -1980,9 +1980,9 @@ describe("Config", () => {
 		it("says the mailbox, who carries the answers, and what pays for that", () => {
 			const drawn = mailed();
 
-			expect(drawn).toContain("desk@agent-dive.dev");
+			expect(drawn).toContain("desk@squad.dev");
 			expect(drawn).toContain("Mailgun");
-			expect(drawn).toContain("agent-dive.dev");
+			expect(drawn).toContain("squad.dev");
 			expect(drawn).toContain("MAILGUN_API_KEY");
 		});
 
@@ -2055,8 +2055,8 @@ describe("Config", () => {
 		});
 
 		it("asks before forgetting, and says every agent stops being reachable", () => {
-			expect(mailed({ cursor: 0, forgetting: "desk@agent-dive.dev" })).toContain(
-				"forget the mailbox at desk@agent-dive.dev",
+			expect(mailed({ cursor: 0, forgetting: "desk@squad.dev" })).toContain(
+				"forget the mailbox at desk@squad.dev",
 			);
 		});
 	});

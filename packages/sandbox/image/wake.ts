@@ -13,7 +13,7 @@ import { Appointment, MAX_SECONDS, MIN_SECONDS } from "./appointment.ts";
  * Named by the plane, with the literal repeated here because a container that predates the variable
  * is still running the agent that needs this.
  */
-const WAKE_FILE = process.env.AGENT_DIVE_WAKE_FILE ?? "/home/agent/.run/wake.json";
+const WAKE_FILE = process.env.SQUAD_WAKE_FILE ?? "/home/agent/.run/wake.json";
 
 /** Both tools write the same file, because the plane reads one file and acts on what it says. */
 function request(asked: Record<string, unknown>): void {

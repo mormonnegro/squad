@@ -67,7 +67,7 @@ describe("agent repository", () => {
 	let root: string;
 
 	beforeEach(async () => {
-		root = await mkdtemp(join(tmpdir(), "agent-dive-repo-"));
+		root = await mkdtemp(join(tmpdir(), "squad-repo-"));
 	});
 
 	afterEach(async () => {

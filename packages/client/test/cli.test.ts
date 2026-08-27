@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ControlPlane, ControlServer } from "@agent-dive/control-plane";
+import { ControlPlane, ControlServer } from "@squad/control-plane";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/cli.ts";
 import { writePlane } from "../src/plane.ts";
@@ -16,13 +16,13 @@ describe("the console, driving the plane this operator chose", () => {
 	let err: string;
 
 	beforeEach(async () => {
-		home = await mkdtemp(join(tmpdir(), "agent-dive-console-"));
+		home = await mkdtemp(join(tmpdir(), "squad-console-"));
 		stateDir = join(home, "state");
 		plane = new ControlPlane({ agents: [{ id: "scout" }, { id: "scribe" }], stateDir });
 		server = new ControlServer({ plane });
 		await server.listen();
 
-		vi.stubEnv("AGENT_DIVE_HOME", home);
+		vi.stubEnv("SQUAD_HOME", home);
 		out = "";
 		err = "";
 		vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -104,24 +104,24 @@ describe("the install, as the far end is told to run it", () => {
 	});
 
 	it("carries where the tree comes from, when this machine was told", () => {
-		expect(remoteInstall({ AGENT_DIVE_REPO: "https://example.test/fork.git" })).toBe(
-			"AGENT_DIVE_REPO='https://example.test/fork.git' sh -s",
+		expect(remoteInstall({ SQUAD_REPO: "https://example.test/fork.git" })).toBe(
+			"SQUAD_REPO='https://example.test/fork.git' sh -s",
 		);
-		expect(remoteInstall({ AGENT_DIVE_BRANCH: "next" })).toBe("AGENT_DIVE_BRANCH='next' sh -s");
+		expect(remoteInstall({ SQUAD_BRANCH: "next" })).toBe("SQUAD_BRANCH='next' sh -s");
 	});
 
 	// It is the operator's own environment and not a stranger's, but it is still a string on its way
 	// into a shell, and one word is what it has to stay.
 	it("keeps a value one word, whatever is in it", () => {
-		expect(remoteInstall({ AGENT_DIVE_BRANCH: "a branch'; rm -rf /" })).toBe(
-			`AGENT_DIVE_BRANCH='a branch'\\''; rm -rf /' sh -s`,
+		expect(remoteInstall({ SQUAD_BRANCH: "a branch'; rm -rf /" })).toBe(
+			`SQUAD_BRANCH='a branch'\\''; rm -rf /' sh -s`,
 		);
 	});
 
 	// Where things go is the server's own business: a state directory that suits this laptop is the
 	// wrong one there, and the script's defaults are the right ones.
 	it("says nothing about where things go on that machine", () => {
-		const said = remoteInstall({ AGENT_DIVE_DIR: "/tmp/here", AGENT_DIVE_STATE: "/tmp/state" });
+		const said = remoteInstall({ SQUAD_DIR: "/tmp/here", SQUAD_STATE: "/tmp/state" });
 		expect(said).toBe("sh -s");
 	});
 });

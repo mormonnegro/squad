@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import type { NewAgentEvent, TrustLevel } from "@agent-dive/events";
+import type { NewAgentEvent, TrustLevel } from "@squad/events";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
 import { isFresh, SIGNATURE_HEADER, sign, TIMESTAMP_HEADER, verify } from "./signature.ts";
 

@@ -1,7 +1,7 @@
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EnvSecretStore } from "@agent-dive/proxy";
+import { EnvSecretStore } from "@squad/proxy";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProviderKeys } from "../src/keys.ts";
 

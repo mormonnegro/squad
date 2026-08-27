@@ -2,15 +2,15 @@
 #
 # Puts a plane on a machine that has nothing on it yet:
 #
-#   curl -fsSL https://raw.githubusercontent.com/agent-dive/agent-dive/main/deploy/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh
 #
-# Installs Docker if there is none, puts the repository in /opt/agent-dive, asks for the keys the
+# Installs Docker if there is none, puts the repository in /opt/squad, asks for the keys the
 # proxy will hold, writes a config that already works, starts the plane, and leaves `agent` on the
 # PATH so the machine is driven by typing its name.
 #
 # This is the server half, and it does not know which machine it landed on: a VPS reached over SSH
 # and the laptop the operator is sitting at run the same script. What differs is where things go,
-# and that is three variables — AGENT_DIVE_DIR, AGENT_DIVE_STATE, and AGENT_DIVE_SHIM for whether
+# and that is three variables — SQUAD_DIR, SQUAD_STATE, and SQUAD_SHIM for whether
 # to take the name `agent` on this PATH. The client passes them when the plane is going to live
 # alongside it; a server takes the defaults.
 #
@@ -24,23 +24,23 @@
 #
 set -eu
 
-DIR=${AGENT_DIVE_DIR:-/opt/agent-dive}
-REPO=${AGENT_DIVE_REPO:-https://github.com/agent-dive/agent-dive.git}
-BRANCH=${AGENT_DIVE_BRANCH:-main}
+DIR=${SQUAD_DIR:-/opt/squad}
+REPO=${SQUAD_REPO:-https://github.com/mormonnegro/squad.git}
+BRANCH=${SQUAD_BRANCH:-main}
 # Mounted into the plane at its own name, so this path means the same thing on both sides of the
 # daemon. /var/lib is right for a server and wrong for a laptop: Docker Desktop shares /Users and
 # not that, so a state directory there is a bind mount the daemon resolves inside its own VM.
-STATE=${AGENT_DIVE_STATE:-/var/lib/agent-dive}
+STATE=${SQUAD_STATE:-/var/lib/squad}
 # Whether to leave `agent` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `agent` is
 # already the client that ran this, and a shim written over it would take the console away from the
 # thing that opened it.
-SHIM=${AGENT_DIVE_SHIM:-yes}
+SHIM=${SQUAD_SHIM:-yes}
 # Whether there is anyone to ask. Piped into a VPS there is no terminal and this is already no; on
 # the laptop the terminal is right there, and it belongs to the client that started this. That
 # client has a setup screen for the keys, so it says no here — three secrets in the first minute is
 # a worse first minute than an empty setup screen in the second one.
-ASK=${AGENT_DIVE_ASK:-yes}
+ASK=${SQUAD_ASK:-yes}
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -147,7 +147,7 @@ if [ -d "$DIR/.git" ]; then
 	$SUDO git -C "$DIR" fetch --quiet --depth 1 origin "$BRANCH"
 	$SUDO git -C "$DIR" reset --quiet --hard "origin/$BRANCH"
 else
-	step "Fetching agent-dive into $DIR"
+	step "Fetching squad into $DIR"
 	$SUDO mkdir -p "$(dirname "$DIR")"
 	$SUDO git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$DIR"
 fi
@@ -200,7 +200,7 @@ HOOK_SECRET=$HOOK_SECRET
 # Where the state lives, which compose reads from here to know what to mount and what to label the
 # plane with. It is also handed to the plane, so \`agent\` inside the container looks where the
 # socket actually is rather than where a server would have put it.
-AGENT_DIVE_STATE=$STATE
+SQUAD_STATE=$STATE
 ENV
 	$SUDO chmod 600 "$DIR/deploy/.env"
 	umask 022
@@ -294,14 +294,14 @@ fi
 # minute. The layer cache makes it nearly free when nothing has changed.
 step "Building"
 note "the sandbox image, which is what an agent runs inside"
-quietly $SUDO docker build -t agent-dive/sandbox:dev "$DIR/packages/sandbox/image" ||
+quietly $SUDO docker build -t squad/sandbox:dev "$DIR/packages/sandbox/image" ||
 	die "The sandbox image would not build."
 note "the control plane"
 $SUDO mkdir -p "$STATE"
 cd "$DIR/deploy"
 # Exported as well as written into .env, because an .env from an older install has no line for it
 # and the mount it would fall back to is not the one this run just made.
-quietly $SUDO env AGENT_DIVE_STATE="$STATE" docker compose up -d --build ||
+quietly $SUDO env SQUAD_STATE="$STATE" docker compose up -d --build ||
 	die "The control plane would not start."
 
 # The reason the machine is driven by typing `agent`, and the door a console on another computer
@@ -315,7 +315,7 @@ quietly $SUDO env AGENT_DIVE_STATE="$STATE" docker compose up -d --build ||
 if [ "$SHIM" = "yes" ]; then
 	$SUDO tee /usr/local/bin/agent >/dev/null <<AGENT
 #!/bin/sh
-# Written by agent-dive's installer. The console, the log feed and every subcommand come through
+# Written by squad's installer. The console, the log feed and every subcommand come through
 # here; it is the same line you would otherwise type by hand.
 cd "$DIR/deploy" || exit 1
 # Decided here rather than baked in when this was written, because the operator who installed it
@@ -333,7 +333,7 @@ AGENT
 fi
 
 step "Up"
-$SUDO docker ps --filter label=com.docker.compose.project=agent-dive \
+$SUDO docker ps --filter label=com.docker.compose.project=squad \
 	--format '  {{.Names}}  {{.Status}}'
 
 ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
@@ -347,7 +347,7 @@ if [ "$SHIM" = "yes" ]; then
 	note "agent logs               what every agent runs, answers and spends"
 	printf '\n'
 	note "From your own computer, the console is a package and this machine is an answer it keeps:"
-	note "  npm install -g agent-dive && agent"
+	note "  npm install -g squad && agent"
 	printf '\n'
 	note "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
 	note "that travels the SSH connection you already have here, so there is nothing to open on"
