@@ -6,7 +6,7 @@ import { ControlPlane, ControlServer } from "@squad/control-plane";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/cli.ts";
 import { writePlane } from "../src/plane.ts";
-import { authorizeKey, remoteInstall, settle } from "../src/setup.ts";
+import { authorizeKey, planeEnv, remoteInstall, settle } from "../src/setup.ts";
 
 describe("the console, driving the plane this operator chose", () => {
 	let home: string;
@@ -61,6 +61,28 @@ describe("the console, driving the plane this operator chose", () => {
 		expect(out).toContain("squad chat");
 		expect(out).toContain("squad connect");
 		expect(out).not.toMatch(/^\s+squad (run|relay)\b/m);
+	});
+
+	/**
+	 * The one command the plane has no version of.
+	 *
+	 * Everything else here is forwarded to the plane's own CLI, and this cannot be: half of what an
+	 * update replaces is the process that would be answering it.
+	 */
+	it("offers the update beside the commands that reach the plane", async () => {
+		await writePlane(home, { kind: "server", target: "me@vps" });
+		await cli(["help"]);
+		expect(out).toContain("squad update");
+		expect(out).toContain("your keys stay as they are");
+	});
+
+	// An update with nowhere to run it is the question `squad` asks on its first run, not an error:
+	// nothing was chosen, so there is nothing to say is out of date.
+	it("asks where the plane goes rather than failing when none was chosen", async () => {
+		Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+		await cli(["update"]);
+		expect(err).toContain("terminal");
+		expect(process.exitCode).toBe(1);
 	});
 
 	// Which machine, on the screen that lists what can be done to it.
@@ -124,6 +146,33 @@ describe("the install, as the far end is told to run it", () => {
 	it("says nothing about where things go on that machine", () => {
 		const said = remoteInstall({ SQUAD_DIR: "/tmp/here", SQUAD_STATE: "/tmp/state" });
 		expect(said).toBe("sh -s");
+	});
+});
+
+/**
+ * The same script, as this computer is told to run it — on the install and on every update after.
+ *
+ * The four are what keep a plane living beside its client from stepping on it, and they matter most
+ * on the second run: the first one is watched, and an update is the one an operator walks away from.
+ */
+describe("the install, as this computer is told to run it", () => {
+	it("puts the tree beside the client's own directory, and the state where the plane serves it", () => {
+		expect(planeEnv("/home/me/.squad", "/home/me/.squad/state")).toMatchObject({
+			SQUAD_DIR: "/home/me/.squad/src",
+			SQUAD_STATE: "/home/me/.squad/state",
+		});
+	});
+
+	// `squad` here is the client that is running right now. A shim written over it would take the
+	// console away from the thing that opened it — on an update, mid-command.
+	it("refuses the shim, because the name is already taken by what ran this", () => {
+		expect(planeEnv("/home/me/.squad", "/state").SQUAD_SHIM).toBe("no");
+	});
+
+	// The keys have a screen of their own in the console, and an update that stopped to ask for three
+	// of them would be an update that hangs on a terminal nobody is watching.
+	it("refuses the questions, because the console is where the keys are given", () => {
+		expect(planeEnv("/home/me/.squad", "/state").SQUAD_ASK).toBe("no");
 	});
 });
 

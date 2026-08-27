@@ -126,6 +126,25 @@ export function remoteInstall(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
+ * The other end of the same thing: the install, as this computer has to be told to run it.
+ *
+ * A server takes the script's defaults because where things go there is the server's own business.
+ * A plane living beside the client has to be told all four. The shim is refused because `squad` on
+ * this machine is the client that is running right now, and one written over it would take the
+ * console away from the thing that opened it. The questions are refused because the keys have a
+ * screen of their own in the console, and three secrets in the first minute is a worse first minute
+ * than an empty setup screen in the second one.
+ */
+export function planeEnv(home: string, stateDir: string): NodeJS.ProcessEnv {
+	return {
+		SQUAD_DIR: join(home, "src"),
+		SQUAD_STATE: stateDir,
+		SQUAD_SHIM: "no",
+		SQUAD_ASK: "no",
+	};
+}
+
+/**
  * The options that let ssh try the key and nothing else.
  *
  * Every connection this makes is opened with them, so that a machine which has the key never asks
@@ -334,15 +353,7 @@ async function here(home: string): Promise<Plane> {
 	note("The sandbox image, the plane, and Docker's part of it. This takes a few minutes.");
 	note(dim(`Everything it writes goes under ${home}.`));
 
-	const code = await pipe(await installer(), ["sh", "-s"], {
-		SQUAD_DIR: join(home, "src"),
-		SQUAD_STATE: stateDir,
-		// `squad` on this machine is the client that is running right now. A shim written over it
-		// would take the console away from the thing that opened it.
-		SQUAD_SHIM: "no",
-		// The keys have a screen of their own in the console, and this has a terminal it could ask on.
-		SQUAD_ASK: "no",
-	});
+	const code = await pipe(await installer(), ["sh", "-s"], planeEnv(home, stateDir));
 	if (code !== 0) throw new ControlError("The install did not finish. What it printed is above.");
 
 	return { kind: "here", stateDir };
@@ -406,7 +417,7 @@ async function there(): Promise<Plane> {
 	}
 
 	if (reached.code === 0) {
-		note("a plane is already there, so nothing was rebuilt");
+		note("a plane is already there, so nothing was rebuilt — `squad update` is what rebuilds one");
 	} else {
 		step(`Installing the plane on ${target}`);
 		note("Docker if it has none, the images, and the plane. This takes a few minutes.");
@@ -415,6 +426,26 @@ async function there(): Promise<Plane> {
 	}
 
 	return { kind: "server", target };
+}
+
+/**
+ * Puts what main holds today on the machine the plane is already on.
+ *
+ * The same script the install ran, because on the server half they were never two things: it pulls,
+ * rebuilds both images and swaps the plane in, and leaves config.yaml and .env exactly as they are.
+ * So this asks nothing — the machine was chosen once, and an update is not that question again.
+ */
+export async function updatePlane(plane: Plane, home: string): Promise<void> {
+	const where = plane.kind === "here" ? "this computer" : plane.target;
+	step(`Updating the plane on ${where}`);
+	note("The latest main, both images rebuilt, the plane swapped in. This takes a few minutes.");
+	note(dim("Your config and your keys are left where they are."));
+
+	const code =
+		plane.kind === "here"
+			? await pipe(await installer(), ["sh", "-s"], planeEnv(home, plane.stateDir))
+			: await pipe(await installer(), ["ssh", plane.target, remoteInstall()]);
+	if (code !== 0) throw new ControlError("The update did not finish. What it printed is above.");
 }
 
 /**

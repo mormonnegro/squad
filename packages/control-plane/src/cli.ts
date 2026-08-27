@@ -711,6 +711,18 @@ async function main(argv: readonly string[], remote?: Remote): Promise<number> {
 			return relay(args);
 		case undefined:
 			return console_(args);
+		// Named here only to answer it, because half of what an update replaces is the process that
+		// would be answering. So this is the one thing a plane cannot do to itself, and the operator
+		// who typed it on the machine is owed the two lines that do it rather than the whole usage.
+		case "update":
+			process.stderr.write(
+				"An update replaces this plane, so it is run from outside it:\n\n" +
+					"  squad update    in the console on your own computer, or on this machine\n" +
+					"  curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh\n\n" +
+					"Either one pulls the latest main, rebuilds and swaps the plane in, and leaves\n" +
+					"config.yaml and .env exactly as they are.\n",
+			);
+			return 1;
 		case "help":
 		case "--help":
 		case "-h":

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { addressee, parseArgs } from "../src/cli.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { addressee, cli, parseArgs } from "../src/cli.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 
 const summary = (id: string): AgentSummary => ({
@@ -72,5 +72,48 @@ describe("who the words after `wake` are for", () => {
 
 	it("does not queue a turn for an agent nobody runs", async () => {
 		await expect(addressee(plane(), ["hola"])).rejects.toThrow("This plane has no agents");
+	});
+});
+
+/**
+ * The one command this CLI is asked for and cannot do.
+ *
+ * On a server `squad` is a shim into this plane's container, so `squad update` typed on the machine
+ * lands here — and half of what an update replaces is the process it landed in. The answer is the
+ * two lines that do it, from outside.
+ */
+describe("an update, asked of the thing being updated", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		process.exitCode = 0;
+	});
+
+	const said = async (): Promise<string> => {
+		let text = "";
+		vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+			text += chunk.toString();
+			return true;
+		});
+		await cli(["update"]);
+		return text;
+	};
+
+	it("says where an update is run from, rather than that there is no such command", async () => {
+		const text = await said();
+		expect(text).toContain("outside it");
+		expect(text).toContain("install.sh");
+		expect(text).not.toContain("Unknown command");
+	});
+
+	// The whole usage under it would bury the two lines worth reading, and none of those commands is
+	// the answer to what was asked.
+	it("answers with the two ways and not with every other command", async () => {
+		expect(await said()).not.toContain("squad relay");
+	});
+
+	// Nothing was updated, and a shell that was told otherwise is one that would go on to deploy.
+	it("fails, because nothing was rebuilt", async () => {
+		await said();
+		expect(process.exitCode).toBe(1);
 	});
 });

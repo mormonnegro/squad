@@ -1,7 +1,7 @@
 import { ControlError, type Dial, dialLocal } from "@squad/control-plane";
 import { cli as planeCli } from "@squad/control-plane/cli";
 import { clientHome, describePlane, type Plane, readPlane, writePlane } from "./plane.ts";
-import { pickPlane, settle } from "./setup.ts";
+import { pickPlane, settle, updatePlane } from "./setup.ts";
 import { dialOverSsh } from "./ssh.ts";
 
 /**
@@ -26,6 +26,8 @@ function usage(plane: Plane | undefined): string {
   squad connect                where the agents live: a plane on this computer, or
                                one on a machine you have SSH to. Asked on the first
                                run and remembered — run it again to move
+  squad update                 put the latest squad on your plane, wherever it is.
+                               Your agents, your config and your keys stay as they are
   squad help                   this
 
 ${plane === undefined ? "Nowhere yet: the first `squad` asks where." : `Your plane is ${describePlane(plane)}.`}`;
@@ -77,6 +79,23 @@ export async function cli(argv: readonly string[]): Promise<void> {
 		if (process.platform === "win32") {
 			throw new ControlError("This drives ssh and sh, which Windows has no version of. Use WSL.");
 		}
+		// The one command the plane has no version of: it is about the plane rather than for it, and
+		// half of what it rebuilds is the thing that would be answering.
+		if (command === "update") {
+			// Nowhere yet is not a failure here. An install puts the latest main there, which is the
+			// whole of what was asked for — asking where, building one, and rebuilding it a minute
+			// later would be the same minute twice.
+			const known = await readPlane(home);
+			if (known === undefined) {
+				await chosen(home);
+				return;
+			}
+			await updatePlane(known, home);
+			await settle(dialFor(known, home));
+			process.stdout.write("\n  Up to date. `squad` opens the console on it.\n\n");
+			return;
+		}
+
 		// Choosing is also connecting: the operator who just said where the plane goes wants to be in
 		// front of it, not back at a prompt being told it worked.
 		const plane =

@@ -151,7 +151,8 @@ a terminal rather than down a pipe, it asks for the keys the proxy will hold as 
 `SQUAD_DIR`, `SQUAD_STATE` and `SQUAD_SHIM` are the three things the console
 overrides when the plane is going to live alongside it, which is the whole of the difference between
 a laptop and a VPS. Running it again is the update: it pulls, rebuilds and swaps the plane in, and
-never touches `config.yaml` or `.env`.
+never touches `config.yaml` or `.env`. `squad update` runs that same script on whichever machine the
+plane is on, so the update is one word from the computer you already type at.
 
 By hand, which is the same thing without the questions:
 
@@ -199,6 +200,7 @@ squad wake "check the open issues"       take one turn, and wait for the answer
 squad logs                               follow what every agent runs, answers and spends
 squad rm demo [--purge]                  take the sandbox away, and with --purge the repository
 squad connect                            ask again where the agents should live
+squad update                             put the latest squad on the plane, wherever it is
 squad help                               the rest
 ```
 

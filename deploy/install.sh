@@ -363,5 +363,6 @@ note "The config is read when the plane starts, so an edit takes hold on:"
 note "  cd $DIR/deploy && docker compose restart control-plane"
 printf '\n'
 note "And this same command again, any time, is the update: it pulls, rebuilds and swaps the"
-note "plane in, and never touches config.yaml or .env."
+note "plane in, and never touches config.yaml or .env. \`squad update\`, from the console on"
+note "your own computer, runs it here for you."
 printf '\n'

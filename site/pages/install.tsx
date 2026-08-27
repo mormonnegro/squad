@@ -166,6 +166,12 @@ $ curl -fsSL ${INSTALL} | sh
 						again. <code>squad connect</code> asks again, and the installer prints your own address
 						when it finishes so there is nothing to go and look up.
 					</p>
+					<p className="small muted">
+						Running that installer again is the update, and <code>squad update</code> runs it on
+						whichever machine the plane is on. It pulls the latest, rebuilds both images and swaps
+						the plane in; <code>config.yaml</code> and <code>.env</code> are left exactly as they
+						are, so nothing you granted or gave it goes away.
+					</p>
 				</div>
 			</section>
 
