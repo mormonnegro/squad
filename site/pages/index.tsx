@@ -1,9 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Code } from "../components/Code";
 import { Console } from "../components/Console";
 import { Feed, type FeedRow } from "../components/Feed";
 import { Layout } from "../components/Layout";
-import { PI, REPO, TAGLINE } from "../lib/site";
+import { CLIENT, PI, REPO, TAGLINE } from "../lib/site";
 
 const FEED: FeedRow[] = [
 	{ at: "18:12:53", who: "maxi", action: "bash", detail: "pnpm -r test" },
@@ -155,13 +156,20 @@ export default function Home() {
 				<div className="wrap">
 					<h1>squad</h1>
 					<p className="lede">{TAGLINE}</p>
-					<div className="jump-row">
-						<Link href="/install" className="jump jump-lead">
-							self-host it →
-						</Link>
-						<Link href="/install#a-machine" className="jump">
-							no machine? one is $5 a month
-						</Link>
+					<div className="hero-install">
+						<Code label="on your laptop" wrap>{`
+$ curl -fsSL ${CLIENT} | sh
+$ squad
+`}</Code>
+						<p className="small">
+							It asks one question: where the agents should live. <strong>On this computer</strong>,
+							or <strong>on a server</strong> you have SSH to — it installs itself there over the
+							connection you already have. The console you type at stays here either way.
+						</p>
+						<p className="small muted">
+							Node 22.18 or newer, and nothing else. <Link href="/install">What it does</Link>, and
+							if you have no server yet, <Link href="/install#a-machine">one is $5 a month</Link>.
+						</p>
 					</div>
 					<div className="hero-meta">
 						<span>On a machine of your own</span>

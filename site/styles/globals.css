@@ -254,6 +254,11 @@ code {
 	color: var(--line);
 }
 
+.hero-install {
+	max-width: 38rem;
+	margin-top: 1.8rem;
+}
+
 .hero-console {
 	margin-top: 2.8rem;
 }
@@ -267,6 +272,10 @@ code {
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	overflow: hidden;
+}
+
+.hero-install .code {
+	margin-bottom: 0.8rem;
 }
 
 .code-head {
@@ -999,12 +1008,6 @@ footer {
 .jump:hover {
 	border-color: var(--green);
 	color: var(--green);
-}
-
-/* Of the two doors in the hero, the one most people are already standing at. */
-.jump-lead {
-	color: var(--green);
-	border-color: color-mix(in srgb, var(--green) 40%, var(--line));
 }
 
 .jump-row {
