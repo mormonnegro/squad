@@ -65,24 +65,10 @@ const REMEMBERED_LINES = 2000;
 const AGENTS_WIDTH = 24;
 
 /**
- * The two reach marks and the space before them, which every agent row spends whatever it has on it.
- *
- * Two columns each, because they are emoji and a terminal draws those double-wide. That is what they
- * cost over a glyph from the same alphabet as the mark beside them, and what is bought is a picture
- * of a postbox instead of a shape somebody has to be told the meaning of once and remember after.
+ * What a row has left for the name and its numbers, once the border, the padding and the mark that
+ * says whether it is up are paid.
  */
-const REACH_ROOM = 5;
-
-/**
- * What a row has left for the name and its numbers, once the border, the padding, the mark that says
- * whether it is up and the two that say who can reach it are paid.
- *
- * The reach marks are taken off every row rather than dropped from the tight ones, because a column
- * is scanned down: marks that appear on the rows with short names and go missing on the rest are
- * not a column at all, and the question they answer — which of these has a bot — is asked of the
- * whole list at once.
- */
-const ROW_ROOM = AGENTS_WIDTH - 6 - REACH_ROOM;
+const ROW_ROOM = AGENTS_WIDTH - 6;
 
 /**
  * What the chat has to fit into: the terminal, less the agents column and the pane's own border.
@@ -128,47 +114,42 @@ const MARKS = {
 	stopped: { glyph: "○", color: "gray" },
 } as const;
 
-/** A mark as a row draws it: a glyph, and the colour that is the other half of what it says. */
+/** A mark as the title row draws it: a glyph, and the colour of the words that follow it. */
 export interface Mark {
 	readonly glyph: string;
 	readonly color: string;
-	readonly dimColor: boolean;
 }
 
-/**
- * The mark for a way in an agent has not been given: the room one takes, and nothing in it.
- *
- * Blank rather than a dot standing in for it. With glyphs a column wide a dot was what made the
- * marks read as a column at all; at two columns each the emoji are their own alignment, and a row
- * of placeholders for the things an agent has not got is a row of noise to look past.
- */
-const UNREACHED: Mark = { glyph: "  ", color: "gray", dimColor: true };
+/** The mark for a way in an agent has not been given, which is nothing: there is no line to draw. */
+const UNREACHED: Mark = { glyph: "", color: "gray" };
 
 /**
- * How an agent can be spoken to, in the columns beside the mark that says whether it is up.
+ * How an agent can be spoken to, for the title row over its conversation.
  *
- * The state is in the drawing rather than in the colour, which is what changed when these became
- * emoji: a terminal paints a glyph that brings its own colours in those, and a yellow that never
- * arrives is a warning nobody gets. So the half-connected have a glyph of their own — the link for
- * a bot whose token was pasted and whose link nobody ever tapped, and the closed box for a mailbox
- * that takes an agent's mail and leaves it no way to answer. Both of those look exactly like
- * working from every other screen in this console, and both are somebody's afternoon.
+ * These were in the column too, one pair beside every name, and that is what they are not any more.
+ * Two glyphs between the mark that says whether an agent is up and the name being looked for put
+ * three things to read in front of the one being scanned for, and the answer they gave — which of
+ * these has a bot — is not a question asked six times a minute. In the title row the same fact
+ * arrives with the username and the address attached, which is what somebody actually wants once
+ * they have wondered at all.
  *
- * The colour is still carried, for the title row: there the piece is a username and an address,
- * which are words, and words take a colour the way these no longer can.
+ * The half-connected are a glyph of their own rather than a colour, because a terminal paints an
+ * emoji in the colours it comes with: the link for a bot whose token was pasted and whose link
+ * nobody ever tapped, and the closed box for a mailbox that takes an agent's mail and leaves it no
+ * way to answer. Both look exactly like working from every other screen in this console.
  */
 export function reached(agent: AgentSummary): readonly [Mark, Mark] {
 	return [
 		agent.bot === undefined
 			? UNREACHED
 			: agent.bot.paired
-				? { glyph: "🤖", color: "green", dimColor: false }
-				: { glyph: "🔗", color: "yellow", dimColor: false },
+				? { glyph: "🤖", color: "green" }
+				: { glyph: "🔗", color: "yellow" },
 		agent.mail === undefined
 			? UNREACHED
 			: agent.mail.writes
-				? { glyph: "📬", color: "gray", dimColor: false }
-				: { glyph: "📪", color: "yellow", dimColor: false },
+				? { glyph: "📬", color: "gray" }
+				: { glyph: "📪", color: "yellow" },
 	];
 }
 
@@ -789,17 +770,16 @@ function room(said: Standing): number {
  * only one of them fits. Nothing is truncated to a stump — a `deepseek-v4-fl…` is a fact half said,
  * and a row that says less is easier to read than a row that says everything badly.
  *
- * The two addresses go before either of those, in that order, because they are the longest things
- * here and the least perishable: where an agent is reached does not change while you watch it, and
- * the column beside this row has already said whether it has each of them. What this row adds is
- * which bot and which address, and that is a thing you look up once and then know.
+ * The two addresses go before either of those, in that order, because this is the only place they
+ * are said at all: the column beside this row is a name and a number, and where an agent can be
+ * reached is not something anybody asks of six agents at once. It is looked up about one of them,
+ * on the row over the conversation being had with it, and then known.
  */
 export function standing(agent: AgentSummary, had: number): Standing {
 	const spent = money(agent.spentUsd);
 	const full = agent.limitUsd === undefined ? spent : `${spent} / ${money(agent.limitUsd)}`;
-	// The same glyph the column drew, so the row is the mark read out rather than a second notation.
-	// Two columns wide and two units long, which is the one thing that lets the room below be counted
-	// in characters the way every other piece here is.
+	// Two columns wide and two units long, which is what lets the room below be counted in characters
+	// the way every other piece of this row is.
 	const [botMark, mailMark] = reached(agent);
 	const bot = agent.bot?.username === undefined ? "" : `${botMark.glyph} @${agent.bot.username}`;
 	const mail = agent.mail === undefined ? "" : `${mailMark.glyph} ${agent.mail.address}`;
@@ -943,16 +923,10 @@ export function Column({
 			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
 			const here = index === cursor;
 			const row = laid(agent);
-			// Beside the mark rather than after the name, which is the only place in a column this narrow
-			// where they line up: the name is as long as somebody made it and the numbers are pinned to
-			// the far edge, so anything between the two is at a different column on every row.
-			const [bot, mail] = reached(agent);
 			return h(
 				Text,
 				{ key: agent.id, wrap: "truncate" },
 				h(Text, { color: mark.color }, mark.glyph),
-				h(Text, { color: bot.color, dimColor: bot.dimColor }, ` ${bot.glyph}`),
-				h(Text, { color: mail.color, dimColor: mail.dimColor }, mail.glyph),
 				h(Text, pointed(here, agent.running), ` ${row.name}`),
 				row.gap === "" ? undefined : row.gap,
 				// An agent that booked its own next turn is going to act while nobody is watching, which is
@@ -3971,10 +3945,10 @@ export function App({
 					h(Box, { flexGrow: 1, key: "gap" }),
 					state.bot === "" || botMark === undefined
 						? null
-						: h(Text, { color: botMark.color, dimColor: botMark.dimColor }, `${state.bot}   `),
+						: h(Text, { color: botMark.color }, `${state.bot}   `),
 					state.mail === "" || mailMark === undefined
 						? null
-						: h(Text, { color: mailMark.color, dimColor: mailMark.dimColor }, `${state.mail}   `),
+						: h(Text, { color: mailMark.color }, `${state.mail}   `),
 					state.model === "" ? null : h(Text, { dimColor: true }, `${state.model}   `),
 					state.spend === "" ? null : h(Text, heat, state.spend),
 				),

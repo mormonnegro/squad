@@ -820,9 +820,9 @@ describe("Column", () => {
 			}),
 		);
 
-		expect(drawn).toContain("●      scout");
-		expect(drawn).toContain("◐      scribe");
-		expect(drawn).toContain("○      sleeper");
+		expect(drawn).toContain("● scout");
+		expect(drawn).toContain("◐ scribe");
+		expect(drawn).toContain("○ sleeper");
 	});
 
 	// The list is what you read while an answer streams past it, and one that resizes as it streams
@@ -1057,10 +1057,11 @@ describe("Column", () => {
 		expect(drawn).not.toContain("0.0004");
 	});
 
-	// The question asked of this column is which of six agents has a bot at all, and that is asked of
-	// the list rather than of a row: marks that started at a different column on every line would be
-	// read one at a time, which is the thing a mark is for instead of a word.
-	it("leaves the room for a way in an agent has not got, so the names still line up", () => {
+	// These were drawn here, between the mark that says whether an agent is up and its name, and that
+	// put three things to read in front of the one thing this column is scanned for. Which agents have
+	// a bot is not a question asked of a list six times a minute; it is asked about one agent, and the
+	// row over that agent's conversation is where it is answered.
+	it("says nothing about how an agent is reached, whatever it has", () => {
 		const drawn = renderToString(
 			h(Column, {
 				agents: [
@@ -1079,7 +1080,8 @@ describe("Column", () => {
 			.split("\n")
 			.map(bare);
 
-		expect(drawn.find((row) => row.includes("ana"))).toContain("🤖📬");
+		expect(drawn.find((row) => row.includes("ana"))).toContain("● ana");
+		expect(drawn.join("")).not.toMatch(/[🤖📬🔗📪]/u);
 		expect(drawn.find((row) => row.includes("ana"))?.indexOf("ana")).toBe(
 			drawn.find((row) => row.includes("beto"))?.indexOf("beto"),
 		);
@@ -1121,7 +1123,7 @@ describe("reached", () => {
 
 	// The colour is what the title row paints the username and the address in, where the piece is
 	// words rather than a picture. An account the plane connected once is an address for every agent
-	// it has, so a colour on a working mailbox would be six rows saying the same thing.
+	// it has, so a colour on a working mailbox would be one more thing lit up for nothing.
 	it("carries the colour the title row says a name in", () => {
 		expect(reached(agent)[0].color).toBe("green");
 		expect(reached({ ...agent, bot: { username: "demo_bot", paired: false } })[0].color).toBe(
@@ -1130,12 +1132,12 @@ describe("reached", () => {
 		expect(reached(agent)[1].color).toBe("gray");
 	});
 
-	// Two columns of room, because the marks beside it take two each and a row that gave the space
-	// back would put its name where no other row has one.
-	it("leaves the room for a way in an agent has not been given", () => {
+	// Nothing rather than a blank held open: there is no column of these any more, so a way in an
+	// agent has not been given is a piece of the title row that is simply not drawn.
+	it("draws nothing for a way in an agent has not been given", () => {
 		const [bot, mail] = reached({ ...agent, bot: undefined, mail: undefined });
 
-		expect([bot.glyph, mail.glyph]).toEqual(["  ", "  "]);
+		expect([bot.glyph, mail.glyph]).toEqual(["", ""]);
 	});
 });
 
