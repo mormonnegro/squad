@@ -172,12 +172,16 @@ const THINKING = "thinking";
 
 // The clock the pane is printed on, in characters: one unit is one character of a streamed line, a
 // line a person types is charged more per character, and a line that arrives lands whole after a beat.
-const MS = 6;
+//
+// An answer lands at about thirty characters a second, which is a shade faster than the same line is
+// read — printed at reading speed exactly you are always waiting on the cursor, and printed at the
+// speed a model really streams there is nothing to read, only a paragraph appearing.
+const MS = 30;
 const BEAT = 26;
-const TYPED = 2.4;
+const TYPED = 1.8;
 const ALL = Number.POSITIVE_INFINITY;
 /** How many units of that clock one frame of the spinner lasts, so it turns at a terminal's pace. */
-const SPIN = 13;
+const SPIN = 3;
 
 /**
  * How long until an instant, in the coarsest unit that still says it — `until` in console.ts, which
@@ -264,7 +268,11 @@ export function Console() {
 				}
 			}
 			const start = at;
-			at += "said" in line ? line.said.length * TYPED : "via" in line ? BEAT : line.text.length;
+			// A line that arrived lands whole rather than a character at a time, so the clock is the only
+			// thing that can give it its reading: a beat for the arriving, and then as long as printing
+			// it would have taken before anything else moves.
+			at +=
+				"said" in line ? line.said.length * TYPED : line.text.length + ("via" in line ? BEAT : 0);
 			return { line, start };
 		});
 		return { lines, steps, from, total: at };
