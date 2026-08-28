@@ -3565,12 +3565,11 @@ export function App({
 		}
 		if (key.downArrow) {
 			// Down that list stops at the end of it instead of carrying on round to the first agent:
-			// reading to the bottom of something is not a way of asking to be somewhere else. It stops on
-			// the way in too, on the column's own last row: a walk down the column ends where the column
-			// does, and the list beside it is stepped into on purpose or not at all.
-			if (panel === "config") {
-				if (onRow >= 0) setWhere(Math.min(walk.length - 1, onRow + 1));
-			} else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
+			// reading to the bottom of something is not a way of asking to be somewhere else. The column
+			// is the other case: it is a ring both ways, so the row past the config screen is the first
+			// agent again, exactly as the row above the first agent is the config screen.
+			if (panel === "config" && onRow >= 0) setWhere(Math.min(walk.length - 1, onRow + 1));
+			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
 			else setSpot((prev) => walked(prev, 1, agents.length));
 			return;
 		}

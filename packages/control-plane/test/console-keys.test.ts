@@ -475,10 +475,10 @@ describe("the console, pressed at", () => {
 
 	/**
 	 * The config screen draws a list of its own, and arriving beside it is not the same as being in
-	 * it: the walk down the column ends on the row that opens the screen, and the key that got there
-	 * still walks the column until something says to hand it over.
+	 * it: the key that walked down the column keeps walking it, round to the first agent, until
+	 * something says to hand it over.
 	 */
-	it("leaves the arrows on the column when the walk down reaches the config screen", async () => {
+	it("carries on round the column when the walk down reaches the config screen", async () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
@@ -486,9 +486,8 @@ describe("the console, pressed at", () => {
 			expect(showing(console_.screen())).toBe("config");
 
 			await console_.press(DOWN);
-			await console_.press(DOWN);
 
-			expect(showing(console_.screen())).toBe("config");
+			expect(showing(console_.screen())).toBe("demo");
 			expect(console_.screen()).toContain("↑↓ moves");
 		} finally {
 			console_.close();
