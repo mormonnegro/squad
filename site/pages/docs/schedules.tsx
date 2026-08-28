@@ -41,8 +41,8 @@ schedules:
 				<span className="eyebrow">The one it books</span>
 				<h2>wake_me asks for another turn and leaves itself a note</h2>
 				<Screen>{`
-00:12:36  demo      wake_me     {"afterSeconds":180,"note":"Volver a chequear si example.com sigue
-                                arriba. Primera verificación: HTTP 200 a las 00:12."}
+00:12:36  demo      wake_me     {"afterSeconds":180,"note":"Check whether example.com is still up.
+                                First check: HTTP 200 at 00:12."}
 00:15:38  demo      bash        curl -sS -o /dev/null -w "HTTP %{http_code}" -m 15 https://example.com
 `}</Screen>
 				<p>

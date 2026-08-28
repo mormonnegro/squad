@@ -24,7 +24,7 @@ const FEED: FeedRow[] = [
 		failed: true,
 		detail: "denied GET api.github.com/repos — no_matching_host",
 	},
-	{ at: "18:12:53", who: "maxi", action: "answer", detail: "El test esperaba el mensaje viejo." },
+	{ at: "18:12:53", who: "maxi", action: "answer", detail: "The test asserted the old message." },
 	{
 		at: "18:12:53",
 		who: "maxi",

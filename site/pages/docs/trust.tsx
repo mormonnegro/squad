@@ -94,12 +94,12 @@ export default function Trust() {
 				<span className="eyebrow">And it is visible</span>
 				<h2>Everything not typed at the console wears a mark</h2>
 				<Screen>{`
-> ¿cómo va la cola?
-cuatro issues abiertos, ninguno bloqueado.
-‹wake› volver a chequear la cola
-sigue igual.
-‹email› ¿y el build?
-‹→ email› verde desde anoche.
+> how is the queue looking?
+four issues open, none of them blocked.
+‹wake› check the queue again
+still the same.
+‹email› and the build?
+‹→ email› green since last night.
 ‹webhook:github› the nightly build failed on main
 `}</Screen>
 				<p>

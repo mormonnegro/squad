@@ -231,13 +231,13 @@ asking to see the thing, not to be told a fact about it:
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
 │ agents               ││ demo                         deepseek-v4-flash   $0.42 / $5.00 │
 │                      ││                                                                │
-│ ◐ demo         $0.42 ││ > que es un webhook                                            │
+│ ◐ demo         $0.42 ││ > what is a webhook                                            │
 │ ● maxi     15m $4.80 ││                                                                │
-│ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
-│                      ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
-│ + new agent          ││ envía una petición HTTP a una URL configurada.                 │
+│ ○ scout              ││ A webhook is one service telling another that something        │
+│                      ││ happened: when an event fires, the first sends an HTTP         │
+│ + new agent          ││ request to a URL you configured.                               │
 │                      ││ ⠹ 9s search webhook retry semantics                            │
-│ logs                 ││ ⋯ y cada cuanto reintenta?                                     │
+│ logs                 ││ ⋯ and how often does it retry?                                 │
 │ config               ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ >                                                          │ │
@@ -571,12 +571,12 @@ turn nobody at a keyboard started appears there too — a schedule coming due, a
 message you sent by mail, an agent waking itself — with a mark saying where it came from:
 
 ```
-> ¿cómo va la cola?
-cuatro issues abiertos, ninguno bloqueado.
-‹wake› volver a chequear la cola
-sigue igual.
-‹email› ¿y el build?
-‹→ email› verde desde anoche.
+> how is the queue looking?
+four issues open, none of them blocked.
+‹wake› check the queue again
+still the same.
+‹email› and the build?
+‹→ email› green since last night.
 ‹webhook:github› the nightly build failed on main
 ```
 
@@ -632,7 +632,7 @@ spent.
 18:12:53  maxi      bash      ✗ after 12.4s: FAIL test/turn.test.ts > carries the failure detail
 18:12:53  maxi      read        packages/control-plane/src/turn.ts
 18:12:53  scout     egress    ✗ denied GET api.github.com/repos — no_matching_host
-18:12:53  maxi      answer      El test esperaba el mensaje viejo.
+18:12:53  maxi      answer      The test asserted the old message.
 18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12
 ```
 
@@ -1026,8 +1026,8 @@ now — a pi extension shipped in the sandbox image, so it is the plane's to fix
 agent's to edit — that asks for another turn and leaves itself a note to be told then:
 
 ```
-00:12:36  demo      wake_me     {"afterSeconds":180,"note":"Volver a chequear si example.com sigue
-                                arriba. Primera verificación: HTTP 200 a las 00:12."}
+00:12:36  demo      wake_me     {"afterSeconds":180,"note":"Check whether example.com is still up.
+                                First check: HTTP 200 at 00:12."}
 00:15:38  demo      bash        curl -sS -o /dev/null -w "HTTP %{http_code}" -m 15 https://example.com
 ```
 

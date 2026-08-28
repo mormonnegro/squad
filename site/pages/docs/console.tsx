@@ -91,13 +91,13 @@ export default function Console() {
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
 │ agents               ││ demo                         deepseek-v4-flash   $0.42 / $5.00 │
 │                      ││                                                                │
-│ ◐ demo         $0.42 ││ > que es un webhook                                            │
+│ ◐ demo         $0.42 ││ > what is a webhook                                            │
 │ ● maxi     15m $4.80 ││                                                                │
-│ ○ scout              ││ Un webhook es una forma de comunicación automática entre       │
-│                      ││ servicios: cuando ocurre un evento en un sistema, ese sistema  │
-│ + new agent          ││ envía una petición HTTP a una URL configurada.                 │
+│ ○ scout              ││ A webhook is one service telling another that something        │
+│                      ││ happened: when an event fires, the first sends an HTTP         │
+│ + new agent          ││ request to a URL you configured.                               │
 │                      ││ ⠹ 9s search webhook retry semantics                            │
-│ logs                 ││ ⋯ y cada cuanto reintenta?                                     │
+│ logs                 ││ ⋯ and how often does it retry?                                 │
 │ config               ││                                                                │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ >                                                          │ │
@@ -257,12 +257,12 @@ exit 56
 				<span className="eyebrow">Where a turn came from</span>
 				<h2>Everything not typed here wears a mark</h2>
 				<Screen>{`
-> ¿cómo va la cola?
-cuatro issues abiertos, ninguno bloqueado.
-‹wake› volver a chequear la cola
-sigue igual.
-‹email› ¿y el build?
-‹→ email› verde desde anoche.
+> how is the queue looking?
+four issues open, none of them blocked.
+‹wake› check the queue again
+still the same.
+‹email› and the build?
+‹→ email› green since last night.
 ‹webhook:github› the nightly build failed on main
 `}</Screen>
 				<p>
@@ -294,7 +294,7 @@ sigue igual.
 18:12:53  maxi      bash      ✗ after 12.4s: FAIL test/turn.test.ts > carries the failure detail
 18:12:53  maxi      read        packages/control-plane/src/turn.ts
 18:12:53  scout     egress    ✗ denied GET api.github.com/repos — no_matching_host
-18:12:53  maxi      answer      El test esperaba el mensaje viejo.
+18:12:53  maxi      answer      The test asserted the old message.
 18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12
 `}</Screen>
 				<p>
