@@ -8,26 +8,26 @@ import { Screen } from "../components/Screen";
 import { CLIENT, REPO, TAGLINE } from "../lib/site";
 
 const FEED: FeedRow[] = [
-	{ at: "18:12:53", who: "maxi", action: "bash", detail: "pnpm -r test" },
+	{ at: "18:12:53", who: "builds", action: "bash", detail: "pnpm -r test" },
 	{
 		at: "18:12:53",
-		who: "maxi",
+		who: "builds",
 		action: "bash",
 		failed: true,
 		detail: "after 12.4s: FAIL test/turn.test.ts > carries the failure detail",
 	},
-	{ at: "18:12:53", who: "maxi", action: "read", detail: "packages/control-plane/src/turn.ts" },
+	{ at: "18:12:53", who: "builds", action: "read", detail: "packages/control-plane/src/turn.ts" },
 	{
 		at: "18:12:53",
-		who: "scout",
+		who: "market",
 		action: "egress",
 		failed: true,
 		detail: "denied GET api.github.com/repos — no_matching_host",
 	},
-	{ at: "18:12:53", who: "maxi", action: "answer", detail: "The test asserted the old message." },
+	{ at: "18:12:53", who: "builds", action: "answer", detail: "The test asserted the old message." },
 	{
 		at: "18:12:53",
-		who: "maxi",
+		who: "builds",
 		action: "spent",
 		detail: "1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12",
 	},

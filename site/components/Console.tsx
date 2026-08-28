@@ -12,6 +12,11 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { useReveal } from "../lib/reveal";
 
+// One line of the pane, in the order it appeared: typed at this console, arrived from a channel, or
+// the agent answering. A case is a sequence rather than a question and an answer, because what a
+// visitor is deciding about is the middle — the part where nobody was at the keyboard.
+type Line = { said: string } | { via: string; text: string } | { text: string; to?: string };
+
 // One agent per job, because that is what a plane looks like: the sidebar is the set of examples,
 // and every case opens with the thing an operator asked for — the part a visitor is deciding about.
 type Use = {
@@ -24,32 +29,35 @@ type Use = {
 	next?: string | { day: number; hour: number };
 	model: string;
 	limit: string;
-	// The channel the ask arrived by, when it was not typed at this console.
-	via?: string;
-	ask: string;
-	// What fired this particular turn, days after the ask: its own wakeup, or something outside.
-	woke?: [string, string];
+	lines: [Line, ...Line[]];
 	// What it reached for, as the row under the conversation says it: what it is, and what it is on.
+	// They belong to the last turn of the case, which is the one the pane is still printing.
 	steps?: [string, string][];
 	// How long the turn took, for the clock that row carries.
 	took?: number;
-	// Where the answer went, when it went anywhere but this pane.
-	to?: string;
-	reply: string[];
 	// Typed at it while it was still working, and waiting where the hand left it.
 	queued?: string;
 };
 
 const USES: [Use, ...Use[]] = [
 	{
-		name: "rival",
+		name: "market",
 		label: "track a competitor",
 		spend: "$1.10",
 		next: { day: 1, hour: 8 },
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
-		ask: "every monday at 8, diff the other three's pricing and changelogs and mail me what moved",
-		woke: ["wake", "monday: diff the three, mail what moved"],
+		lines: [
+			{ said: "every monday at 8, check the other three's pricing and mail me what moved" },
+			{
+				text: "Booked for mondays at 8. I write down what they say each week, so next monday there is something to compare it against.",
+			},
+			{ via: "wake", text: "monday 08:00 · diff the three, mail what moved" },
+			{
+				to: "email",
+				text: "Two moved. One put a seat price on the plan that was flat before, at $29; the other took the free tier down to a trial and said so nowhere but the pricing page.",
+			},
+		],
 		steps: [
 			["fetch", "three pricing pages, three changelogs"],
 			["read", "memory/reference/rivals.md"],
@@ -57,20 +65,27 @@ const USES: [Use, ...Use[]] = [
 			["email", "you · “Monday: two of them moved”"],
 		],
 		took: 192,
-		to: "email",
-		reply: [
-			"Two moved. One put a seat price on the plan that was flat before, at $29; the other took the free tier down to a trial and said so nowhere but the pricing page.",
-		],
 	},
 	{
-		name: "ci",
+		name: "builds",
 		label: "fix a failing check",
 		spend: "$4.80",
 		heat: "warn",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
-		ask: "when checks fail on a pull request, find out why and fix it",
-		woke: ["github", "pull_request #212 · checks failed"],
+		lines: [
+			{ said: "when a check fails on a pull request, work out why and fix it" },
+			{
+				text: "Watching. GitHub calls my webhook the moment one goes red, and that is what wakes me — nobody has to be at this console.",
+			},
+			{ via: "github", text: "pull_request #212 · checks failed" },
+			{
+				text: "The new test asserts the error string I changed on Tuesday, not the behaviour. Fixed the assertion, pushed to the branch, and said as much on the pull request.",
+			},
+			{
+				text: "The issue body it came from is quoted, never obeyed — nobody who can open a pull request can give me an instruction.",
+			},
+		],
 		steps: [
 			["bash", "pnpm -r test"],
 			["read", "packages/control-plane/src/turn.ts"],
@@ -79,55 +94,72 @@ const USES: [Use, ...Use[]] = [
 		],
 		took: 98,
 		queued: "does the same test fail on main?",
-		reply: [
-			"The new test asserts the error string I changed on Tuesday, not the behaviour. Fixed the assertion, pushed to the branch, and said as much on the pull request.",
-			"The issue body it came from is quoted, never obeyed — nobody who can open a pull request can give me an instruction.",
-		],
 	},
 	{
-		name: "desk",
-		label: "connect an MCP",
-		spend: "$0.42",
-		model: "deepseek-v4-flash",
-		limit: "$5.00",
-		ask: "/mcp add linear",
-		reply: [
-			"Connected. It runs in the sandbox next to notion and playwright, and reaches Linear through the proxy — which is what holds the key. The agent got the tool, never the secret.",
-			"On the shelf: github, sentry, slack, postgres, stripe. Nothing was woken to answer this, and nothing was spent.",
-		],
-	},
-	{
-		name: "errand",
-		label: "from your phone",
+		name: "deploy",
+		label: "connect Telegram",
 		spend: "$0.18",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
-		via: "telegram",
-		ask: "deploy the site when CI goes green",
-		woke: ["wake", "check CI again"],
+		lines: [
+			{ said: "/telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw" },
+			{
+				text: "@squad_deploy_bot is deploy's bot. Nobody is paired to it yet — open t.me/squad_deploy_bot?start=kqm3nvbh27, press Start, and it is yours.",
+			},
+			{ via: "telegram", text: "deploy the site when CI goes green" },
+			{ via: "wake", text: "check CI again" },
+			{
+				to: "telegram",
+				text: "Green at 09:12, and it is live. I answered in the thread you wrote from — anyone else on that bot is heard, not obeyed.",
+			},
+		],
 		steps: [
 			["bash", "gh run watch"],
 			["bash", "./deploy.sh"],
 		],
 		took: 242,
-		to: "telegram",
-		reply: [
-			"Green at 09:12, and it is live. I answered in the thread you wrote from — anyone else on this bot is heard, not obeyed.",
-		],
 	},
 	{
-		name: "ops",
+		name: "tickets",
+		label: "connect an MCP",
+		spend: "$0.42",
+		model: "deepseek-v4-flash",
+		limit: "$5.00",
+		lines: [
+			{ said: "/mcp add linear https://mcp.linear.app/mcp" },
+			{
+				text: "“linear” is on the shelf, and this agent has it. It wants an account first: /mcp login linear",
+			},
+			{ said: "/mcp login linear" },
+			{
+				text: "Logged in at the consent screen in your browser. The token stays with the plane and goes on the wire at the proxy — the agent got the tool, never the key.",
+			},
+			{ said: "open a bug for the check that failed on #212" },
+			{
+				text: "ENG-418, with the failing test's name and a link to the run. Also on the shelf: github, sentry, slack, postgres, stripe.",
+			},
+		],
+		steps: [["linear", "create_issue · ENG"]],
+		took: 11,
+	},
+	{
+		name: "server",
 		label: "ask it anything",
 		spend: "$0.06",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
-		ask: "what is eating the disk on this box",
-		steps: [["bash", "df -h && docker system df"]],
-		took: 18,
-		reply: [
-			"38 of the 40 GB is /var/lib/docker, and 21 of those are build cache for images nothing tags any more.",
-			"Say the word and I prune it.",
+		lines: [
+			{ said: "what is eating the disk on this box" },
+			{
+				text: "38 of the 40 GB is /var/lib/docker, and 21 of those are build cache for images nothing tags any more.",
+			},
+			{ said: "prune it" },
+			{
+				text: "21 GB back, and the box is at 45%. That ran as root on this agent's own machine, so there was nothing outside it to get wrong.",
+			},
 		],
+		steps: [["bash", "docker builder prune -af"]],
+		took: 18,
 	},
 ];
 
@@ -212,27 +244,30 @@ export function Console() {
 	}, []);
 
 	const script = useMemo(() => {
+		// The last turn is the one the pane is still taking, so the tools belong after the last line
+		// that arrived — everything before that has already been answered.
+		const last = use.lines.reduce(
+			(at, line, i) => ("text" in line && !("via" in line) ? at : i),
+			0,
+		);
 		let at = 0;
-		const take = (cost: number) => {
+		let from = 0;
+		const steps: { text: string; start: number }[] = [];
+		// A line typed at this prompt is typed; one that arrived from somewhere else lands whole; an
+		// answer prints at the speed a model streams it.
+		const lines = use.lines.map((line, i) => {
+			if (i === last + 1) {
+				from = at;
+				for (const [action, detail] of use.steps ?? []) {
+					steps.push({ text: `${action} ${detail}`, start: at });
+					at += BEAT;
+				}
+			}
 			const start = at;
-			at += cost;
-			return start;
-		};
-		// A line typed at this prompt is typed; one that arrived from somewhere else lands whole.
-		const ask = {
-			text: use.ask,
-			start: take(use.via === undefined ? use.ask.length * TYPED : BEAT),
-		};
-		const woke =
-			use.woke === undefined ? null : { via: use.woke[0], text: use.woke[1], start: take(BEAT) };
-		// Where the turn begins, which is what the clock under the conversation counts from.
-		const from = at;
-		const steps = (use.steps ?? []).map(([action, detail]) => ({
-			text: `${action} ${detail}`,
-			start: take(BEAT),
-		}));
-		const reply = use.reply.map((text) => ({ text, start: take(text.length) }));
-		return { ask, woke, steps, reply, from, total: at };
+			at += "said" in line ? line.said.length * TYPED : "via" in line ? BEAT : line.text.length;
+			return { line, start };
+		});
+		return { lines, steps, from, total: at };
 	}, [use]);
 
 	const pick = (next: Use) => {
@@ -359,27 +394,30 @@ export function Console() {
 					{/* Resting on the prompt rather than hanging from the top: an answer arrives where the
 					    next question is being typed, instead of at the far end of a pane of blank rows. */}
 					<div className="mock-body">
-						{use.via === undefined ? (
-							<p className="mock-said">
-								<span className="mock-mark">&gt;</span>{" "}
-								<Typed text={script.ask.text} chars={(n - script.ask.start) / TYPED} />
-							</p>
-						) : (
-							<Came via={use.via} text={script.ask.text} here={n > script.ask.start} />
-						)}
-						{script.woke === null ? null : (
-							<Came via={script.woke.via} text={script.woke.text} here={n > script.woke.start} />
-						)}
-						{script.reply.map((r, i) => (
-							<p key={r.text} data-off={n > r.start ? undefined : "true"}>
-								{use.to === undefined || i > 0 ? null : (
-									<>
-										<span className="mock-via">‹→ {use.to}›</span>{" "}
-									</>
-								)}
-								<Typed text={r.text} chars={n - r.start} />
-							</p>
-						))}
+						{script.lines.map(({ line, start }) => {
+							const here = n > start;
+							if ("said" in line) {
+								return (
+									<p className="mock-said" key={line.said} data-off={here ? undefined : "true"}>
+										<span className="mock-mark">&gt;</span>{" "}
+										<Typed text={line.said} chars={(n - start) / TYPED} />
+									</p>
+								);
+							}
+							if ("via" in line) {
+								return <Came key={line.text} via={line.via} text={line.text} here={here} />;
+							}
+							return (
+								<p key={line.text} data-off={here ? undefined : "true"}>
+									{line.to === undefined ? null : (
+										<>
+											<span className="mock-via">‹→ {line.to}›</span>{" "}
+										</>
+									)}
+									<Typed text={line.text} chars={n - start} />
+								</p>
+							);
+						})}
 					</div>
 
 					{/* Under the conversation and outside the prompt, which is a hand's own row and has to
