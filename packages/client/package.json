@@ -1,5 +1,5 @@
 {
-	"name": "squad",
+	"name": "@squad/cli",
 	"version": "0.0.0",
 	"description": "The console for self-hosted cloud agents. Picks where the agents live, and drives them once they do.",
 	"type": "module",
@@ -14,6 +14,9 @@
 		"bin",
 		"src"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"typecheck": "tsc -p tsconfig.json"
 	},

@@ -113,7 +113,7 @@ Two halves: the console you type at, and the plane the agents live in. Install t
 computer you are sitting at:
 
 ```sh
-npm install -g squad
+npm install -g @squad/cli
 squad
 ```
 
@@ -131,7 +131,8 @@ browser is on, which is the one place it is of any use.
 
 It asks for no keys. Every one of them is given later on the config screen in `squad`, because three
 secrets in the first minute is a worse first minute than an empty setup screen in the second. The
-npm name is not settled yet.
+package is scoped and the command is not: `squad` on its own is somebody else's package on npm, and
+`@squad/cli` still puts `squad` on your PATH.
 
 A server needs a Linux with SSH on it and nothing else — the installer brings Docker. One vCPU, a
 gigabyte of memory and ten gigabytes of disk runs a few agents, which is the bottom of every

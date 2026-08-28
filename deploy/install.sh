@@ -347,7 +347,7 @@ if [ "$SHIM" = "yes" ]; then
 	note "squad logs               what every agent runs, answers and spends"
 	printf '\n'
 	note "From your own computer, the console is a package and this machine is an answer it keeps:"
-	note "  npm install -g squad && squad"
+	note "  npm install -g @squad/cli && squad"
 	printf '\n'
 	note "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
 	note "that travels the SSH connection you already have here, so there is nothing to open on"
