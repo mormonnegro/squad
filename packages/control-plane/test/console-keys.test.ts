@@ -534,7 +534,7 @@ describe("the console, pressed at", () => {
 
 			expect(console_.screen()).not.toContain("creating scout");
 			// Appended where the plane appends it, which is the row the cursor was already on.
-			expect(console_.screen()).toContain("● ·· scout");
+			expect(console_.screen()).toContain("●      scout");
 			expect(showing(console_.screen())).toBe("scout");
 		} finally {
 			console_.close();
@@ -597,7 +597,7 @@ describe("the console, pressed at", () => {
 			expect(console_.screen()).toContain("delete demo?");
 			expect(console_.screen()).toContain("y / n");
 			expect(console_.screen()).toContain("y delete");
-			expect(console_.screen()).toContain("● ·· demo");
+			expect(console_.screen()).toContain("●      demo");
 		} finally {
 			console_.close();
 		}
@@ -622,7 +622,7 @@ describe("the console, pressed at", () => {
 
 			expect(console_.screen()).not.toContain("delete demo?");
 			expect(commanded).toEqual(["/delete"]);
-			expect(console_.screen()).toContain("● ·· demo");
+			expect(console_.screen()).toContain("●      demo");
 		} finally {
 			console_.close();
 		}
@@ -643,7 +643,7 @@ describe("the console, pressed at", () => {
 			await console_.press("y");
 
 			expect(commanded).toEqual(["/delete", "/delete demo"]);
-			expect(console_.screen()).not.toContain("● ·· demo");
+			expect(console_.screen()).not.toContain("●      demo");
 			expect(showing(console_.screen())).toBe("new agent");
 		} finally {
 			console_.close();

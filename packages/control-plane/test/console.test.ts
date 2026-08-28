@@ -820,9 +820,9 @@ describe("Column", () => {
 			}),
 		);
 
-		expect(drawn).toContain("● ·· scout");
-		expect(drawn).toContain("◐ ·· scribe");
-		expect(drawn).toContain("○ ·· sleeper");
+		expect(drawn).toContain("●      scout");
+		expect(drawn).toContain("◐      scribe");
+		expect(drawn).toContain("○      sleeper");
 	});
 
 	// The list is what you read while an answer streams past it, and one that resizes as it streams
@@ -1023,7 +1023,7 @@ describe("Column", () => {
 			h(Column, {
 				agents: [
 					{ ...listed("ana", true), spentUsd: 1.5 },
-					{ ...listed("bernardo", true), spentUsd: 12 },
+					{ ...listed("beto", true), spentUsd: 12 },
 				],
 				spot: 0,
 				busy: new Map<string, number>(),
@@ -1032,7 +1032,7 @@ describe("Column", () => {
 		);
 		const rows = drawn.split("\n");
 		const first = rows.find((row) => row.includes("ana"));
-		const second = rows.find((row) => row.includes("bernardo"));
+		const second = rows.find((row) => row.includes("beto"));
 
 		// Where each of them ends, which is what lining numbers up means when they are not the same
 		// length: it is the last digit that has to sit under the last digit.
@@ -1060,7 +1060,7 @@ describe("Column", () => {
 	// The question asked of this column is which of six agents has a bot at all, and that is asked of
 	// the list rather than of a row: marks that started at a different column on every line would be
 	// read one at a time, which is the thing a mark is for instead of a word.
-	it("puts the ways in at the same column on every row", () => {
+	it("leaves the room for a way in an agent has not got, so the names still line up", () => {
 		const drawn = renderToString(
 			h(Column, {
 				agents: [
@@ -1069,7 +1069,7 @@ describe("Column", () => {
 						bot: { username: "ana_bot", paired: true },
 						mail: { address: "agents+ana@squad.dev", writes: true },
 					},
-					listed("bernardo", true),
+					listed("beto", true),
 				],
 				spot: 0,
 				busy: new Map<string, number>(),
@@ -1079,10 +1079,9 @@ describe("Column", () => {
 			.split("\n")
 			.map(bare);
 
-		expect(drawn.find((row) => row.includes("ana"))).toContain("✆✉");
-		expect(drawn.find((row) => row.includes("bernardo"))).toContain("··");
-		expect(drawn.find((row) => row.includes("ana"))?.indexOf("✆")).toBe(
-			drawn.find((row) => row.includes("bernardo"))?.indexOf("·"),
+		expect(drawn.find((row) => row.includes("ana"))).toContain("🤖📬");
+		expect(drawn.find((row) => row.includes("ana"))?.indexOf("ana")).toBe(
+			drawn.find((row) => row.includes("beto"))?.indexOf("beto"),
 		);
 	});
 });
@@ -1109,27 +1108,34 @@ describe("reached", () => {
 		mail: { address: "agents+demo@squad.dev", writes: true },
 	};
 
-	it("keeps yellow for the half connected", () => {
+	// A terminal paints an emoji in the colours it comes with, so a yellow asked for here is a warning
+	// that never arrives. The half connected are drawn as something else instead.
+	it("draws the half connected rather than colouring them", () => {
+		expect(reached(agent)[0].glyph).toBe("🤖");
+		expect(reached({ ...agent, bot: { username: "demo_bot", paired: false } })[0].glyph).toBe("🔗");
+		expect(reached(agent)[1].glyph).toBe("📬");
+		expect(
+			reached({ ...agent, mail: { address: "agents+demo@squad.dev", writes: false } })[1].glyph,
+		).toBe("📪");
+	});
+
+	// The colour is what the title row paints the username and the address in, where the piece is
+	// words rather than a picture. An account the plane connected once is an address for every agent
+	// it has, so a colour on a working mailbox would be six rows saying the same thing.
+	it("carries the colour the title row says a name in", () => {
 		expect(reached(agent)[0].color).toBe("green");
 		expect(reached({ ...agent, bot: { username: "demo_bot", paired: false } })[0].color).toBe(
 			"yellow",
 		);
-		expect(
-			reached({ ...agent, mail: { address: "agents+demo@squad.dev", writes: false } })[1].color,
-		).toBe("yellow");
-	});
-
-	// An account the plane connected once is an address for every agent it has, including the ones
-	// made tomorrow. Painted, it would be six rows saying the same thing about the plane.
-	it("says a mailbox that works without making a colour of it", () => {
 		expect(reached(agent)[1].color).toBe("gray");
 	});
 
-	it("draws a way in an agent has not been given, so the column still lines up", () => {
+	// Two columns of room, because the marks beside it take two each and a row that gave the space
+	// back would put its name where no other row has one.
+	it("leaves the room for a way in an agent has not been given", () => {
 		const [bot, mail] = reached({ ...agent, bot: undefined, mail: undefined });
 
-		expect([bot.glyph, mail.glyph]).toEqual(["·", "·"]);
-		expect(bot.dimColor && mail.dimColor).toBe(true);
+		expect([bot.glyph, mail.glyph]).toEqual(["  ", "  "]);
 	});
 });
 
@@ -1157,8 +1163,8 @@ describe("standing", () => {
 
 	it("says where it is reached, what it thinks with, and what it has spent against its ceiling", () => {
 		expect(standing(agent, 80)).toEqual({
-			bot: "✆ @demo_bot",
-			mail: "✉ agents+demo@squad.dev",
+			bot: "🤖 @demo_bot",
+			mail: "📬 agents+demo@squad.dev",
 			model: "deepseek-v4-flash",
 			spend: "$0.42 / $5.00",
 		});
@@ -1168,7 +1174,7 @@ describe("standing", () => {
 	// one. Which address it is can be had from `/email`, and does not change while you watch it.
 	it("gives up the address first as the terminal narrows, and the bot next", () => {
 		expect(standing(agent, 60)).toEqual({
-			bot: "✆ @demo_bot",
+			bot: "🤖 @demo_bot",
 			mail: "",
 			model: "deepseek-v4-flash",
 			spend: "$0.42 / $5.00",

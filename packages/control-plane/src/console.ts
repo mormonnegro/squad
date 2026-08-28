@@ -64,8 +64,14 @@ const REMEMBERED_LINES = 2000;
  */
 const AGENTS_WIDTH = 24;
 
-/** The two reach marks and the space before them, which every agent row spends whatever it has on it. */
-const REACH_ROOM = 3;
+/**
+ * The two reach marks and the space before them, which every agent row spends whatever it has on it.
+ *
+ * Two columns each, because they are emoji and a terminal draws those double-wide. That is what they
+ * cost over a glyph from the same alphabet as the mark beside them, and what is bought is a picture
+ * of a postbox instead of a shape somebody has to be told the meaning of once and remember after.
+ */
+const REACH_ROOM = 5;
 
 /**
  * What a row has left for the name and its numbers, once the border, the padding, the mark that says
@@ -129,29 +135,40 @@ export interface Mark {
 	readonly dimColor: boolean;
 }
 
-/** The mark for a way in that this agent has not been given, drawn so the column still lines up. */
-const UNREACHED: Mark = { glyph: "·", color: "gray", dimColor: true };
+/**
+ * The mark for a way in an agent has not been given: the room one takes, and nothing in it.
+ *
+ * Blank rather than a dot standing in for it. With glyphs a column wide a dot was what made the
+ * marks read as a column at all; at two columns each the emoji are their own alignment, and a row
+ * of placeholders for the things an agent has not got is a row of noise to look past.
+ */
+const UNREACHED: Mark = { glyph: "  ", color: "gray", dimColor: true };
 
 /**
- * How an agent can be spoken to, in the two columns beside the mark that says whether it is up.
+ * How an agent can be spoken to, in the columns beside the mark that says whether it is up.
  *
- * Yellow is kept for the half-connected, which is the state no other screen admits to: a bot whose
- * token was pasted and whose link nobody ever tapped listens to nobody, and a mailbox connected for
- * reading takes an agent's mail and leaves it with no way to answer. Both of those look exactly like
- * working from anywhere else in this console, and both are somebody's afternoon.
+ * The state is in the drawing rather than in the colour, which is what changed when these became
+ * emoji: a terminal paints a glyph that brings its own colours in those, and a yellow that never
+ * arrives is a warning nobody gets. So the half-connected have a glyph of their own — the link for
+ * a bot whose token was pasted and whose link nobody ever tapped, and the closed box for a mailbox
+ * that takes an agent's mail and leaves it no way to answer. Both of those look exactly like
+ * working from every other screen in this console, and both are somebody's afternoon.
  *
- * A bot is green because it is this agent's own — somebody went to BotFather for it. Mail is not: the
- * account is the plane's and every agent gets a tag on it for free, so a colour there would be six
- * rows saying the same thing about the plane in the column that is read for what differs.
+ * The colour is still carried, for the title row: there the piece is a username and an address,
+ * which are words, and words take a colour the way these no longer can.
  */
 export function reached(agent: AgentSummary): readonly [Mark, Mark] {
 	return [
 		agent.bot === undefined
 			? UNREACHED
-			: { glyph: "✆", color: agent.bot.paired ? "green" : "yellow", dimColor: false },
+			: agent.bot.paired
+				? { glyph: "🤖", color: "green", dimColor: false }
+				: { glyph: "🔗", color: "yellow", dimColor: false },
 		agent.mail === undefined
 			? UNREACHED
-			: { glyph: "✉", color: agent.mail.writes ? "gray" : "yellow", dimColor: false },
+			: agent.mail.writes
+				? { glyph: "📬", color: "gray", dimColor: false }
+				: { glyph: "📪", color: "yellow", dimColor: false },
 	];
 }
 
@@ -780,8 +797,12 @@ function room(said: Standing): number {
 export function standing(agent: AgentSummary, had: number): Standing {
 	const spent = money(agent.spentUsd);
 	const full = agent.limitUsd === undefined ? spent : `${spent} / ${money(agent.limitUsd)}`;
-	const bot = agent.bot?.username === undefined ? "" : `✆ @${agent.bot.username}`;
-	const mail = agent.mail === undefined ? "" : `✉ ${agent.mail.address}`;
+	// The same glyph the column drew, so the row is the mark read out rather than a second notation.
+	// Two columns wide and two units long, which is the one thing that lets the room below be counted
+	// in characters the way every other piece here is.
+	const [botMark, mailMark] = reached(agent);
+	const bot = agent.bot?.username === undefined ? "" : `${botMark.glyph} @${agent.bot.username}`;
+	const mail = agent.mail === undefined ? "" : `${mailMark.glyph} ${agent.mail.address}`;
 	const model = agent.model ?? "";
 
 	for (const said of [
