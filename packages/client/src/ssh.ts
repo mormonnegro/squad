@@ -32,13 +32,31 @@ export function shared(target: string, home: string): string[] {
 }
 
 /**
+ * The options that let ssh try the key and nothing else.
+ *
+ * Every connection this program makes is opened with them, so that a machine which has the key never
+ * asks for anything and a machine which has not is refused, legibly, in a second. The alternative is
+ * not "it asks for a password sometimes": ssh reads one from /dev/tty, which the console is holding
+ * and redrawing, so the prompt lands under a full-screen UI that is also reading those keystrokes.
+ * And the connections nobody is sitting in front of — a forwarded port, a reconnect after the master
+ * has expired — have nobody to answer it at all. The password is worth exactly one connection, the
+ * one that puts a key up; `squad connect` is where it is typed.
+ */
+export const KEY_ONLY = [
+	"-o",
+	"PasswordAuthentication=no",
+	"-o",
+	"KbdInteractiveAuthentication=no",
+] as const;
+
+/**
  * The command that opens a plane's control socket on a machine this computer has SSH to.
  *
  * `-T` because a pty would rewrite the bytes of the protocol on the way past: newlines are the
  * frame boundary and a terminal line discipline turns them into something else.
  */
 export function relayOverSsh(target: string, home: string): string[] {
-	return ["ssh", ...shared(target, home), "-T", target, "squad relay"];
+	return ["ssh", ...KEY_ONLY, ...shared(target, home), "-T", target, "squad relay"];
 }
 
 /**
@@ -146,6 +164,14 @@ function trouble(target: string, complaint: string, error: Error): ControlError 
 		return new ControlError(
 			`${target} answered, but has no squad on it.\n\n` +
 				"  squad connect             put a plane there, or point this somewhere else\n",
+		);
+	}
+	// The other end of the key being the only way in: a machine that has not got yours turns this
+	// down, and the thing to do about it is the one connection that is allowed to cost a password.
+	if (/Permission denied/.test(said)) {
+		return new ControlError(
+			`${target} would not take this computer's key.\n${said}\n\n` +
+				"  squad connect             puts one up, and asks for the password once\n",
 		);
 	}
 	if (said.length > 0) return new ControlError(said);

@@ -171,6 +171,16 @@ describe("reaching a plane by running a relay", () => {
 		await expect(dial()).rejects.toThrow("Permission denied (publickey).");
 	});
 
+	// A refused key is the one failure with something to do about it, and the thing to do is the one
+	// connection that may cost a password.
+	it("says how to put a key up when the machine turns this one down", async () => {
+		const dial = dialCommand(
+			["sh", "-c", "echo 'Permission denied (publickey).' >&2; exit 255"],
+			"root@example.test",
+		);
+		await expect(dial()).rejects.toThrow(/squad connect/);
+	});
+
 	it("refuses something that answers but is not a relay", async () => {
 		const dial = dialCommand(["sh", "-c", "echo hello"], "root@example.test");
 		await expect(dial()).rejects.toThrow(/before the relay answered/);
@@ -183,6 +193,13 @@ describe("the command that reaches a plane over SSH", () => {
 	// A pty rewrites the bytes of the protocol on the way past: newlines are the frame boundary.
 	it("asks for no terminal", () => {
 		expect(argv).toContain("-T");
+	});
+
+	// ssh reads a password from /dev/tty, which the console is holding and redrawing — and a
+	// forwarded port has nobody sitting in front of it at all. Refused beats prompted here.
+	it("will not fall back to a password", () => {
+		expect(argv).toContain("PasswordAuthentication=no");
+		expect(argv).toContain("KbdInteractiveAuthentication=no");
 	});
 
 	// Not an optimisation: a page with six forwarded ports would otherwise be six SSH handshakes.

@@ -6,7 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ControlError, type Dial } from "@squad/control-plane";
 import { localStateDir, normalizeTarget, type Plane } from "./plane.ts";
-import { shared } from "./ssh.ts";
+import { KEY_ONLY, shared } from "./ssh.ts";
 
 /**
  * Where the server half is fetched from, and a local path in development.
@@ -144,20 +144,6 @@ export function planeEnv(home: string, stateDir: string): NodeJS.ProcessEnv {
 		SQUAD_ASK: "no",
 	};
 }
-
-/**
- * The options that let ssh try the key and nothing else.
- *
- * Every connection this makes is opened with them, so that a machine which has the key never asks
- * for anything, and a machine which has not is refused rather than left waiting on a prompt this
- * would have to answer once per connection for as long as the console is open.
- */
-const KEY_ONLY = [
-	"-o",
-	"PasswordAuthentication=no",
-	"-o",
-	"KbdInteractiveAuthentication=no",
-] as const;
 
 /** Whether what ssh said is a machine turning the key down, as against one that is not there. */
 const turnedDown = (said: string): boolean => said.includes("Permission denied");
