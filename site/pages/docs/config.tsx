@@ -8,7 +8,7 @@ const SECTIONS: [string, string][] = [
 	["search", "where web_search goes, and what a search costs"],
 	["grants", "the hosts the agents may reach, and what they carry"],
 	["mcp", "the servers on the shelf, and which agents hold them"],
-	["email", "the mailbox agents are reached at, and who carries the answer out"],
+	["email", "the mailbox agents are reached at, and whose mail they read"],
 ];
 
 export default function Config() {
@@ -62,7 +62,7 @@ hooks:                    # the signed endpoints, and which agent each reaches
 │ ○ search    where web_search goes, and what a search costs     │
 │ ● grants    the hosts the agents may reach, and what they car… │
 │ ● mcp       the servers on the shelf, and which agents hold t… │
-│ ○ email     the mailbox agents are reached at, and who carrie… │
+│ ○ email     the mailbox agents are reached at, and whose mai… │
 │ ╭────────────────────────────────────────────────────────────╮ │
 │ │ 3 to think with, 1 of 4 providers paid for                 │ │
 │ ╰────────────────────────────────────────────────────────────╯ │

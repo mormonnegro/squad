@@ -314,7 +314,39 @@ describe("EmailChannel", () => {
 		await until(() => publisher.published.length > 0, "the operator's mail");
 
 		expect(publisher.published).toHaveLength(1);
-		expect(dropped).toContainEqual({ why: "not the operator", count: 2 });
+		expect(dropped).toContainEqual({ why: "not on the list", count: 2 });
+	});
+
+	/**
+	 * A whole company, which is the shape an operator reaches for the second time somebody needs in.
+	 *
+	 * Safe to offer because it is not a claim anybody can make about themselves. The signature is
+	 * checked against the domain in `From:` before this list is read at all, so the wildcard means
+	 * whoever that company's mail server signed for — not whoever typed an address at that company.
+	 */
+	it("reads everyone at a domain the mail was actually signed by", async () => {
+		const { mailbox, publisher, dropped } = await running({
+			account: { operators: ["*@example.com"] },
+		});
+
+		mailbox.deliver(
+			// The refused two go first, so the one that gets through is the last thing to happen and the
+			// drops are already counted by the time it lands.
+			{
+				uid: 1,
+				from: "forged@example.com",
+				body: "not mine",
+				results: "mx.test; dkim=pass header.d=attacker.test; dmarc=pass header.from=attacker.test",
+			},
+			{ uid: 2, from: "elsewhere@other.test", body: "nor this", results: SIGNED },
+			{ uid: 3, from: "anyone@example.com", body: "mine", results: SIGNED },
+		);
+		await until(() => publisher.published.length > 0, "the signed one");
+
+		expect(publisher.published).toHaveLength(1);
+		expect(publisher.published[0]).toMatchObject({ body: "mine" });
+		expect(dropped.some((one) => one.why.includes("unsigned"))).toBe(true);
+		expect(dropped).toContainEqual({ why: "not on the list", count: 1 });
 	});
 
 	it("says nothing back to a machine", async () => {
@@ -767,5 +799,64 @@ describe("pairing", () => {
 		await until(() => dropped.length > 0, "the drop");
 
 		expect(channel.account).toMatchObject({ pairing: "openthedoor" });
+	});
+});
+
+/**
+ * The list, changed at the console rather than by somebody mailing a phrase in.
+ *
+ * On the connection that is already reading: an account put down and picked up again is a fresh
+ * dial, a fresh login and a fresh argument about where it had read to, and none of that is what
+ * adding a colleague should cost.
+ */
+describe("allow", () => {
+	it("reads the new list without dropping the connection", async () => {
+		const { channel, mailbox, publisher, changes } = await running();
+		const dials = mailbox.connections.length;
+
+		channel.allow(["nico@example.com", "*@company.com"]);
+		mailbox.deliver({
+			uid: 1,
+			from: "ana@company.com",
+			body: "mine now",
+			results: "mx.test; dkim=pass header.d=company.com; dmarc=pass header.from=company.com",
+		});
+		await until(() => publisher.published.length > 0, "the event");
+
+		expect(publisher.published[0]).toMatchObject({ body: "mine now", trust: "operator" });
+		expect(mailbox.connections).toHaveLength(dials);
+		// Written down as it happens, or the list is gone the next time the plane starts.
+		expect(changes.at(-1)?.operators).toEqual(["nico@example.com", "*@company.com"]);
+	});
+
+	/**
+	 * Pairing and this are the same door, so filling the list by hand spends the phrase.
+	 *
+	 * Left armed it would swallow the next message in: while a phrase is set every mail is read as a
+	 * pairing attempt and dropped for not carrying it, and the pairing that eventually happened would
+	 * overwrite the list with the single address that sent it.
+	 */
+	it("spends the pairing phrase, so the list it was given holds", async () => {
+		const { channel, mailbox, publisher } = await running({
+			account: { operators: [], pairing: "openthedoor" },
+		});
+
+		channel.allow(["ana@example.com"]);
+		mailbox.deliver({ uid: 1, from: "ana@example.com", body: "no phrase here", results: SIGNED });
+		await until(() => publisher.published.length > 0, "the event");
+
+		expect(channel.account).not.toHaveProperty("pairing");
+		expect(publisher.published[0]).toMatchObject({ body: "no phrase here" });
+	});
+
+	// Emptying the list is not pairing again. There is nothing to arm a phrase for — the console is
+	// where somebody was taken off it, and it is where the next one is put back on.
+	it("leaves an emptied list empty rather than reopening the door", async () => {
+		const { channel } = await running();
+
+		channel.allow([]);
+
+		expect(channel.account?.operators).toEqual([]);
+		expect(channel.account).not.toHaveProperty("pairing");
 	});
 });

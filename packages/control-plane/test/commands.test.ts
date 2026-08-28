@@ -1,3 +1,4 @@
+import { asOperator, tooWide } from "@squad/channels";
 import { describe, expect, it } from "vitest";
 import {
 	agentMayNot,
@@ -92,6 +93,9 @@ function context(
 	};
 	/** Every password that got as far as the plane, which is how the redaction is checked from outside. */
 	const passwords: string[] = [];
+	/** The entries the plane wrote down, which is what a typed line turned into rather than what it was. */
+	const admitted: string[] = [];
+	const denied: string[] = [];
 	const here = start.agentId ?? "scout";
 	const named = (name: string) => {
 		const server = shelf.get(name);
@@ -252,9 +256,44 @@ function context(
 				mail.held = undefined;
 				return had;
 			},
+			// Through the real grammar, because what the plane makes of a typed line is half of what the
+			// command has to say back — a domain typed bare comes out as the whole of it, and a domain
+			// anybody can sign up at does not come out at all.
+			allowSender: async (typed: string) => {
+				const held = mail.held;
+				if (held === undefined) {
+					throw new Error("There is no mailbox yet, so there is nobody to let write to it.");
+				}
+				const entry = asOperator(typed);
+				if (entry === undefined) {
+					throw new Error(`"${typed}" is neither an address nor a domain, like *@company.com.`);
+				}
+				const wide = tooWide(entry);
+				if (wide !== undefined) throw new Error(wide);
+				admitted.push(entry);
+				// The phrase is spent by a list put here by hand, the way the channel spends it.
+				mail.held = held.operators.includes(entry)
+					? held
+					: { ...held, operators: [...held.operators, entry], phrase: undefined };
+				return entry;
+			},
+			denySender: async (typed: string) => {
+				const held = mail.held;
+				if (held === undefined) return false;
+				// The same grammar going out as coming in: `company.com` went on as `*@company.com`, so it
+				// has to come off under the line it was typed as.
+				const entry = asOperator(typed) ?? typed;
+				const left = held.operators.filter((one) => one !== entry);
+				if (left.length === held.operators.length) return false;
+				denied.push(entry);
+				mail.held = { ...held, operators: left };
+				return true;
+			},
 		} satisfies CommandContext,
 		mail,
 		passwords,
+		admitted,
+		denied,
 	};
 }
 
@@ -1506,6 +1545,118 @@ describe("/email", () => {
 		expect(mail.held).toBeUndefined();
 		expect(await runCommand("/email off", ctx)).toContain("No mailbox was connected");
 	});
+
+	/**
+	 * Who else may write, which is the question a mailbox raises the moment a second person needs it.
+	 *
+	 * There is one rung: everybody on this list spends turns and instructs agents, the same as whoever
+	 * connected the mailbox. So the answers say what admitting somebody costs rather than only that it
+	 * happened, and a domain is never quietly turned into more people than the person typing expected.
+	 */
+	describe("allow and deny", () => {
+		it("adds an address, and says what it now costs to be on that list", async () => {
+			const { context: ctx, mail, admitted } = context({ mailbox: CONNECTED });
+
+			const answer = await runCommand("/email allow ana@example.com", ctx);
+
+			expect(admitted).toEqual(["ana@example.com"]);
+			expect(mail.held?.operators).toEqual(["nico@example.com", "ana@example.com"]);
+			expect(answer).toContain("spending a turn");
+			expect(answer).toContain("/email deny ana@example.com");
+		});
+
+		// The shape somebody reaches for when the answer is "the company". Reading it back as the entry
+		// it became is the difference between a command that took the line and one that understood it.
+		it("takes a whole domain, typed with the star or without it", async () => {
+			const { context: ctx, mail } = context({ mailbox: CONNECTED });
+
+			const answer = await runCommand("/email allow company.com", ctx);
+
+			expect(mail.held?.operators).toContain("*@company.com");
+			expect(answer).toContain("Everyone at company.com");
+			// The reason it is safe to offer at all, said where it is being used.
+			expect(answer).toContain("signs for");
+		});
+
+		/**
+		 * A wildcard over a provider anybody can sign up with is not a company, it is the internet. It is
+		 * refused rather than accepted with a warning, because the warning is read once and the list is
+		 * what the mailbox is checked against on every message for as long as it is connected.
+		 */
+		it("refuses a domain that anybody can get an address at", async () => {
+			const { context: ctx, mail } = context({ mailbox: CONNECTED });
+
+			const answer = await runCommand("/email allow *@gmail.com", ctx);
+
+			expect(answer).toContain("gmail.com");
+			expect(mail.held?.operators).toEqual(["nico@example.com"]);
+		});
+
+		it("refuses a line that is neither an address nor a domain", async () => {
+			const { context: ctx, mail } = context({ mailbox: CONNECTED });
+
+			const answer = await runCommand("/email allow everyone", ctx);
+
+			expect(answer).toContain("*@company.com");
+			expect(mail.held?.operators).toEqual(["nico@example.com"]);
+		});
+
+		it("takes somebody off, and says so rather than pretending when they were not on", async () => {
+			const { context: ctx, mail, denied } = context({ mailbox: CONNECTED });
+
+			expect(await runCommand("/email deny nico@example.com", ctx)).toContain(
+				"no longer instructs anything here",
+			);
+			expect(denied).toEqual(["nico@example.com"]);
+			expect(mail.held?.operators).toEqual([]);
+
+			expect(await runCommand("/email deny nico@example.com", ctx)).toContain(
+				"was not on the list",
+			);
+		});
+
+		// Off under the line it was typed on. An entry added as `company.com` and only removable as
+		// `*@company.com` is one that reads as stuck to whoever put it there.
+		it("takes a whole domain off however it was written", async () => {
+			const { context: ctx, mail } = context({ mailbox: CONNECTED });
+
+			await runCommand("/email allow company.com", ctx);
+			expect(await runCommand("/email deny company.com", ctx)).toContain("no longer instructs");
+			expect(mail.held?.operators).toEqual(["nico@example.com"]);
+		});
+
+		// The verb alone is somebody finding out what it takes, and the useful half of that answer is
+		// who is on the list today — which is the thing the verb is about to change.
+		it("says what the verb takes, and who is on the list, when it is typed alone", async () => {
+			const { context: ctx } = context({ mailbox: CONNECTED });
+
+			const asked = await runCommand("/email allow", ctx);
+			expect(asked).toContain("*@company.com");
+			expect(asked).toContain("nico@example.com");
+
+			expect(await runCommand("/email deny", ctx)).toContain("nico@example.com");
+		});
+
+		it("has nobody to admit when no mailbox is connected", async () => {
+			const { context: ctx } = context();
+
+			expect(await runCommand("/email allow ana@example.com", ctx)).toContain(
+				"No mailbox is connected",
+			);
+		});
+
+		// Pairing binds the first sender and is the only door until somebody uses it. A list put here by
+		// hand is the same door, so the phrase is spent rather than left armed to swallow the next mail.
+		it("spends the pairing phrase when the list is filled by hand", async () => {
+			const { context: ctx, mail } = context({
+				mailbox: { ...CONNECTED, operators: [], phrase: "kqm3nvbh27" },
+			});
+
+			await runCommand("/email allow ana@example.com", ctx);
+
+			expect(mail.held?.phrase).toBeUndefined();
+		});
+	});
 });
 
 describe("withoutSecrets", () => {
@@ -1537,6 +1688,15 @@ describe("withoutSecrets", () => {
 			"/email agents@fastmail.com … …",
 		);
 		expect(withoutSecrets("/email off")).toBe("/email off");
+	});
+
+	// The list is the account's whole security, and the transcript is where it is read back to find out
+	// who let whom in. A line struck out to dots would be the record of that with the answer removed.
+	it("keeps the line that says who was let in, whatever shape it was typed in", () => {
+		expect(withoutSecrets("/email allow ana@example.com")).toBe("/email allow ana@example.com");
+		expect(withoutSecrets("/email allow *@company.com")).toBe("/email allow *@company.com");
+		expect(withoutSecrets("/email allow company.com")).toBe("/email allow company.com");
+		expect(withoutSecrets("/email deny ana@example.com")).toBe("/email deny ana@example.com");
 	});
 });
 

@@ -6,6 +6,7 @@ import type { Outgoing } from "./autoconfig.ts";
 import { type Channel, ChannelError, type Reply } from "./channel.ts";
 import {
 	addressesIn,
+	admits,
 	agentFor,
 	authenticated,
 	automated,
@@ -71,7 +72,14 @@ export interface Account {
 	 * otherwise reach nobody — a mailbox connected, read, and quietly dropping everything in it.
 	 */
 	readonly fallback: string;
-	/** Addresses whose mail is read as instructions rather than as something to consider. */
+	/**
+	 * Who this mailbox is read for: an address, or `*@company.com` for everyone at a domain.
+	 *
+	 * A list rather than the one address pairing binds, because the people an agent works for are a
+	 * team about as often as they are a person, and the alternative for the second colleague was a
+	 * second mailbox. What a domain is worth here comes from the signature check that runs before it:
+	 * the entry admits whoever that domain vouched for, not whoever wrote it in a `From:`.
+	 */
 	readonly operators: readonly string[];
 	/** The phrase that binds the first operator, until one is bound. */
 	readonly pairing?: string;
@@ -277,6 +285,26 @@ export class EmailChannel implements Channel {
 		this.#session?.close();
 		this.#session = undefined;
 		if (this.#running) void this.#read();
+	}
+
+	/**
+	 * Replaces who is read as an operator, on the connection that is already reading.
+	 *
+	 * Not through {@link set}, which would drop the session and dial the provider again: who may write
+	 * is not a fact the mailbox is opened with, and a list edited twice in a row should not cost two
+	 * logins and a gap in which mail arrives at nobody.
+	 *
+	 * A list put here by hand spends the pairing phrase, because the two are the same door. Left armed,
+	 * the next message in would be read as a pairing attempt — dropped for not carrying the phrase, and
+	 * then, when the phrase did arrive, replacing everything typed here with the one address that sent
+	 * it. And a phrase still good after somebody has been let in is a second key to a door already open.
+	 */
+	allow(operators: readonly string[]): void {
+		const account = this.#account;
+		if (account === undefined) return;
+		const { pairing: _spent, ...rest } = account;
+		this.#account = operators.length > 0 ? { ...rest, operators } : { ...account, operators };
+		this.#onChange?.(this.#account);
 	}
 
 	remove(): void {
@@ -528,10 +556,10 @@ export class EmailChannel implements Channel {
 			if (body === "") return;
 		}
 
-		// Only the operator. Every message that gets past here spends a turn, and a mailbox is an address
+		// Only the list. Every message that gets past here spends a turn, and a mailbox is an address
 		// strangers already have — publishing whatever arrives from anyone would put the plane's bill in
 		// the hands of whoever finds it, and now that agents answer, its outgoing mail too.
-		if (!mailbox.operators.includes(sender.address)) return this.#drop("not the operator");
+		if (!admits(mailbox.operators, sender.address)) return this.#drop("not on the list");
 		if (!proven) return this.#drop(`${sender.address} unsigned: DKIM did not vouch for the domain`);
 
 		const tag = agentFor(recipients, mailbox.address);

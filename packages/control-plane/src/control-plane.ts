@@ -7,6 +7,7 @@ import {
 	type Account,
 	addressFor,
 	appPasswordPage,
+	asOperator,
 	type Bot,
 	baseAddress,
 	CARRIERS,
@@ -22,6 +23,7 @@ import {
 	resolveCarrier,
 	startLink,
 	TelegramChannel,
+	tooWide,
 	WebhookChannel,
 } from "@squad/channels";
 import { EventBus, FileEventStore, isOwnNote } from "@squad/events";
@@ -1475,6 +1477,8 @@ export class ControlPlane {
 			held,
 			here: keyEnv !== undefined && (await this.#keys.here()).has(keyEnv),
 			writes: account !== undefined && held,
+			senders: account?.operators ?? [],
+			phrase: account?.pairing,
 			// A carrier resolving to a sentence is a carrier chosen and not finished — the domain it will
 			// not send without — and that is the trouble worth saying here over anything the reader hit.
 			trouble: typeof resolved === "string" ? resolved : (this.#mailTrouble ?? this.#mailMute),
@@ -1504,6 +1508,54 @@ export class ControlPlane {
 		await this.#mailbox.save(settled);
 		this.#mailTrouble = undefined;
 		this.email.set(settled);
+	}
+
+	/**
+	 * Lets somebody write to the agents, and answers with the line as the list now holds it.
+	 *
+	 * Whoever is added here is an operator: their mail is read as instructions, spends turns and is
+	 * answered from the agent's address. There is no lesser rung, and a screen that offered one would
+	 * be offering to read mail it then had to decide what to do about.
+	 *
+	 * Two refusals, both said here rather than discovered later. Something that is neither an address
+	 * nor a domain would sit on the list matching nothing, and a domain anybody can sign up at is a
+	 * list entry that says colleagues and means the internet.
+	 */
+	allowSender(typed: string): string {
+		if (this.email.account === undefined) {
+			throw new Error("There is no mailbox yet, so there is nobody to let write to it.");
+		}
+		const entry = asOperator(typed);
+		if (entry === undefined) {
+			throw new Error(`"${typed}" is neither an address nor a domain, like *@company.com.`);
+		}
+		const wide = tooWide(entry);
+		if (wide !== undefined) throw new Error(wide);
+
+		const held = this.email.account.operators;
+		if (!held.includes(entry)) this.email.allow([...held, entry]);
+		return entry;
+	}
+
+	/**
+	 * Takes one off, and says whether it was on.
+	 *
+	 * Taken literally rather than resolved: `*@company.com` is removed by naming that line, and never
+	 * by naming somebody who was let in through it. A list where removing an address silently left it
+	 * admitted would be a list that cannot be read.
+	 *
+	 * Written the same way as it was added, though. `allow company.com` goes on as `*@company.com`, so
+	 * `deny company.com` has to find it — an entry that can only be taken off in a spelling nobody used
+	 * to put it on is an entry that reads as stuck.
+	 */
+	denySender(entry: string): boolean {
+		const account = this.email.account;
+		if (account === undefined) return false;
+		const wanted = asOperator(entry) ?? entry.trim().toLowerCase();
+		const left = account.operators.filter((one) => one.toLowerCase() !== wanted);
+		if (left.length === account.operators.length) return false;
+		this.email.allow(left);
+		return true;
 	}
 
 	/** Puts the mailbox down for the whole plane, and says whether there was one. */
@@ -1623,6 +1675,8 @@ export class ControlPlane {
 			offerEmail: (address) => this.offerEmail(address),
 			connectEmail: (password) => this.connectEmail(agentId, password),
 			disconnectEmail: () => this.disconnectEmail(),
+			allowSender: async (typed) => this.allowSender(typed),
+			denySender: async (entry) => this.denySender(entry),
 		};
 	}
 

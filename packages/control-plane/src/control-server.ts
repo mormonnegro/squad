@@ -143,6 +143,15 @@ export type ControlRequest =
 	  }
 	/** Who carries the mail out. Nothing at all hands it back to the mailbox's own server. */
 	| { readonly id: string; readonly op: "set-carrier"; readonly spec?: CarrierSpec }
+	/**
+	 * Lets an address, or everyone at a domain, write to the agents as an operator.
+	 *
+	 * What is sent is what somebody typed, and the plane answers with the line as the list holds it:
+	 * `company.com` goes down and `*@company.com` comes back, so the screen draws what it stored
+	 * rather than what it hoped had been understood.
+	 */
+	| { readonly id: string; readonly op: "allow-sender"; readonly typed: string }
+	| { readonly id: string; readonly op: "deny-sender"; readonly entry: string }
 	| { readonly id: string; readonly op: "forget-mail" }
 	/**
 	 * Takes this connection over and turns the rest of it into bytes to a port inside a sandbox.
@@ -467,6 +476,15 @@ export class ControlServer {
 			} else if (request.op === "set-carrier") {
 				await this.#plane.setCarrier(request.spec);
 				this.#write(socket, { id: request.id, ok: true, text: request.spec?.carrier ?? "" });
+			} else if (request.op === "allow-sender") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: this.#plane.allowSender(request.typed),
+				});
+			} else if (request.op === "deny-sender") {
+				this.#plane.denySender(request.entry);
+				this.#write(socket, { id: request.id, ok: true, text: request.entry });
 			} else if (request.op === "forget-mail") {
 				await this.#plane.disconnectEmail();
 				this.#write(socket, { id: request.id, ok: true, text: "" });

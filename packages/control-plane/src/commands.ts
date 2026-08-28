@@ -198,6 +198,16 @@ export interface CommandContext {
 	connectEmail(password: string): Promise<EmailStanding>;
 	/** Puts the mailbox down, for the whole plane. Answers whether there was one. */
 	disconnectEmail(): Promise<boolean>;
+	/**
+	 * Lets somebody else instruct the agents by mail. Answers with the entry as it was written down.
+	 *
+	 * What was typed is not what is kept: a bare domain is a whole domain, and the plane says so by
+	 * handing back `*@company.com`. It refuses a line that is neither, and a wildcard over a provider
+	 * anybody can sign up with, by throwing — because both are said to whoever typed them.
+	 */
+	allowSender(typed: string): Promise<string>;
+	/** Stops reading one entry's mail. Answers whether it was on the list. */
+	denySender(entry: string): Promise<boolean>;
 }
 
 /**
@@ -258,8 +268,8 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/email",
-		takes: "[<address>|<password>|off]",
-		does: "the address it is reached at, and how to connect a mailbox",
+		takes: "[<address>|<password>|allow …|deny …|off]",
+		does: "the address it is reached at, and whose mail is read as instructions",
 	},
 	{ name: "/clear", takes: "", does: "forget the conversation, and start it again on nothing" },
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
@@ -912,7 +922,13 @@ export function withoutSecrets(line: string): string {
 	// By the command rather than by the shape of it. An app password is sixteen ordinary letters, often
 	// in four groups of four, and no pattern that catches one leaves a sentence alone. What is known
 	// here is the thing a pattern cannot know: everything after `/email` that is not an address is one.
-	if (email !== null) return `${email[1] ?? ""}${spent(email[2] ?? "")}`;
+	if (email !== null) {
+		const rest = email[2] ?? "";
+		// Except after the two verbs that take a list, where there is no password to be had and the line
+		// is the record of who was let in. Struck out to dots it would be a record nobody can read back.
+		if (/^(allow|deny)\b/i.test(rest)) return line;
+		return `${email[1] ?? ""}${spent(rest)}`;
+	}
 	return line.replace(BOT_TOKEN, (_whole, id: string) => `${id}:…`);
 }
 
@@ -1098,9 +1114,11 @@ function pairingByMail(id: string, said: EmailStanding): string {
 		`Ask for something in that same mail if you like. ${id} reads whatever the phrase was written`,
 		"around, so the first mail takes a turn like any other.",
 		"",
-		`Whoever sends it is the one ${id} takes instructions from, and the only one: an address`,
-		"strangers already have is one where every message read would spend a turn, so everyone",
-		"else's mail is left unread.",
+		`Whoever sends it is the one ${id} takes instructions from: an address strangers already have is`,
+		"one where every message read would spend a turn, so everyone else's mail is left unread.",
+		"",
+		"/email allow <address> is the other way onto that list, for anyone you would rather not wait",
+		"on — and /email allow *@company.com lets a whole domain in at once.",
 	].join("\n");
 }
 
@@ -1164,7 +1182,8 @@ function reachedAt(id: string, said: EmailStanding): string {
 		`Mail from ${said.operators.join(", ")} is read as instructions and nobody else's is read at all: an`,
 		"address strangers already have is one where every message read would spend a turn.",
 		"",
-		"/email off puts the mailbox down, for every agent.",
+		"/email allow <address> adds somebody to that list, /email allow *@company.com adds everyone at",
+		"a domain, and /email deny takes them off. /email off puts the mailbox down, for every agent.",
 	].join("\n");
 }
 
@@ -1207,6 +1226,10 @@ async function email(words: readonly string[], context: CommandContext): Promise
 			: "No mailbox was connected.";
 	}
 
+	// Before the address path, because `allow nico@company.com` has an address in it and is not one
+	// being connected. Two words where the second is the address, so the verb is what tells them apart.
+	if (first === "allow" || first === "deny") return whoMayWrite(id, first, rest, context);
+
 	if (first.includes("@")) {
 		const offer = await context.offerEmail(first);
 		const stop = refusal(offer);
@@ -1216,6 +1239,79 @@ async function email(words: readonly string[], context: CommandContext): Promise
 
 	const said = await connect(password(first.includes("@") ? rest : words), context);
 	return typeof said === "string" ? said : reachedAt(id, said);
+}
+
+/** The list as a sentence, which is the half of every answer here that says where things stand. */
+function reading(said: EmailStanding): string {
+	return said.operators.length === 0
+		? "Nobody's mail is read as instructions."
+		: `Mail from ${said.operators.join(", ")} is read as instructions, and nobody else's is read at all.`;
+}
+
+/**
+ * Adds somebody to the list whose mail is read as instructions, or takes them off it.
+ *
+ * There is one rung and this is it: everybody on the list spends turns and instructs agents, the
+ * same as whoever connected the mailbox. So the answer says what it costs rather than only that it
+ * happened, and a domain admitted is spelled out as the number of people nobody counted that it is.
+ *
+ * A whole domain is safe to offer because it is not a promise anybody can make about themselves.
+ * The mail is checked against the domain that signed it before this list is read at all, so
+ * `*@company.com` means whoever that company's mail server signed for, not whoever typed it.
+ */
+async function whoMayWrite(
+	id: string,
+	verb: "allow" | "deny",
+	words: readonly string[],
+	context: CommandContext,
+): Promise<string> {
+	const said = await context.email();
+	if (said === undefined) {
+		return `No mailbox is connected, so there is nobody to let write to one.\n\n${NEW_MAILBOX}`;
+	}
+
+	const typed = words.join(" ").trim();
+	if (typed === "") {
+		return verb === "allow"
+			? [
+					`/email allow <address> lets somebody instruct ${id} and every other agent here by mail.`,
+					"/email allow *@company.com lets everyone at a domain, which is checked against the domain",
+					"that signed the mail rather than the one it claims to be from.",
+					"",
+					reading(said),
+				].join("\n")
+			: ["/email deny <address> stops their mail being read.", "", reading(said)].join("\n");
+	}
+
+	if (verb === "deny") {
+		const had = await context.denySender(typed);
+		const now = await context.email();
+		return had
+			? [
+					`${typed} no longer instructs anything here, and nothing they write is answered.`,
+					...(now === undefined ? [] : ["", reading(now)]),
+				].join("\n")
+			: [`${typed} was not on the list.`, "", reading(said)].join("\n");
+	}
+
+	let entry: string;
+	try {
+		entry = await context.allowSender(typed);
+	} catch (error) {
+		// The plane's own words. A line that is neither an address nor a domain and a domain that means
+		// the whole internet are refused for different reasons, and which it was is what to do about it.
+		return (error as Error).message;
+	}
+
+	const everyone = entry.startsWith("*@")
+		? `Everyone at ${entry.slice(2)} — anyone whose mail that domain signs for — can now instruct`
+		: `${entry} can now instruct`;
+	return [
+		`${everyone} ${id} and every other agent on this plane, spending a turn for`,
+		"each message, the same as whoever connected the mailbox.",
+		"",
+		`/email deny ${entry} stops it.`,
+	].join("\n");
 }
 
 async function connect(secret: string, context: CommandContext): Promise<EmailStanding | string> {

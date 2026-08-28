@@ -1393,6 +1393,8 @@ const MAIL = [
 	"One mailbox serves every agent: mail to you+scout@ is scout's and mail to you+clerk@ is clerk's, so connecting this is a thing done once, including for the agents that do not exist yet.",
 	"",
 	"Reading is IMAP, which wants no domain and nothing open on this machine. Sending is either the mailbox's own server, or a company that carries mail for a domain of yours and says whether it landed.",
+	"",
+	"Whose mail is read is a list rather than one address, and everybody on it instructs every agent. *@company.com is everyone at a domain, checked against the domain that signed the mail rather than the one it claims to be from.",
 ];
 
 /**
@@ -1408,6 +1410,11 @@ const REACH = [
 	"",
 	"A host opened here carries nothing. Keys are attached by name, in deploy/config.yaml, and that is the half of a grant this screen has no box for — so what is added here widens where an agent may go and not one thing about what it may spend.",
 ];
+
+/** How many people a line of the mail list stands for, when it stands for more than one. */
+function whoIs(entry: string): string {
+	return entry.startsWith("*@") ? `everyone at ${entry.slice(2)}` : "";
+}
 
 /** The part of a grant that is narrower than its host, or nothing when it is the whole of it. */
 function under(grant: GrantStanding): string {
@@ -1447,7 +1454,7 @@ const SECTIONS: Readonly<
 	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
 	grants: { does: "the hosts the agents may reach, and what they carry there", said: REACH },
 	mcp: { does: "the servers on the shelf, and which agents hold them", said: SERVERS },
-	email: { does: "the mailbox agents are reached at, and who carries their answers", said: MAIL },
+	email: { does: "the mailbox agents are reached at, and whose mail they read", said: MAIL },
 };
 
 /** The three facts about searching, in the order a hand fills them in. */
@@ -1476,7 +1483,10 @@ export type ConfigRow =
 	| { readonly kind: "add-server" }
 	| { readonly kind: "grant"; readonly grant: GrantStanding }
 	| { readonly kind: "add-grant" }
-	| { readonly kind: "mail"; readonly field: "mailbox" | "carrier" | "domain" | "key" };
+	| { readonly kind: "mail"; readonly field: "mailbox" | "carrier" | "domain" | "key" }
+	/** One line of the list of who may write, which is an address or a whole domain. */
+	| { readonly kind: "sender"; readonly entry: string }
+	| { readonly kind: "add-sender" };
 
 /**
  * The screen's rows in the order the arrows walk them, headers and blank lines left out.
@@ -1514,6 +1524,15 @@ export function configRows(
 			{ kind: "mail", field: "carrier" } as const,
 			...(carrier?.needsDomain === true ? [{ kind: "mail", field: "domain" } as const] : []),
 			...(carrier !== undefined ? [{ kind: "mail", field: "key" } as const] : []),
+			// Below the mailbox rather than beside them, because it is the half that keeps being edited:
+			// the account is connected once, and who may write to it changes every time somebody joins.
+			// Nothing to add to until there is a mailbox — a list of people who may write to no address.
+			...(mail?.mailbox === undefined
+				? []
+				: [
+						...mail.senders.map((entry) => ({ kind: "sender", entry }) as const),
+						{ kind: "add-sender" } as const,
+					]),
 		];
 	}
 	if (section === "mcp") {
@@ -1586,6 +1605,8 @@ export function Config({
 	shelving,
 	/** The host being opened, as far as it has been typed, or nothing when none is. */
 	opening,
+	/** The address or domain being let in, as far as it has been typed, or nothing when none is. */
+	admitting,
 	/** The server a forget was asked about, while the answer is still being waited for. */
 	forgetting,
 	/** The model or host a drop was asked about, while the answer is still being waited for. */
@@ -1620,6 +1641,7 @@ export function Config({
 	readonly adding: string | undefined;
 	readonly shelving?: string | undefined;
 	readonly opening?: string | undefined;
+	readonly admitting?: string | undefined;
 	readonly forgetting?: string | undefined;
 	readonly dropping?: string | undefined;
 	readonly offers?: readonly ModelOffer[] | undefined;
@@ -1877,22 +1899,103 @@ export function Config({
 			}
 			return { text: mail.keyEnv ?? "", on: mail.held };
 		};
-		for (const [index, field] of walked.entries()) {
-			if (field.kind !== "mail") continue;
-			const { text, on } = value(field);
-			const mark = on ? MARKS.running : MARKS.stopped;
+		const senders = mail?.senders ?? [];
+		const widestSender = Math.max(0, ...senders.map((entry) => entry.length));
+		// The heading goes in once, above whichever of the two rows comes first — the list is empty on
+		// a mailbox nobody has paired, and an unlabelled `+ an address` under the key row would be a row
+		// offering to add an address to something the screen never named.
+		let labelled = false;
+		for (const [index, one] of walked.entries()) {
+			if (one.kind !== "mail" && !labelled) {
+				labelled = true;
+				listed.push(h(Text, { key: "between" }, " "));
+				listed.push(heading("who may write"));
+			}
 			if (index === cursor) at = listed.length;
-			listed.push(
-				h(
-					Text,
-					{ key: `mail-${field.field}`, wrap: "truncate" },
-					h(Text, { color: mark.color }, mark.glyph),
-					h(Text, pointed(index === cursor, on), ` ${field.field.padEnd(10)}`),
-					h(Text, { dimColor: true }, text),
-				),
-			);
+			if (one.kind === "mail") {
+				const { text, on } = value(one);
+				const mark = on ? MARKS.running : MARKS.stopped;
+				listed.push(
+					h(
+						Text,
+						{ key: `mail-${one.field}`, wrap: "truncate" },
+						h(Text, { color: mark.color }, mark.glyph),
+						h(Text, pointed(index === cursor, on), ` ${one.field.padEnd(10)}`),
+						h(Text, { dimColor: true }, text),
+					),
+				);
+				continue;
+			}
+			if (one.kind === "sender") {
+				listed.push(
+					h(
+						Text,
+						{ key: `sender-${one.entry}`, wrap: "truncate" },
+						// Filled on every row, the way the grants list is: each line here is somebody whose
+						// mail is being read right now, and a mark that varied would be a second question.
+						h(Text, { color: MARKS.running.color }, MARKS.running.glyph),
+						h(Text, pointed(index === cursor, true), ` ${one.entry.padEnd(widestSender + 2)}`),
+						// What a wildcard actually admits, spelled out beside it. `*@company.com` is eleven
+						// characters that stand for a number of people nobody counted, and the line that says
+						// so is the difference between reading the list and trusting it.
+						h(Text, { dimColor: true }, whoIs(one.entry)),
+					),
+				);
+				continue;
+			}
+			if (one.kind === "add-sender") {
+				listed.push(
+					h(
+						Text,
+						{ key: "add-sender", wrap: "truncate" },
+						h(Text, { dimColor: true }, "+"),
+						h(Text, pointed(index === cursor, false), " an address"),
+					),
+				);
+			}
 		}
 		const field = row?.kind === "mail" ? row.field : "mailbox";
+		/**
+		 * The half of the row under the cursor that no column had room for.
+		 *
+		 * A function rather than another arm of the chain below, because there are now nine rows this
+		 * has to answer for and a ternary that deep is a paragraph nobody can check against the screen.
+		 */
+		const underneath = (): string => {
+			if (mail === undefined) return "asking the plane…";
+			if (row?.kind === "sender") {
+				return "read as instructions, and answered from the agent's address   ⌫ stops it";
+			}
+			if (row?.kind === "add-sender") {
+				// The other way onto the list, while it is still open: the phrase works from a phone, with
+				// nothing typed here, and it is how the list was filled before this row existed. It is gone
+				// from the row the moment somebody is on the list, because the phrase is spent by then.
+				if (mail.phrase !== undefined) {
+					return `an address, or mail "${mail.phrase}" to the mailbox from your own`;
+				}
+				// The two shapes, on the row that takes them, because a box that only accepted one of them
+				// would be a box you find out about by getting it wrong.
+				return "an address, or *@company.com for everyone at a domain";
+			}
+			if (field === "mailbox") {
+				return (
+					mail.trouble ??
+					(mail.mailbox === undefined
+						? "an address, then the app password your provider issued for it"
+						: `${mail.host}   ⌫ disconnects it`)
+				);
+			}
+			if (field === "carrier") {
+				return `${Object.keys(CARRIERS).length} to send with, or the server the mailbox came with`;
+			}
+			if (field === "domain") {
+				return `${carrier?.title ?? "a carrier"} sends only for a domain it was set up for`;
+			}
+			if (mail.here) return `${mail.keyEnv}   set here`;
+			return mail.held
+				? `${mail.keyEnv}   from this plane's environment`
+				: `${mail.keyEnv}   no key, so nothing can be sent`;
+		};
 		return configScreen({
 			listed,
 			at,
@@ -1910,31 +2013,21 @@ export function Config({
 								// whoever has it read every message in the account, tagged or not.
 								secret: mailing.field === "password",
 							}
-						: forgetting !== undefined
-							? {
-									kind: "dim",
-									text: `forget the mailbox at ${forgetting}? every agent stops being reachable — y or n`,
-								}
-							: {
-									kind: "dim",
-									text:
-										mail === undefined
-											? "asking the plane…"
-											: field === "mailbox"
-												? (mail.trouble ??
-													(mail.mailbox === undefined
-														? "an address, then the app password your provider issued for it"
-														: `${mail.host}   ⌫ disconnects it`))
-												: field === "carrier"
-													? `${Object.keys(CARRIERS).length} to send with, or the server the mailbox came with`
-													: field === "domain"
-														? `${carrier?.title ?? "a carrier"} sends only for a domain it was set up for`
-														: mail.here
-															? `${mail.keyEnv}   set here`
-															: mail.held
-																? `${mail.keyEnv}   from this plane's environment`
-																: `${mail.keyEnv}   no key, so nothing can be sent`,
-								},
+						: admitting !== undefined
+							? { kind: "typed", mark: "may write  ", text: admitting, secret: false }
+							: forgetting !== undefined
+								? {
+										kind: "dim",
+										text: `forget the mailbox at ${forgetting}? every agent stops being reachable — y or n`,
+									}
+								: dropping !== undefined
+									? {
+											kind: "dim",
+											// What stops rather than what is being removed: the answer to this question is
+											// silence at the other end, and the person on that row is never told.
+											text: `stop reading mail from ${dropping}? nothing they write is answered after — y or n`,
+										}
+									: { kind: "dim", text: underneath() },
 			boxed,
 			rows,
 			columns,
@@ -2388,6 +2481,10 @@ export function App({
 	// The one line of it being typed out. The password goes here rather than into the draft for the
 	// reason every secret on this screen does: the chat prompt is one `tab` away.
 	const [mailing, setMailing] = useState<{ field: MailField; text: string } | undefined>(undefined);
+	// The address or domain being let in, kept apart from the mailbox's own line above: they are two
+	// boxes on one section and telling them apart by which row was under the cursor is how a domain
+	// ends up being tried as a mailbox to log into.
+	const [admitting, setAdmitting] = useState<string | undefined>(undefined);
 	// What the providers this plane can pay say they answer to, or nothing while they are being asked.
 	// Fetched when the row that adds a model is entered rather than with the screen, because it is a
 	// round trip to every provider at once and most visits here are about a key.
@@ -2816,6 +2913,27 @@ export function App({
 		[client, mail, say],
 	);
 
+	/**
+	 * Lets somebody write to every agent on this plane, from the line that was typed.
+	 *
+	 * Read back rather than assumed, because the plane settles what was meant: a bare domain comes back
+	 * as `*@company.com`, and the two lines that are refused — something that is no address at all, and
+	 * a domain the whole internet can sign up at — are refused with a sentence that goes on the screen.
+	 */
+	const allow = useCallback(
+		async (typed: string): Promise<void> => {
+			await say(async () => {
+				await client.allowSender(typed);
+			});
+		},
+		[client, say],
+	);
+
+	const deny = useCallback(
+		async (entry: string): Promise<void> => say(() => client.denySender(entry)),
+		[client, say],
+	);
+
 	/** Tells the carrier which domain it is sending for, which is the rest of naming one. */
 	const sendingFor = useCallback(
 		async (domain: string): Promise<void> =>
@@ -3101,7 +3219,11 @@ export function App({
 		if (dropping !== undefined) {
 			setDropping(undefined);
 			if (input === "y" || input === "Y") {
-				void (section === "grants" ? closeHost(dropping) : forget(dropping));
+				void (section === "grants"
+					? closeHost(dropping)
+					: section === "email"
+						? deny(dropping)
+						: forget(dropping));
 			}
 			return;
 		}
@@ -3319,6 +3441,34 @@ export function App({
 				return;
 			}
 			entered(opening + first);
+			return;
+		}
+		// The same box as the host above it, and here for the same reason: what is typed is one word,
+		// and every branch below would read a character of it as a key of its own.
+		if (admitting !== undefined) {
+			const entered = (value: string): void => {
+				setAdmitting(undefined);
+				if (value.trim().length > 0) void allow(value);
+			};
+			if (key.escape) {
+				setAdmitting(undefined);
+				return;
+			}
+			if (key.return) {
+				entered(admitting);
+				return;
+			}
+			if (key.backspace || key.delete) {
+				setAdmitting((prev) => (prev ?? "").slice(0, -1));
+				return;
+			}
+			if (input.length === 0 || key.ctrl || key.meta) return;
+			const [first = "", ...rest] = input.split(/\r|\n/);
+			if (rest.length === 0) {
+				setAdmitting((prev) => (prev ?? "") + first);
+				return;
+			}
+			entered(admitting + first);
 			return;
 		}
 		if (shelving !== undefined) {
@@ -3577,9 +3727,21 @@ export function App({
 						setSecret("");
 					}
 				}
+				if (configRow?.kind === "add-sender") setAdmitting("");
+				// A line of this list is not edited, because there is nothing in it to edit: it is one
+				// address or one domain, and changing it is taking it off and typing the other one.
+				if (configRow?.kind === "sender") {
+					setUnanswered(`${configRow.entry} may write — ⌫ stops it`);
+				}
 			}
 			if ((key.backspace || key.delete) && configRow?.kind === "server") {
 				setForgetting(configRow.server.name);
+			}
+			// Asked rather than done, like every other ⌫ on this screen. What it costs is not the line —
+			// that is one row to type again — it is that somebody's mail goes unread from now on, and they
+			// are never told: their messages simply stop being answered.
+			if ((key.backspace || key.delete) && configRow?.kind === "sender") {
+				setDropping(configRow.entry);
 			}
 			if (
 				(key.backspace || key.delete) &&
@@ -3835,6 +3997,7 @@ export function App({
 								adding,
 								shelving,
 								opening,
+								admitting,
 								forgetting,
 								dropping,
 								offers,
@@ -3901,7 +4064,7 @@ export function App({
 							["esc", "cancel"],
 							["^C", "quit"],
 						]
-					: shelving !== undefined || opening !== undefined
+					: shelving !== undefined || opening !== undefined || admitting !== undefined
 						? // A line with nothing to pick off, so the arrows are not named: there is no list here.
 							[
 								["⏎", "add"],
@@ -3976,18 +4139,23 @@ export function App({
 																							? [["⌫", "disconnect"]]
 																							: []),
 																					]
-																				: configRow?.kind === "add-grant"
-																					? [["⏎", "open host"]]
-																					: configRow?.kind === "grant"
-																						? // Only the ones this console wrote: the other three lists
-																							// refuse this key, and a hint for a key that is refused is
-																							// the same lie as a hint for a key that does nothing.
-																							configRow.grant.origin === "here"
-																							? [["⌫", "close host"]]
-																							: []
-																						: configRow?.kind === "model" && configRow.model.added
-																							? [["⌫", "drop model"]]
-																							: []),
+																				: configRow?.kind === "add-sender"
+																					? [["⏎", "let write"]]
+																					: configRow?.kind === "sender"
+																						? [["⌫", "stop reading"]]
+																						: configRow?.kind === "add-grant"
+																							? [["⏎", "open host"]]
+																							: configRow?.kind === "grant"
+																								? // Only the ones this console wrote: the other three lists
+																									// refuse this key, and a hint for a key that is refused is
+																									// the same lie as a hint for a key that does nothing.
+																									configRow.grant.origin === "here"
+																									? [["⌫", "close host"]]
+																									: []
+																								: configRow?.kind === "model" &&
+																										configRow.model.added
+																									? [["⌫", "drop model"]]
+																									: []),
 													// Only where there is one to leave, because a key named on a row it does nothing
 													// on is the same lie as a key named for nothing at all. Both keys named, the way
 													// `^U^D` names two: a hand on the arrows and a hand coming from a text box are

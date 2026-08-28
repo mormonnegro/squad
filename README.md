@@ -810,9 +810,11 @@ mail, with this phrase anywhere in the message:
 Ask for something in that same mail if you like. scout reads whatever the phrase was written
 around, so the first mail takes a turn like any other.
 
-Whoever sends it is the one scout takes instructions from, and the only one: an address
-strangers already have is one where every message read would spend a turn, so everyone
-else's mail is left unread.
+Whoever sends it is the one scout takes instructions from: an address strangers already have is
+one where every message read would spend a turn, so everyone else's mail is left unread.
+
+/email allow <address> is the other way onto that list, for anyone you would rather not wait
+on — and /email allow *@company.com lets a whole domain in at once.
 ```
 
 Pairing is the same phrase in the same place it is on Telegram, sent by mail this time. What makes
@@ -823,8 +825,8 @@ the receiving provider strip any foreign copy of that header on the way in, so t
 one it wrote. Mail that is not signed and aligned pairs nothing and instructs nothing, whatever it
 says it is.
 
-Telegram fences strangers and publishes them as participants. Mail does not: only the paired
-operator's is read, and everyone else's is dropped. A chat is a room someone let you into, while a
+Telegram fences strangers and publishes them as participants. Mail does not: only what comes from
+the list is read, and everyone else's is dropped. A chat is a room someone let you into, while a
 mailbox is an address that leaks — every message read spends a turn, so publishing whatever arrived
 would put the plane's bill in the hands of whoever found it, and now that agents answer, its
 outgoing mail as well.
@@ -844,8 +846,39 @@ arrives in the thread you started and a reply to that comes back to the same age
 Mail from you@example.com is read as instructions and nobody else's is read at all: an
 address strangers already have is one where every message read would spend a turn.
 
-/email off puts the mailbox down, for every agent.
+/email allow <address> adds somebody to that list, /email allow *@company.com adds everyone at
+a domain, and /email deny takes them off. /email off puts the mailbox down, for every agent.
 ```
+
+Pairing binds the first person. The second is a colleague, and waiting for them to mail a phrase in
+is a worse answer than typing their address, so the list is a list — edited from the config screen
+or from any agent's prompt, in force on the next message, with the mailbox never disconnected:
+
+```
+/email allow ana@company.com
+
+ana@company.com can now instruct scout and every other agent on this plane, spending a turn for
+each message, the same as whoever connected the mailbox.
+
+/email deny ana@company.com stops it.
+```
+
+A whole company at once is `/email allow *@company.com`, and a domain typed bare means the same
+thing. Two shapes and no more — an address or a domain — because this list is what every message is
+checked against for as long as the mailbox is connected, and a pattern language here would be a
+security decision written in something nobody proofreads. `seb*@company.com` is refused for that
+reason rather than accepted and half understood.
+
+The wildcard is safe for the same reason the phrase is. The signature is checked against the domain
+in `From:` before the list is consulted at all, so `*@company.com` means whoever that company's mail
+server signed for — not whoever typed an address at that company into a header. Which is also why a
+wildcard over gmail, iCloud or Proton is refused: anybody can hold an address at one of those by
+this afternoon, so it would not name a company, it would name the internet.
+
+There is one rung. Everybody on the list spends turns and instructs agents, the same as whoever
+connected the mailbox; there is no lesser tier that can ask but not tell. So admitting a domain is a
+decision about the bill as much as about trust, and the config screen says beside each wildcard how
+many people it stands for in words rather than leaving eleven characters to be read as a name.
 
 Plus-addressing is the whole design: `agents+scout@` and `agents+clerk@` are one account to the
 provider and two agents here, so an agent made tomorrow has an address without anybody going back to
@@ -902,8 +935,14 @@ message over HTTP, and which one is a row on the config screen's `email` section
 │                      ││                                                                │
 │                      ││ ● mailbox   agents@fastmail.com                                │
 │                      ││ ● carrier   Mailgun                                            │
-│                      ││ ● domain    squad.dev                                     │
+│                      ││ ● domain    squad.dev                                          │
 │                      ││ ● key       MAILGUN_API_KEY                                    │
+│                      ││                                                                │
+│                      ││ who may write                                                  │
+│                      ││                                                                │
+│                      ││ ● you@example.com                                              │
+│                      ││ ● *@squad.dev      everyone at squad.dev                       │
+│                      ││ + an address                                                   │
 │                      ││ ╭────────────────────────────────────────────────────────────╮ │
 │                      ││ │ imap.fastmail.com   ⌫ disconnects it                       │ │
 │ tab moves            ││ ╰────────────────────────────────────────────────────────────╯ │
@@ -959,14 +998,14 @@ is read and the mail goes to the agent untagged mail goes to. Reaching a particu
 forward takes one rule per agent, addressed to that agent's tagged address, rather than a single
 rule for the whole domain.
 
-An inbox is mostly not for you, so most of what arrives is dropped: anyone who is not the operator,
+An inbox is mostly not for you, so most of what arrives is dropped: anyone not on the list,
 anything auto-submitted, a tag that names no agent, and the mailbox's own mail — without that last
 one an agent Cc'd on its own answer would wake itself, read its own words as somebody's, and do it
 again. Drops are counted by reason rather than listed, because a mailbox declining two hundred
 newsletters is worth one line in the feed and is not worth two hundred:
 
 ```
-09:14:02  email     dropped     not the operator ×212
+09:14:02  email     dropped     not on the list ×212
 09:14:02  email     dropped     no agent "billing" ×3
 ```
 

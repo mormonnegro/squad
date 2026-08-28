@@ -7,7 +7,7 @@ export default function Email() {
 		<Docs
 			title="Email"
 			lede="One mailbox for the whole plane, connected once. Every agent you have — and every agent you make after this — is reached at the same address with its own name tagged on."
-			description="Connect a mailbox to the plane: type the address, make an app password, pair yourself by a phrase, and choose who carries the answers out."
+			description="Connect a mailbox to the plane: type the address, make an app password, pair yourself by a phrase, and list who else may write — an address at a time or a whole domain."
 		>
 			<section>
 				<span className="eyebrow">Why a mailbox you already read</span>
@@ -76,9 +76,11 @@ mail, with this phrase anywhere in the message:
 Ask for something in that same mail if you like. scout reads whatever the phrase was written
 around, so the first mail takes a turn like any other.
 
-Whoever sends it is the one scout takes instructions from, and the only one: an address
-strangers already have is one where every message read would spend a turn, so everyone
-else's mail is left unread.
+Whoever sends it is the one scout takes instructions from: an address strangers already have is
+one where every message read would spend a turn, so everyone else's mail is left unread.
+
+/email allow <address> is the other way onto that list, for anyone you would rather not wait
+on — and /email allow *@company.com lets a whole domain in at once.
 `}</Screen>
 				<p>
 					What makes the phrase mean anything is that a <code>From:</code> line is forgeable and the
@@ -89,10 +91,11 @@ else's mail is left unread.
 					it wrote.
 				</p>
 				<p>
-					Telegram fences strangers and publishes them as participants. Mail does not: only the
-					paired operator's is read, and everyone else's is dropped. A chat is a room someone let
-					you into, while a mailbox is an address that leaks — every message read spends a turn, so
-					publishing whatever arrived would put the plane's bill in the hands of whoever found it.
+					Telegram fences strangers and publishes them as participants. Mail does not: only what
+					comes from the list below is read, and everyone else's is dropped. A chat is a room
+					someone let you into, while a mailbox is an address that leaks — every message read spends
+					a turn, so publishing whatever arrived would put the plane's bill in the hands of whoever
+					found it.
 				</p>
 			</section>
 
@@ -112,7 +115,8 @@ arrives in the thread you started and a reply to that comes back to the same age
 Mail from you@example.com is read as instructions and nobody else's is read at all: an
 address strangers already have is one where every message read would spend a turn.
 
-/email off puts the mailbox down, for every agent.
+/email allow <address> adds somebody to that list, /email allow *@company.com adds everyone at
+a domain, and /email deny takes them off. /email off puts the mailbox down, for every agent.
 `}</Screen>
 				<p>
 					<code>agents+scout@</code> and <code>agents+clerk@</code> are one account to the provider
@@ -134,6 +138,45 @@ address strangers already have is one where every message read would spend a tur
 					way: an agent reads its mail, and a mail can tell it to write anything. Only{" "}
 					<code>http</code>, <code>https</code> and <code>mailto</code> become links.
 				</p>
+			</section>
+
+			<section>
+				<span className="eyebrow">Who else</span>
+				<h2>A list, not one address</h2>
+				<p>
+					Pairing binds the first person. The second is a colleague, and waiting for them to mail a
+					phrase in is a worse answer than typing their address — so the list is a list, and it is
+					edited from the console or from any agent's prompt while the mailbox stays connected.
+				</p>
+				<Screen>{`
+/email allow ana@company.com
+
+ana@company.com can now instruct scout and every other agent on this plane, spending a turn for
+each message, the same as whoever connected the mailbox.
+
+/email deny ana@company.com stops it.
+`}</Screen>
+				<p>
+					A whole company at once is <code>/email allow *@company.com</code>, and a domain typed
+					bare means the same thing. That is only two shapes — an address or a domain — because this
+					list is what the mailbox is checked against on every message, and a pattern language here
+					would be a security decision written in something nobody proofreads.
+				</p>
+				<p>
+					The wildcard is safe for the same reason the pairing phrase is. The signature is checked
+					against the domain in <code>From:</code> before the list is consulted at all, so{" "}
+					<code>*@company.com</code> means whoever that company's mail server signed for — not
+					whoever typed an address at that company into a header. Which is also why a wildcard over
+					gmail, iCloud or Proton is refused: anybody can hold an address at one by this afternoon,
+					so it would not name a company, it would name the internet.
+				</p>
+				<div className="note">
+					<p>
+						<strong>There is one rung.</strong> Everybody on this list spends turns and instructs
+						agents, the same as whoever connected the mailbox. There is no lesser tier that can ask
+						but not tell, so a domain is a decision about the bill as much as about trust.
+					</p>
+				</div>
 			</section>
 
 			<section>
@@ -162,6 +205,12 @@ address strangers already have is one where every message read would spend a tur
 │ ● carrier   Mailgun                                            │
 │ ● domain    squad.dev                                          │
 │ ● key       MAILGUN_API_KEY                                    │
+│                                                                │
+│ who may write                                                  │
+│                                                                │
+│ ● you@example.com                                              │
+│ ● *@squad.dev      everyone at squad.dev                       │
+│ + an address                                                   │
 `}</Screen>
 				<p>
 					Mailgun, Resend, Postmark and SendGrid each take a message over HTTP, and which one is a
@@ -200,12 +249,12 @@ address strangers already have is one where every message read would spend a tur
 				<span className="eyebrow">What is not read</span>
 				<h2>An inbox is mostly not for you</h2>
 				<Screen>{`
-09:14:02  email     dropped     not the operator ×212
+09:14:02  email     dropped     not on the list ×212
 09:14:02  email     dropped     no agent "billing" ×3
 `}</Screen>
 				<p>
-					Anyone who is not the operator, anything auto-submitted, a tag that names no agent, and
-					the mailbox's own mail — without that last one an agent Cc'd on its own answer would wake
+					Anyone not on the list, anything auto-submitted, a tag that names no agent, and the
+					mailbox's own mail — without that last one an agent Cc'd on its own answer would wake
 					itself, read its own words as somebody's, and do it again. Drops are counted by reason
 					rather than listed, because a mailbox declining two hundred newsletters is worth one line
 					in the feed and is not worth two hundred.

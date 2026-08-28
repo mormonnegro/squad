@@ -29,6 +29,14 @@ export interface MailStanding {
 	readonly here: boolean;
 	/** Whether mail can actually leave: somewhere to hand it in, and the means to pay for that. */
 	readonly writes: boolean;
+	/**
+	 * Whose mail is read as instructions: addresses, and `*@company.com` for everyone at a domain.
+	 *
+	 * Empty is a mailbox nobody may write to, which is what a connected one is until somebody pairs.
+	 */
+	readonly senders: readonly string[];
+	/** The phrase that binds the first sender, while there is none. */
+	readonly phrase: string | undefined;
 	/** What went wrong the last time this was tried, if something did. */
 	readonly trouble: string | undefined;
 }

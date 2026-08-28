@@ -118,6 +118,40 @@ export function domainOf(address: string): string {
 }
 
 /**
+ * Domains anybody can hold an address at by this afternoon, sign-up page and all.
+ *
+ * Asked because a whole domain can be let in at once, and the answer is only ever meant to be a
+ * company: `*@yourfirm.com` is everyone you work with, and `*@gmail.com` is everyone. The two look
+ * identical on the screen that adds them, which is exactly why the difference is written down here.
+ *
+ * The providers this file already knows are most of the list — a table of where mail lives is a
+ * table of the places mail is free — and the rest are the ones people would otherwise reach for.
+ */
+const OPEN = new Set([
+	...Object.keys(KNOWN),
+	...Object.keys(SHUT),
+	"aol.com",
+	"gmx.com",
+	"gmx.net",
+	"googlemail.com",
+	"hey.com",
+	"mail.com",
+	"me.com",
+	"pm.me",
+	"proton.me",
+	"protonmail.com",
+	"tuta.com",
+	"tutanota.com",
+	"yahoo.com",
+	"yandex.com",
+]);
+
+/** Whether a stranger can get an address at this domain, which decides if it means anything. */
+export function openDomain(domain: string): boolean {
+	return OPEN.has(domain.trim().toLowerCase());
+}
+
+/**
  * The address with any `+tag` taken off, which is the account the tag was a label on.
  *
  * Plus-addressing is how one mailbox serves every agent — `you+scout@` and `you+clerk@` land in the

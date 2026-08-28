@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
 	addressesIn,
+	admits,
 	agentFor,
+	asOperator,
 	authenticated,
 	automated,
 	isOwnAddress,
 	parseAddress,
 	readableText,
+	tooWide,
 	withoutTrail,
 } from "../src/mail.ts";
 
@@ -237,5 +240,78 @@ describe("readableText", () => {
 
 	it("breaks lines where the markup broke them", () => {
 		expect(readableText("one<br>two<br/>three")).toBe("one\ntwo\nthree");
+	});
+});
+
+/**
+ * Who is read as an operator, which is the whole of what an agent's mailbox is protected by.
+ *
+ * Two shapes and no more. A regular expression here would be a security decision made in a language
+ * nobody proofreads, on a list where being wrong means a stranger spends turns and instructs agents.
+ */
+describe("admits", () => {
+	it("takes an address exactly, and nobody who merely looks like it", () => {
+		const list = ["nico@company.com"];
+
+		expect(admits(list, "nico@company.com")).toBe(true);
+		expect(admits(list, "NICO@Company.com")).toBe(true);
+		expect(admits(list, " nico@company.com ")).toBe(true);
+		expect(admits(list, "nico@company.com.evil.test")).toBe(false);
+		expect(admits(list, "notnico@company.com")).toBe(false);
+	});
+
+	it("takes everyone at a domain, and only at that domain", () => {
+		const list = ["*@company.com"];
+
+		expect(admits(list, "anyone@company.com")).toBe(true);
+		expect(admits(list, "anyone@sub.company.com")).toBe(false);
+		expect(admits(list, "anyone@company.com.evil.test")).toBe(false);
+		expect(admits(list, "company.com@evil.test")).toBe(false);
+	});
+
+	it("admits nobody off an empty list", () => {
+		expect(admits([], "nico@company.com")).toBe(false);
+	});
+});
+
+describe("asOperator", () => {
+	it("keeps an address as the address it is", () => {
+		expect(asOperator("Nico@Company.com")).toBe("nico@company.com");
+		expect(asOperator("  nico@company.com  ")).toBe("nico@company.com");
+		// Pasted out of a mail client, which brackets what it copies.
+		expect(asOperator("<nico@company.com>")).toBe("nico@company.com");
+	});
+
+	// A domain typed bare is somebody meaning the company. Reading it as anything else would be
+	// reading it as an address that cannot exist.
+	it("reads a bare domain as everyone at it", () => {
+		expect(asOperator("company.com")).toBe("*@company.com");
+		expect(asOperator("*@company.com")).toBe("*@company.com");
+		expect(asOperator("@company.com")).toBe("*@company.com");
+	});
+
+	it("refuses what is neither", () => {
+		expect(asOperator("")).toBeUndefined();
+		expect(asOperator("everyone")).toBeUndefined();
+		expect(asOperator("two words")).toBeUndefined();
+		expect(asOperator("nico@")).toBeUndefined();
+		// A star in the local part is a pattern, and patterns are the thing this grammar exists to
+		// keep off the list: `*@*.com` and `seb*@company.com` are unreadable at a glance.
+		expect(asOperator("seb*@company.com")).toBeUndefined();
+		expect(asOperator("*@*.com")).toBeUndefined();
+	});
+});
+
+describe("tooWide", () => {
+	it("refuses a domain a stranger can hold an address at by this afternoon", () => {
+		expect(tooWide("*@gmail.com")).toContain("gmail.com");
+		expect(tooWide("*@icloud.com")).toBeDefined();
+		expect(tooWide("*@proton.me")).toBeDefined();
+	});
+
+	it("leaves a company's own domain alone, and an address always", () => {
+		expect(tooWide("*@company.com")).toBeUndefined();
+		// One person at a public provider is one person, which is the ordinary case.
+		expect(tooWide("nico@gmail.com")).toBeUndefined();
 	});
 });

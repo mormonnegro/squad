@@ -57,6 +57,8 @@ const NO_MAIL: MailStanding = {
 	held: false,
 	here: false,
 	writes: false,
+	senders: [],
+	phrase: undefined,
 	trouble: undefined,
 };
 
@@ -98,6 +100,7 @@ function plane(
 		refusesGrant?: string;
 		posts?: MailStanding;
 		refusesMail?: string;
+		refusesSender?: string;
 	} = {},
 ) {
 	const asked: string[] = [];
@@ -118,6 +121,8 @@ function plane(
 	const connected: [string, string][] = [];
 	const carried: (CarrierSpec | undefined)[] = [];
 	const unmailed: string[] = [];
+	const admitted: string[] = [];
+	const denied: string[] = [];
 	// What the plane would say it has if it were asked right now, which a command can change.
 	let roster = options.has ?? [];
 	// Where the search is pointed. Answered back the way the plane answers it — read again after
@@ -255,6 +260,19 @@ function plane(
 			unmailed.push(posted.mailbox ?? "");
 			posted = NO_MAIL;
 		},
+		// The plane is what turns a typed line into an entry — a bare domain comes back as the whole of
+		// it — so the console sends what was typed and the list it draws is whatever came back.
+		allowSender: async (typed: string) => {
+			admitted.push(typed);
+			if (options.refusesSender !== undefined) throw new Error(options.refusesSender);
+			const entry = typed.includes("@") ? typed : `*@${typed}`;
+			posted = { ...posted, senders: [...posted.senders, entry], phrase: undefined };
+			return entry;
+		},
+		denySender: async (entry: string) => {
+			denied.push(entry);
+			posted = { ...posted, senders: posted.senders.filter((one) => one !== entry) };
+		},
 	} as unknown as ControlClient;
 	return {
 		client,
@@ -276,6 +294,8 @@ function plane(
 		connected,
 		carried,
 		unmailed,
+		admitted,
+		denied,
 		built: (id: string) => finish(listed(id)),
 		/** The plane is what says an agent is thinking, so the console is told the way it tells it. */
 		thinking: (id: string) => feed({ kind: "thinking", agentId: id }),
@@ -2317,6 +2337,117 @@ describe("the config screen, pressed at", () => {
 
 				expect(screen.offered).toEqual([]);
 				expect(screen.screen()).toContain("⌫ disconnects it");
+			} finally {
+				screen.close();
+			}
+		});
+
+		/**
+		 * Who the mailbox is read for, typed at the same screen that connected it.
+		 *
+		 * This is the account's whole security and it changes every time somebody joins, so it is a list
+		 * the console owns rather than a line in a file that would be edited and redeployed. The plane
+		 * decides what a typed line means; the keyboard only has to get it there and draw what came back.
+		 */
+		const listing = async (senders: readonly string[] = [], refusesSender?: string) => {
+			const screen = await sections({
+				pays,
+				thinks,
+				posts: { ...reading, senders },
+				...(refusesSender !== undefined ? { refusesSender } : {}),
+			});
+			for (let step = 0; step < 4; step += 1) await screen.press(DOWN);
+			await screen.press(ENTER);
+			// Past the two mail rows this mailbox draws, onto the list under them.
+			for (let step = 0; step < senders.length + 2; step += 1) await screen.press(DOWN);
+			return screen;
+		};
+
+		it("takes an address onto the list from the row that adds one", async () => {
+			const screen = await listing();
+			try {
+				expect(screen.screen()).toContain("+ an address");
+
+				await screen.press(ENTER);
+				await screen.press("nico@squad.dev");
+				await screen.press(ENTER);
+
+				expect(screen.admitted).toEqual(["nico@squad.dev"]);
+				expect(screen.screen()).toContain("nico@squad.dev");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// A domain is the shape somebody reaches for when the answer is "the company", and the plane is
+		// what turns it into the entry. What the screen draws afterwards is that entry, not what was typed.
+		it("draws back what the plane made of a bare domain", async () => {
+			const screen = await listing();
+			try {
+				await screen.press(ENTER);
+				await screen.press("company.com\n");
+
+				expect(screen.admitted).toEqual(["company.com"]);
+				expect(screen.screen()).toContain("*@company.com");
+				expect(screen.screen()).toContain("everyone at company.com");
+			} finally {
+				screen.close();
+			}
+		});
+
+		// A wildcard over a provider anybody can sign up with is everybody, and the plane refuses it. The
+		// line stays where it was typed with the reason beside it, rather than a list it is quietly not in.
+		it("says why the plane would not admit a line", async () => {
+			const screen = await listing([], "anybody can get an address at gmail.com");
+			try {
+				await screen.press(ENTER);
+				await screen.press("*@gmail.com\n");
+
+				expect(screen.screen()).toContain("anybody can get an address at gmail.com");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("gives up on an address without admitting it", async () => {
+			const screen = await listing();
+			try {
+				await screen.press(ENTER);
+				await screen.press("nico@squad.dev");
+				await screen.press(ESCAPE);
+				await screen.press(ENTER);
+
+				expect(screen.admitted).toEqual([]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// Wider than the row: mail from them stops being answered from that moment, so it is asked
+		// before it happens and answered by one key.
+		it("asks before dropping somebody, and drops them when the answer is yes", async () => {
+			const screen = await listing(["nico@squad.dev"]);
+			try {
+				await screen.press(UP);
+				await screen.press(BACKSPACE);
+				expect(screen.screen()).toContain("stop reading mail from nico@squad.dev");
+				expect(screen.denied).toEqual([]);
+
+				await screen.press("y");
+				expect(screen.denied).toEqual(["nico@squad.dev"]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("keeps somebody on the list when the answer is anything else", async () => {
+			const screen = await listing(["nico@squad.dev"]);
+			try {
+				await screen.press(UP);
+				await screen.press(BACKSPACE);
+				await screen.press(ENTER);
+
+				expect(screen.denied).toEqual([]);
 			} finally {
 				screen.close();
 			}

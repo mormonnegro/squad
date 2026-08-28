@@ -1689,6 +1689,8 @@ describe("Config", () => {
 		held: true,
 		here: false,
 		writes: true,
+		senders: [],
+		phrase: undefined,
 		trouble: undefined,
 	};
 	const reach: readonly GrantStanding[] = [
@@ -1717,6 +1719,7 @@ describe("Config", () => {
 		grants?: readonly GrantStanding[];
 		mail?: MailStanding | undefined;
 		mailing?: { field: MailField; text: string } | undefined;
+		admitting?: string | undefined;
 		cursor?: number;
 		typing?: string | undefined;
 		secret?: string;
@@ -2284,6 +2287,68 @@ describe("Config", () => {
 		it("asks before forgetting, and says every agent stops being reachable", () => {
 			expect(mailed({ cursor: 0, forgetting: "desk@squad.dev" })).toContain(
 				"forget the mailbox at desk@squad.dev",
+			);
+		});
+
+		/**
+		 * Who the mailbox is read for, which is a different question from whether it is read at all.
+		 *
+		 * The four rows above say a channel is up. These say who it is up for, and that list is the whole
+		 * of the account's security: everybody on it spends turns and instructs agents, so it is a list
+		 * that has to be readable at a glance rather than one kept in a file somebody remembers editing.
+		 */
+		const admitted = (senders: readonly string[], props: Parameters<typeof pane>[0] = {}) =>
+			mailed({ mail: { ...post, senders, phrase: undefined }, ...props });
+
+		it("lists who may write, under a heading of their own", () => {
+			const drawn = admitted(["nico@squad.dev", "*@company.com"]);
+
+			expect(drawn).toContain("who may write");
+			expect(drawn).toContain("nico@squad.dev");
+			expect(drawn).toContain("*@company.com");
+			expect(drawn).toContain("+ an address");
+		});
+
+		// Eleven characters that stand for a number of people nobody counted. The line beside them is
+		// the difference between reading the list and trusting it.
+		it("says in words what a whole domain admits", () => {
+			expect(admitted(["*@company.com"])).toContain("everyone at company.com");
+			expect(admitted(["nico@squad.dev"])).not.toContain("everyone at squad.dev");
+		});
+
+		// Nothing to add to until there is a mailbox: a list of people who may write to no address is a
+		// question asked in the wrong order.
+		it("offers nobody until there is a mailbox", () => {
+			const nowhere = mailed({
+				mail: { ...post, mailbox: undefined, host: undefined, senders: [] },
+			});
+
+			expect(nowhere).not.toContain("who may write");
+			expect(nowhere).not.toContain("+ an address");
+		});
+
+		// The other door, on the row that would otherwise be the only one. The phrase works from a
+		// phone with nothing typed here, and it is spent the moment anybody is on the list.
+		it("names the pairing phrase while the list is empty, and not after", () => {
+			const empty = mailed({ cursor: 4, mail: { ...post, senders: [], phrase: "kwilbracne" } });
+			expect(empty).toContain('mail "kwilbracne" to the mailbox');
+
+			const filled = admitted(["nico@squad.dev"], { cursor: 5 });
+			expect(filled).not.toContain("kwilbracne");
+			expect(filled).toContain("*@company.com for everyone at a domain");
+		});
+
+		it("says what a row on the list does, and what stops it", () => {
+			expect(admitted(["nico@squad.dev"], { cursor: 4 })).toContain("read as instructions");
+		});
+
+		it("shows an address as it is typed onto the list", () => {
+			expect(admitted(["nico@squad.dev"], { admitting: "*@compa" })).toContain("*@compa");
+		});
+
+		it("asks before dropping somebody, and says their mail stops being answered", () => {
+			expect(admitted(["nico@squad.dev"], { cursor: 4, dropping: "nico@squad.dev" })).toContain(
+				"stop reading mail from nico@squad.dev",
 			);
 		});
 	});

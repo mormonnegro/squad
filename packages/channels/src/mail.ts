@@ -1,4 +1,4 @@
-import { baseAddress } from "./autoconfig.ts";
+import { baseAddress, domainOf, openDomain } from "./autoconfig.ts";
 
 /** Header names folded to lower case, which is how a reader wants them and not how they arrive. */
 export type MailHeaders = Readonly<Record<string, string | undefined>>;
@@ -83,6 +83,71 @@ export function agentFor(recipients: readonly string[], mailbox: string): string
 		if (tag !== "") return tag;
 	}
 	return undefined;
+}
+
+/** How a whole domain is written on the list, which is the only wildcard there is. */
+const ANYBODY = "*@";
+
+/**
+ * Whether the list lets this address in, which is the whole of who an agent takes orders from.
+ *
+ * Two shapes and no more: an address, or `*@company.com` for everyone at a domain. A pattern
+ * language here would be a pattern language deciding who may spend this plane's money, and the two
+ * things anybody actually wants — that person, those colleagues — are these two lines.
+ *
+ * The domain form is only safe because of what runs before it: {@link authenticated} has already
+ * made the sending domain prove itself, so `*@company.com` means whoever that company signed for
+ * rather than whoever typed it into a `From:`.
+ */
+export function admits(list: readonly string[], address: string): boolean {
+	const one = address.trim().toLowerCase();
+	const domain = domainOf(one);
+	return list.some((entry) => {
+		const wanted = entry.trim().toLowerCase();
+		return wanted.startsWith(ANYBODY) ? wanted.slice(ANYBODY.length) === domain : wanted === one;
+	});
+}
+
+const DOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * What somebody typed, as the list would hold it, or nothing when it is neither of the two shapes.
+ *
+ * Generous about the ways of writing the same thing, because all of them are things a hand does:
+ * an address pasted out of a mail client arrives inside angle brackets, a domain gets typed with
+ * the `*@` and without it, and case is whatever the keyboard was doing at the time.
+ */
+export function asOperator(typed: string): string | undefined {
+	const one = typed.trim().toLowerCase().replace(/^<|>$/g, "").trim();
+	if (one === "" || /\s/.test(one)) return undefined;
+
+	const at = one.lastIndexOf("@");
+	// No `@` at all is a domain and can be nothing else, so it is read as the one thing it could mean
+	// rather than refused for missing a character whose only job here is to separate two halves.
+	if (at === -1) return DOMAIN.test(one) ? `${ANYBODY}${one}` : undefined;
+
+	const local = one.slice(0, at);
+	const domain = one.slice(at + 1);
+	if (!DOMAIN.test(domain)) return undefined;
+	if (local === "" || local === "*") return `${ANYBODY}${domain}`;
+	// Half a wildcard is the beginning of a pattern language, and it is refused rather than taken
+	// literally: `sales*@company.com` matching one address called exactly that is a rule that looks
+	// like it is doing something and is not.
+	return local.includes("*") ? undefined : one;
+}
+
+/**
+ * Why an entry lets in more than anybody means by it, or nothing when it does not.
+ *
+ * The one mistake this list makes that cannot be seen by reading it back. `*@company.com` and
+ * `*@gmail.com` are the same eleven characters of grammar, and the second is a plane that takes
+ * instructions from anyone who signs up for an address this afternoon.
+ */
+export function tooWide(entry: string): string | undefined {
+	if (!entry.startsWith(ANYBODY)) return undefined;
+	const domain = entry.slice(ANYBODY.length);
+	if (!openDomain(domain)) return undefined;
+	return `anybody can get an address at ${domain}, so ${entry} is everybody. Name the addresses instead.`;
 }
 
 /** Whether an address is the connected mailbox itself, tag or no tag. */

@@ -7,6 +7,7 @@ export {
 	domainOf,
 	type Incoming,
 	needsBridge,
+	openDomain,
 } from "./autoconfig.ts";
 export { type Channel, ChannelError, ChannelRouter, type Reply } from "./channel.ts";
 export {
@@ -20,7 +21,9 @@ export {
 } from "./email.ts";
 export {
 	addressesIn,
+	admits,
 	agentFor,
+	asOperator,
 	authenticated,
 	automated,
 	isOwnAddress,
@@ -28,6 +31,7 @@ export {
 	parseAddress,
 	readableText,
 	type Sender,
+	tooWide,
 	withoutTrail,
 } from "./mail.ts";
 export { asHtml } from "./markup.ts";

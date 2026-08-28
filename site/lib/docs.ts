@@ -53,7 +53,7 @@ export const DOCS: readonly DocGroup[] = [
 			{
 				href: "/docs/email/",
 				title: "Email",
-				blurb: "one mailbox for the whole plane, and who carries the answer out",
+				blurb: "one mailbox for the whole plane, and a list of who may write to it",
 			},
 			{
 				href: "/docs/webhooks/",

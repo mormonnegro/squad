@@ -278,6 +278,18 @@ export class ControlClient {
 		await this.#once({ op: "set-carrier", ...(spec !== undefined ? { spec } : {}) });
 	}
 
+	/** Lets somebody write to the agents, and answers with the line as the list holds it. */
+	async allowSender(typed: string): Promise<string> {
+		const response = await this.#once({ op: "allow-sender", typed });
+		if ("text" in response) return response.text;
+		throw new ControlError("unexpected answer to allow-sender");
+	}
+
+	/** Takes one off the list, named exactly as it is written there. */
+	async denySender(entry: string): Promise<void> {
+		await this.#once({ op: "deny-sender", entry });
+	}
+
 	async forgetMail(): Promise<void> {
 		await this.#once({ op: "forget-mail" });
 	}
