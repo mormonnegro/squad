@@ -5,7 +5,9 @@ import type { NamedServer } from "../src/mcp.ts";
 import {
 	createTurnHandler,
 	HOUSE_RULES,
+	LESSON_BYTES,
 	MOST_ASKED,
+	MOST_LESSONS,
 	PiTurnRunner,
 	parseAsked,
 	parseWake,
@@ -51,6 +53,10 @@ class StubSandbox implements TurnSandbox {
 	refusesWrites = false;
 	/** The session files pi has left behind, which are what forgetting a conversation reaches. */
 	sessions: string[] = [];
+	/** What the agent has written down about its own mistakes. Empty is an agent yet to be wrong. */
+	lessons = "";
+	/** A sandbox where that file cannot be read at all, which is what a new agent's volume is. */
+	readsLessons = true;
 
 	async run(
 		agentId: string,
@@ -78,6 +84,14 @@ class StubSandbox implements TurnSandbox {
 			if (String(cmd[2]).includes("cat >")) {
 				if (this.refusesWrites) return { exitCode: 1, stdout: "", stderr: "read-only" };
 				return { exitCode: 0, stdout: "", stderr: "" };
+			}
+			// Read and left, unlike the two below, and cut where the real head would cut it.
+			if (String(cmd[2]).startsWith("head")) {
+				if (!this.readsLessons) return { exitCode: 1, stdout: "", stderr: "no such file" };
+				const lines = Number(cmd[5]);
+				const bytes = Number(cmd[6]);
+				const cut = this.lessons.split("\n").slice(0, lines).join("\n").slice(0, bytes);
+				return { exitCode: 0, stdout: cut, stderr: "" };
 			}
 			const asking = String(cmd[4]).includes("console.json");
 			const held = asking ? this.asked : this.left;
@@ -118,6 +132,16 @@ class StubSandbox implements TurnSandbox {
 	}
 }
 
+/**
+ * The turn itself, out of everything a turn does around it.
+ *
+ * Found rather than indexed because a turn keeps growing another step in front of pi — servers,
+ * search, the model, the lessons — and every one of those has been a morning spent on tests that
+ * were only ever counting.
+ */
+const piCall = (sandbox: StubSandbox): Invocation | undefined =>
+	sandbox.calls.find((call) => call.cmd[0] === "pi");
+
 describe("PiTurnRunner", () => {
 	it("runs pi non-interactively with the prompt on stdin", async () => {
 		const sandbox = new StubSandbox();
@@ -126,8 +150,8 @@ describe("PiTurnRunner", () => {
 		const result = await runner.run("a1", "something happened");
 
 		expect(result.text).toBe("done");
-		expect(sandbox.calls[0]?.input).toBe("something happened");
-		expect(sandbox.calls[0]?.cmd).toEqual([
+		expect(piCall(sandbox)?.input).toBe("something happened");
+		expect(piCall(sandbox)?.cmd).toEqual([
 			"pi",
 			"--print",
 			"--mode",
@@ -150,6 +174,8 @@ describe("PiTurnRunner", () => {
 			"/usr/local/lib/squad/extensions/mcp.ts",
 			"--extension",
 			"/usr/local/lib/squad/extensions/console.ts",
+			"--extension",
+			"/usr/local/lib/squad/extensions/remember.ts",
 		]);
 	});
 
@@ -177,7 +203,7 @@ describe("PiTurnRunner", () => {
 
 		expect(sandbox.calls[0]?.cmd).toContain("/home/agent/.run/mcp.json");
 		expect(sandbox.calls[0]?.input).toBe("[]");
-		expect(sandbox.calls[1]?.cmd[0]).toBe("pi");
+		expect(piCall(sandbox)).toBeDefined();
 
 		held = [{ name: "linear", server: { transport: "http", url: "https://mcp.linear.app/mcp" } }];
 		await runner.run("a1", "otra vez");
@@ -249,7 +275,60 @@ describe("PiTurnRunner", () => {
 
 		await new PiTurnRunner({ sandbox }).run("a1", "hello");
 
-		expect(sandbox.calls[0]?.workingDir).toBe("/home/agent/workspace");
+		expect(piCall(sandbox)?.workingDir).toBe("/home/agent/workspace");
+	});
+
+	/**
+	 * The half of remembering that the agent cannot do for itself: the turn where a lesson would save
+	 * something is the turn where nothing reminds the agent that it has one.
+	 */
+	it("reads back what the agent wrote down about its own mistakes", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.lessons = "- The proxy refuses any host nobody granted.\n";
+
+		await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		const said = piCall(sandbox)?.cmd.join("\n") ?? "";
+		expect(said).toContain("The proxy refuses any host nobody granted.");
+		expect(said).toContain("do not have to learn them a second time");
+	});
+
+	// An agent that has never been wrong should not carry a heading saying so, on every turn, forever.
+	it("says nothing at all when the agent has no lessons", async () => {
+		const sandbox = new StubSandbox();
+
+		await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		const cmd = piCall(sandbox)?.cmd ?? [];
+		expect(cmd.filter((one) => one === "--append-system-prompt")).toHaveLength(2);
+	});
+
+	/**
+	 * The file is the agent's own and it has an editor, so the count it was told is a count it can
+	 * walk past. What that costs is not a broken turn — it is a slow expensive one, every turn, that
+	 * nobody notices until the bill, which is why the cut that decides is this one and not the tool's.
+	 */
+	it("cuts the lessons in the sandbox, so a file somebody filled never crosses the socket", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.lessons = Array.from({ length: 500 }, (_, index) => `- lesson ${index}`).join("\n");
+
+		await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		const read = sandbox.calls.find((call) => String(call.cmd[2]).startsWith("head"));
+		expect(read?.cmd).toEqual(expect.arrayContaining([String(MOST_LESSONS), String(LESSON_BYTES)]));
+		const said = piCall(sandbox)?.cmd.join("\n") ?? "";
+		expect(said).toContain("lesson 19");
+		expect(said).not.toContain("lesson 20");
+	});
+
+	// Fewer lessons is a worse turn. No turn is worse than that, and a new agent has no file at all.
+	it("takes the turn anyway when the lessons could not be read", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.readsLessons = false;
+
+		const result = await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		expect(result.text).toBe("done");
 	});
 
 	// Every turn and not only the first, because tidiness is a habit; and from the plane rather than
@@ -315,7 +394,7 @@ describe("PiTurnRunner", () => {
 	it("bounds a turn so a stuck agent cannot hold its sandbox forever", async () => {
 		const sandbox = new StubSandbox();
 		await new PiTurnRunner({ sandbox, timeoutMs: 1000 }).run("a1", "hi");
-		expect(sandbox.calls[0]?.timeoutMs).toBe(1000);
+		expect(piCall(sandbox)?.timeoutMs).toBe(1000);
 	});
 
 	it("reports a failed turn instead of returning empty output", async () => {

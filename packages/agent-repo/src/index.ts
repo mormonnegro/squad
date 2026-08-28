@@ -10,6 +10,7 @@ export {
 	AgentRepoError,
 	type InitAgentRepoOptions,
 	initAgentRepo,
+	LESSONS_FILE,
 	loadAgentRepo,
 	MANIFEST_FILE,
 	MEMORY_DIR,

@@ -29,15 +29,17 @@ RUN chmod 755 /usr/local/bin/keep
 
 # The plane's own extensions, kept here rather than in the agent's repository: that repository is
 # written once and is the agent's from then on, so anything shipped into it could never be fixed.
-# The first three are imported by the extensions below rather than registered themselves, which is what
-# lets them be tested: neither reaches for pi or typebox, so vitest can load them outside the image.
+# The first four are imported by the extensions below rather than registered themselves, which is what
+# lets them be tested: none reaches for pi or typebox, so vitest can load them outside the image.
 COPY http-reply.ts /usr/local/lib/squad/extensions/http-reply.ts
 COPY appointment.ts /usr/local/lib/squad/extensions/appointment.ts
 COPY commands.ts /usr/local/lib/squad/extensions/commands.ts
+COPY lessons.ts /usr/local/lib/squad/extensions/lessons.ts
 COPY wake.ts /usr/local/lib/squad/extensions/wake.ts
 COPY search.ts /usr/local/lib/squad/extensions/search.ts
 COPY mcp.ts /usr/local/lib/squad/extensions/mcp.ts
 COPY console.ts /usr/local/lib/squad/extensions/console.ts
+COPY remember.ts /usr/local/lib/squad/extensions/remember.ts
 
 USER agent
 WORKDIR /home/agent

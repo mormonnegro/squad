@@ -43,12 +43,39 @@ agent.yaml   name, model, and the capabilities it asks an operator for
 soul.md      who it is; appended to the system prompt on every turn
 skills/      SKILL.md folders, loaded by pi
 memory/      what it chose to remember, partitioned by users, projects and reference
+             lessons.md is what it got wrong, and is read back to it on every turn
 tools/       scripts it wrote for itself
 ```
 
 It is scaffolded once, git-initialised, and then left alone: what the agent learns and what it can do
 are files it edits and commits itself. The control plane never writes there again, because the second
 write would be the control plane overwriting the agent's own work.
+
+### Learning from its own mistakes
+
+Everything under `memory/` is there when the agent goes looking for it, which is the right shape for
+what it knows about a person or a project: recalled when the subject comes up. A mistake is the
+opposite. The turn where the lesson would have saved something is the turn where nothing reminds the
+agent that it has one, because not knowing is what a mistake is made of.
+
+So `memory/lessons.md` is the one file that is carried rather than looked up. A `remember` tool
+appends one line to it — the rule, not the story of how it was found out — and the plane reads it
+back into the system prompt at the start of every turn, after the soul and the house rules and
+nearest the work.
+
+Being carried is what makes a lesson worth writing and also what makes it cost something, so it is
+bounded at both ends. Twenty lessons, one line each. When the list is full the tool **refuses**, and
+says where to go: nothing is dropped for the agent, which merges two lines that turned out to be the
+same lesson or deletes one it has outgrown. Scarcity is what produces consolidation — a list nobody
+is ever made to consolidate never gets consolidated, and one that only grows is an agent that pays
+more to think the longer it has been alive, and pays most for the lessons it has held longest and
+needs least. The plane applies the same cap again when it reads, inside the sandbox and before
+anything crosses the socket, because the file is the agent's own and it has an editor: what an
+unbounded file costs is not a broken turn but a slow expensive one on every turn, which nobody
+notices until the bill arrives.
+
+An agent that has never been wrong carries nothing at all — no heading, no empty list, no invitation
+to fill one with things that merely sound wise.
 
 That repository is the agent, not its desk. Turns start next door, in a second volume at
 `/home/agent/workspace`, and the house rule goes in as argv on every turn: one directory per project,

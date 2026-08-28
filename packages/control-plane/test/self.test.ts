@@ -34,6 +34,7 @@ describe("the agent's own repository", () => {
 			"/home/agent/.self/soul.md",
 			"/home/agent/.self/skills/.gitkeep",
 			"/home/agent/.self/tools/.gitkeep",
+			"/home/agent/.self/memory/lessons.md",
 			"/home/agent/.self/memory/users/.gitkeep",
 			"/home/agent/.self/memory/projects/.gitkeep",
 			"/home/agent/.self/memory/reference/.gitkeep",

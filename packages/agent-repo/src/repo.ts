@@ -11,6 +11,19 @@ export const TOOLS_DIR = "tools";
 /** Memory is partitioned so the agent can scope what it recalls to the subject at hand. */
 export const MEMORY_PARTITIONS = ["users", "projects", "reference"] as const;
 
+/**
+ * The one file in memory that is read to the agent rather than looked up by it.
+ *
+ * Everything else under `memory/` is there when the agent goes for it, which is the right shape for
+ * what it knows about a person or a project: recalled when the subject comes up. A mistake is the
+ * opposite. The turn where the lesson would save something is the turn where nothing reminds the
+ * agent that it has one, because not knowing is what a mistake is made of.
+ *
+ * So this file is carried, and everything about it is bounded because of that: one line each, and a
+ * count the agent has to stay under. See MOST_LESSONS in the sandbox.
+ */
+export const LESSONS_FILE = `${MEMORY_DIR}/lessons.md`;
+
 /** Mount point of the agent repository inside its sandbox. */
 export const SANDBOX_REPO_PATH = "/home/agent/.self";
 
@@ -113,6 +126,9 @@ export function scaffoldAgentRepo(options: InitAgentRepoOptions): readonly Scaff
 		// Empty directories do not survive a git clone, and this repository is meant to be cloned.
 		{ path: `${SKILLS_DIR}/.gitkeep`, content: "" },
 		{ path: `${TOOLS_DIR}/.gitkeep`, content: "" },
+		// Empty rather than headed, because this one is read into every turn and a heading the agent
+		// never wrote would be a line it pays for on every turn of its life to be told nothing.
+		{ path: LESSONS_FILE, content: "" },
 		...MEMORY_PARTITIONS.map((partition) => ({
 			path: `${MEMORY_DIR}/${partition}/.gitkeep`,
 			content: "",

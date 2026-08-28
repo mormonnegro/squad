@@ -5,6 +5,7 @@ import {
 	type ExecResult,
 	SANDBOX_CONSOLE_FILE,
 	SANDBOX_EXTENSIONS,
+	SANDBOX_LESSONS_FILE,
 	SANDBOX_MCP_FILE,
 	SANDBOX_SEARCH_FILE,
 	SANDBOX_WAKE_FILE,
@@ -167,6 +168,8 @@ export interface PiTurnRunnerOptions {
 	/** Which provider the web_search tool goes through, asked again at the start of every turn. */
 	readonly search?: () => Promise<Search | undefined>;
 	readonly searchFile?: string;
+	/** The agent's own file of what it got wrong, read back to it at the start of every turn. */
+	readonly lessonsFile?: string;
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
@@ -207,6 +210,35 @@ export const HOUSE_RULES = [
 ].join("\n");
 
 /**
+ * How many lessons are read back to the agent, and how much of them.
+ *
+ * The tool caps this too, and this is the cap that decides. The file is the agent's own — it has a
+ * shell and an editor and is expected to use both on it — so the number it was told is a number it
+ * can walk past, and what would come of trusting it is not a broken turn but a slow expensive one
+ * that nobody notices until the bill. The bytes are the same guarantee against one enormous line.
+ */
+export const MOST_LESSONS = 20;
+export const LESSON_BYTES = 4_000;
+
+/**
+ * The lessons, framed as what they are, or nothing at all when there are none.
+ *
+ * Nothing at all is the important half. An agent that has never been wrong should not carry a
+ * heading saying so, and a heading over an empty list is an invitation to fill it — which is how a
+ * list meant for what was learned the hard way fills up with things the model thought sounded wise.
+ */
+export function lessonsPrompt(lessons: string): string | undefined {
+	const written = lessons.trim();
+	if (written.length === 0) return undefined;
+	return [
+		"What you got wrong before, written down by you at the time it happened. They are here so",
+		"that you do not have to learn them a second time:",
+		"",
+		written,
+	].join("\n");
+}
+
+/**
  * Takes one turn by running pi non-interactively inside the agent's sandbox.
  *
  * pi 0.84.2 has no server to hold a session open, so each wakeup is a separate process. Passing a
@@ -229,6 +261,7 @@ export class PiTurnRunner {
 	readonly #mcpFile: string;
 	readonly #search: (() => Promise<Search | undefined>) | undefined;
 	readonly #searchFile: string;
+	readonly #lessonsFile: string;
 	/** The turn each agent is taking, while it is taking it, so that it can be stopped. */
 	readonly #running = new Map<string, AbortController>();
 
@@ -248,6 +281,7 @@ export class PiTurnRunner {
 		this.#mcpFile = options.mcpFile ?? SANDBOX_MCP_FILE;
 		this.#search = options.search;
 		this.#searchFile = options.searchFile ?? SANDBOX_SEARCH_FILE;
+		this.#lessonsFile = options.lessonsFile ?? SANDBOX_LESSONS_FILE;
 	}
 
 	sessionId(agentId: string): string {
@@ -258,7 +292,8 @@ export class PiTurnRunner {
 	 * The soul and skills are passed as paths rather than discovered, because discovery is gated on
 	 * pi trusting the project and the answer to "is this project trusted" is the agent itself.
 	 */
-	commandFor(agentId: string, thinksWith?: ModelChoice): string[] {
+	commandFor(agentId: string, thinksWith?: ModelChoice, lessons?: string): string[] {
+		const learned = lessons === undefined ? undefined : lessonsPrompt(lessons);
 		return [
 			...this.#command,
 			"--print",
@@ -277,6 +312,10 @@ export class PiTurnRunner {
 			// this flag more than once, and takes text where the line above takes a path.
 			"--append-system-prompt",
 			HOUSE_RULES,
+			// Last of the three, nearest the task, because it is the one that is about the work rather
+			// than about the agent: the soul is who it is, the house rules are where it lives, and this is
+			// what it found out by being wrong here.
+			...(learned !== undefined ? ["--append-system-prompt", learned] : []),
 			"--skill",
 			`${this.#repoPath}/${SKILLS_DIR}`,
 			// Named rather than discovered, for the same reason the skills are: discovery is gated on
@@ -353,16 +392,22 @@ export class PiTurnRunner {
 			await this.#putServers(agentId);
 			await this.#putSearch(agentId);
 			const thinksWith = await this.#model?.(agentId);
+			const lessons = await this.#lessons(agentId);
 			// In the workspace, because a turn works where it is standing and the repository is not a
 			// workspace: standing there is what had agents building projects inside their own soul. The
 			// soul, the skills and the session are named by absolute path above, so none of them needs
 			// this to be the repository — and the agent can still walk into it when it means to.
-			executed = await this.#sandbox.run(agentId, this.commandFor(agentId, thinksWith), prompt, {
-				timeoutMs: this.#timeoutMs,
-				workingDir: this.#workspacePath,
-				onStdout: (chunk) => output.push(chunk),
-				signal: stopping.signal,
-			});
+			executed = await this.#sandbox.run(
+				agentId,
+				this.commandFor(agentId, thinksWith, lessons),
+				prompt,
+				{
+					timeoutMs: this.#timeoutMs,
+					workingDir: this.#workspacePath,
+					onStdout: (chunk) => output.push(chunk),
+					signal: stopping.signal,
+				},
+			);
 		} finally {
 			// Cleared before anything else can go wrong, so a stop arriving late finds nothing to stop
 			// rather than reaching into the turn after it.
@@ -461,6 +506,40 @@ export class PiTurnRunner {
 				JSON.stringify(chosen),
 			)
 			.catch(() => undefined);
+	}
+
+	/**
+	 * Reads back what the agent wrote down about its own mistakes, and no more of it than was agreed.
+	 *
+	 * Cut in the sandbox rather than after it arrives, so that a file somebody has filled with a
+	 * hundred thousand lines is a hundred thousand lines that never cross the socket. The cut is the
+	 * point of the whole feature: this is read on every turn forever, and the difference between a
+	 * memory and a leak is whether anything bounds it.
+	 *
+	 * Left rather than taken, unlike the wakeup and the console queue. Those are messages, consumed
+	 * once. This is the agent's, and reading it changes nothing.
+	 */
+	async #lessons(agentId: string): Promise<string | undefined> {
+		const read = await this.#sandbox
+			.run(
+				agentId,
+				[
+					"sh",
+					"-c",
+					'head -n "$2" "$1" 2>/dev/null | head -c "$3"',
+					"sh",
+					this.#lessonsFile,
+					String(MOST_LESSONS),
+					String(LESSON_BYTES),
+				],
+				"",
+			)
+			.catch(() => undefined);
+
+		// A turn with no lessons is the ordinary case — a new agent has none — so nothing here is worth
+		// failing a turn over, and an unreadable file is the same as an empty one from where pi stands.
+		if (read === undefined || read.exitCode !== 0) return undefined;
+		return read.stdout.trim().length > 0 ? read.stdout : undefined;
 	}
 
 	/**

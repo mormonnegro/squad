@@ -1,4 +1,4 @@
-import { SANDBOX_REPO_PATH } from "@squad/agent-repo";
+import { LESSONS_FILE, SANDBOX_REPO_PATH } from "@squad/agent-repo";
 
 /** Where the egress proxy's root certificate is mounted inside the sandbox. */
 export const CA_CERT_PATH = "/etc/squad/ca.crt";
@@ -47,6 +47,14 @@ export const SANDBOX_MCP_EXTENSION = "/usr/local/lib/squad/extensions/mcp.ts";
 export const SANDBOX_CONSOLE_EXTENSION = "/usr/local/lib/squad/extensions/console.ts";
 
 /**
+ * The extension that lets an agent write down what it got wrong. Shipped in the image.
+ *
+ * The only one of these whose file the agent keeps rather than hands over, and the only one whose
+ * effect lands on a turn nobody has asked for yet.
+ */
+export const SANDBOX_REMEMBER_EXTENSION = "/usr/local/lib/squad/extensions/remember.ts";
+
+/**
  * Every extension the plane hands the agent, which is a list because there is more than one and
  * naming only the first is a silent way to lose the rest. An extension in the image that nothing
  * names is one the agent never finds, and what that looks like from outside is not an error: it is
@@ -58,6 +66,7 @@ export const SANDBOX_EXTENSIONS: readonly string[] = [
 	SANDBOX_SEARCH_EXTENSION,
 	SANDBOX_MCP_EXTENSION,
 	SANDBOX_CONSOLE_EXTENSION,
+	SANDBOX_REMEMBER_EXTENSION,
 ];
 
 /**
@@ -96,6 +105,17 @@ export const SANDBOX_SEARCH_FILE = `${SANDBOX_HOME}/.run/search.json`;
  * a turn waiting to be allowed to ask for the second.
  */
 export const SANDBOX_CONSOLE_FILE = `${SANDBOX_HOME}/.run/console.json`;
+
+/**
+ * Where the agent writes down what it got wrong, and the plane reads it back to it every turn.
+ *
+ * Inside the repository, unlike the four above, because this one is not a message: it is part of
+ * what the agent has become, it belongs in the same git history as the soul it sits beside, and an
+ * agent whose lessons lived on the plane's side would be an agent that cannot reread or rewrite its
+ * own. That it can rewrite this is the design and not a hole — the file is a copy of its judgement,
+ * and nothing is granted by it.
+ */
+export const SANDBOX_LESSONS_FILE = `${SANDBOX_REPO_PATH}/${LESSONS_FILE}`;
 
 export interface SandboxSpec {
 	readonly agentId: string;
@@ -139,6 +159,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		SQUAD_MCP_FILE: SANDBOX_MCP_FILE,
 		SQUAD_SEARCH_FILE: SANDBOX_SEARCH_FILE,
 		SQUAD_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
+		SQUAD_LESSONS_FILE: SANDBOX_LESSONS_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,
 		http_proxy: spec.proxyUrl,
