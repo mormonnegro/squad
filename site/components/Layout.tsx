@@ -50,6 +50,9 @@ export function Layout({
 					<Link href="/install" data-current={pathname.startsWith("/install")}>
 						install
 					</Link>
+					<Link href="/docs" data-current={pathname.startsWith("/docs")}>
+						docs
+					</Link>
 					<a href={REPO}>source</a>
 				</div>
 			</nav>

@@ -990,6 +990,171 @@ footer {
 	color: var(--green);
 }
 
+/* ---------- docs ---------- */
+
+.docs {
+	display: grid;
+	width: 100%;
+	max-width: 62rem;
+	margin: 0 auto;
+	padding: 2.4rem 1.5rem 0;
+	gap: 0 3rem;
+	grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+	.docs {
+		grid-template-columns: 13rem minmax(0, 44rem);
+	}
+}
+
+/* The column is there on a screen with room for one, and it stays where it is while the page moves
+   past it — a menu of sixteen rows that scrolls away is one you scroll back up to use. */
+.docs-side {
+	display: none;
+}
+
+@media (min-width: 900px) {
+	.docs-side {
+		display: block;
+		position: sticky;
+		top: 4rem;
+		align-self: start;
+		max-height: calc(100vh - 5.5rem);
+		overflow-y: auto;
+		padding-bottom: 2rem;
+	}
+}
+
+/* And on a phone it is a thing you open, because sixteen rows above every page is the page pushed
+   off the screen by the way to leave it. */
+.docs-menu {
+	margin-bottom: 2rem;
+	background: var(--bg-raised);
+	border: 1px solid var(--line-soft);
+	border-radius: 8px;
+}
+
+@media (min-width: 900px) {
+	.docs-menu {
+		display: none;
+	}
+}
+
+.docs-menu > summary {
+	padding: 0.5rem 0.9rem;
+	font-family: var(--mono);
+	font-size: 0.72rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--muted);
+	cursor: pointer;
+}
+
+.docs-menu[open] > summary {
+	border-bottom: 1px solid var(--line-soft);
+}
+
+.docs-menu .docs-nav {
+	padding: 0.9rem;
+}
+
+.docs-group + .docs-group {
+	margin-top: 1.3rem;
+}
+
+.docs-group-name {
+	display: block;
+	margin-bottom: 0.45rem;
+	font-family: var(--mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--muted);
+	opacity: 0.7;
+}
+
+.docs-nav a {
+	display: block;
+	padding: 0.14rem 0;
+	font-size: 0.9rem;
+	color: var(--muted);
+	border: 0;
+}
+
+.docs-nav a:hover {
+	color: var(--text-strong);
+}
+
+/* The page being read, in the cyan the console gives the row the keyboard is on. There is no mark in
+   a gutter beside it: a column whose rows all begin further in than their heading reads as a list
+   indented under a title it does not belong to. */
+.docs-nav a[data-current="true"] {
+	color: var(--cyan);
+}
+
+.docs-body {
+	min-width: 0;
+	padding-bottom: 1rem;
+}
+
+.docs-head h1 {
+	font-size: clamp(1.7rem, 5vw, 2.2rem);
+}
+
+.docs-head .lede {
+	margin-bottom: 0;
+	font-size: 1.05rem;
+	color: var(--muted);
+}
+
+/* Shorter than the sections on the front, which are the argument for reading on. These are looked
+   things up in. */
+.docs-body section {
+	padding: 2.1rem 0;
+}
+
+/* The rule the front page drops on its first section is wanted here: what is above it is the title,
+   and the first section is already a different thing from it. */
+.docs-body section:first-of-type {
+	border-top: 1px solid var(--line-soft);
+}
+
+/* A capture is a hundred columns across because a console is, and the whole of what one shows is the
+   shape of the screen rather than any line on it — so a mock cut down the middle is not a smaller
+   mock. It is set a size that fits one, and on a screen with room to the right of the text it takes
+   that room instead of scrolling. `max-content` is what keeps the short ones short. */
+.docs-body .terminal pre {
+	font-size: 0.7rem;
+}
+
+@media (min-width: 900px) {
+	.docs-body .terminal pre {
+		font-size: 0.75rem;
+	}
+}
+
+@media (min-width: 1150px) {
+	.docs-body .terminal {
+		width: max-content;
+		max-width: min(52rem, calc(100vw - 24rem));
+	}
+}
+
+.docs-map + .docs-map {
+	margin-top: 1.9rem;
+}
+
+.docs-walk {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+	justify-content: space-between;
+	margin-top: 1rem;
+	padding-top: 1.7rem;
+	border-top: 1px solid var(--line-soft);
+}
+
 /* ---------- next/prev ---------- */
 
 .jump {
