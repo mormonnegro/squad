@@ -452,11 +452,29 @@ describe("the console, pressed at", () => {
 	});
 
 	/**
-	 * The config screen draws a list of its own and that list has the arrows, so leaving it upward
-	 * takes as many presses as walking back to the top of it — and then one more, which is the press
-	 * that would otherwise have done nothing at all.
+	 * The config screen draws a list of its own, and arriving beside it is not the same as being in
+	 * it: the walk down the column ends on the row that opens the screen, and the key that got there
+	 * still walks the column until something says to hand it over.
 	 */
-	it("steps off the config screen once its own list runs out above the cursor", async () => {
+	it("leaves the arrows on the column when the walk down reaches the config screen", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo")]);
+		try {
+			await console_.press(SHIFT_TAB);
+			expect(showing(console_.screen())).toBe("config");
+
+			await console_.press(DOWN);
+			await console_.press(DOWN);
+
+			expect(showing(console_.screen())).toBe("config");
+			expect(console_.screen()).toContain("↑↓ moves");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** And back up the column from there, because nothing on the way down took the key. */
+	it("steps off the config screen on the key that arrived at it", async () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
@@ -485,14 +503,15 @@ describe("the console, pressed at", () => {
 	});
 
 	/**
-	 * On the config screen the arrows are that screen's list's until it runs out, so the column names
-	 * the key that answers there whatever row the cursor is on.
+	 * Once the config screen's list has been handed the arrows they are its until it runs out, so the
+	 * column names the key that answers there whatever row the cursor is on.
 	 */
 	it("names tab in the column once the arrows belong to the screen beside it", async () => {
 		const { client } = plane();
 		const console_ = open(client, [listed("demo")]);
 		try {
 			await console_.press(SHIFT_TAB);
+			await console_.press(RIGHT);
 
 			expect(showing(console_.screen())).toBe("config");
 			expect(console_.screen()).toContain("tab moves");
@@ -1124,9 +1143,21 @@ describe("the config screen, pressed at", () => {
 		return { ...it_, ...console_ };
 	}
 
+	/**
+	 * The same, with the arrows handed to the screen's own list.
+	 *
+	 * Arriving is not entering: the column keeps them until a key says otherwise, so every one of
+	 * these starts with the press that says it.
+	 */
+	async function sections(options: Parameters<typeof plane>[0] = { pays, thinks }) {
+		const screen = await config(options);
+		await screen.press(RIGHT);
+		return screen;
+	}
+
 	/** The same, with the models section already open, which is where most of these start. */
 	async function models(options: Parameters<typeof plane>[0] = { pays, thinks }) {
-		const screen = await config(options);
+		const screen = await sections(options);
 		await screen.press(ENTER);
 		return screen;
 	}
@@ -1205,9 +1236,43 @@ describe("the config screen, pressed at", () => {
 		}
 	});
 
-	// Nothing to leave, and nothing to do: the column is already what is being walked, and a left that
-	// stepped off the screen would be the arrows meaning somewhere else on the row they were pressed.
-	it("does nothing on a left arrow at the list of sections", async () => {
+	// Both keys, because both are named on the row at the foot: a hand on the arrows walks across and
+	// a hand that reads the row presses return, and neither should find the other one's key.
+	it("hands the arrows to its own list on a return as well as on a right arrow", async () => {
+		const screen = await config();
+		try {
+			expect(screen.screen()).toContain("↑↓ moves");
+
+			await screen.press(ENTER);
+			expect(screen.screen()).toContain("tab moves");
+
+			// Standing on the first section rather than in it: the press that entered the list is not
+			// also the press that opens what it is standing on.
+			expect(screen.screen()).toContain("⏎ open");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// One level further out than a section, and the same key does it: the list of sections was itself
+	// entered, so left leaves it and the column has the arrows again.
+	it("gives the arrows back to the column on a left arrow at the list of sections", async () => {
+		const screen = await sections();
+		try {
+			expect(screen.screen()).toContain("tab moves");
+
+			await screen.press(LEFT);
+
+			expect(showing(screen.screen())).toBe("config");
+			expect(screen.screen()).toContain("↑↓ moves");
+		} finally {
+			screen.close();
+		}
+	});
+
+	// Nothing left to leave: the column is already what is being walked, and a left that stepped off
+	// the screen would be the arrows meaning somewhere else on the row they were pressed.
+	it("does nothing on a left arrow once the column has them back", async () => {
 		const screen = await config();
 		try {
 			await screen.press(LEFT);
@@ -1233,7 +1298,7 @@ describe("the config screen, pressed at", () => {
 	// The other half of the same idea: with right going in, the four arrows are the whole of moving
 	// about this screen — two for the list you are on, two for which list that is.
 	it("opens the section under the cursor on a right arrow", async () => {
-		const screen = await config();
+		const screen = await sections();
 		try {
 			expect(screen.screen()).toContain("→ ⏎ open");
 
@@ -1275,6 +1340,10 @@ describe("the config screen, pressed at", () => {
 			await screen.press(UP);
 			await screen.press(UP);
 			expect(screen.screen()).toContain("⏎ open");
+
+			await screen.press(UP);
+			expect(showing(screen.screen())).toBe("config");
+			expect(screen.screen()).toContain("↑↓ moves");
 
 			await screen.press(UP);
 			expect(showing(screen.screen())).toBe("logs");
@@ -1633,7 +1702,7 @@ describe("the config screen, pressed at", () => {
 	describe("the search section", () => {
 		/** Opens the config screen with the search section already open, which is the second row. */
 		async function searching(options: Parameters<typeof plane>[0] = { pays, thinks }) {
-			const screen = await config(options);
+			const screen = await sections(options);
 			await screen.press(DOWN);
 			await screen.press(ENTER);
 			return screen;
@@ -1735,7 +1804,7 @@ describe("the config screen, pressed at", () => {
 	describe("the grants section", () => {
 		/** Opens the config screen with the grants already open, which is the third row. */
 		async function reached(options: Parameters<typeof plane>[0] = { pays, thinks }) {
-			const screen = await config(options);
+			const screen = await sections(options);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(ENTER);
@@ -1908,7 +1977,7 @@ describe("the config screen, pressed at", () => {
 
 		/** Opens the config screen with the shelf already open, which is the fourth row. */
 		async function shelved(options: Parameters<typeof plane>[0] = { pays, thinks, shelf }) {
-			const screen = await config(options);
+			const screen = await sections(options);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -2049,7 +2118,7 @@ describe("the config screen, pressed at", () => {
 
 		/** Opens the config screen with the mail already open, which is the last row. */
 		async function mailed(posts: MailStanding = reading, refusesMail?: string) {
-			const screen = await config({
+			const screen = await sections({
 				pays,
 				thinks,
 				posts,

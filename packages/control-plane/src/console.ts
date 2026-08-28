@@ -815,6 +815,7 @@ export function Column({
 	spot,
 	busy,
 	rows,
+	arrows = true,
 }: {
 	readonly agents: readonly AgentSummary[];
 	/** Which row of the whole column the keyboard is on, counted from the first agent. */
@@ -822,6 +823,8 @@ export function Column({
 	/** Each agent mid-turn, against when its turn started. The column only asks whether. */
 	readonly busy: ReadonlyMap<string, number>;
 	readonly rows: number;
+	/** Whether the arrows still walk this column, or have been handed to the screen beside it. */
+	readonly arrows?: boolean;
 }): ReactElement {
 	const cursor = spot;
 	// The row under the last agent, which tab reaches with the same press as any other.
@@ -902,19 +905,15 @@ export function Column({
 		// in the list — and given up first, when the column is too short to spare a row.
 		//
 		// It names whichever key walks the column from where the keyboard already is, which is the
-		// arrows everywhere except the config screen: there they are that screen's own list's until it
-		// runs out above the cursor, so tab is the one that always answers. A footing naming a key that
-		// does something else here would be worse than none.
+		// arrows until the config screen's own list has been handed them: from there they are that
+		// list's until it runs out above the cursor, so tab is the one that always answers. A footing
+		// naming a key that does something else here would be worse than none.
 		spaced ? h(Box, { flexGrow: 1, key: "rest" }) : undefined,
 		spaced
 			? h(
 					Text,
 					{ key: "how", wrap: "truncate" },
-					h(
-						Text,
-						{ color: "cyan", dimColor: true },
-						panelAt(cursor, agents.length) === "config" ? "tab" : "↑↓",
-					),
+					h(Text, { color: "cyan", dimColor: true }, arrows ? "↑↓" : "tab"),
 					h(Text, { dimColor: true }, " moves"),
 				)
 			: undefined,
@@ -1508,6 +1507,11 @@ export function Config({
 	readonly grants: readonly GrantStanding[];
 	readonly mail?: MailStanding | undefined;
 	readonly mailing?: { readonly field: MailField; readonly text: string } | undefined;
+	/**
+	 * Which row the arrows are on, or -1 while they are still the column's and no row is theirs. Drawn
+	 * with nothing pointed at then, the way the log feed beside it is: a highlight on a list that would
+	 * not answer the next arrow is a cursor in the wrong place.
+	 */
 	readonly cursor: number;
 	readonly typing: string | undefined;
 	readonly secret: string;
@@ -2255,7 +2259,12 @@ export function App({
 	// swallowed the reason reads as a plane with no providers, and the reason is usually that the
 	// console is newer than the plane it is talking to — which is a sentence, not a mystery.
 	const [unanswered, setUnanswered] = useState<string | undefined>(undefined);
-	const [where, setWhere] = useState(0);
+	// Which row of the config screen the arrows are on, or -1 while they are still the column's. A
+	// screen arrived at by walking down a column should not swallow the key that walked there: the two
+	// rows under the agents are the end of that walk, and going into what one of them holds is its own
+	// press. Only the list of sections has this level — a section is opened deliberately, and its rows
+	// have the arrows from the moment it is.
+	const [where, setWhere] = useState(-1);
 	// The variable a key is being typed into, and the key itself, which is never in the draft: a
 	// secret that shared the prompt's state would be one keystroke of `tab` away from a chat pane.
 	const [typing, setTyping] = useState<string | undefined>(undefined);
@@ -2302,7 +2311,8 @@ export function App({
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
 	const walk = configRows(section, providers, models, servers, grants, mail);
-	const onRow = Math.min(where, walk.length - 1);
+	const onRow =
+		section === undefined && where < 0 ? -1 : Math.min(Math.max(0, where), walk.length - 1);
 	const configRow = walk[onRow];
 	// A command nobody can name is a command nobody has. Not offered over the shell, where a slash is
 	// the start of a path, not over the log feed, which has no prompt for a command to go into, and
@@ -2532,6 +2542,13 @@ export function App({
 	useEffect(() => {
 		if (panel !== "logs") void readConfig();
 	}, [panel, readConfig]);
+
+	// Off the screen, so the arrows are the column's again. A row remembered from the last visit would
+	// hand the list the keyboard the moment the next walk down the column arrived here, which is the
+	// whole of what that walk is not supposed to do.
+	useEffect(() => {
+		if (panel !== "config") setWhere(-1);
+	}, [panel]);
 
 	/**
 	 * Asks the plane for something, reads the lists back, and leaves the refusal on screen if it came.
@@ -3240,6 +3257,12 @@ export function App({
 				leave();
 				return;
 			}
+			// And out of the list of sections, which is the level above that: whatever left does, escape
+			// does, so a hand coming out of a box and a hand on the arrows end up in the same place.
+			if (panel === "config" && onRow >= 0) {
+				setWhere(-1);
+				return;
+			}
 			if (selected !== undefined && busy.has(selected.id)) {
 				void client.stop(selected.id).catch(() => {});
 				// A turn stopped before it said anything leaves the question standing alone in the
@@ -3303,21 +3326,25 @@ export function App({
 		// feed and the config screen under them. Stopping the arrows at the last agent made the two
 		// rows at the foot reachable only by a key nobody had been pressing to get anywhere else.
 		if (key.upArrow) {
-			// The config screen's own list is a list too, and it holds the arrows while there is any of
-			// it above the cursor. At the top they go back to walking the column, so that screen is left
-			// by the same key that arrived on it — and out of an open section first, one level per press,
-			// which is the same walk backwards.
+			// The config screen's own list is a list too, and it holds the arrows once it has been handed
+			// them, while there is any of it above the cursor. At the top they go back to the column, so
+			// that screen is left by the same key that arrived on it — and out of an open section first,
+			// one level per press, which is the same walk backwards.
 			if (panel === "config" && onRow > 0) setWhere(onRow - 1);
 			else if (panel === "config" && section !== undefined) leave();
+			else if (panel === "config" && onRow === 0) setWhere(-1);
 			else if (menu.length > 0) setPick(Math.max(0, at - 1));
 			else setSpot((prev) => walked(prev, -1, agents.length));
 			return;
 		}
 		if (key.downArrow) {
 			// Down that list stops at the end of it instead of carrying on round to the first agent:
-			// reading to the bottom of something is not a way of asking to be somewhere else.
-			if (panel === "config") setWhere(Math.min(walk.length - 1, onRow + 1));
-			else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
+			// reading to the bottom of something is not a way of asking to be somewhere else. It stops on
+			// the way in too, on the column's own last row: a walk down the column ends where the column
+			// does, and the list beside it is stepped into on purpose or not at all.
+			if (panel === "config") {
+				if (onRow >= 0) setWhere(Math.min(walk.length - 1, onRow + 1));
+			} else if (menu.length > 0) setPick(Math.min(menu.length - 1, at + 1));
 			else setSpot((prev) => walked(prev, 1, agents.length));
 			return;
 		}
@@ -3328,6 +3355,12 @@ export function App({
 			// still does it and so does walking up off the top, because these are three hands reaching for
 			// the same move: the one already on the arrows should not have to find another key.
 			else if (panel === "config" && key.leftArrow && section !== undefined) leave();
+			// One more level of the same walk: the list of sections is itself something the column was
+			// standing beside, and giving the arrows back is how you leave it.
+			else if (panel === "config" && key.leftArrow && onRow >= 0) setWhere(-1);
+			// And right is in, which is what takes the arrows off the column to begin with: the screen is
+			// reached by walking down it and entered by walking across.
+			else if (panel === "config" && key.rightArrow && onRow < 0) setWhere(0);
 			// And right is in, so the four arrows are the whole of moving about this screen: two for the
 			// list you are on and two for which list that is. Only into a section — the rows inside one
 			// open a box to type in or a question to answer, which is what return is for and not a level
@@ -3338,6 +3371,13 @@ export function App({
 			return;
 		}
 		if (panel === "config") {
+			// The list is entered before it is used: while the arrows are still the column's there is no
+			// row under them, and this is the press that puts one there. The other way in is right, and
+			// naming both is what the row of keys at the foot does.
+			if (key.return && onRow < 0) {
+				setWhere(0);
+				return;
+			}
 			// Everything this screen does is about the row the arrows are standing on, which is why there
 			// is nothing here to type into until one of these is pressed.
 			if (key.return && configRow !== undefined) {
@@ -3627,7 +3667,14 @@ export function App({
 		h(
 			Box,
 			{ flexDirection: "row", flexGrow: 1, key: "panes" },
-			h(Column, { agents, spot, busy, rows: body, key: "agents" }),
+			h(Column, {
+				agents,
+				spot,
+				busy,
+				rows: body,
+				arrows: panel !== "config" || onRow < 0,
+				key: "agents",
+			}),
 			h(
 				Box,
 				{
@@ -3669,7 +3716,7 @@ export function App({
 								grants,
 								mail,
 								mailing,
-								cursor: Math.max(0, onRow),
+								cursor: onRow,
 								typing,
 								secret,
 								adding,
@@ -3783,7 +3830,9 @@ export function App({
 												// hint for a key that does nothing at all.
 												[
 													["↑↓", "move"],
-													...(configRow?.kind === "section"
+													// The row under the cursor when there is one, and the list itself when the
+													// arrows are still the column's: what is opened differs, the key does not.
+													...(onRow < 0 || configRow?.kind === "section"
 														? // Both, the way the row back names both: the arrows are the whole of moving
 															// about this screen once you know that, and the way to know it is to read it.
 															[["→ ⏎", "open"]]

@@ -1845,6 +1845,13 @@ describe("Config", () => {
 			expect(rows.find((row) => row.includes("where web_search goes"))).toContain("○");
 		});
 
+		// Arriving beside this list is not standing in it, so there is a cursor it draws no row for:
+		// what the line under it says then is what entering the list would land on, which is the
+		// first row. A screen that went blank there would be one that looks broken while it waits.
+		it("stands on the first row while the arrows are still the column's", () => {
+			expect(list({ cursor: -1 })).toContain("2 of 3 providers paid for");
+		});
+
 		it("says under the list what the section it is standing on holds", () => {
 			expect(list({ cursor: 0 })).toContain("2 of 3 providers paid for");
 			expect(list({ cursor: 1 })).toContain("gpt-5-mini");
