@@ -135,7 +135,7 @@ secrets in the first minute is a worse first minute than an empty setup screen i
 That first line needs Node 22.18 or newer and nothing else — no Docker on this computer, whichever
 answer you give. [`deploy/client.sh`](deploy/client.sh) fetches this tree, installs what the console
 imports and leaves `squad` on your PATH; there is no build step, so what lands is what runs, and
-running it again is how the console updates. Not an npm package because the console is eight
+running it again is how the console updates — which is also what `squad update` does to it. Not an npm package because the console is eight
 workspace packages that only mean anything together, and publishing eight names in lockstep to
 distribute one command is a release process standing in for a download.
 
@@ -166,7 +166,8 @@ a terminal rather than down a pipe, it asks for the keys the proxy will hold as 
 overrides when the plane is going to live alongside it, which is the whole of the difference between
 a laptop and a VPS. Running it again is the update: it pulls, rebuilds and swaps the plane in, and
 never touches `config.yaml` or `.env`. `squad update` runs that same script on whichever machine the
-plane is on, so the update is one word from the computer you already type at.
+plane is on and then the console's own script here, so one word from the computer you already type
+at leaves both halves on the same version.
 
 By hand, which is the same thing without the questions:
 
@@ -214,7 +215,7 @@ squad wake "check the open issues"       take one turn, and wait for the answer
 squad logs                               follow what every agent runs, answers and spends
 squad rm demo [--purge]                  take the sandbox away, and with --purge the repository
 squad connect                            ask again where the agents should live
-squad update                             put the latest squad on the plane, wherever it is
+squad update                             the latest squad on the plane and on this computer
 squad help                               the rest
 ```
 

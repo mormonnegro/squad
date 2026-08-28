@@ -86,17 +86,18 @@ function ran(child: ReturnType<typeof spawn>): Promise<number> {
  * On stdin because the machine it lands on may not have curl yet, and because the script that
  * arrives is then the one this version was published against rather than whatever main holds today.
  */
-async function pipe(script: string, argv: string[], env: NodeJS.ProcessEnv = {}): Promise<number> {
+async function pipe(text: string, argv: string[], env: NodeJS.ProcessEnv = {}): Promise<number> {
 	const child = spawn(argv[0] as string, argv.slice(1), {
 		stdio: ["pipe", "inherit", "inherit"],
 		env: { ...process.env, ...env },
 	});
-	child.stdin?.end(script);
+	child.stdin?.end(text);
 	return ran(child);
 }
 
-async function installer(): Promise<string> {
-	const url = `${BASE}/install.sh`;
+/** One of the published scripts: the plane's install, or the console's own. */
+async function script(name: string): Promise<string> {
+	const url = `${BASE}/${name}`;
 	if (!url.startsWith("http")) {
 		const { readFile } = await import("node:fs/promises");
 		return readFile(url, "utf8");
@@ -373,7 +374,7 @@ async function here(home: string): Promise<Plane> {
 	note("The sandbox image, the plane, and Docker's part of it. This takes a few minutes.");
 	note(dim(`Everything it writes goes under ${home}.`));
 
-	const code = await pipe(await installer(), ["sh", "-s"], planeEnv(home, stateDir));
+	const code = await pipe(await script("install.sh"), ["sh", "-s"], planeEnv(home, stateDir));
 	if (code !== 0) throw new ControlError("The install did not finish. What it printed is above.");
 
 	return { kind: "here", stateDir };
@@ -450,7 +451,7 @@ async function there(home: string): Promise<Plane> {
 	} else {
 		step(`Installing the plane on ${target}`);
 		note("Docker if it has none, the images, and the plane. This takes a few minutes.");
-		const code = await pipe(await installer(), ["ssh", ...on, target, remoteInstall()]);
+		const code = await pipe(await script("install.sh"), ["ssh", ...on, target, remoteInstall()]);
 		if (code !== 0) throw new ControlError("The install did not finish. What it printed is above.");
 	}
 
@@ -471,7 +472,11 @@ export async function updatePlane(plane: Plane, home: string): Promise<void> {
 	note(dim("Your config and your keys are left where they are."));
 
 	if (plane.kind === "here") {
-		const code = await pipe(await installer(), ["sh", "-s"], planeEnv(home, plane.stateDir));
+		const code = await pipe(
+			await script("install.sh"),
+			["sh", "-s"],
+			planeEnv(home, plane.stateDir),
+		);
 		if (code !== 0) throw new ControlError("The update did not finish. What it printed is above.");
 		return;
 	}
@@ -481,13 +486,33 @@ export async function updatePlane(plane: Plane, home: string): Promise<void> {
 	// both ride what it opens. An update is not the place to ask which way in an operator prefers.
 	await warm(plane.target, home);
 
-	const code = await pipe(await installer(), [
+	const code = await pipe(await script("install.sh"), [
 		"ssh",
 		...shared(plane.target, home),
 		plane.target,
 		remoteInstall(),
 	]);
 	if (code !== 0) throw new ControlError("The update did not finish. What it printed is above.");
+}
+
+/**
+ * Puts what main holds today on the computer this was typed at, over the console that is typing.
+ *
+ * The same script anyone installs the console with, because there was never a second one: it fetches
+ * the tree whole, installs what it needs beside it, and renames the new one over the old. Which is
+ * why this goes last and nothing of ours may be read after it — the directory it replaces is the one
+ * this process was loaded from. What is already in memory goes on running to the end of the command.
+ *
+ * The environment is this terminal's, unlike the far end's: a fork or a branch is named there by
+ * hand because ssh carries none, and here it is simply still set.
+ */
+export async function updateClient(): Promise<void> {
+	step("Updating the console on this computer");
+	note("The latest main, and the packages it runs on. This takes a minute.");
+	note(dim("Which plane you chose lives beside it, and is left where it is."));
+
+	const code = await pipe(await script("client.sh"), ["sh", "-s"]);
+	if (code !== 0) throw new ControlError("The console did not update. What it printed is above.");
 }
 
 /**

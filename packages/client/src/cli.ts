@@ -1,7 +1,7 @@
 import { ControlError, type Dial, dialLocal } from "@squad/control-plane";
 import { cli as planeCli } from "@squad/control-plane/cli";
 import { clientHome, describePlane, type Plane, readPlane, writePlane } from "./plane.ts";
-import { pickPlane, settle, updatePlane } from "./setup.ts";
+import { pickPlane, settle, updateClient, updatePlane } from "./setup.ts";
 import { dialOverSsh, warm } from "./ssh.ts";
 
 /**
@@ -26,7 +26,8 @@ function usage(plane: Plane | undefined): string {
   squad connect                where the agents live: a plane on this computer, or
                                one on a machine you have SSH to. Asked on the first
                                run and remembered — run it again to move
-  squad update                 put the latest squad on your plane, wherever it is.
+  squad update                 put the latest squad on your plane, wherever it is,
+                               and on this computer, so the two are one version.
                                Your agents, your config and your keys stay as they are
   squad help                   this
 
@@ -83,20 +84,23 @@ export async function cli(argv: readonly string[]): Promise<void> {
 		if (process.platform === "win32") {
 			throw new ControlError("This drives ssh and sh, which Windows has no version of. Use WSL.");
 		}
-		// The one command the plane has no version of: it is about the plane rather than for it, and
-		// half of what it rebuilds is the thing that would be answering.
+		// The one command the plane has no version of: it is about the pair rather than for one of
+		// them, and both halves of what it replaces are things that would be answering it.
 		if (command === "update") {
 			// Nowhere yet is not a failure here. An install puts the latest main there, which is the
 			// whole of what was asked for — asking where, building one, and rebuilding it a minute
 			// later would be the same minute twice.
 			const known = await readPlane(home);
-			if (known === undefined) {
-				await chosen(home);
-				return;
+			if (known === undefined) await chosen(home);
+			else {
+				await updatePlane(known, home);
+				await settle(dialFor(known, home));
 			}
-			await updatePlane(known, home);
-			await settle(dialFor(known, home));
-			process.stdout.write("\n  Up to date. `squad` opens the console on it.\n\n");
+			// The console last, because the two halves talk to each other and a version of one against
+			// an older other is the bug nobody reports as one. Last also because what it swaps in is the
+			// tree this process was loaded from: after it there is a line to print and nothing to read.
+			await updateClient();
+			process.stdout.write("\n  Up to date, both ends. `squad` opens the console on it.\n\n");
 			return;
 		}
 

@@ -66,14 +66,17 @@ describe("the console, driving the plane this operator chose", () => {
 	/**
 	 * The one command the plane has no version of.
 	 *
-	 * Everything else here is forwarded to the plane's own CLI, and this cannot be: half of what an
-	 * update replaces is the process that would be answering it.
+	 * Everything else here is forwarded to the plane's own CLI, and this cannot be: both halves of
+	 * what an update replaces are processes that would be answering it.
 	 */
 	it("offers the update beside the commands that reach the plane", async () => {
 		await writePlane(home, { kind: "server", target: "me@vps" });
 		await cli(["help"]);
 		expect(out).toContain("squad update");
 		expect(out).toContain("your keys stay as they are");
+		// Which machines it touches, on the screen that lists what can be typed. An operator who reads
+		// only the plane here is one who goes looking for a second command for the console.
+		expect(out).toContain("this computer");
 	});
 
 	// An update with nowhere to run it is the question `squad` asks on its first run, not an error:
@@ -173,6 +176,69 @@ describe("the install, as this computer is told to run it", () => {
 	// of them would be an update that hangs on a terminal nobody is watching.
 	it("refuses the questions, because the console is where the keys are given", () => {
 		expect(planeEnv("/home/me/.squad", "/state").SQUAD_ASK).toBe("no");
+	});
+});
+
+/**
+ * Both halves on one word, and this computer's half last.
+ *
+ * The console and the plane answer each other, so a new one of either against an old one of the
+ * other is a bug that arrives looking like anything but a version. The order is not a preference:
+ * the console's own script renames a new tree over the directory this process was loaded from, so
+ * whatever an update has left to do after it is asked of a program that is no longer on disk.
+ */
+describe("the update, which is both halves or neither", () => {
+	let home: string;
+	let stateDir: string;
+	let plane: ControlPlane;
+	let server: ControlServer;
+	let err: string;
+
+	beforeEach(async () => {
+		home = await mkdtemp(join(tmpdir(), "squad-update-"));
+		stateDir = join(home, "state");
+		const deploy = join(home, "deploy");
+		await mkdir(deploy, { recursive: true });
+
+		// Stand-ins for the two published scripts: each says its name into one file and stops. What is
+		// left there is that both were run, and which of them ran first.
+		const ran = join(home, "ran");
+		await writeFile(join(deploy, "install.sh"), `printf 'plane\\n' >> "${ran}"\n`);
+		await writeFile(join(deploy, "client.sh"), `printf 'console\\n' >> "${ran}"\n`);
+
+		plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		server = new ControlServer({ plane });
+		await server.listen();
+
+		vi.stubEnv("SQUAD_HOME", home);
+		vi.stubEnv("SQUAD_BASE", deploy);
+		err = "";
+		vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+		vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+			err += chunk.toString();
+			return true;
+		});
+		// Where the scripts come from is read once, as the module loads. So it is said first and the
+		// module is imported inside the test rather than at the top of this file.
+		vi.resetModules();
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
+		process.exitCode = 0;
+		await server.close();
+		await plane.bus.drain();
+		await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+	});
+
+	it("puts the latest on the plane, and then over the console that asked for it", async () => {
+		await writePlane(home, { kind: "here", stateDir });
+		const { cli } = await import("../src/cli.ts");
+		await cli(["update"]);
+		expect(err).toBe("");
+		expect(await readFile(join(home, "ran"), "utf8")).toBe("plane\nconsole\n");
+		expect(process.exitCode).toBe(0);
 	});
 });
 
