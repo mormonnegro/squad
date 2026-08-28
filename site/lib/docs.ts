@@ -26,6 +26,11 @@ export const DOCS: readonly DocGroup[] = [
 				blurb: "the two halves, and what an agent turns out to be",
 			},
 			{
+				href: "/docs/server/",
+				title: "A server",
+				blurb: "renting the cheapest one on any list, and getting in with a key or a password",
+			},
+			{
 				href: "/docs/console/",
 				title: "The console",
 				blurb: "the screen, the keys, and every command there is",
