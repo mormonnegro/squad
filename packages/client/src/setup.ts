@@ -6,6 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ControlError, type Dial } from "@squad/control-plane";
 import { localStateDir, normalizeTarget, type Plane } from "./plane.ts";
+import { shared } from "./ssh.ts";
 
 /**
  * Where the server half is fetched from, and a local path in development.
@@ -326,7 +327,7 @@ export async function pickPlane(home: string): Promise<Plane> {
 	);
 
 	const chosen = await oneOf(["1", "2"]);
-	return chosen === "1" ? await here(home) : await there();
+	return chosen === "1" ? await here(home) : await there(home);
 }
 
 /**
@@ -345,7 +346,7 @@ async function here(home: string): Promise<Plane> {
 				`  ${dim("docs.docker.com/get-started/get-docker — if this computer has none")}\n\n` +
 				`  ${dim("1 or 2")}  `,
 		);
-		if ((await oneOf(["1", "2"])) === "2") return there();
+		if ((await oneOf(["1", "2"])) === "2") return there(home);
 	}
 
 	const stateDir = localStateDir(home);
@@ -366,7 +367,7 @@ async function here(home: string): Promise<Plane> {
  * connection the operator already has, and so does everything after it — and where there is no
  * such connection yet, the password buys one and is then done with.
  */
-async function there(): Promise<Plane> {
+async function there(home: string): Promise<Plane> {
 	process.stdout.write(
 		`\n${bold("Which machine?")}\n` +
 			`  ${dim("Anything ssh can reach. The prompt already reads root@, so a bare host finishes it.")}\n` +
@@ -392,18 +393,20 @@ async function there(): Promise<Plane> {
 		throw new ControlError("No machine, so nothing to set up. `squad connect` asks again.");
 	}
 	const target = normalizeTarget(typed);
+	const on = shared(target, home);
 
 	// One connection that both proves the address and says whether there is anything to install, so
-	// a machine that already has a plane costs a second rather than a rebuild.
+	// a machine that already has a plane costs a second rather than a rebuild. It is also the one
+	// that opens the master: the install and the console after it ride this same handshake.
 	step(`Reaching ${target}`);
-	let reached = await reach(target, KEY_ONLY);
+	let reached = await reach(target, [...KEY_ONLY, ...on]);
 
 	// A refused key is the one failure with something to do about it. Anything else the connection
 	// could die of — a name that does not resolve, a host key that changed — is the operator's to
 	// look at, and asking them for a password would only bury what ssh already said.
 	if (reached.code === 255 && turnedDown(reached.said)) {
 		await authorize(target);
-		reached = await reach(target, KEY_ONLY);
+		reached = await reach(target, [...KEY_ONLY, ...on]);
 		if (reached.code === 255) {
 			throw new ControlError(
 				`The key went up, but ${target} still will not take it.\n${beneath(reached.said)}`,
@@ -421,7 +424,7 @@ async function there(): Promise<Plane> {
 	} else {
 		step(`Installing the plane on ${target}`);
 		note("Docker if it has none, the images, and the plane. This takes a few minutes.");
-		const code = await pipe(await installer(), ["ssh", target, remoteInstall()]);
+		const code = await pipe(await installer(), ["ssh", ...on, target, remoteInstall()]);
 		if (code !== 0) throw new ControlError("The install did not finish. What it printed is above.");
 	}
 
@@ -441,10 +444,20 @@ export async function updatePlane(plane: Plane, home: string): Promise<void> {
 	note("The latest main, both images rebuilt, the plane swapped in. This takes a few minutes.");
 	note(dim("Your config and your keys are left where they are."));
 
-	const code =
-		plane.kind === "here"
-			? await pipe(await installer(), ["sh", "-s"], planeEnv(home, plane.stateDir))
-			: await pipe(await installer(), ["ssh", plane.target, remoteInstall()]);
+	if (plane.kind === "here") {
+		const code = await pipe(await installer(), ["sh", "-s"], planeEnv(home, plane.stateDir));
+		if (code !== 0) throw new ControlError("The update did not finish. What it printed is above.");
+		return;
+	}
+
+	// A machine that will not take a key would ask for the password here, again for the console that
+	// this ends on, and again for every connection after that — so the key goes up first, exactly as
+	// it would have when the machine was chosen. A plane installed by hand never went through that.
+	const on = shared(plane.target, home);
+	const reached = await reach(plane.target, [...KEY_ONLY, ...on]);
+	if (reached.code === 255 && turnedDown(reached.said)) await authorize(plane.target);
+
+	const code = await pipe(await installer(), ["ssh", ...on, plane.target, remoteInstall()]);
 	if (code !== 0) throw new ControlError("The update did not finish. What it printed is above.");
 }
 

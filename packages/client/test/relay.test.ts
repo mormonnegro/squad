@@ -5,7 +5,7 @@ import { Transform } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { ControlClient, ControlError, ControlPlane, ControlServer } from "@squad/control-plane";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { dialCommand, relayOverSsh } from "../src/ssh.ts";
+import { dialCommand, relayOverSsh, shared } from "../src/ssh.ts";
 
 const BIN = fileURLToPath(new URL("../../control-plane/bin/squad.mjs", import.meta.url));
 
@@ -208,6 +208,12 @@ describe("the command that reaches a plane over SSH", () => {
 			relayOverSsh(target, "/h").find((argument) => argument.startsWith("ControlPath="));
 		expect(path("me@one")).not.toBe(path("me@two"));
 		expect(path("me@one")).toBe(path("me@one"));
+	});
+
+	// The install, the update and the console are three connections to one machine, and on a machine
+	// that has only a password they cost one prompt each unless they land on the same handshake.
+	it("shares its connection with whatever else reaches that machine", () => {
+		expect(argv.join(" ")).toContain(shared("me@vps", "/home/me/.squad").join(" "));
 	});
 
 	it("runs the plane's own relay, and nothing else", () => {

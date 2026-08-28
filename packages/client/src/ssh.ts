@@ -10,19 +10,15 @@ const MARK = Buffer.from(`${RELAY_HELLO}\n`);
 const PATIENCE = 64 * 1024;
 
 /**
- * The command that opens a plane's control socket on a machine this computer has SSH to.
+ * The options that put every connection to one machine on a single handshake.
  *
  * Multiplexing is not an optimisation here, it is what makes the console usable: every forwarded
  * port opens a connection of its own, and six of them behind one page load would otherwise be six
  * SSH handshakes and, on a key with a passphrase, six prompts fighting the screen for the terminal.
- * The console's own connection is the master, and it outlives them all.
- *
- * `-T` because a pty would rewrite the bytes of the protocol on the way past: newlines are the
- * frame boundary and a terminal line discipline turns them into something else.
+ * The install and the update ride it too, so the console they end on costs nothing to open.
  */
-export function relayOverSsh(target: string, home: string): string[] {
+export function shared(target: string, home: string): string[] {
 	return [
-		"ssh",
 		"-o",
 		"ControlMaster=auto",
 		// Hashed here rather than left to ssh's own %C, which expands to forty hex characters and
@@ -32,10 +28,17 @@ export function relayOverSsh(target: string, home: string): string[] {
 		`ControlPath=${join(home, `ssh-${createHash("sha256").update(target).digest("hex").slice(0, 12)}`)}`,
 		"-o",
 		"ControlPersist=60",
-		"-T",
-		target,
-		"squad relay",
 	];
+}
+
+/**
+ * The command that opens a plane's control socket on a machine this computer has SSH to.
+ *
+ * `-T` because a pty would rewrite the bytes of the protocol on the way past: newlines are the
+ * frame boundary and a terminal line discipline turns them into something else.
+ */
+export function relayOverSsh(target: string, home: string): string[] {
+	return ["ssh", ...shared(target, home), "-T", target, "squad relay"];
 }
 
 /**
