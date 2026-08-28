@@ -1103,7 +1103,7 @@ footer {
 }
 
 .docs-head .lede {
-	margin-bottom: 0;
+	margin-bottom: 1.6rem;
 	font-size: 1.05rem;
 	color: var(--muted);
 }
