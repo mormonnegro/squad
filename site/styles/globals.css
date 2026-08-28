@@ -1008,6 +1008,17 @@ footer {
 	}
 }
 
+/* Wide enough for the third column. The text column grows to the width of the widest capture and no
+   further: it is the size the page already had to be, and a line of prose that runs the width of a
+   monitor is not a line anyone finishes. */
+@media (min-width: 1320px) {
+	.docs {
+		/* The three columns, the two gaps between them, and the padding either side. */
+		max-width: 81rem;
+		grid-template-columns: 13rem minmax(0, 48rem) 11rem;
+	}
+}
+
 /* The column is there on a screen with room for one, and it stays where it is while the page moves
    past it — a menu of sixteen rows that scrolls away is one you scroll back up to use. */
 .docs-side {
@@ -1093,6 +1104,25 @@ footer {
 	color: var(--cyan);
 }
 
+/* Where in the menu this page is, for the width where the menu is a thing you open. Beside the open
+   column it is the same word twice on the same line. */
+.docs-crumb {
+	display: block;
+	margin-bottom: 0.5rem;
+	font-family: var(--mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--muted);
+	opacity: 0.7;
+}
+
+@media (min-width: 900px) {
+	.docs-crumb {
+		display: none;
+	}
+}
+
 .docs-body {
 	min-width: 0;
 	padding-bottom: 1rem;
@@ -1112,12 +1142,23 @@ footer {
    things up in. */
 .docs-body section {
 	padding: 2.1rem 0;
+	/* The nav is fixed to the top, and a section jumped to lands under it without this. */
+	scroll-margin-top: 3.6rem;
 }
 
 /* The rule the front page drops on its first section is wanted here: what is above it is the title,
    and the first section is already a different thing from it. */
 .docs-body section:first-of-type {
 	border-top: 1px solid var(--line-soft);
+}
+
+/* The column is the width of the widest capture, but a line of prose is not: the text keeps the
+   measure it has at every other width, and the captures are the only thing that uses the rest. */
+@media (min-width: 1320px) {
+	.docs-head > *,
+	.docs-body section > *:not(.terminal) {
+		max-width: 44rem;
+	}
 }
 
 /* A capture is a hundred columns across because a console is, and the whole of what one shows is the
@@ -1139,6 +1180,67 @@ footer {
 		width: max-content;
 		max-width: min(52rem, calc(100vw - 24rem));
 	}
+}
+
+/* Where the third column is, the room to the right of the text belongs to it — and the column is by
+   then as wide as the widest capture, so none of them has to borrow any. */
+@media (min-width: 1320px) {
+	.docs-body .terminal {
+		max-width: 100%;
+	}
+}
+
+/* The sections of this page, which is the question "how long is this and what is in it" answered
+   without scrolling it. Sixteen pages already have a column; this is the one inside a page. */
+.docs-toc {
+	display: none;
+}
+
+@media (min-width: 1320px) {
+	.docs-toc {
+		display: block;
+		position: sticky;
+		top: 4rem;
+		align-self: start;
+		max-height: calc(100vh - 5.5rem);
+		overflow-y: auto;
+		padding-bottom: 2rem;
+	}
+}
+
+.docs-toc-name {
+	display: block;
+	margin-bottom: 0.5rem;
+	font-family: var(--mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--muted);
+	opacity: 0.7;
+}
+
+.docs-toc nav {
+	border-left: 1px solid var(--line-soft);
+}
+
+.docs-toc a {
+	display: block;
+	padding: 0.28rem 0 0.28rem 0.8rem;
+	margin-left: -1px;
+	font-size: 0.82rem;
+	line-height: 1.35;
+	color: var(--muted);
+	border: 0;
+	border-left: 1px solid transparent;
+}
+
+.docs-toc a:hover {
+	color: var(--text-strong);
+}
+
+.docs-toc a[data-current="true"] {
+	color: var(--cyan);
+	border-left-color: var(--cyan);
 }
 
 .docs-map + .docs-map {

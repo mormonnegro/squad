@@ -134,6 +134,11 @@ export function markdownOf(href: string): string {
 	return `/docs/${slug === "" ? "index" : slug}.md`;
 }
 
+/** Which part of the menu a page is under, for the line above its title. */
+export function docsGroupOf(href: string): string | undefined {
+	return DOCS.find((group) => group.pages.some((page) => page.href === href))?.name;
+}
+
 export function docsAround(href: string): {
 	readonly previous: DocPage | undefined;
 	readonly next: DocPage | undefined;

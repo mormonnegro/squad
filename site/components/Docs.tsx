@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { ReactNode } from "react";
-import { DOCS, docsAround, markdownOf } from "../lib/docs";
+import { DOCS, docsAround, docsGroupOf, markdownOf } from "../lib/docs";
+import { anchored, useReading } from "../lib/toc";
 import { Layout } from "./Layout";
 
 function Menu({ here }: { here: string }) {
@@ -48,6 +49,8 @@ export function Docs({
 	// the export writes. The menu is written with them, and this is where the two are made the same.
 	const here = `${useRouter().pathname.replace(/\/$/, "")}/`;
 	const { previous, next } = docsAround(here);
+	const { body, anchors } = anchored(children);
+	const reading = useReading(anchors.map((anchor) => anchor.id));
 
 	return (
 		<Layout title={title} description={description} markdown={markdownOf(here)}>
@@ -67,11 +70,12 @@ export function Docs({
 
 				<article className="docs-body">
 					<header className="docs-head">
+						<span className="docs-crumb">{docsGroupOf(here)}</span>
 						<h1>{title}</h1>
 						<p className="lede">{lede}</p>
 					</header>
 
-					{children}
+					{body}
 
 					<div className="docs-walk">
 						{previous === undefined ? (
@@ -88,6 +92,22 @@ export function Docs({
 						)}
 					</div>
 				</article>
+
+				{/* Outside the article on purpose: the markdown of each page is cut from `.docs-body` at
+				    build time, and a list of the page's own sections is a way around it rather than part
+				    of it. */}
+				{anchors.length > 1 && (
+					<aside className="docs-toc">
+						<span className="docs-toc-name">On this page</span>
+						<nav>
+							{anchors.map((anchor) => (
+								<a key={anchor.id} href={`#${anchor.id}`} data-current={anchor.id === reading}>
+									{anchor.label}
+								</a>
+							))}
+						</nav>
+					</aside>
+				)}
 			</div>
 		</Layout>
 	);

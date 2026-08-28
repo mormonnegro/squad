@@ -174,6 +174,10 @@ function block(node, where) {
 		}
 		case "header.docs-head":
 			return kids();
+		// Which part of the menu the page is under. That is where it sits among the others rather than
+		// anything the page says, and llms.txt already lists it under that heading.
+		case "span.docs-crumb":
+			return [];
 		case "div.docs-map":
 			return kids();
 		case "h1":
