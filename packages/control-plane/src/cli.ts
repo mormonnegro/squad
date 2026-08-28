@@ -718,7 +718,7 @@ async function main(argv: readonly string[], remote?: Remote): Promise<number> {
 			process.stderr.write(
 				"An update replaces this plane, so it is run from outside it:\n\n" +
 					"  squad update    in the console on your own computer, or on this machine\n" +
-					"  curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh\n\n" +
+					"  curl -fsSL https://squad.mormon.garden/install.sh | sh\n\n" +
 					"Either one pulls the latest main, rebuilds and swaps the plane in, and leaves\n" +
 					"config.yaml and .env exactly as they are.\n",
 			);

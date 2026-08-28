@@ -2,17 +2,18 @@
 // every link on the site follows, including the URL the install command reads from.
 export const REPO = "https://github.com/mormonnegro/squad";
 
-// Derived rather than written out, because the two are the same repository and a site that offers
-// a `curl | sh` pointing at somebody else's fork is the worst thing on it.
-const RAW = `${REPO.replace("github.com", "raw.githubusercontent.com")}/main/deploy`;
+// This site, and so where the two installers are served from. They are not written here: the build
+// copies them out of deploy/, so the line somebody pipes into a shell is byte for byte the file in
+// the repository and cannot drift from it.
+export const SITE = "https://squad.mormon.garden";
 
 /** On the machine the agents will live on, whether that is a server or this computer. */
-export const INSTALL = `${RAW}/install.sh`;
+export const INSTALL = `${SITE}/install.sh`;
 
 // On the computer you sit at. Not an npm package: the console is eight workspace packages that only
 // mean anything together, and publishing eight names in lockstep to distribute one command is a
 // release process standing in for a download.
-export const CLIENT = `${RAW}/client.sh`;
+export const CLIENT = `${SITE}/client.sh`;
 
 export const PI = "https://github.com/earendil-works/pi";
 

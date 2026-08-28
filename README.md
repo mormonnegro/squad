@@ -113,7 +113,7 @@ Two halves: the console you type at, and the plane the agents live in. Install t
 computer you are sitting at:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/client.sh | sh
+curl -fsSL https://squad.mormon.garden/client.sh | sh
 squad
 ```
 
@@ -147,7 +147,7 @@ Nothing of the console stays on that machine. It pipes one shell script to it, a
 stands alone:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh
+curl -fsSL https://squad.mormon.garden/install.sh | sh
 ```
 
 It installs Docker if there is none, puts the repository in `/opt/squad`, writes a config with

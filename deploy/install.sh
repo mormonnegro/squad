@@ -2,7 +2,7 @@
 #
 # Puts a plane on a machine that has nothing on it yet:
 #
-#   curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/install.sh | sh
+#   curl -fsSL https://squad.mormon.garden/install.sh | sh
 #
 # Installs Docker if there is none, puts the repository in /opt/squad, asks for the keys the
 # proxy will hold, writes a config that already works, starts the plane, and leaves `squad` on the
@@ -347,7 +347,7 @@ if [ "$SHIM" = "yes" ]; then
 	note "squad logs               what every agent runs, answers and spends"
 	printf '\n'
 	note "From your own computer, the console is one line and this machine is an answer it keeps:"
-	note "  curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/client.sh | sh"
+	note "  curl -fsSL https://squad.mormon.garden/client.sh | sh"
 	note "  squad"
 	printf '\n'
 	note "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"

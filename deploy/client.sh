@@ -2,7 +2,7 @@
 #
 # Puts the console on the computer you sit at:
 #
-#   curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/client.sh | sh
+#   curl -fsSL https://squad.mormon.garden/client.sh | sh
 #
 # This is the half you type at, and it is the one that asks where the agents should live. It puts
 # no containers here and needs no Docker: the first `squad` asks that question, and installs a plane
