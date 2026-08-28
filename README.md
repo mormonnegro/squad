@@ -143,6 +143,14 @@ A server needs a Linux with SSH on it and nothing else — the installer brings 
 gigabyte of memory and ten gigabytes of disk runs a few agents, which is the bottom of every
 provider's list at around five dollars a month, and an old laptop under the desk does just as well.
 
+How you reach it is your own business: a key and a password both work. Where the machine does not
+already take this computer's key, `squad connect` says so and offers one — put a key up, or keep the
+password. What is not negotiable is *when* you are asked. ssh reads a password from `/dev/tty`,
+which the console is holding and redrawing, so the connection is always opened first, on a bare
+terminal, before anything is drawn; everything after it — the console, and one more per forwarded
+port — rides that same handshake and authenticates not at all. It lasts ten idle minutes, so a
+password is typed about as often as you walk away, and never in the middle of anything.
+
 Nothing of the console stays on that machine. It pipes one shell script to it, and that script
 stands alone:
 

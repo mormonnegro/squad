@@ -2,7 +2,7 @@ import { ControlError, type Dial, dialLocal } from "@squad/control-plane";
 import { cli as planeCli } from "@squad/control-plane/cli";
 import { clientHome, describePlane, type Plane, readPlane, writePlane } from "./plane.ts";
 import { pickPlane, settle, updatePlane } from "./setup.ts";
-import { dialOverSsh } from "./ssh.ts";
+import { dialOverSsh, warm } from "./ssh.ts";
 
 /**
  * The client's commands, which are not quite the plane's.
@@ -63,6 +63,10 @@ async function chosen(home: string): Promise<Plane> {
  */
 async function drive(plane: Plane, home: string, argv: readonly string[]): Promise<void> {
 	if (plane.kind === "here") return planeCli(["--state", plane.stateDir, ...argv]);
+	// Before the screen belongs to anything else. A machine that wants a password or a passphrase
+	// asks for it here, on a bare terminal, and what it opens is what every connection after it —
+	// the console, and one per forwarded port — rides without authenticating at all.
+	await warm(plane.target, home);
 	return planeCli(argv, { at: plane.target, dial: dialOverSsh(plane.target, home) });
 }
 

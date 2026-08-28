@@ -195,11 +195,11 @@ describe("the command that reaches a plane over SSH", () => {
 		expect(argv).toContain("-T");
 	});
 
-	// ssh reads a password from /dev/tty, which the console is holding and redrawing — and a
-	// forwarded port has nobody sitting in front of it at all. Refused beats prompted here.
-	it("will not fall back to a password", () => {
-		expect(argv).toContain("PasswordAuthentication=no");
-		expect(argv).toContain("KbdInteractiveAuthentication=no");
+	// A password is allowed on this machine, but not here: ssh reads one from /dev/tty, which the
+	// console is holding and redrawing, and a forwarded port has nobody in front of it at all. This
+	// one rides the connection that was opened where the question could be answered.
+	it("asks the operator nothing, whatever the machine wants", () => {
+		expect(argv).toContain("BatchMode=yes");
 	});
 
 	// Not an optimisation: a page with six forwarded ports would otherwise be six SSH handshakes.

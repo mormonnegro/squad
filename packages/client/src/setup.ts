@@ -6,7 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ControlError, type Dial } from "@squad/control-plane";
 import { localStateDir, normalizeTarget, type Plane } from "./plane.ts";
-import { KEY_ONLY, shared } from "./ssh.ts";
+import { shared, warm } from "./ssh.ts";
 
 /**
  * Where the server half is fetched from, and a local path in development.
@@ -145,6 +145,21 @@ export function planeEnv(home: string, stateDir: string): NodeJS.ProcessEnv {
 	};
 }
 
+/**
+ * The options that let the probe try the key and nothing else.
+ *
+ * This is the one question worth asking before anything else: does this machine already take the
+ * key, or is there an offer to make? A password prompt in the middle of finding that out would be
+ * the operator answering for a connection that exists only to decide whether to spare them the next
+ * hundred. Host keys are left alone, because a machine seen for the first time has a fair question.
+ */
+const KEY_ONLY = [
+	"-o",
+	"PasswordAuthentication=no",
+	"-o",
+	"KbdInteractiveAuthentication=no",
+] as const;
+
 /** Whether what ssh said is a machine turning the key down, as against one that is not there. */
 const turnedDown = (said: string): boolean => said.includes("Permission denied");
 
@@ -258,6 +273,24 @@ export function authorizeKey(key: string): string {
 		'chmod 700 "$HOME/.ssh"',
 		'chmod 600 "$HOME/.ssh/authorized_keys"',
 	].join("\n");
+}
+
+/**
+ * Whether to spend the password on a key, or on the connection it was going to open anyway.
+ *
+ * Both work. A password is not the weaker way in — it is the one that has to be typed again, and how
+ * often depends on nothing more interesting than how long the multiplexed connection has been idle.
+ * So this is a preference and it is asked as one, rather than a key appearing on a machine because
+ * the program preferred it.
+ */
+async function offerKey(target: string): Promise<boolean> {
+	process.stdout.write(
+		`\n${bold(`${target} does not take this computer's key.`)}\n\n` +
+			`  ${bold("1")}  Put one up         ${dim("appends it to authorized_keys, and nothing asks again")}\n` +
+			`  ${bold("2")}  Keep the password  ${dim("asked once per connection, and one lasts ten idle minutes")}\n\n` +
+			`  ${dim("1 or 2")}  `,
+	);
+	return (await oneOf(["1", "2"])) === "1";
 }
 
 /**
@@ -387,16 +420,23 @@ async function there(home: string): Promise<Plane> {
 	step(`Reaching ${target}`);
 	let reached = await reach(target, [...KEY_ONLY, ...on]);
 
-	// A refused key is the one failure with something to do about it. Anything else the connection
-	// could die of — a name that does not resolve, a host key that changed — is the operator's to
-	// look at, and asking them for a password would only bury what ssh already said.
+	// A refused key is the one failure with something to do about it, and there are two things: put a
+	// key up, or go on typing the password. Anything else the connection could die of — a name that
+	// does not resolve, a host key that changed — is the operator's to look at, and asking them for a
+	// password would only bury what ssh already said.
 	if (reached.code === 255 && turnedDown(reached.said)) {
-		await authorize(target);
-		reached = await reach(target, [...KEY_ONLY, ...on]);
-		if (reached.code === 255) {
-			throw new ControlError(
-				`The key went up, but ${target} still will not take it.\n${beneath(reached.said)}`,
-			);
+		if (await offerKey(target)) {
+			await authorize(target);
+			reached = await reach(target, [...KEY_ONLY, ...on]);
+			if (reached.code === 255) {
+				throw new ControlError(
+					`The key went up, but ${target} still will not take it.\n${beneath(reached.said)}`,
+				);
+			}
+		} else {
+			// The same probe with the password allowed. It is the handshake the console rides for the
+			// next ten idle minutes, so the one prompt it costs is the one it saves later.
+			reached = await reach(target, on);
 		}
 	}
 	if (reached.code === 255) {
@@ -436,14 +476,17 @@ export async function updatePlane(plane: Plane, home: string): Promise<void> {
 		return;
 	}
 
-	// A machine that will not take a key would ask for the password here, again for the console that
-	// this ends on, and again for every connection after that — so the key goes up first, exactly as
-	// it would have when the machine was chosen. A plane installed by hand never went through that.
-	const on = shared(plane.target, home);
-	const reached = await reach(plane.target, [...KEY_ONLY, ...on]);
-	if (reached.code === 255 && turnedDown(reached.said)) await authorize(plane.target);
+	// Opened before the build rather than during it: on a machine that answers to a password this is
+	// where it is asked, with nothing else on the screen, and the rebuild and the console it ends on
+	// both ride what it opens. An update is not the place to ask which way in an operator prefers.
+	await warm(plane.target, home);
 
-	const code = await pipe(await installer(), ["ssh", ...on, plane.target, remoteInstall()]);
+	const code = await pipe(await installer(), [
+		"ssh",
+		...shared(plane.target, home),
+		plane.target,
+		remoteInstall(),
+	]);
 	if (code !== 0) throw new ControlError("The update did not finish. What it printed is above.");
 }
 

@@ -26,37 +26,56 @@ export function shared(target: string, home: string): string[] {
 		// is plenty to tell two machines apart, and the length is then something this can promise.
 		"-o",
 		`ControlPath=${join(home, `ssh-${createHash("sha256").update(target).digest("hex").slice(0, 12)}`)}`,
+		// Long enough that a handful of commands typed one after another are one connection. On a
+		// machine that answers to a password this is the difference between being asked once and being
+		// asked per command, so it is measured in how long an operator stays at a keyboard.
 		"-o",
-		"ControlPersist=60",
+		"ControlPersist=600",
+		// What keeps that from becoming a hang. A master held open across a closed lid or a change of
+		// network is a socket that still looks alive, and the next command would wait on it; this way
+		// it is noticed in under a minute and the connection is made again.
+		"-o",
+		"ServerAliveInterval=15",
+		"-o",
+		"ServerAliveCountMax=3",
 	];
 }
 
 /**
- * The options that let ssh try the key and nothing else.
+ * Opens the connection everything else will ride, at a moment when it can be answered.
  *
- * Every connection this program makes is opened with them, so that a machine which has the key never
- * asks for anything and a machine which has not is refused, legibly, in a second. The alternative is
- * not "it asks for a password sometimes": ssh reads one from /dev/tty, which the console is holding
- * and redrawing, so the prompt lands under a full-screen UI that is also reading those keystrokes.
- * And the connections nobody is sitting in front of — a forwarded port, a reconnect after the master
- * has expired — have nobody to answer it at all. The password is worth exactly one connection, the
- * one that puts a key up; `squad connect` is where it is typed.
+ * A password is a fine way to reach a machine; it is only ever asked at the wrong time. ssh reads
+ * one from /dev/tty, and the console is a full-screen UI holding that same terminal, so a prompt
+ * that arrives once it is drawn lands under it. This runs first and does nothing — the point is the
+ * handshake, on a bare terminal, with the operator looking at it. Every connection after this one
+ * finds the master and authenticates not at all.
  */
-export const KEY_ONLY = [
-	"-o",
-	"PasswordAuthentication=no",
-	"-o",
-	"KbdInteractiveAuthentication=no",
-] as const;
+export async function warm(target: string, home: string): Promise<void> {
+	const child = spawn("ssh", [...shared(target, home), target, "true"], { stdio: "inherit" });
+	const code = await new Promise<number>((resolve, reject) => {
+		child.once("error", reject);
+		child.once("close", (status) => resolve(status ?? 1));
+	});
+	if (code !== 0) {
+		throw new ControlError(
+			`Could not open an SSH connection to ${target}. What ssh said is above.`,
+		);
+	}
+}
 
 /**
  * The command that opens a plane's control socket on a machine this computer has SSH to.
  *
  * `-T` because a pty would rewrite the bytes of the protocol on the way past: newlines are the
  * frame boundary and a terminal line discipline turns them into something else.
+ *
+ * `BatchMode` because this one may not ask a human anything: it is opened behind a drawn console,
+ * and once per forwarded port while the operator is looking at a browser. It rides the master that
+ * `warm` opened — where there is one, no question arises, and where there is not, an error the
+ * console can print beats a prompt nobody can see.
  */
 export function relayOverSsh(target: string, home: string): string[] {
-	return ["ssh", ...KEY_ONLY, ...shared(target, home), "-T", target, "squad relay"];
+	return ["ssh", "-o", "BatchMode=yes", ...shared(target, home), "-T", target, "squad relay"];
 }
 
 /**
@@ -166,12 +185,13 @@ function trouble(target: string, complaint: string, error: Error): ControlError 
 				"  squad connect             put a plane there, or point this somewhere else\n",
 		);
 	}
-	// The other end of the key being the only way in: a machine that has not got yours turns this
-	// down, and the thing to do about it is the one connection that is allowed to cost a password.
-	if (/Permission denied/.test(said)) {
+	// This connection is not allowed to ask, so a machine that wants to be asked something reads as a
+	// refusal here. Both ways out are a connection opened where there is somebody to answer it.
+	if (/Permission denied|Host key verification/.test(said)) {
 		return new ControlError(
-			`${target} would not take this computer's key.\n${said}\n\n` +
-				"  squad connect             puts one up, and asks for the password once\n",
+			`${target} wants something typed, and this connection cannot ask for it.\n${said}\n\n` +
+				"  squad                     opens the connection first, where you can answer it\n" +
+				"  squad connect             puts your key up, so nothing asks again\n",
 		);
 	}
 	if (said.length > 0) return new ControlError(said);
