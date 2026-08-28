@@ -4,9 +4,11 @@
 	--bg-code: #0e1013;
 	--line: #22252a;
 	--line-soft: #191c20;
-	--text: #cfcdc8;
-	--text-strong: #f3f1ed;
-	--muted: #7f838a;
+	--text: #dedcd7;
+	--text-strong: #f5f3ef;
+	/* Not decoration: the lede, the notes under a block and half the small print are this colour, so
+	   it has to be a colour prose can be set in. 7.5:1 on the background above. */
+	--muted: #9ba1a9;
 	/* The console's sixteen colours, brought here at the brightness this background wants. What each
 	   one means is decided in the terminal, not on the page: cyan is the agent, green is what is up,
 	   amber is what is working or nearing its ceiling, red is the only bad news. */
@@ -1082,7 +1084,6 @@ footer {
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: var(--muted);
-	opacity: 0.7;
 }
 
 .docs-nav a {
@@ -1114,7 +1115,6 @@ footer {
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: var(--muted);
-	opacity: 0.7;
 }
 
 @media (min-width: 900px) {
@@ -1216,7 +1216,6 @@ footer {
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: var(--muted);
-	opacity: 0.7;
 }
 
 .docs-toc nav {
