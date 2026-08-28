@@ -1,0 +1,12 @@
+# The markdown of the docs, and the two indexes over it, are for reading where they land rather than
+# for downloading and opening: served as plain text so a browser shows them and anything fetching
+# them gets a string back instead of an attachment.
+
+/docs/*.md
+  Content-Type: text/plain; charset=utf-8
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+
+/llms-full.txt
+  Content-Type: text/plain; charset=utf-8

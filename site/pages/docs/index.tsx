@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Code } from "../../components/Code";
 import { Docs } from "../../components/Docs";
 import { Screen } from "../../components/Screen";
-import { DOCS } from "../../lib/docs";
-import { CLIENT, PI } from "../../lib/site";
+import { DOC_PAGES, DOCS } from "../../lib/docs";
+import { CLIENT, PI, SITE } from "../../lib/site";
 
 const WHERE: [string, string][] = [
 	[
@@ -135,6 +135,25 @@ $ squad
 						</table>
 					</div>
 				))}
+			</section>
+
+			<section>
+				<span className="eyebrow">Reading this without a browser</span>
+				<h2>One address hands an agent the whole of it</h2>
+				<p>
+					Every page here is also written as markdown at the same address with <code>.md</code> on
+					the end, and all {DOC_PAGES.length} of them are in one file. That file is the thing to
+					paste when what you are explaining squad to is a coding agent rather than a person:
+				</p>
+				<Code label="the whole documentation" wrap>{`
+${SITE}/llms-full.txt
+`}</Code>
+				<p className="small muted">
+					<a href="/llms.txt">/llms.txt</a> is the index instead — the same list as the map above,
+					with a link to each page's markdown, for a reader that would rather fetch the one page it
+					needs. Both are converted from these pages at build time rather than written beside them,
+					so neither can be a version behind what you are reading now.
+				</p>
 			</section>
 		</Docs>
 	);

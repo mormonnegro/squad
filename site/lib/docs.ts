@@ -122,6 +122,18 @@ export const DOCS: readonly DocGroup[] = [
 /** The menu read top to bottom, which is the order the foot of each page walks. */
 export const DOC_PAGES: readonly DocPage[] = DOCS.flatMap((group) => group.pages);
 
+/**
+ * The same page written for a reader without a browser: `/docs/server/` is `/docs/server.md`, and
+ * `/docs/` is `/docs/index.md`.
+ *
+ * The build writes those files and every page's head points at its own, so this is the one place
+ * that decides the address. Two copies of that rule is one of them being wrong the day a page moves.
+ */
+export function markdownOf(href: string): string {
+	const slug = href.replace(/^\/docs\//, "").replace(/\/$/, "");
+	return `/docs/${slug === "" ? "index" : slug}.md`;
+}
+
 export function docsAround(href: string): {
 	readonly previous: DocPage | undefined;
 	readonly next: DocPage | undefined;

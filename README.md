@@ -8,6 +8,11 @@ squad gives it a machine to live on, a way to be woken, and a boundary to work i
 
 Requires Docker and Node 22 or newer. One VPS is enough.
 
+The documentation is at [squad.mormon.garden/docs](https://squad.mormon.garden/docs/), and the same
+pages are markdown at [/llms.txt](https://squad.mormon.garden/llms.txt) page by page or
+[/llms-full.txt](https://squad.mormon.garden/llms-full.txt) all at once — which is the address to
+hand an agent you want to explain squad to.
+
 ## Why the parts are shaped this way
 
 Three problems decide the whole design.

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { ReactNode } from "react";
-import { DOCS, docsAround } from "../lib/docs";
+import { DOCS, docsAround, markdownOf } from "../lib/docs";
 import { Layout } from "./Layout";
 
 function Menu({ here }: { here: string }) {
@@ -50,7 +50,7 @@ export function Docs({
 	const { previous, next } = docsAround(here);
 
 	return (
-		<Layout title={title} description={description}>
+		<Layout title={title} description={description} markdown={markdownOf(here)}>
 			<div className="docs">
 				<details className="docs-menu">
 					<summary>docs</summary>
