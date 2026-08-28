@@ -22,6 +22,11 @@ RUN userdel -r node \
 
 COPY relay.mjs /usr/local/lib/squad/relay.mjs
 
+# On PATH rather than under lib, because this one is typed by the agent and a path it has to
+# remember is a path it will get wrong on the turn that matters.
+COPY keep.sh /usr/local/bin/keep
+RUN chmod 755 /usr/local/bin/keep
+
 # The plane's own extensions, kept here rather than in the agent's repository: that repository is
 # written once and is the agent's from then on, so anything shipped into it could never be fixed.
 # The first three are imported by the extensions below rather than registered themselves, which is what

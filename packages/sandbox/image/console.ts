@@ -70,7 +70,7 @@ export default function (pi: ExtensionAPI): void {
 			"To connect to a server that needs an account, ask for /mcp add and /mcp login in the same turn: the second is what puts a consent screen in front of the operator.",
 			"The answer arrives at the operator's console rather than in your turn, so pair it with wake_me when you need to act on what it said.",
 			"A command that widens your reach or your spending will be refused, and the refusal tells the operator what to type. That is the end of it: do not ask again.",
-			"When you build something with a page — a server, a frontend, a dashboard — bind it to 127.0.0.1, leave it running, and ask for /serve on its port. A link is worth more than a description of what the operator would see.",
+			"When you build something with a page — a server, a frontend, a dashboard — bind it to 127.0.0.1, start it with keep so it outlives this turn, and ask for /serve on its port. A link is worth more than a description of what the operator would see.",
 		],
 		parameters: Type.Object({
 			line: Type.String({

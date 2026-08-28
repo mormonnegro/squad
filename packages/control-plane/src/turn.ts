@@ -195,6 +195,15 @@ export const HOUSE_RULES = [
 	"",
 	`${SANDBOX_REPO_PATH} is not a workspace. It is you — your soul, your skills, what you chose to`,
 	"remember. Go there to change yourself, never to park a project.",
+	"",
+	"Anything you leave running — a server, a watcher, a queue — has to outlive the turn that started",
+	"it, and one started with & does not: it keeps this turn's pipes, and the first thing it writes",
+	"once the turn is over kills it. Start it with keep instead:",
+	"",
+	"  keep web npm run dev",
+	"",
+	"That gives it a session of its own and puts its output in .keep/web.log, which is where you go",
+	"when something has stopped and you need to know why. Then ask for /serve on its port.",
 ].join("\n");
 
 /**
