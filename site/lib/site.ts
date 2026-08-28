@@ -9,10 +9,10 @@ const RAW = `${REPO.replace("github.com", "raw.githubusercontent.com")}/main/dep
 /** On the machine the agents will live on, whether that is a server or this computer. */
 export const INSTALL = `${RAW}/install.sh`;
 
-// The npm name. Scoped because `squad` on its own belongs to somebody else, and a landing page whose
-// install line fetches a stranger's package is the worst thing on it. Written once so the day it
-// changes is one edit here and not a hunt through the pages for a command people copy.
-export const PACKAGE = "@squad/cli";
+// On the computer you sit at. Not an npm package: the console is eight workspace packages that only
+// mean anything together, and publishing eight names in lockstep to distribute one command is a
+// release process standing in for a download.
+export const CLIENT = `${RAW}/client.sh`;
 
 export const PI = "https://github.com/earendil-works/pi";
 

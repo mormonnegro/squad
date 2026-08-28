@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Code } from "../components/Code";
 import { Layout } from "../components/Layout";
-import { INSTALL, PACKAGE, REPO } from "../lib/site";
+import { CLIENT, INSTALL, REPO } from "../lib/site";
 
 const ASKS: [string, string][] = [
 	["Docker", "installed from get.docker.com if the machine has none"],
@@ -53,10 +53,17 @@ export default function Install() {
 				<div className="wrap">
 					<span className="eyebrow">From your computer</span>
 					<h2>One command, and it asks one thing</h2>
-					<Code label="on your laptop">{`
-$ npm install -g ${PACKAGE}
+					<Code label="on your laptop" wrap>{`
+$ curl -fsSL ${CLIENT} | sh
 $ squad
 `}</Code>
+					<p className="small muted">
+						It needs Node 22.18 or newer and nothing else — no Docker here, whichever answer you
+						give. <a href={`${REPO}/blob/main/deploy/client.sh`}>deploy/client.sh</a> fetches the
+						tree, installs what the console imports, and leaves <code>squad</code> on your PATH.
+						There is no build step, so what lands is what runs, and running it again is how the
+						console updates.
+					</p>
 					<p>
 						The thing it asks is where your agents should live: <strong>on this computer</strong>,
 						which means Docker and a state directory under <code>~/.squad</code>, or{" "}
@@ -161,7 +168,7 @@ $ curl -fsSL ${INSTALL} | sh
 						the whole of the difference between a laptop and a VPS.
 					</p>
 					<p className="small muted">
-						Whichever end you ran it at, the console is the npm package above and this machine is an
+						Whichever end you ran it at, the console is the command above and this machine is an
 						answer it keeps — in <code>~/.squad/plane.json</code>, written once and never asked
 						again. <code>squad connect</code> asks again, and the installer prints your own address
 						when it finishes so there is nothing to go and look up.

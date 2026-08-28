@@ -113,7 +113,7 @@ Two halves: the console you type at, and the plane the agents live in. Install t
 computer you are sitting at:
 
 ```sh
-npm install -g @squad/cli
+curl -fsSL https://raw.githubusercontent.com/mormonnegro/squad/main/deploy/client.sh | sh
 squad
 ```
 
@@ -130,9 +130,14 @@ agents wherever they are. That is also why a port you expose from an agent opens
 browser is on, which is the one place it is of any use.
 
 It asks for no keys. Every one of them is given later on the config screen in `squad`, because three
-secrets in the first minute is a worse first minute than an empty setup screen in the second. The
-package is scoped and the command is not: `squad` on its own is somebody else's package on npm, and
-`@squad/cli` still puts `squad` on your PATH.
+secrets in the first minute is a worse first minute than an empty setup screen in the second.
+
+That first line needs Node 22.18 or newer and nothing else — no Docker on this computer, whichever
+answer you give. [`deploy/client.sh`](deploy/client.sh) fetches this tree, installs what the console
+imports and leaves `squad` on your PATH; there is no build step, so what lands is what runs, and
+running it again is how the console updates. Not an npm package because the console is eight
+workspace packages that only mean anything together, and publishing eight names in lockstep to
+distribute one command is a release process standing in for a download.
 
 A server needs a Linux with SSH on it and nothing else — the installer brings Docker. One vCPU, a
 gigabyte of memory and ten gigabytes of disk runs a few agents, which is the bottom of every
