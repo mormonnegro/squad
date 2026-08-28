@@ -300,6 +300,26 @@ export interface AgentSummary {
 	 * seconds as everything else on this row.
 	 */
 	readonly served: readonly Served[];
+	/**
+	 * The Telegram bot it answers on, if one is connected, and whether anybody has paired with it.
+	 *
+	 * Here rather than asked for per agent because the column draws the whole fleet at once, and a
+	 * fact that costs a request each is a fact a list of six agents cannot afford to have. Both of
+	 * these are read off the record the plane already holds, so the summary costs what it did.
+	 *
+	 * The pairing matters as much as the bot: a token pasted and never paired is a bot that looks
+	 * connected from every screen there is and listens to nobody.
+	 */
+	readonly bot: { readonly username: string | undefined; readonly paired: boolean } | undefined;
+	/**
+	 * Where mail reaches it, when the plane has a mailbox, and whether it can answer from there.
+	 *
+	 * Every agent has an address the moment the plane has an account — it is a tag on that one — so
+	 * this is absent for all of them or present for all of them, which is why it is drawn dim: the
+	 * fact worth a colour is the mailbox that can only be written to, where an agent reads its mail
+	 * and has no way to reply.
+	 */
+	readonly mail: { readonly address: string; readonly writes: boolean } | undefined;
 }
 
 /**
@@ -622,6 +642,8 @@ export class ControlPlane {
 		// operator wrote down and would never show the one the agent booked for itself.
 		const schedules = await this.scheduler.list(agent.id).catch(() => []);
 		const account = await this.#account(agent.id);
+		const bot = this.telegramStanding(agent.id);
+		const mail = this.emailStanding(agent.id);
 		return {
 			...account,
 			id: agent.id,
@@ -633,6 +655,10 @@ export class ControlPlane {
 			created: this.#createdIds.has(agent.id),
 			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
 			served: await this.#served.of(agent.id),
+			bot: bot === undefined ? undefined : { username: bot.username, paired: bot.paired },
+			// Cut down to the two facts a row can draw. The rest of a standing is a pairing link and a
+			// host and a port, which are answers to `/telegram` and `/email` and belong in a sentence.
+			mail: mail === undefined ? undefined : { address: mail.address, writes: mail.writes },
 		};
 	}
 

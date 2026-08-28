@@ -64,8 +64,19 @@ const REMEMBERED_LINES = 2000;
  */
 const AGENTS_WIDTH = 24;
 
-/** What a row has for the name and its numbers, once the border, the padding and the mark are paid. */
-const ROW_ROOM = AGENTS_WIDTH - 6;
+/** The two reach marks and the space before them, which every agent row spends whatever it has on it. */
+const REACH_ROOM = 3;
+
+/**
+ * What a row has left for the name and its numbers, once the border, the padding, the mark that says
+ * whether it is up and the two that say who can reach it are paid.
+ *
+ * The reach marks are taken off every row rather than dropped from the tight ones, because a column
+ * is scanned down: marks that appear on the rows with short names and go missing on the rest are
+ * not a column at all, and the question they answer — which of these has a bot — is asked of the
+ * whole list at once.
+ */
+const ROW_ROOM = AGENTS_WIDTH - 6 - REACH_ROOM;
 
 /**
  * What the chat has to fit into: the terminal, less the agents column and the pane's own border.
@@ -110,6 +121,39 @@ const MARKS = {
 	running: { glyph: "●", color: "green" },
 	stopped: { glyph: "○", color: "gray" },
 } as const;
+
+/** A mark as a row draws it: a glyph, and the colour that is the other half of what it says. */
+export interface Mark {
+	readonly glyph: string;
+	readonly color: string;
+	readonly dimColor: boolean;
+}
+
+/** The mark for a way in that this agent has not been given, drawn so the column still lines up. */
+const UNREACHED: Mark = { glyph: "·", color: "gray", dimColor: true };
+
+/**
+ * How an agent can be spoken to, in the two columns beside the mark that says whether it is up.
+ *
+ * Yellow is kept for the half-connected, which is the state no other screen admits to: a bot whose
+ * token was pasted and whose link nobody ever tapped listens to nobody, and a mailbox connected for
+ * reading takes an agent's mail and leaves it with no way to answer. Both of those look exactly like
+ * working from anywhere else in this console, and both are somebody's afternoon.
+ *
+ * A bot is green because it is this agent's own — somebody went to BotFather for it. Mail is not: the
+ * account is the plane's and every agent gets a tag on it for free, so a colour there would be six
+ * rows saying the same thing about the plane in the column that is read for what differs.
+ */
+export function reached(agent: AgentSummary): readonly [Mark, Mark] {
+	return [
+		agent.bot === undefined
+			? UNREACHED
+			: { glyph: "✆", color: agent.bot.paired ? "green" : "yellow", dimColor: false },
+		agent.mail === undefined
+			? UNREACHED
+			: { glyph: "✉", color: agent.mail.writes ? "gray" : "yellow", dimColor: false },
+	];
+}
 
 /** Where a turn has got to, and how long it has been getting there. */
 export interface Thinking {
@@ -702,6 +746,24 @@ export function until(iso: string, now: number = Date.now()): string {
 	return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
+/** What the title row says about an agent besides its name, each piece in the colour it is read in. */
+export interface Standing {
+	/** The bot it answers on, which the column can only say it has. */
+	readonly bot: string;
+	/** The address it is reached at, which nothing on screen used to say at all. */
+	readonly mail: string;
+	readonly model: string;
+	readonly spend: string;
+}
+
+/** Three columns between the pieces, so two facts never read as one. */
+const GAP = 3;
+
+function room(said: Standing): number {
+	const pieces = [said.bot, said.mail, said.model, said.spend].filter((piece) => piece !== "");
+	return pieces.join(" ".repeat(GAP)).length;
+}
+
 /**
  * What the title row says about the selected agent besides its name, in the room the tabs left it.
  *
@@ -709,19 +771,32 @@ export function until(iso: string, now: number = Date.now()): string {
  * comes back to the screen for, and the model is what explains it, so the model is what goes when
  * only one of them fits. Nothing is truncated to a stump — a `deepseek-v4-fl…` is a fact half said,
  * and a row that says less is easier to read than a row that says everything badly.
+ *
+ * The two addresses go before either of those, in that order, because they are the longest things
+ * here and the least perishable: where an agent is reached does not change while you watch it, and
+ * the column beside this row has already said whether it has each of them. What this row adds is
+ * which bot and which address, and that is a thing you look up once and then know.
  */
-export function standing(
-	agent: AgentSummary,
-	room: number,
-): { readonly model: string; readonly spend: string } {
+export function standing(agent: AgentSummary, had: number): Standing {
 	const spent = money(agent.spentUsd);
-	const spend = agent.limitUsd === undefined ? spent : `${spent} / ${money(agent.limitUsd)}`;
+	const full = agent.limitUsd === undefined ? spent : `${spent} / ${money(agent.limitUsd)}`;
+	const bot = agent.bot?.username === undefined ? "" : `✆ @${agent.bot.username}`;
+	const mail = agent.mail === undefined ? "" : `✉ ${agent.mail.address}`;
 	const model = agent.model ?? "";
-	if (model !== "" && model.length + 3 + spend.length <= room) return { model, spend };
-	if (spend.length <= room) return { model: "", spend };
-	// The ceiling is the first thing to go: what was spent is a fact, and what it was allowed to be
-	// is a second fact about the first one, worth less than half of the room it takes to say both.
-	return { model: "", spend: spent.length <= room ? spent : "" };
+
+	for (const said of [
+		{ bot, mail, model, spend: full },
+		{ bot, mail: "", model, spend: full },
+		{ bot: "", mail: "", model, spend: full },
+		{ bot: "", mail: "", model: "", spend: full },
+		// The ceiling is the last thing to go before the row is empty: what was spent is a fact, and
+		// what it was allowed to be is a second fact about the first one, worth less than half of the
+		// room it takes to say both.
+		{ bot: "", mail: "", model: "", spend: spent },
+	]) {
+		if (room(said) <= had) return said;
+	}
+	return { bot: "", mail: "", model: "", spend: "" };
 }
 
 /**
@@ -847,10 +922,16 @@ export function Column({
 			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
 			const here = index === cursor;
 			const row = laid(agent);
+			// Beside the mark rather than after the name, which is the only place in a column this narrow
+			// where they line up: the name is as long as somebody made it and the numbers are pinned to
+			// the far edge, so anything between the two is at a different column on every row.
+			const [bot, mail] = reached(agent);
 			return h(
 				Text,
 				{ key: agent.id, wrap: "truncate" },
 				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, { color: bot.color, dimColor: bot.dimColor }, ` ${bot.glyph}`),
+				h(Text, { color: mail.color, dimColor: mail.dimColor }, mail.glyph),
 				h(Text, pointed(here, agent.running), ` ${row.name}`),
 				row.gap === "" ? undefined : row.gap,
 				// An agent that booked its own next turn is going to act while nobody is watching, which is
@@ -3639,9 +3720,14 @@ export function App({
 	// What the left of the title row has already spent, so that what goes at the right end knows how
 	// much of the row is left for it. Three columns of gap, so the two halves never touch.
 	const tabs = `${title}${top === undefined ? "" : "   ↑ scrolled"}${took}   `;
-	const state =
-		selected === undefined ? { model: "", spend: "" } : standing(selected, width - tabs.length);
+	const state: Standing =
+		selected === undefined
+			? { bot: "", mail: "", model: "", spend: "" }
+			: standing(selected, width - tabs.length);
 	const heat = selected === undefined ? { dimColor: true } : burning(selected);
+	// The same two colours the column paints these in, so a yellow mark in the list and the yellow
+	// name of the bot it belongs to are one fact seen twice rather than two things to work out.
+	const [botMark, mailMark] = selected === undefined ? [undefined, undefined] : reached(selected);
 	const started = selected === undefined ? undefined : busy.get(selected.id);
 	const latest = selected === undefined ? undefined : step.get(selected.id);
 	const thinking: Thinking | undefined =
@@ -3700,6 +3786,12 @@ export function App({
 					// sideways as a number under them grows: they are pressed at, and a target that
 					// wanders while you reach for it is worse than one that says less.
 					h(Box, { flexGrow: 1, key: "gap" }),
+					state.bot === "" || botMark === undefined
+						? null
+						: h(Text, { color: botMark.color, dimColor: botMark.dimColor }, `${state.bot}   `),
+					state.mail === "" || mailMark === undefined
+						? null
+						: h(Text, { color: mailMark.color, dimColor: mailMark.dimColor }, `${state.mail}   `),
 					state.model === "" ? null : h(Text, { dimColor: true }, `${state.model}   `),
 					state.spend === "" ? null : h(Text, heat, state.spend),
 				),

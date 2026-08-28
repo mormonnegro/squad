@@ -26,6 +26,7 @@ import {
 	plain,
 	pointed,
 	quoted,
+	reached,
 	recalled,
 	resume,
 	type Said,
@@ -790,6 +791,8 @@ describe("Column", () => {
 		limitUsd: undefined,
 		model: undefined,
 		served: [],
+		bot: undefined,
+		mail: undefined,
 	});
 	const three = [listed("scout", true), listed("scribe", true), listed("sleeper", false)];
 
@@ -817,9 +820,9 @@ describe("Column", () => {
 			}),
 		);
 
-		expect(drawn).toContain("● scout");
-		expect(drawn).toContain("◐ scribe");
-		expect(drawn).toContain("○ sleeper");
+		expect(drawn).toContain("● ·· scout");
+		expect(drawn).toContain("◐ ·· scribe");
+		expect(drawn).toContain("○ ·· sleeper");
 	});
 
 	// The list is what you read while an answer streams past it, and one that resizes as it streams
@@ -1053,6 +1056,81 @@ describe("Column", () => {
 		expect(drawn).toContain("<$0.01");
 		expect(drawn).not.toContain("0.0004");
 	});
+
+	// The question asked of this column is which of six agents has a bot at all, and that is asked of
+	// the list rather than of a row: marks that started at a different column on every line would be
+	// read one at a time, which is the thing a mark is for instead of a word.
+	it("puts the ways in at the same column on every row", () => {
+		const drawn = renderToString(
+			h(Column, {
+				agents: [
+					{
+						...listed("ana", true),
+						bot: { username: "ana_bot", paired: true },
+						mail: { address: "agents+ana@squad.dev", writes: true },
+					},
+					listed("bernardo", true),
+				],
+				spot: 0,
+				busy: new Map<string, number>(),
+				rows: 10,
+			}),
+		)
+			.split("\n")
+			.map(bare);
+
+		expect(drawn.find((row) => row.includes("ana"))).toContain("✆✉");
+		expect(drawn.find((row) => row.includes("bernardo"))).toContain("··");
+		expect(drawn.find((row) => row.includes("ana"))?.indexOf("✆")).toBe(
+			drawn.find((row) => row.includes("bernardo"))?.indexOf("·"),
+		);
+	});
+});
+
+/**
+ * Both of these are states no other screen admits to. A bot whose token was pasted and whose link
+ * nobody tapped answers nobody, and a mailbox connected for reading takes an agent's mail and leaves
+ * it no way to reply — and from anywhere else in this console both look like working.
+ */
+describe("reached", () => {
+	const agent: AgentSummary = {
+		id: "demo",
+		running: true,
+		startedAt: undefined,
+		grants: 0,
+		schedules: 0,
+		wakeAt: undefined,
+		created: false,
+		spentUsd: 0,
+		limitUsd: undefined,
+		model: undefined,
+		served: [],
+		bot: { username: "demo_bot", paired: true },
+		mail: { address: "agents+demo@squad.dev", writes: true },
+	};
+
+	it("keeps yellow for the half connected", () => {
+		expect(reached(agent)[0].color).toBe("green");
+		expect(reached({ ...agent, bot: { username: "demo_bot", paired: false } })[0].color).toBe(
+			"yellow",
+		);
+		expect(
+			reached({ ...agent, mail: { address: "agents+demo@squad.dev", writes: false } })[1].color,
+		).toBe("yellow");
+	});
+
+	// An account the plane connected once is an address for every agent it has, including the ones
+	// made tomorrow. Painted, it would be six rows saying the same thing about the plane.
+	it("says a mailbox that works without making a colour of it", () => {
+		expect(reached(agent)[1].color).toBe("gray");
+	});
+
+	it("draws a way in an agent has not been given, so the column still lines up", () => {
+		const [bot, mail] = reached({ ...agent, bot: undefined, mail: undefined });
+
+		expect([bot.glyph, mail.glyph]).toEqual(["·", "·"]);
+		expect(bot.dimColor && mail.dimColor).toBe(true);
+	});
 });
 
 /**
@@ -1073,24 +1151,56 @@ describe("standing", () => {
 		limitUsd: 5,
 		model: "deepseek-v4-flash",
 		served: [],
+		bot: { username: "demo_bot", paired: true },
+		mail: { address: "agents+demo@squad.dev", writes: true },
 	};
 
-	it("says what it thinks with and what it has spent against its ceiling", () => {
+	it("says where it is reached, what it thinks with, and what it has spent against its ceiling", () => {
+		expect(standing(agent, 80)).toEqual({
+			bot: "✆ @demo_bot",
+			mail: "✉ agents+demo@squad.dev",
+			model: "deepseek-v4-flash",
+			spend: "$0.42 / $5.00",
+		});
+	});
+
+	// The address is the longest thing on the row and the column beside it has already said there is
+	// one. Which address it is can be had from `/email`, and does not change while you watch it.
+	it("gives up the address first as the terminal narrows, and the bot next", () => {
 		expect(standing(agent, 60)).toEqual({
+			bot: "✆ @demo_bot",
+			mail: "",
+			model: "deepseek-v4-flash",
+			spend: "$0.42 / $5.00",
+		});
+		expect(standing(agent, 40)).toEqual({
+			bot: "",
+			mail: "",
 			model: "deepseek-v4-flash",
 			spend: "$0.42 / $5.00",
 		});
 	});
 
 	// The money is what an operator comes back to the screen for; the model is what explains it.
-	it("gives up the model before the money as the terminal narrows", () => {
-		expect(standing(agent, 20)).toEqual({ model: "", spend: "$0.42 / $5.00" });
+	it("gives up the model before the money", () => {
+		expect(standing(agent, 20)).toEqual({
+			bot: "",
+			mail: "",
+			model: "",
+			spend: "$0.42 / $5.00",
+		});
 	});
 
 	// What was spent is a fact; what it was allowed to be is a second fact about the first.
 	it("gives up the ceiling next, and then everything", () => {
-		expect(standing(agent, 8)).toEqual({ model: "", spend: "$0.42" });
-		expect(standing(agent, 2)).toEqual({ model: "", spend: "" });
+		expect(standing(agent, 8)).toEqual({ bot: "", mail: "", model: "", spend: "$0.42" });
+		expect(standing(agent, 2)).toEqual({ bot: "", mail: "", model: "", spend: "" });
+	});
+
+	// A bot whose token was pasted and whose link nobody tapped has no username to say and is not a
+	// bot anybody can write to. The mark in the column is what says it is there and waiting.
+	it("says nothing of a bot with no name to give", () => {
+		expect(standing({ ...agent, bot: { username: undefined, paired: false } }, 80).bot).toBe("");
 	});
 
 	// A `deepseek-v4-fl…` is a fact half said. A row that says less reads better than one that says
