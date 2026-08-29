@@ -74,6 +74,13 @@ anything crosses the socket, because the file is the agent's own and it has an e
 unbounded file costs is not a broken turn but a slow expensive one on every turn, which nobody
 notices until the bill arrives.
 
+A tool nobody mentions is a tool nobody calls, so the harness mentions it. When a tool call fails,
+one line goes in front of the agent before the turn ends, naming what failed and asking whether the
+reason is the kind of thing that would catch it again on a turn where it will not remember this one.
+Once per turn, and it says outright that leaving it is fine: an agent that has just worked out why
+something broke is already writing that sentence, and one that writes a lesson to satisfy a reminder
+spends a slot forever on nothing.
+
 An agent that has never been wrong carries nothing at all — no heading, no empty list, no invitation
 to fill one with things that merely sound wise.
 
