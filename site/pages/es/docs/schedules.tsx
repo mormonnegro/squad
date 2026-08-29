@@ -6,13 +6,13 @@ import { Screen } from "../../../components/Screen";
 export default function Schedules() {
 	return (
 		<Docs
-			title="Schedules"
-			lede="A standing job you wrote, and a turn the agent books for itself. One of the two may instruct, and it is the one you wrote."
-			description="Cron schedules in the config file, and wake_me: how an agent asks for another turn, what it may leave itself, and why that wakeup never carries operator trust."
+			title="Horarios"
+			lede="Un trabajo permanente que escribiste tú, y un turno que el agente reserva para sí mismo. Uno de los dos puede instruir, y es el que escribiste tú."
+			description="Horarios cron en el archivo de configuración, y wake_me: cómo un agente pide otro turno, qué puede dejarse a sí mismo, y por qué ese despertar nunca lleva confianza de operador."
 		>
 			<section>
-				<span className="eyebrow">The one you wrote</span>
-				<h2>Cron, in the agent's own block</h2>
+				<span className="eyebrow">El que escribiste tú</span>
+				<h2>Cron, en el bloque propio del agente</h2>
 				<Code label="deploy/config.yaml">{`
 schedules:
   - kind: cron
@@ -20,81 +20,83 @@ schedules:
     timeZone: America/Argentina/Buenos_Aires
     channel: cron:standup
     body: Summarise yesterday's issues and post the standup note.
-    # An operator wrote this line, so the wakeup may instruct.
+    # Un operador escribió esta línea, así que el despertar puede instruir.
     trust: operator
     createdBy: operator
 `}</Code>
 				<p>
-					Vixie cron semantics, matched against the wall clock in the zone you name, so a job at
-					nine in the morning is at nine in the morning on both sides of a daylight-saving change
-					rather than at eight for half the year. One-shot wakeups are the other kind, and both are
-					persisted — a plane that restarts comes back owing the same appointments.
+					Semántica de Vixie cron, cotejada con el reloj de pared en la zona que nombres, de modo
+					que un trabajo a las nueve de la mañana es a las nueve de la mañana a ambos lados de un
+					cambio de horario de verano y no a las ocho durante medio año. Los despertares de una sola
+					vez son el otro tipo, y ambos se persisten — un plano que se reinicia vuelve debiendo las
+					mismas citas.
 				</p>
 				<p className="small muted">
-					<code>trust: operator</code> is allowed here and nowhere else that an agent can reach,
-					because a line in this file is something an operator typed. That is what makes a schedule
-					able to say <em>do this</em> rather than <em>somebody said this</em>.
+					<code>trust: operator</code> se permite aquí y en ningún otro sitio al que un agente pueda
+					llegar, porque una línea en este archivo es algo que tecleó un operador. Eso es lo que
+					hace que un horario pueda decir <em>haz esto</em> en vez de <em>alguien dijo esto</em>.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The one it books</span>
-				<h2>wake_me asks for another turn and leaves itself a note</h2>
+				<span className="eyebrow">El que reserva él</span>
+				<h2>wake_me pide otro turno y se deja una nota</h2>
 				<Screen>{`
 00:12:36  demo      wake_me     {"afterSeconds":180,"note":"Check whether example.com is still up.
                                 First check: HTTP 200 at 00:12."}
 00:15:38  demo      bash        curl -sS -o /dev/null -w "HTTP %{http_code}" -m 15 https://example.com
 `}</Screen>
 				<p>
-					Work that does not finish in one sitting used to end with the turn. <code>wake_me</code>{" "}
-					is a pi extension shipped in the sandbox image, so it is the plane's to fix rather than
-					the agent's to edit. The wait shows beside the agent in the console —{" "}
-					<code>● demo 3m</code> — because an agent about to act with nobody watching should not
-					need a command to notice.
+					El trabajo que no termina de una sentada acababa antes con el turno. <code>wake_me</code>{" "}
+					es una extensión de pi que viene en la imagen del sandbox, así que es del plano arreglarla
+					y no del agente editarla. La espera se ve junto al agente en la consola —{" "}
+					<code>● demo 3m</code> — porque un agente a punto de actuar sin que nadie mire no debería
+					necesitar un comando para notarlo.
 				</p>
 				<p>
-					There is no path from the sandbox to the plane, and this does not open one: the request is
-					a file the agent writes, which the plane reads and removes once the turn is over. So the
-					plane checks it rather than trusting it. One wakeup is pending at a time, so asking again
-					moves the appointment instead of adding to it; the delay is held between a second and a
-					month; and the wakeup carries <Link href="/es/docs/trust/">participant trust</Link>, never
-					operator, however it asks.
+					No hay camino del sandbox al plano, y esto no abre ninguno: la petición es un archivo que
+					el agente escribe, que el plano lee y borra una vez terminado el turno. Así que el plano
+					lo comprueba en vez de confiar en él. Hay un despertar pendiente a la vez, así que volver
+					a pedirlo mueve la cita en vez de sumarse a ella; la demora se mantiene entre un segundo y
+					un mes; y el despertar lleva <Link href="/es/docs/trust/">confianza de participante</Link>
+					, nunca de operador, lo pida como lo pida.
 				</p>
 				<p className="small muted">
-					Calling it off is a second tool, <code>cancel_wake</code>, rather than a time that means
-					never — the clamp is exactly why there is no such time, so an agent pushing its wakeup a
-					year away to be rid of it has only moved it a month, and left believing otherwise.
+					Cancelarlo es una segunda herramienta, <code>cancel_wake</code>, y no un tiempo que
+					signifique nunca — el recorte es justo la razón por la que no existe tal tiempo, así que
+					un agente que empuja su despertar a un año vista para quitárselo de encima solo lo ha
+					movido un mes, y se ha quedado creyendo lo contrario.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Where the answer goes</span>
-				<h2>A wakeup answers where the conversation is</h2>
+				<span className="eyebrow">Adónde va la respuesta</span>
+				<h2>Un despertar responde donde está la conversación</h2>
 				<p>
-					Ask by mail for a joke every minute and the second joke arrives by mail like the first:
-					the appointment carries the channel the turn that booked it was answering, and so does the
-					appointment that turn books after it. A wakeup used to answer to the agent itself, which
-					is why the first joke arrived and the rest were written, paid for, and said to nobody.
+					Pide por correo un chiste cada minuto y el segundo chiste llega por correo como el
+					primero: la cita lleva el canal al que respondía el turno que la reservó, y también lo
+					lleva la cita que ese turno reserva después. Un despertar respondía antes al propio
+					agente, y por eso el primer chiste llegó y el resto se escribieron, se pagaron y no se le
+					dijeron a nadie.
 				</p>
 				<p>
-					A wakeup that comes due while somebody is writing is folded into the same turn, and there
-					the conversation wins the tie: an agent that booked on its own note instead would have
-					nothing but its own notes in front of it ever after, and would book the next one the same
-					way.
+					Un despertar que vence mientras alguien escribe se pliega dentro del mismo turno, y ahí la
+					conversación gana el empate: un agente que en su lugar reservara sobre su propia nota no
+					tendría delante más que sus propias notas para siempre, y reservaría la siguiente igual.
 				</p>
 				<p className="small muted">
-					A turn books its wakeup once. The second ask in the same turn is refused, because it is
-					not an agent changing its mind about when — it is an agent that read{" "}
-					<em>you will be woken at 09:41</em> as the waiting being over. One asked for a joke a
-					minute told two hundred of them in a single turn that way, three seconds apart. Changing
-					one's mind is <code>cancel_wake</code> and then asking again, which says out loud that the
-					appointment is gone.
+					Un turno reserva su despertar una vez. La segunda petición en el mismo turno se rechaza,
+					porque no es un agente cambiando de idea sobre cuándo — es un agente que leyó{" "}
+					<em>se te despertará a las 09:41</em> como que la espera había terminado. A uno al que se
+					le pidió un chiste por minuto le salieron doscientos en un solo turno de esa manera, con
+					tres segundos de diferencia. Cambiar de idea es <code>cancel_wake</code> y luego volver a
+					pedirlo, lo que dice en voz alta que la cita ya no está.
 				</p>
 				<p className="small muted">
-					Calling it off drops what the appointment has already produced as well as the appointment
-					— a ten-second wakeup fires while a two-minute turn is running and queues behind it. Only
-					its own bookings go: a message somebody typed at a busy agent is owed an answer whatever
-					the agent decided while it sat in the queue.
+					Cancelarlo tira lo que la cita ya ha producido además de la cita — un despertar de diez
+					segundos salta mientras corre un turno de dos minutos y se pone en cola detrás de él. Solo
+					se van sus propias reservas: a un mensaje que alguien tecleó a un agente ocupado se le
+					debe una respuesta decidiera lo que decidiera el agente mientras estaba en la cola.
 				</p>
 			</section>
 		</Docs>

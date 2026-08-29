@@ -3,38 +3,41 @@ import { Docs } from "../../../components/Docs";
 import { Screen } from "../../../components/Screen";
 
 const MCP: [string, string][] = [
-	["/mcp", "what this agent has, and what is on the shelf"],
-	["/mcp add <name> <url>", "find one once: it goes on the shelf, and this agent gets it"],
-	["/mcp add <name> sse <url>", "the same, for a server speaking the older transport"],
-	["/mcp add <name> <command …>", "a server the agent starts for itself, inside the sandbox"],
-	["/mcp <name>", "give this agent one that is already on the shelf"],
-	["/mcp login <name>", "the consent screen, opened in your browser"],
-	["/mcp drop <name>", "take it off this agent, and leave it on the shelf"],
-	["/mcp forget <name>", "take it off the shelf, and off every agent that had it"],
-	["/mcp logout <name>", "give the account back, for everyone"],
+	["/mcp", "lo que tiene este agente, y lo que hay en el estante"],
+	["/mcp add <name> <url>", "encontrar uno una vez: va al estante, y este agente lo recibe"],
+	["/mcp add <name> sse <url>", "lo mismo, para un servidor que habla el transporte antiguo"],
+	[
+		"/mcp add <name> <command …>",
+		"un servidor que el agente arranca por su cuenta, dentro del sandbox",
+	],
+	["/mcp <name>", "dar a este agente uno que ya está en el estante"],
+	["/mcp login <name>", "la pantalla de consentimiento, abierta en tu navegador"],
+	["/mcp drop <name>", "quitarlo de este agente, y dejarlo en el estante"],
+	["/mcp forget <name>", "quitarlo del estante, y de todos los agentes que lo tenían"],
+	["/mcp logout <name>", "devolver la cuenta, para todos"],
 ];
 
 export default function Mcp() {
 	return (
 		<Docs
-			title="MCP servers"
-			lede="Tools that live somewhere else, registered as pi's own so the model cannot tell which of them do. Finding a server is the expensive part, and it only has to happen once."
-			description="Add MCP servers to the shelf the plane keeps, give them to agents, log into the ones that want an account, and understand why no server holds a credential."
+			title="Servidores MCP"
+			lede="Herramientas que viven en otra parte, registradas como propias de pi para que el modelo no pueda saber cuáles lo hacen. Encontrar un servidor es la parte cara, y solo tiene que ocurrir una vez."
+			description="Añadir servidores MCP al estante que guarda el plano, dárselos a los agentes, iniciar sesión en los que quieren una cuenta y entender por qué ningún servidor guarda una credencial."
 		>
 			<section>
-				<span className="eyebrow">Where the client is</span>
-				<h2>An extension, in the sandbox image</h2>
+				<span className="eyebrow">Dónde está el cliente</span>
+				<h2>Una extensión, en la imagen del sandbox</h2>
 				<p>
-					pi has no MCP client and says so on purpose: build an extension, its README answers. So{" "}
-					<code>mcp.ts</code> sits in the sandbox image beside <code>wake_me</code> and{" "}
-					<code>web_search</code> and is a whole one — the handshake, all three transports, and the
-					tools that come back registered as pi's own.
+					pi no tiene cliente MCP y lo dice a propósito: construye una extensión, responde su
+					README. Así que <code>mcp.ts</code> está en la imagen del sandbox junto a{" "}
+					<code>wake_me</code> y <code>web_search</code> y es uno completo — el handshake, los tres
+					transportes, y las herramientas que vuelven registradas como propias de pi.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The shelf</span>
-				<h2>Found once, given out by name</h2>
+				<span className="eyebrow">El estante</span>
+				<h2>Encontrado una vez, repartido por nombre</h2>
 				<Screen>{`
 > /mcp add linear https://mcp.linear.app/mcp
 "linear" is on the shelf, and this agent has it.
@@ -52,10 +55,11 @@ On the shelf:
 /mcp linear gives this agent that one.
 `}</Screen>
 				<p>
-					A URL is a remote server, <code>sse &lt;url&gt;</code> is one speaking the older transport
-					— the one thing about a server a line cannot show by itself — and anything else is a
-					command the agent starts for itself. From the second agent on it is a name off a list,
-					which is the whole point of the shelf being the plane's rather than the agent's.
+					Una URL es un servidor remoto, <code>sse &lt;url&gt;</code> es uno que habla el transporte
+					antiguo — lo único de un servidor que una línea no puede mostrar por sí sola — y cualquier
+					otra cosa es un comando que el agente arranca por su cuenta. A partir del segundo agente
+					es un nombre sacado de una lista, que es todo el sentido de que el estante sea del plano y
+					no del agente.
 				</p>
 				<table className="table table-cmd">
 					<tbody>
@@ -68,15 +72,15 @@ On the shelf:
 					</tbody>
 				</table>
 				<p className="small muted">
-					The list is written into the sandbox before every turn rather than baked into the
-					container, so a server added from the console reaches an agent that is already up on its
-					next turn, and one taken away stops being offered.
+					La lista se escribe en el sandbox antes de cada turno en vez de quedar fijada en el
+					contenedor, así que un servidor añadido desde la consola llega a un agente que ya está
+					levantado en su turno siguiente, y uno que se quita deja de ofrecerse.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The whole shelf at once</span>
-				<h2>And who is holding what</h2>
+				<span className="eyebrow">Todo el estante de una vez</span>
+				<h2>Y quién tiene qué</h2>
 				<Screen>{`
 │ config                                                         │
 │                                                                │
@@ -97,25 +101,26 @@ On the shelf:
 │ ╰────────────────────────────────────────────────────────────╯ │
 `}</Screen>
 				<p>
-					The dot means what it means in the agents column: something that is actually reaching
-					anything. A server nobody was given is a URL written down — <code>notion</code> above —
-					and finding that is the question you would otherwise open every agent in turn to ask.{" "}
-					<code>⏎</code> gives the row under the cursor to the agent <code>tab</code> names, and{" "}
-					<code>⏎</code> again takes it back.
+					El punto significa lo que significa en la columna de agentes: algo que de verdad está
+					alcanzando algo. Un servidor que no se le dio a nadie es una URL anotada —{" "}
+					<code>notion</code> arriba — y encontrar eso es la pregunta que si no abrirías agente por
+					agente para hacer. <code>⏎</code> da la fila que hay bajo el cursor al agente que nombra{" "}
+					<code>tab</code>, y <code>⏎</code> otra vez la quita.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Accounts</span>
-				<h2>There is nowhere in a server to put a credential</h2>
+				<span className="eyebrow">Cuentas</span>
+				<h2>En un servidor no hay dónde poner una credencial</h2>
 				<p>
-					A local one inherits a sandbox whose only road out is{" "}
-					<Link href="/es/docs/grants/">the egress proxy</Link>, a remote one is reached down that
-					same road, and the proxy already writes whatever key either of them needs. So connecting
-					to a server that wants an account is still two things: the line, and a way in. Which way
-					is not a question the operator should have to answer out of a README, so the server is
-					asked — <code>initialize</code> is what any client sends first, and a server that would
-					refuse the agent refuses that identically.
+					Uno local hereda un sandbox cuya única salida es{" "}
+					<Link href="/es/docs/grants/">el proxy de egreso</Link>, a uno remoto se llega por ese
+					mismo camino, y el proxy ya escribe la clave que cualquiera de los dos necesite. Así que
+					conectarse a un servidor que quiere una cuenta siguen siendo dos cosas: la línea y una
+					forma de entrar. Cuál no es una pregunta que el operador deba responder sacándola de un
+					README, así que se le pregunta al servidor — <code>initialize</code> es lo que envía
+					primero cualquier cliente, y un servidor que rechazaría al agente rechaza eso de forma
+					idéntica.
 				</p>
 				<Screen>{`
 > /mcp add notion https://mcp.notion.com/mcp
@@ -124,44 +129,45 @@ On the shelf:
 It wants an account first: /mcp login notion
 `}</Screen>
 				<p>
-					<code>/mcp login</code> registers a client, opens the consent screen at the console —
-					which is the machine the person is at, where a plane in a container is not — and waits on
-					port 8788 for the browser to come back. One number rather than one per login, because that
-					door has to be published out of the container in advance; the deployment binds it to
-					loopback, and one login happens at a time. Where even that cannot be reached, the address
-					the browser lands on can be pasted back instead:{" "}
-					<code>/mcp login notion &lt;address&gt;</code>.
+					<code>/mcp login</code> registra un cliente, abre la pantalla de consentimiento en la
+					consola — que es la máquina en la que está la persona, donde un plano dentro de un
+					contenedor no está — y espera en el puerto 8788 a que vuelva el navegador. Un número y no
+					uno por inicio de sesión, porque esa puerta tiene que publicarse fuera del contenedor de
+					antemano; el despliegue la ata a loopback, y solo pasa un inicio de sesión a la vez. Donde
+					ni siquiera eso se puede alcanzar, se puede pegar de vuelta la dirección en la que
+					aterriza el navegador: <code>/mcp login notion &lt;address&gt;</code>.
 				</p>
 				<p>
-					What comes back is held on the plane, <code>0600</code>, next to the CA key. The sandbox
-					never sees a token, and neither does the agent. The grant it makes is one host, that
-					server's own path, and only for as long as the agent is holding the server —{" "}
-					<code>/mcp drop</code> takes the reach with it, and <code>/mcp logout</code> takes it from
-					everyone.
+					Lo que vuelve se guarda en el plano, <code>0600</code>, junto a la clave de la CA. El
+					sandbox nunca ve un token, y el agente tampoco. La concesión que produce es un host, la
+					ruta propia de ese servidor, y solo mientras el agente tenga el servidor —{" "}
+					<code>/mcp drop</code> se lleva el alcance con él, y <code>/mcp logout</code> se lo quita
+					a todos.
 				</p>
 				<div className="note">
 					<p>
 						<strong>
-							A finished login is the one capability that does not come out of the config file.
+							Un inicio de sesión terminado es la única capacidad que no sale del archivo de
+							configuración.
 						</strong>{" "}
-						That is deliberate and it is narrow: a consent screen is a person reading a host name
-						and deciding, which is a stronger act of approval than a line of YAML rather than a
-						weaker one. An agent can ask for that screen to be put in front of its operator and gets
-						no further by asking — what comes back is a person's answer to a question they were
-						shown.
+						Es deliberado y es estrecho: una pantalla de consentimiento es una persona leyendo un
+						nombre de host y decidiendo, que es un acto de aprobación más fuerte que una línea de
+						YAML y no más débil. Un agente puede pedir que esa pantalla se le ponga delante a su
+						operador y no llega más lejos por pedirlo — lo que vuelve es la respuesta de una persona
+						a una pregunta que se le mostró.
 					</p>
 				</div>
 				<p className="small muted">
-					A server that wants no account and is still out of reach is the other case, and it stays
-					the operator's: <code>/mcp</code> prints the grant to paste but will not write it, because
-					putting the whole of an agent's reach one typo away from the box its messages are typed
-					into is not a convenience.
+					Un servidor que no quiere cuenta y sigue fuera de alcance es el otro caso, y sigue siendo
+					del operador: <code>/mcp</code> imprime la concesión para pegar pero no la escribe, porque
+					dejar todo el alcance de un agente a una errata de distancia de la caja donde se escriben
+					sus mensajes no es una comodidad.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">And the agent is told</span>
-				<h2>Which servers it is holding, every turn</h2>
+				<span className="eyebrow">Y al agente se le dice</span>
+				<h2>Qué servidores tiene, en cada turno</h2>
 				<Screen>{`
 ## The MCP servers you have
 
@@ -172,19 +178,20 @@ the list that is true now — not whatever was said about them earlier in the co
 - \`notion\` — did not answer: HTTP 401: unauthorized
 `}</Screen>
 				<p>
-					Having the tools is not the same as knowing they arrived. The console's answer to{" "}
-					<code>/mcp login</code> goes to the operator, because the operator is the one with the
-					browser it ends in — so an agent that asked for a server is never told it got one. It has
-					only its tool list to infer from, and what it does instead is remember: the turn before it
-					told the operator the login was pending, so this turn it says so again, sitting on a
-					hundred working tools it will not touch. The paragraph goes in every turn rather than
-					once, because the turn the list moves on is exactly the one whose history says otherwise.
+					Tener las herramientas no es lo mismo que saber que llegaron. La respuesta de la consola a{" "}
+					<code>/mcp login</code> va al operador, porque el operador es quien tiene el navegador en
+					el que termina — así que a un agente que pidió un servidor nunca se le dice que lo
+					consiguió. Solo tiene su lista de herramientas de la que deducirlo, y lo que hace en su
+					lugar es recordar: el turno anterior le dijo al operador que el inicio de sesión estaba
+					pendiente, así que este turno lo dice otra vez, sentado sobre cien herramientas que
+					funcionan y que no va a tocar. El párrafo entra en cada turno y no una vez, porque el
+					turno en el que la lista cambia es exactamente aquel cuyo historial dice lo contrario.
 				</p>
 				<p className="small muted">
-					A server that will not answer costs the agent that server's tools and not the turn, and it
-					is named both ways: to the agent, so it can report what the server said instead of
-					guessing what the operator still has to do, and to the operator in the log — the one thing
-					they have to go and fix should not be the one thing nobody is told.
+					Un servidor que no responde le cuesta al agente las herramientas de ese servidor y no el
+					turno, y se nombra en los dos sentidos: al agente, para que pueda informar de lo que dijo
+					el servidor en vez de adivinar lo que al operador le queda por hacer, y al operador en el
+					log — lo único que tiene que ir a arreglar no debería ser lo único que nadie le dice.
 				</p>
 			</section>
 		</Docs>

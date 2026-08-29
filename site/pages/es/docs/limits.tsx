@@ -6,45 +6,46 @@ import { Screen } from "../../../components/Screen";
 export default function Limits() {
 	return (
 		<Docs
-			title="Spending"
-			lede="An agent that books its own next turn is one that goes on running with nobody watching, and until there is a ceiling the first anyone knows of a loop is the bill."
-			description="Dollars a day per agent, where the ceiling is set, what happens at it, and why this is the one setting the keyboard may lower."
+			title="Gasto"
+			lede="Un agente que reserva su propio turno siguiente es uno que sigue ejecutándose sin que nadie mire, y hasta que hay un techo lo primero que se sabe de un bucle es la factura."
+			description="Dólares al día por agente, dónde se fija el techo, qué pasa al llegar a él, y por qué este es el único ajuste que el teclado puede bajar."
 		>
 			<section>
-				<span className="eyebrow">The ceiling</span>
-				<h2>Dollars a day, and a day that belongs to the plane</h2>
+				<span className="eyebrow">El techo</span>
+				<h2>Dólares al día, y un día que pertenece al plano</h2>
 				<Code label="deploy/config.yaml">{`
 defaults:
   limitUsd: 5
 `}</Code>
 				<p>
-					US dollars a day, counted across every turn and reset at midnight UTC — the plane's
-					midnight, since one of the two machines has to decide when the day turns over and it is
-					the plane that enforces it. In <code>defaults</code> it covers the agents made later at
-					the keyboard too, which are exactly the ones nobody remembers to put a ceiling on; an
-					agent's own block narrows it, and leaving it out is no ceiling at all.
+					Dólares estadounidenses al día, contados a lo largo de cada turno y reiniciados a
+					medianoche UTC — la medianoche del plano, ya que una de las dos máquinas tiene que decidir
+					cuándo pasa el día y es el plano el que lo aplica. En <code>defaults</code> cubre también
+					a los agentes creados después con el teclado, que son exactamente aquellos a los que nadie
+					se acuerda de ponerles un techo; el bloque propio de un agente lo estrecha, y omitirlo es
+					no tener techo alguno.
 				</p>
 				<p className="small muted">
-					What a turn cost was reported on the feed all along and added up nowhere, which is the
-					same as not knowing.
+					Lo que costó un turno se informaba en el feed desde siempre y no se sumaba en ninguna
+					parte, que es lo mismo que no saberlo.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Reaching it</span>
-				<h2>It stops the agent taking turns, not a turn in flight</h2>
+				<span className="eyebrow">Llegar a él</span>
+				<h2>Detiene que el agente tome turnos, no un turno en vuelo</h2>
 				<p>
-					The point is not to kill work halfway, which has already been paid for, but not to start
-					more. Nothing is lost: messages that arrive while it is over the ceiling are in the
-					conversation, written down when they arrived, and the plane says there why it is not
-					answering. That matters more than it sounds, because a plane that quietly stops answering
-					is indistinguishable from a broken one. The next day it goes on.
+					El objetivo no es matar trabajo a medias, que ya está pagado, sino no empezar más. No se
+					pierde nada: los mensajes que llegan mientras está por encima del techo están en la
+					conversación, anotados cuando llegaron, y el plano dice ahí por qué no responde. Eso
+					importa más de lo que parece, porque un plano que deja de responder en silencio es
+					indistinguible de uno roto. Al día siguiente continúa.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Moving it</span>
-				<h2>/limit, and both halves in the conversation</h2>
+				<span className="eyebrow">Moverlo</span>
+				<h2>/limit, y ambas mitades en la conversación</h2>
 				<Screen>{`
 > /limit
 $0.42 spent today, against no limit.
@@ -52,21 +53,20 @@ $0.42 spent today, against no limit.
 Spending limit set to $5.00 a day. $0.42 spent today, of $5.00 a day.
 `}</Screen>
 				<p>
-					<code>/limit</code> moves it for one agent without editing the file. Both halves go into
-					the conversation, because that is where they were typed and where the answer gets read: a
-					ceiling that changed with nothing to show for it is one nobody can later work out the
-					reason for.
+					<code>/limit</code> lo mueve para un agente sin editar el archivo. Ambas mitades van a la
+					conversación, porque es ahí donde se teclearon y donde se lee la respuesta: un techo que
+					cambió sin nada que lo muestre es uno cuya razón nadie puede averiguar después.
 				</p>
 				<p>
-					<code>/limit off</code> means no ceiling and not "forget I said anything" — the config's
-					value does not come back, since reinstating the ceiling somebody was in the act of
-					removing is a surprise they would find out about by hitting it.
+					<code>/limit off</code> significa sin techo y no "olvida lo que dije" — el valor del
+					archivo de configuración no vuelve, ya que reinstaurar el techo que alguien estaba en el
+					acto de quitar es una sorpresa de la que se enterarían al chocar con ella.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Where it shows</span>
-				<h2>On the row, before it is a question anyone asks</h2>
+				<span className="eyebrow">Dónde se ve</span>
+				<h2>En la fila, antes de que sea una pregunta que alguien haga</h2>
 				<Screen>{`
 │ agents               │
 │                      │
@@ -76,36 +76,37 @@ Spending limit set to $5.00 a day. $0.42 spent today, of $5.00 a day.
 │ + new agent          │
 `}</Screen>
 				<p>
-					What each agent has spent today is on its row, because "which of these is burning through
-					its day" is a question about all of them at once and the header can only ever answer it
-					about the one you are standing on. The figure turns yellow at four fifths of the ceiling
-					and red at it. An agent that has spent nothing says nothing — a column of{" "}
-					<code>$0.00</code> is noise to read past, and what is being looked for here is the row
-					that is not like the others.
+					Lo que cada agente ha gastado hoy está en su fila, porque "cuál de estos se está quemando
+					el día" es una pregunta sobre todos a la vez y la cabecera solo puede responderla sobre
+					aquel en el que estás parado. La cifra se pone amarilla a cuatro quintos del techo y roja
+					al llegar. Un agente que no ha gastado nada no dice nada — una columna de{" "}
+					<code>$0.00</code> es ruido que hay que saltarse al leer, y lo que se busca aquí es la
+					fila que no es como las demás.
 				</p>
 				<p className="small muted">
-					The title row says what the selected agent is thinking with and what that has cost against
-					what it is allowed. Both were already crossing the socket and being thrown away, and the
-					price of that was that the way to find out which model an agent was answering badly with
-					was to go and read the operator's config file.
+					La fila de título dice con qué está pensando el agente seleccionado y cuánto ha costado
+					eso frente a lo que tiene permitido. Ambas cosas ya cruzaban el socket y se tiraban, y el
+					precio de eso era que la forma de averiguar con qué modelo respondía mal un agente era ir
+					a leer el archivo de configuración del operador.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Why an agent may ask</span>
-				<h2>To be held to less, never to more</h2>
+				<span className="eyebrow">Por qué un agente puede pedirlo</span>
+				<h2>Sujeto a menos, nunca a más</h2>
 				<Screen>{`
 ‹ask› /limit 50
 This agent asked for a ceiling of $50.00 a day, which is above the $5.00 it has. It can ask to
 be held to less, never to more: /limit $50.00, if you meant it.
 `}</Screen>
 				<p>
-					A ceiling is the one setting the keyboard may touch, and it is safe for the reason a grant
-					is not: it can only ever take capability away. So an agent may ask to be held to a tighter
-					one and gets nowhere asking for a looser one — and the refusal hands the operator the line
-					they would have typed, at the moment it is the answer, in the pane they were already
-					looking at. <Link href="/es/docs/console/">The console</Link> has the rest of what an
-					agent may ask for.
+					Un techo es el único ajuste que el teclado puede tocar, y es seguro por la razón por la
+					que una concesión no lo es: solo puede quitar capacidad. Así que un agente puede pedir que
+					se le sujete a uno más estrecho y no llega a ninguna parte pidiendo uno más holgado — y la
+					negativa le entrega al operador la línea que habría tecleado, en el momento en que es la
+					respuesta, en el panel que ya estaba mirando.{" "}
+					<Link href="/es/docs/console/">La consola</Link> tiene el resto de lo que un agente puede
+					pedir.
 				</p>
 			</section>
 		</Docs>

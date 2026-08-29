@@ -5,13 +5,13 @@ import { Screen } from "../../../components/Screen";
 export default function Serve() {
 	return (
 		<Docs
-			title="Serving a port"
-			lede="An agent that writes a frontend has nowhere to put it. The sandbox network is unrouted and that is the point, so a dev server it starts is a dev server nobody can open."
-			description="/serve opens a port from inside an agent's sandbox on the machine your browser is on, over the control socket the console was already talking on."
+			title="Publicar un puerto"
+			lede="Un agente que escribe un frontend no tiene dónde ponerlo. La red del sandbox no está enrutada y esa es la idea, así que un servidor de desarrollo que arranque es un servidor de desarrollo que nadie puede abrir."
+			description="/serve abre un puerto desde dentro del sandbox de un agente en la máquina donde está tu navegador, por el socket de control por el que la consola ya hablaba."
 		>
 			<section>
-				<span className="eyebrow">The way in</span>
-				<h2>It takes two machines to explain, because this runs on two</h2>
+				<span className="eyebrow">La vía de entrada</span>
+				<h2>Hacen falta dos máquinas para explicarlo, porque esto corre en dos</h2>
 				<Screen>{`
 > /serve 3000
 scout is serving 3000
@@ -26,25 +26,25 @@ there and from nowhere else: nothing is published off the server, and the sandbo
 is still as unrouted as it was.
 `}</Screen>
 				<p>
-					The plane keeps the record and the console opens the listener, and those are usually not
-					the same computer. Agents run where the Docker daemon is — a VPS — and the console is the{" "}
-					<code>squad</code> on your own PATH. So the port comes out on <em>your</em> loopback, over
-					the control socket the console was already talking on. Nothing is published on the server,
-					no firewall rule changes, and the link dies when you close the console rather than staying
-					open on a machine nobody is looking at.
+					El plano lleva el registro y la consola abre el listener, y esos no suelen ser el mismo
+					equipo. Los agentes corren donde está el demonio de Docker — un VPS — y la consola es el{" "}
+					<code>squad</code> de tu propio PATH. Así que el puerto sale en <em>tu</em> loopback, por
+					el socket de control por el que la consola ya hablaba. No se publica nada en el servidor,
+					no cambia ninguna regla de firewall, y el enlace muere cuando cierras la consola en vez de
+					quedarse abierto en una máquina que nadie mira.
 				</p>
 				<p>
-					Inside the sandbox it goes to <code>127.0.0.1</code>, which is the part worth having.
-					Sandboxes share one network and can dial each other by container name, so a server bound
-					to <code>0.0.0.0</code> is a server every other agent on the plane can reach; a server on
-					loopback is one only this reaches. The agent is told to bind loopback, and the operator
-					gets the same link either way.
+					Dentro del sandbox va a <code>127.0.0.1</code>, que es la parte que vale la pena. Los
+					sandboxes comparten una red y pueden llamarse entre sí por nombre de contenedor, así que
+					un servidor atado a <code>0.0.0.0</code> es un servidor al que puede llegar cualquier otro
+					agente del plano; un servidor en loopback es uno al que solo llega este. Al agente se le
+					dice que ate el loopback, y el operador recibe el mismo enlace en cualquier caso.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Two agents, one 3000</span>
-				<h2>The number gives way, and the name says whose it is</h2>
+				<span className="eyebrow">Dos agentes, un 3000</span>
+				<h2>El número cede, y el nombre dice de quién es</h2>
 				<Screen>{`
 > /serve
 scout is serving:
@@ -53,45 +53,46 @@ scout is serving:
   8080  http://scout.localhost:8081   (8080 is scribe's here)
 `}</Screen>
 				<p>
-					<code>*.localhost</code> resolves to loopback in every modern browser with nothing
-					configured anywhere. Two agents both running a dev server land on 3000 without either of
-					them having chosen it, and one machine has one 3000 — so the number gives way rather than
-					the second agent being refused for something it did not do. The port inside the sandbox is
-					the one the agent knows about and should keep using; the port in the link is the one to
-					open, which is why the answer names both.
+					<code>*.localhost</code> resuelve a loopback en todos los navegadores modernos sin nada
+					configurado en ninguna parte. Dos agentes que ejecutan los dos un servidor de desarrollo
+					aterrizan en 3000 sin que ninguno lo haya elegido, y una máquina tiene un solo 3000 — así
+					que el número cede en vez de rechazar al segundo agente por algo que no hizo. El puerto de
+					dentro del sandbox es el que el agente conoce y el que debe seguir usando; el puerto del
+					enlace es el que hay que abrir, y por eso la respuesta nombra los dos.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Your own machine has an opinion</span>
-				<h2>The number is knocked on before a door is opened</h2>
+				<span className="eyebrow">Tu propia máquina tiene una opinión</span>
+				<h2>Se llama al número antes de abrir una puerta</h2>
 				<Screen>{`
 ✗ scout serve  could not open 3000 here — 127.0.0.1 in use. Something on this machine
                already answers there: free it, or have the agent bind another port
                inside and /serve that one.
 `}</Screen>
 				<p>
-					Giving way settles the agents against each other, which is all the plane can know: the
-					machine the console runs on is somebody's laptop, with its own idea of what 3000 is for.
-					Knocked on rather than bound, because a bind does not reliably refuse — on BSD a server
-					holding <code>*:3000</code> and a door on <code>127.0.0.1:3000</code> are two sockets to
-					the kernel and both binds succeed, the more specific one then winning every connection.
-					The door would open, the operator's own dev server would quietly stop answering, and the
-					reason would be an agent they were not thinking about at the time.
+					Ceder resuelve a los agentes unos frente a otros, que es todo lo que el plano puede saber:
+					la máquina en la que corre la consola es el equipo de alguien, con su propia idea de para
+					qué es el 3000. Se llama en vez de atar, porque atar no rechaza de forma fiable — en BSD
+					un servidor que ocupa <code>*:3000</code> y una puerta en <code>127.0.0.1:3000</code> son
+					dos sockets para el kernel y ambas ataduras tienen éxito, y la más específica gana
+					entonces todas las conexiones. La puerta se abriría, el propio servidor de desarrollo del
+					operador dejaría de responder en silencio, y la razón sería un agente en el que no estaba
+					pensando en ese momento.
 				</p>
 				<p className="small muted">
-					The diagnosis is in the answer rather than in the log, because a browser opens six
-					connections to a page and a feed with six identical failures in it is a feed nobody reads.
-					Asking for <code>/serve</code> probes the port inside the sandbox at that moment and says
-					whether anything is listening, so "the link is dead" and "the server is not up yet" are
-					told apart where the person is already looking. <code>/serve stop</code> closes the way in
-					and nothing else.
+					El diagnóstico está en la respuesta y no en el log, porque un navegador abre seis
+					conexiones a una página y un feed con seis fallos idénticos dentro es un feed que nadie
+					lee. Pedir <code>/serve</code> sondea el puerto de dentro del sandbox en ese momento y
+					dice si algo está escuchando, de modo que "el enlace está muerto" y "el servidor aún no
+					está levantado" se distinguen donde la persona ya está mirando. <code>/serve stop</code>{" "}
+					cierra la vía de entrada y nada más.
 				</p>
 				<p className="small muted">
-					An agent may ask for this one, because it is the reach test read the other way round: it
-					opens a way <em>in</em> rather than a way out, from a console whose operator could already
-					have run anything they liked in that sandbox.{" "}
-					<Link href="/es/docs/console/">The console</Link> has the rest of that rule.
+					Un agente puede pedir esta, porque es la prueba de alcance leída al revés: abre una vía{" "}
+					<em>de entrada</em> y no una de salida, desde una consola cuyo operador ya podría haber
+					ejecutado lo que quisiera en ese sandbox. <Link href="/es/docs/console/">La consola</Link>{" "}
+					tiene el resto de esa regla.
 				</p>
 			</section>
 		</Docs>

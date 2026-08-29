@@ -6,16 +6,16 @@ import { Screen } from "../../../components/Screen";
 export default function Models() {
 	return (
 		<Docs
-			title="Models"
-			lede="A model is the one capability every agent needs and the one nobody thinks of as a capability. Naming a provider is the whole of configuring it."
-			description="Declare models in the config file or add them from the console, give the plane a key, and move one agent onto another model with /model."
+			title="Modelos"
+			lede="Un modelo es la única capacidad que todo agente necesita y la única en la que nadie piensa como capacidad. Nombrar un proveedor es todo lo que es configurarlo."
+			description="Declarar modelos en el archivo de configuración o añadirlos desde la consola, darle una clave al plano y mover un agente a otro modelo con /model."
 		>
 			<section>
-				<span className="eyebrow">Declaring one</span>
-				<h2>A list, and mostly just a provider</h2>
+				<span className="eyebrow">Declarar uno</span>
+				<h2>Una lista, y casi solo un proveedor</h2>
 				<Code label="deploy/config.yaml">{`
 models:
-  - id: deepseek-v4-flash      # the id doubles as the model when it already is one
+  - id: deepseek-v4-flash      # el id hace de modelo cuando ya lo es
     provider: deepseek
 
   - id: sonnet
@@ -23,28 +23,28 @@ models:
     model: claude-sonnet-4-6
 
 defaults:
-  model: deepseek-v4-flash     # where every agent starts
+  model: deepseek-v4-flash     # donde empieza cada agente
 `}</Code>
 				<p>
-					It used to be four coupled things — the provider, the model, a placeholder key in the
-					sandbox's environment and a grant naming the provider's host — and any one of them wrong
-					is not a startup error but a turn that dies at the proxy, complaining about something the
-					operator never typed. Where a provider lives, what its key is called and whether the key
-					goes in a bearer header or one of its own are facts about the provider rather than
-					decisions anybody gets to make, so they are not written out.
+					Antes eran cuatro cosas acopladas — el proveedor, el modelo, una clave de relleno en el
+					entorno del sandbox y una concesión que nombraba el host del proveedor — y cualquiera de
+					ellas mal no es un error de arranque sino un turno que muere en el proxy, quejándose de
+					algo que el operador nunca escribió. Dónde vive un proveedor, cómo se llama su clave y si
+					la clave va en una cabecera bearer o en una propia son hechos sobre el proveedor y no
+					decisiones que nadie pueda tomar, así que no se escriben.
 				</p>
 				<p className="small muted">
-					A provider nothing here knows still works by saying the two things the table would have
-					said: a <code>host</code> and a <code>keyEnv</code>. The key itself is never in this file
-					and never in the agent — <code>keyEnv</code> names a variable of the control plane's own
-					environment, and the grant each model produces is what writes it onto the request on the
-					way out.
+					Un proveedor que aquí no conoce nadie funciona igual diciendo las dos cosas que habría
+					dicho la tabla: un <code>host</code> y un <code>keyEnv</code>. La clave en sí nunca está
+					en este archivo ni en el agente — <code>keyEnv</code> nombra una variable del entorno del
+					propio plano de control, y la concesión que produce cada modelo es lo que la escribe en la
+					petición al salir.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Moving an agent</span>
-				<h2>/model is a choice among what exists</h2>
+				<span className="eyebrow">Mover un agente</span>
+				<h2>/model es una elección entre lo que existe</h2>
 				<Screen>{`
  ▸ /model flash   deepseek/deepseek-v4-flash   (this one)
    /model sonnet  anthropic/claude-sonnet-4-6
@@ -55,31 +55,32 @@ defaults:
  ↑↓ model   ⏎ choose   ^C quit
 `}</Screen>
 				<p>
-					Each row says the two facts about a model that are not its name — whose it is and what
-					they call it — plus the one that decides whether the next turn answers at all. A model
-					this plane holds no key for is offered and marked, not hidden, because it is configured
-					and the missing half is a key you can paste in two panes over. Typing narrows the list
-					against the id, the provider and the provider's own name together, so{" "}
-					<code>/model anthropic</code> finds the one called <code>sonnet</code>.
+					Cada fila dice los dos hechos sobre un modelo que no son su nombre — de quién es y cómo lo
+					llaman — más el que decide si el turno siguiente responde siquiera. Un modelo del que este
+					plano no tiene clave se ofrece y se marca, no se esconde, porque está configurado y la
+					mitad que falta es una clave que puedes pegar dos paneles más allá. Al escribir se
+					estrecha la lista contra el id, el proveedor y el nombre propio del proveedor a la vez,
+					así que <code>/model anthropic</code> encuentra el que se llama <code>sonnet</code>.
 				</p>
 				<p>
-					Every model on that list is already reachable by every agent — configuring one is what
-					granted it — so moving between them changes what a turn costs and how good it is, and
-					changes nothing at all about what the agent can get to. That is what makes it a command
-					rather than an edit and a restart, and it is why an agent is allowed to ask for it.
+					Todos los modelos de esa lista ya son alcanzables por todos los agentes — configurar uno
+					es lo que lo concedió — así que moverse entre ellos cambia lo que cuesta un turno y lo
+					bueno que es, y no cambia nada de lo que el agente puede alcanzar. Eso es lo que lo hace
+					un comando y no una edición y un reinicio, y es por lo que a un agente se le permite
+					pedirlo.
 				</p>
 				<p className="small muted">
-					Nothing is recreated to do it. The container was started holding a placeholder for every
-					provider this knows, and the runner asks what to think with at the start of every turn —
-					so a switch lands on the next turn, and a turn already running finishes on the model it
-					was handed when it started. That last part is said out loud, because the change looks
-					instant and is not.
+					No se recrea nada para hacerlo. El contenedor se arrancó con un relleno para cada
+					proveedor que esto conoce, y el runner pregunta con qué pensar al principio de cada turno
+					— así que un cambio aterriza en el turno siguiente, y un turno que ya está corriendo
+					termina con el modelo que se le dio al empezar. Esa última parte se dice en voz alta,
+					porque el cambio parece instantáneo y no lo es.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The keys</span>
-				<h2>Both halves are a list on the config screen</h2>
+				<span className="eyebrow">Las claves</span>
+				<h2>Las dos mitades son una lista en la pantalla de configuración</h2>
 				<Screen>{`
 │ config                                                         │
 │                                                                │
@@ -101,25 +102,26 @@ defaults:
 │ ╰────────────────────────────────────────────────────────────╯ │
 `}</Screen>
 				<p>
-					A model is three lines of configuration and one exported variable, and the variable is the
-					half that is not in the file — so it is the half that gets forgotten. The failure that
-					produces is a plane that is running and configured and refused at the proxy, with turns
-					dying over a host nobody typed. <code>●</code> is something this plane can use right now
-					and <code>○</code> one it cannot, the same mark the agents column uses.
+					Un modelo son tres líneas de configuración y una variable exportada, y la variable es la
+					mitad que no está en el archivo — así que es la mitad que se olvida. El fallo que eso
+					produce es un plano que está corriendo y configurado y rechazado en el proxy, con turnos
+					que mueren por un host que nadie escribió. <code>●</code> es algo que este plano puede
+					usar ahora mismo y <code>○</code> algo que no, la misma marca que usa la columna de
+					agentes.
 				</p>
 				<p>
-					<code>⏎</code> on a key takes it, masked as it is typed and never shown again. It goes to
-					the plane over the same socket a shell does, and for the same reason: holding that socket
-					is what makes somebody the operator, and a key arriving by webhook would be a stranger
-					paying with your account. A key pasted here holds on the next turn, with nothing restarted
-					and nothing redeployed; an empty line takes it back, and the question goes to the plane's
-					own environment again.
+					<code>⏎</code> sobre una clave la toma, enmascarada mientras se escribe y nunca vuelta a
+					mostrar. Va al plano por el mismo socket por el que va un shell, y por la misma razón:
+					tener ese socket es lo que hace a alguien el operador, y una clave que llegara por webhook
+					sería un desconocido pagando con tu cuenta. Una clave pegada aquí rige desde el turno
+					siguiente, sin nada reiniciado y nada redesplegado; una línea vacía la retira, y la
+					pregunta vuelve a ir al entorno propio del plano.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Adding one at the keyboard</span>
-				<h2>+ a model asks the providers rather than asking you</h2>
+				<span className="eyebrow">Añadir uno desde el teclado</span>
+				<h2>+ a model pregunta a los proveedores en vez de preguntarte a ti</h2>
 				<Screen>{`
 │ 3 on offer                                                     │
 │ › gpt-5-mini   openai                                          │
@@ -130,29 +132,30 @@ defaults:
 │ ╰────────────────────────────────────────────────────────────╯ │
 `}</Screen>
 				<p>
-					Being handed a key and then asked for a model name is being asked for the one fact the key
-					just made the plane able to look up. So every provider it holds a key for is asked what it
-					answers to, all at once, and what comes back is a list to arrow through. Typing narrows it
-					against the provider and the id together and in any order, so <code>openai mini</code>{" "}
-					gets there without remembering which of <code>gpt-5-mini</code> and{" "}
-					<code>gpt-5-nano</code> was the one.
+					Que te tomen una clave y luego te pidan un nombre de modelo es que te pidan el único dato
+					que la clave acaba de permitirle buscar al plano. Así que a cada proveedor del que tiene
+					una clave se le pregunta a qué responde, todos a la vez, y lo que vuelve es una lista por
+					la que moverse con las flechas. Al escribir se estrecha contra el proveedor y el id a la
+					vez y en cualquier orden, así que <code>openai mini</code> llega sin recordar cuál de{" "}
+					<code>gpt-5-mini</code> y <code>gpt-5-nano</code> era el bueno.
 				</p>
 				<p className="small muted">
-					A provider that would not answer is named under the list instead of being counted as
-					having nothing, since an empty list is the shape both a wrong key and an empty catalog
-					arrive in. Writing one out by hand still works and has to — three words, a name, the
-					provider it thinks on and the provider's own name for it, so{" "}
-					<code>sonnet anthropic claude-sonnet-4-6</code> is taken as typed.
+					Un proveedor que no responda se nombra debajo de la lista en vez de contarse como que no
+					tiene nada, ya que una lista vacía es la forma en la que llegan tanto una clave equivocada
+					como un catálogo vacío. Escribir uno a mano sigue funcionando y tiene que hacerlo — tres
+					palabras, un nombre, el proveedor con el que piensa y el nombre propio que el proveedor le
+					da, así que <code>sonnet anthropic claude-sonnet-4-6</code> se toma tal cual se escribió.
 				</p>
 				<div className="note">
 					<p>
-						<strong>What the file declared is there to be read and not to be changed.</strong>{" "}
-						<code>from the file</code> is a row this screen will not shadow and will not drop.
-						Everything given here lives in a store beside <code>config.yaml</code> and never in it,
-						so a redeploy brings back what was written there and what was typed here survives the
-						redeploy on its own. This is the one screen where the keyboard grants rather than pays,
-						and that is deliberate: reaching it means holding the plane's control socket, which is
-						the whole of being <Link href="/es/docs/trust/">the operator</Link> here.
+						<strong>Lo que declaró el archivo está para leerse y no para cambiarse.</strong>{" "}
+						<code>from the file</code> es una fila que esta pantalla no va a tapar y no va a soltar.
+						Todo lo que se da aquí vive en un almacén junto a <code>config.yaml</code> y nunca
+						dentro, así que un redespliegue devuelve lo que se escribió ahí y lo que se escribió
+						aquí sobrevive al redespliegue por su cuenta. Esta es la única pantalla donde el teclado
+						concede en vez de pagar, y es deliberado: llegar a ella significa tener el socket de
+						control del plano, que es todo lo que es ser{" "}
+						<Link href="/es/docs/trust/">el operador</Link> aquí.
 					</p>
 				</div>
 			</section>

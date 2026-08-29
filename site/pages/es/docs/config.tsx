@@ -4,47 +4,48 @@ import { Docs } from "../../../components/Docs";
 import { Screen } from "../../../components/Screen";
 
 const SECTIONS: [string, string][] = [
-	["models", "the providers this plane can pay, and what its agents think with"],
-	["search", "where web_search goes, and what a search costs"],
-	["grants", "the hosts the agents may reach, and what they carry"],
-	["mcp", "the servers on the shelf, and which agents hold them"],
-	["email", "the mailbox agents are reached at, and whose mail they read"],
+	["models", "los proveedores que este plano puede pagar, y con qué piensan sus agentes"],
+	["search", "adónde va web_search, y cuánto cuesta una búsqueda"],
+	["grants", "los hosts que los agentes pueden alcanzar, y qué llevan"],
+	["mcp", "los servidores del estante, y qué agentes los tienen"],
+	["email", "el buzón en el que se llega a los agentes, y de quién leen el correo"],
 ];
 
 export default function Config() {
 	return (
 		<Docs
 			title="config.yaml"
-			lede="Every capability an agent has is in one file, and no secret is. The file describing what an agent may reach should be committable and diffable, because a grant nobody noticed being added is the failure mode."
-			description="The whole config surface, what it deliberately does not hold, and the store beside it that the console writes to."
+			lede="Toda capacidad que tiene un agente está en un archivo, y ningún secreto lo está. El archivo que describe lo que un agente puede alcanzar debería caber en un commit y leerse en un diff, porque una concesión que nadie vio añadirse es el modo de fallo."
+			description="Toda la superficie de configuración, lo que deliberadamente no contiene, y el almacén de al lado en el que escribe la consola."
 		>
 			<section>
-				<span className="eyebrow">The surface</span>
-				<h2>Five keys, and nothing you would not want in a diff</h2>
+				<span className="eyebrow">La superficie</span>
+				<h2>Cinco claves, y nada que no quisieras en un diff</h2>
 				<Code label="deploy/config.yaml">{`
 stateDir: /var/lib/squad
 
-models:                   # what there is to think with
-defaults:                 # model, limitUsd, grants — and the whole of an agent made later
+models:                   # con qué hay para pensar
+defaults:                 # model, limitUsd, grants — y todo lo de un agente creado después
 agents:                   # id, description, grants, schedules
-hooks:                    # the signed endpoints, and which agent each reaches
+hooks:                    # los endpoints firmados, y a qué agente llega cada uno
 `}</Code>
 				<p>
-					<code>deploy/config.example.yaml</code> is that surface written out with the reasons
-					beside it. No secret is in any of it: it names environment variables and the process holds
-					the values, so the file goes in git and a review of it is a review of what the agents can
-					do.
+					<code>deploy/config.example.yaml</code> es esa superficie escrita entera con las razones
+					al lado. No hay ningún secreto en nada de ello: nombra variables de entorno y el proceso
+					guarda los valores, así que el archivo va a git y revisarlo es revisar lo que pueden hacer
+					los agentes.
 				</p>
 				<p className="small muted">
-					<code>defaults</code> is the operator's answer, given in advance, to what an agent made at
-					the keyboard may reach — because nothing said to an agent in a chat pane may widen it. An
-					agent's own block adds to those rather than replacing them.
+					<code>defaults</code> es la respuesta del operador, dada de antemano, a lo que puede
+					alcanzar un agente creado desde el teclado — porque nada de lo que se le diga a un agente
+					en un panel de chat puede ampliarlo. El bloque propio de un agente se suma a esos en lugar
+					de reemplazarlos.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The screen beside it</span>
-				<h2>Everything this plane can be given, in one place</h2>
+				<span className="eyebrow">La pantalla de al lado</span>
+				<h2>Todo lo que se le puede dar a este plano, en un solo sitio</h2>
 				<Screen>{`
 │ config                                                         │
 │                                                                │
@@ -78,63 +79,65 @@ hooks:                    # the signed endpoints, and which agent each reaches
 					</tbody>
 				</table>
 				<p>
-					Each row says what its section is for, because a column of bare nouns is a screen you have
-					to open every row of to find the one you came here for. The line under the list is how
-					that section actually stands — <code>1 of 4 providers paid for</code>, the address the
-					mail comes to — which is the fact a row saying what it is for cannot carry, and is usually
-					the reason you are here.
+					Cada fila dice para qué sirve su sección, porque una columna de sustantivos secos es una
+					pantalla en la que hay que abrir todas las filas para encontrar aquella por la que
+					viniste. La línea bajo la lista es cómo está esa sección de verdad —{" "}
+					<code>1 of 4 providers paid for</code>, la dirección a la que llega el correo — que es el
+					hecho que no puede llevar una fila que dice para qué sirve, y suele ser la razón por la
+					que estás aquí.
 				</p>
 				<p>
-					There are two ways in. The column is one — the screen is its last row, so{" "}
-					<code>shift-tab</code> from the first agent arrives in a single press — and{" "}
-					<code>/config</code> is the other, typed from wherever the hand already is.{" "}
-					<code>/config email</code> skips this list and lands in that section.
-				</p>
-			</section>
-
-			<section>
-				<span className="eyebrow">Which of the two wins</span>
-				<h2>What the file declares is read here and changed only there</h2>
-				<p>
-					Everything given at the console lives in a store beside <code>config.yaml</code> and never
-					in it, so the operator's file stays the operator's. A redeploy brings back what was
-					written there, and what was typed here survives the redeploy on its own.{" "}
-					<code>from the file</code> is a row the screen will not shadow and will not drop, and it
-					says so rather than refusing after the fact.
-				</p>
-				<p>
-					An edit to the file itself is read when the plane starts, so it takes hold on{" "}
-					<code>docker compose restart control-plane</code> from <code>/opt/squad/deploy</code>.
-					That is the road for the half the console has no box for — the credential on a grant — and
-					it is the reason the console can widen where an agent goes and can never decide what it
-					spends. <Link href="/es/docs/grants/">Reach</Link> is where that line is drawn.
+					Hay dos maneras de entrar. La columna es una — la pantalla es su última fila, así que{" "}
+					<code>shift-tab</code> desde el primer agente llega en una sola pulsación — y{" "}
+					<code>/config</code> es la otra, tecleada desde donde ya está la mano.{" "}
+					<code>/config email</code> se salta esta lista y aterriza en esa sección.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The deployment</span>
-				<h2>Three things that are load-bearing and easy to get wrong</h2>
+				<span className="eyebrow">Cuál de los dos gana</span>
+				<h2>Lo que declara el archivo se lee aquí y se cambia solo allí</h2>
 				<p>
-					The control plane runs <strong>on the agents' network</strong>, not on the host.
-					Containers on an internal network cannot reach the host at all, so a proxy on the host is
-					one the agents cannot use.
+					Todo lo que se da en la consola vive en un almacén junto a <code>config.yaml</code> y
+					nunca dentro de él, así que el archivo del operador sigue siendo del operador. Un
+					redespliegue trae de vuelta lo que se escribió allí, y lo que se tecleó aquí sobrevive al
+					redespliegue por su cuenta. <code>from the file</code> es una fila que la pantalla no va a
+					tapar y no va a quitar, y lo dice en vez de negarse después.
 				</p>
 				<p>
-					The state directory is bind-mounted <strong>at its own path</strong>. The control plane
-					hands the daemon that path when mounting the CA into a sandbox, and the daemon resolves
-					bind sources on the host.
+					Una edición del archivo mismo se lee cuando arranca el plano, así que toma efecto con{" "}
+					<code>docker compose restart control-plane</code> desde <code>/opt/squad/deploy</code>.
+					Ese es el camino para la mitad para la que la consola no tiene casilla — la credencial de
+					una concesión — y es la razón por la que la consola puede ampliar adónde va un agente y
+					nunca puede decidir lo que gasta. <Link href="/es/docs/grants/">Alcance</Link> es donde se
+					traza esa línea.
+				</p>
+			</section>
+
+			<section>
+				<span className="eyebrow">El despliegue</span>
+				<h2>Tres cosas que sostienen el peso y son fáciles de equivocar</h2>
+				<p>
+					El plano de control corre <strong>en la red de los agentes</strong>, no en el host. Los
+					contenedores de una red interna no pueden alcanzar el host en absoluto, así que un proxy
+					en el host es uno que los agentes no pueden usar.
 				</p>
 				<p>
-					A sandbox <strong>outlives the plane that made it</strong>, and its proxy credential is in
-					its environment — so a restarting plane reads that credential back off the container
-					rather than deciding it. A plane that decided instead would come back denying every
-					request its own agents made, the model included, with the sandboxes looking perfectly
-					healthy.
+					El directorio de estado se monta por bind <strong>en su propia ruta</strong>. El plano de
+					control le pasa al daemon esa ruta al montar la CA dentro de un sandbox, y el daemon
+					resuelve los orígenes del bind en el host.
+				</p>
+				<p>
+					Un sandbox <strong>sobrevive al plano que lo creó</strong>, y su credencial de proxy está
+					en su entorno — así que un plano que rearranca vuelve a leer esa credencial del contenedor
+					en vez de decidirla. Un plano que la decidiera volvería denegando toda petición que
+					hicieran sus propios agentes, el modelo incluido, con los sandboxes pareciendo
+					perfectamente sanos.
 				</p>
 				<p className="small muted">
-					The control plane holds the Docker socket, so it is root-equivalent on the machine. The
-					trust boundary is the sandbox around the agent, not the process managing it —{" "}
-					<Link href="/es/docs/trust/">Trust</Link> says what that does and does not claim.
+					El plano de control tiene el socket de Docker, así que equivale a root en la máquina. El
+					límite de confianza es el sandbox alrededor del agente, no el proceso que lo gestiona —{" "}
+					<Link href="/es/docs/trust/">Confianza</Link> dice qué afirma eso y qué no.
 				</p>
 			</section>
 		</Docs>

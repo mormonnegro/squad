@@ -3,62 +3,69 @@ import { Docs } from "../../../components/Docs";
 import { Screen } from "../../../components/Screen";
 
 const CLI: [string, string][] = [
-	["squad", "the console: every agent, its turns and its logs on one screen"],
-	["squad chat scout", "talk to one in the scrollback, turn after turn"],
-	["squad ls", "what each agent is and whether it is up"],
+	["squad", "la consola: cada agente, sus turnos y sus logs en una sola pantalla"],
+	["squad chat scout", "hablar con uno en el scrollback, turno tras turno"],
+	["squad ls", "qué es cada agente y si está en marcha"],
 	[
 		'squad wake scout "check the issues"',
-		"take one turn, as the operator, and wait for the answer",
+		"tomar un turno, como el operador, y esperar la respuesta",
 	],
-	["squad logs", "follow what every agent runs, answers and spends"],
-	["squad rm scout [--purge]", "the sandbox, and with --purge the repository inside it"],
-	["squad connect", "ask again where the agents should live"],
-	["squad update", "the latest squad on the plane and on this computer"],
-	["squad help", "the rest"],
+	["squad logs", "seguir lo que cada agente ejecuta, responde y gasta"],
+	["squad rm scout [--purge]", "el sandbox, y con --purge el repositorio que hay dentro"],
+	["squad connect", "volver a preguntar dónde deben vivir los agentes"],
+	["squad update", "el último squad en el plano y en este equipo"],
+	["squad help", "el resto"],
 ];
 
 const KEYS: [string, string][] = [
-	["↑ ↓", "walk the column: every agent, the row that makes one, the feed, the config screen"],
-	["tab", "the same ring, and shift-tab for the way back"],
-	["← →", "the lines you have typed at this agent, left for older"],
-	["^U ^D", "half a pane, the way less moves"],
-	["/", "the commands, filtered by whatever is typed after it"],
-	["!", "the shell inside the sandbox, from an empty prompt"],
-	["esc", "stop the turn this agent is taking"],
-	["^C", "quit, and the terminal comes back as it was"],
+	[
+		"↑ ↓",
+		"recorrer la columna: cada agente, la fila que crea uno, el feed, la pantalla de configuración",
+	],
+	["tab", "el mismo anillo, y shift-tab para la vuelta"],
+	["← →", "las líneas que has escrito a este agente, izquierda para las más antiguas"],
+	["^U ^D", "medio panel, como se mueve less"],
+	["/", "los comandos, filtrados por lo que se escriba después"],
+	["!", "la shell dentro del sandbox, desde un prompt vacío"],
+	["esc", "detener el turno que está tomando este agente"],
+	["^C", "salir, y el terminal vuelve como estaba"],
 ];
 
 const SLASH: [string, string, string][] = [
-	["/limit", "[<amount>|off]", "what it has spent today, and the ceiling for it"],
-	["/model", "[<name>]", "what it thinks with, and what else there is"],
-	["/mcp", "[<name>|add …|login …]", "the MCP servers it has, and the shelf to add from"],
-	["/serve", "[<port>|stop <port>]", "open a port inside it on the machine you are sitting at"],
-	["/telegram", "[<token>|off]", "the bot it answers on, and how to pair one"],
+	["/limit", "[<amount>|off]", "lo que ha gastado hoy, y el techo para ello"],
+	["/model", "[<name>]", "con qué piensa, y qué más hay"],
+	["/mcp", "[<name>|add …|login …]", "los servidores MCP que tiene, y el estante del que añadir"],
+	[
+		"/serve",
+		"[<port>|stop <port>]",
+		"abrir un puerto suyo en la máquina ante la que estás sentado",
+	],
+	["/telegram", "[<token>|off]", "el bot en el que responde, y cómo emparejar uno"],
 	[
 		"/email",
 		"[<address>|<password>|off]",
-		"the address it is reached at, and how to connect a mailbox",
+		"la dirección en la que se le alcanza, y cómo conectar un buzón",
 	],
-	["/clear", "", "forget the conversation, and start it again on nothing"],
-	["/delete", "", "delete this agent, after asking whether you meant it"],
+	["/clear", "", "olvidar la conversación, y empezarla de nuevo sobre nada"],
+	["/delete", "", "borrar este agente, después de preguntar si era eso lo que querías"],
 	[
 		"/config",
 		"[models|search|grants|mcp|email]",
-		"the whole plane's screen: its keys, models, reach and mailbox",
+		"la pantalla del plano entero: sus claves, modelos, alcance y buzón",
 	],
-	["/help", "", "every command there is"],
+	["/help", "", "todos los comandos que hay"],
 ];
 
 export default function Console() {
 	return (
 		<Docs
-			title="The console"
-			lede="A running plane listens on a unix socket in its state directory. That is the whole control surface, and these are typed on your own computer whichever machine the plane is on."
-			description="The squad console: the commands, the screen, every key, the slash commands, and the shell into the sandbox."
+			title="La consola"
+			lede="Un plano en marcha escucha en un socket unix dentro de su directorio de estado. Esa es toda la superficie de control, y estos se escriben en tu propio equipo esté el plano en la máquina que esté."
+			description="La consola de squad: los comandos, la pantalla, cada tecla, los comandos de barra y la shell hacia el sandbox."
 		>
 			<section>
-				<span className="eyebrow">At a shell</span>
-				<h2>Nine commands, and the first one is the thing itself</h2>
+				<span className="eyebrow">En una shell</span>
+				<h2>Nueve comandos, y el primero es la cosa misma</h2>
 				<table className="table table-cmd">
 					<tbody>
 						{CLI.map(([cmd, what]) => (
@@ -70,23 +77,24 @@ export default function Console() {
 					</tbody>
 				</table>
 				<p className="small muted">
-					The name is needed only when there is a choice to make: a plane running one agent already
-					knows which one is meant, so <code>squad wake "check the issues"</code> works, and a first
-					word that names an agent addresses it instead. A name no agent answers to is refused
-					before anything is queued — the plane would otherwise accept the event and deliver it to
-					nobody, and that wait is fifteen minutes long and looks exactly like an agent thinking.
+					El nombre solo hace falta cuando hay una elección que hacer: un plano que corre un solo
+					agente ya sabe a cuál se refiere, así que <code>squad wake "check the issues"</code>{" "}
+					funciona, y una primera palabra que nombra a un agente se dirige a él. Un nombre al que no
+					responde ningún agente se rechaza antes de encolar nada — el plano aceptaría si no el
+					evento y lo entregaría a nadie, y esa espera dura quince minutos y se parece exactamente a
+					un agente pensando.
 				</p>
 				<p className="small muted">
-					The console needs a terminal it can take over and a plane to open on. Missing either — a
-					pipe, a CI job, no plane running — <code>squad</code> prints where the state is and what
-					is in it, so <code>squad | grep</code> keeps working and nothing has to know which case it
-					is in.
+					La consola necesita un terminal del que pueda apoderarse y un plano sobre el que abrirse.
+					Si falta cualquiera de los dos — una tubería, un job de CI, ningún plano en marcha —{" "}
+					<code>squad</code> imprime dónde está el estado y qué hay en él, así que{" "}
+					<code>squad | grep</code> sigue funcionando y nada tiene que saber en qué caso está.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The screen</span>
-				<h2>One column, top to bottom</h2>
+				<span className="eyebrow">La pantalla</span>
+				<h2>Una columna, de arriba abajo</h2>
 				<Screen>{`
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
 │ agents               ││ demo                         deepseek-v4-flash   $0.42 / $5.00 │
@@ -106,39 +114,39 @@ export default function Console() {
  ↑↓ agents   ←→ history   ^U^D scroll   / commands   ! shell   ^C quit
 `}</Screen>
 				<p>
-					The column on the left is the whole of what this console can show, as one list: every
-					agent the plane has — <code>●</code> up, <code>○</code> stopped, <code>◐</code> mid-turn —
-					then the row that makes one, then the log feed and the config screen. Thinking gets a mark
-					of its own because with several agents on screen it is the one thing you cannot find out
-					by asking again in a second.
+					La columna de la izquierda es todo lo que esta consola puede mostrar, como una sola lista:
+					cada agente que tiene el plano — <code>●</code> en marcha, <code>○</code> parado,{" "}
+					<code>◐</code> a mitad de turno — luego la fila que crea uno, luego el feed de logs y la
+					pantalla de configuración. Pensar recibe una marca propia porque con varios agentes en
+					pantalla es lo único que no puedes averiguar volviendo a preguntar dentro de un segundo.
 				</p>
 				<p>
-					The feed and the config screen stand at the foot of the column rather than behind an agent
-					because neither is about an agent. The feed is the plane's, one stream with every agent in
-					it, and the config screen is everything the plane itself was given. Under the agents
-					rather than over them because that is the order they are used in: you open this to talk to
-					an agent, and you go to the feed when something is wrong or to the keys once, at the
-					start.
+					El feed y la pantalla de configuración están al pie de la columna y no detrás de un agente
+					porque ninguno de los dos trata de un agente. El feed es del plano, un solo flujo con
+					todos los agentes dentro, y la pantalla de configuración es todo lo que se le dio al plano
+					mismo. Debajo de los agentes y no encima porque ese es el orden en que se usan: esto se
+					abre para hablar con un agente, y al feed se va cuando algo va mal, o a las claves una
+					vez, al principio.
 				</p>
 				<p>
-					What each agent has spent today is on its row, because "which of these is burning through
-					its day" is a question about all of them at once and the header can only ever answer it
-					about the one you are standing on. It turns yellow at four fifths of its ceiling and red
-					at it, and an agent that has spent nothing says nothing. Where a name leaves room for only
-					one of them the wait wins — <code>15m</code> above is an agent that will act while nobody
-					is watching, and the money is not that.
+					Lo que cada agente ha gastado hoy está en su fila, porque "cuál de estos se está quemando
+					el día" es una pregunta sobre todos a la vez y la cabecera solo puede responderla sobre
+					aquel en el que estás parado. Se pone amarillo a cuatro quintos de su techo y rojo al
+					llegar, y un agente que no ha gastado nada no dice nada. Donde un nombre deja sitio para
+					solo uno de los dos gana la espera — <code>15m</code> arriba es un agente que actuará
+					mientras nadie mira, y el dinero no es eso.
 				</p>
 				<p className="small muted">
-					A turn is not waited on, so asking one agent something and then watching another think is
-					a matter of pressing <code>↑</code>. Each agent keeps its own conversation and it belongs
-					to the plane rather than to the console, so closing one is not ending it: the next console
-					opens on what was said.
+					Un turno no se espera, así que preguntar algo a un agente y ponerse luego a ver pensar a
+					otro es cuestión de pulsar <code>↑</code>. Cada agente guarda su propia conversación y
+					esta pertenece al plano y no a la consola, así que cerrar una no es terminarla: la
+					siguiente consola abre sobre lo que se dijo.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The keys</span>
-				<h2>Two for the list, two for the history</h2>
+				<span className="eyebrow">Las teclas</span>
+				<h2>Dos para la lista, dos para el historial</h2>
 				<table className="table">
 					<tbody>
 						{KEYS.map(([key, what]) => (
@@ -150,37 +158,37 @@ export default function Console() {
 					</tbody>
 				</table>
 				<p className="small muted">
-					The line already sent is walked back through sideways because this prompt takes no cursor:
-					there was never a line to walk along with left and right, so they cost it nothing, and up
-					and down go to the column, which is the one thing on this screen that is a list. The
-					half-written line you were on when the walk began comes back whole at the end of it.
+					La línea ya enviada se recorre hacia atrás de lado porque este prompt no admite cursor:
+					nunca hubo una línea que recorrer con izquierda y derecha, así que no le cuestan nada, y
+					arriba y abajo van a la columna, que es lo único de esta pantalla que es una lista. La
+					línea a medio escribir en la que estabas cuando empezó el recorrido vuelve entera al final
+					de él.
 				</p>
 				<p className="small muted">
-					<code>esc</code> is offered in the hint row only while there is a turn to stop, since a
-					hint for a key that does nothing is a hint that lies. What stops is the process inside the
-					container, killed rather than disconnected from — letting go of the pipe leaves a model
-					thinking on the other side of it, going on being paid for after somebody has been told it
-					stopped. The question that started it goes back into the prompt, over an empty prompt only
-					and only while nothing has come back.
+					<code>esc</code> se ofrece en la fila de pistas solo mientras hay un turno que detener,
+					porque una pista de una tecla que no hace nada es una pista que miente. Lo que se detiene
+					es el proceso dentro del contenedor, matado y no desconectado — soltar la tubería deja un
+					modelo pensando al otro lado de ella, cobrándose todavía después de que a alguien se le
+					haya dicho que paró. La pregunta que lo inició vuelve al prompt, solo sobre un prompt
+					vacío y solo mientras no haya vuelto nada.
 				</p>
 				<p className="small muted">
-					Dragging over the conversation highlights the rows and putting the button back down puts
-					them on the clipboard, <code>⧉ 3 rows copied</code> in the tab row to say it landed. Over{" "}
-					<code>ssh</code> there is no local program to hand the text to, so it goes to the terminal
-					as an OSC 52 sequence and the row says <code>sent to the terminal</code> rather than
-					claiming a clipboard it cannot see. The console takes the whole window and gives it back
-					on the way out, the way <code>less</code> and <code>vim</code> do.
+					Arrastrar por encima de la conversación resalta las filas y soltar el botón las pone en el
+					portapapeles, <code>⧉ 3 rows copied</code> en la fila de pestañas para decir que llegó.
+					Por <code>ssh</code> no hay programa local al que entregar el texto, así que va al
+					terminal como una secuencia OSC 52 y la fila dice <code>sent to the terminal</code> en
+					lugar de reclamar un portapapeles que no puede ver. La consola toma la ventana entera y la
+					devuelve al salir, como hacen <code>less</code> y <code>vim</code>.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Said to the plane, not to the agent</span>
-				<h2>A line starting with a slash</h2>
+				<span className="eyebrow">Dicho al plano, no al agente</span>
+				<h2>Una línea que empieza por barra</h2>
 				<p>
-					It is a command about the agent rather than something said to it, answered by the plane
-					without waking anything — a turn spent reading a settings change is a turn wasted. The
-					slash opens the list of what there is, over the prompt, filtered by whatever is typed
-					after it.
+					Es un comando sobre el agente y no algo dicho a él, respondido por el plano sin despertar
+					nada — un turno gastado en leer un cambio de ajustes es un turno perdido. La barra abre la
+					lista de lo que hay, sobre el prompt, filtrada por lo que se escriba después.
 				</p>
 				<table className="table table-cmd">
 					<tbody>
@@ -196,26 +204,26 @@ export default function Console() {
 					</tbody>
 				</table>
 				<p className="small muted">
-					<code>↑↓</code> move between the entries and <code>⏎</code> or <code>tab</code> takes one.
-					A first return chooses and a second sends, because every command here can be given an
-					argument and a return that fired the moment a name was highlighted would make{" "}
-					<code>/limit 5</code> the one thing the menu could not be used to type. Where the argument
-					is itself a name off a list — <code>/model</code>, and the models — the space behind the
-					command opens that list too.
+					<code>↑↓</code> mueven entre las entradas y <code>⏎</code> o <code>tab</code> toma una. Un
+					primer retorno elige y un segundo envía, porque a todo comando de aquí se le puede dar un
+					argumento y un retorno que disparara en cuanto se resaltara un nombre haría de{" "}
+					<code>/limit 5</code> lo único que el menú no serviría para escribir. Donde el argumento
+					es a su vez un nombre sacado de una lista — <code>/model</code>, y los modelos — el
+					espacio detrás del comando abre también esa lista.
 				</p>
 				<p className="small muted">
-					A message that merely begins with a path is still a message:{" "}
-					<code>/etc/hosts is wrong</code> comes back as a command that does not exist rather than
-					being quietly swallowed. And <code>/config</code> is the one row that is not about the
-					agent whose prompt it was typed at — it moves the column to{" "}
-					<Link href="/es/docs/config/">the plane's own screen</Link>, and naming a section lands
-					inside it.
+					Un mensaje que simplemente empieza por una ruta sigue siendo un mensaje:{" "}
+					<code>/etc/hosts is wrong</code> vuelve como un comando que no existe en lugar de ser
+					tragado en silencio. Y <code>/config</code> es la única fila que no trata del agente en
+					cuyo prompt se escribió — mueve la columna a{" "}
+					<Link href="/es/docs/config/">la pantalla del plano mismo</Link>, y nombrar una sección
+					aterriza dentro de ella.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Looking around inside</span>
-				<h2>! is the door into the box</h2>
+				<span className="eyebrow">Mirar por dentro</span>
+				<h2>! es la puerta a la caja</h2>
 				<Screen>{`
 ! ~/.self  git status --short
  M src/queue.ts
@@ -226,36 +234,37 @@ curl: (56) Received HTTP code 403 from proxy after CONNECT
 exit 56
 `}</Screen>
 				<p>
-					Pressing <code>!</code> at an empty prompt puts you inside, and the prompt says where you
-					are standing. You stay in until you backspace off the empty line, because nobody looks
-					around a machine one command at a time, and <code>cd</code> moves you the way it does
-					anywhere else — every command is its own <code>sh</code>, so the plane carries the
-					directory from one to the next.
+					Pulsar <code>!</code> en un prompt vacío te mete dentro, y el prompt dice dónde estás
+					parado. Sigues dentro hasta que borras hacia atrás desde la línea vacía, porque nadie mira
+					una máquina de un comando en un comando, y <code>cd</code> te mueve como lo hace en
+					cualquier otro sitio — cada comando es su propio <code>sh</code>, así que el plano lleva
+					el directorio de uno al siguiente.
 				</p>
 				<p>
-					It runs where the agent runs, as the agent — the same directory, the same environment, the
-					same proxy — so what comes back is about the agent's world rather than about a shell that
-					happens to be nearby, and <code>!curl</code> is refused exactly where the agent's would
-					be. It grants nothing: whoever can reach the control socket already holds the Docker
-					socket the plane runs on and could open the same shell the long way round.
+					Corre donde corre el agente, como el agente — el mismo directorio, el mismo entorno, el
+					mismo proxy — así que lo que vuelve trata del mundo del agente y no de una shell que
+					casualmente está al lado, y <code>!curl</code> se rechaza exactamente donde se rechazaría
+					el del agente. No concede nada: quien puede alcanzar el socket de control ya tiene el
+					socket de Docker sobre el que corre el plano y podría abrir la misma shell dando el rodeo.
 				</p>
 				<p className="small muted">
-					<code>tab</code> completes a path here, which is what <code>tab</code> is at a shell
-					prompt everywhere else — so in this mode it stops changing panes, and the way to the other
-					panes is over an empty line. Nothing about the completion is recorded and nothing about it
-					runs: the sandbox is asked to read a directory with the half-typed word handed over as an
-					argument, so a directory the agent called <code>; rm -rf ~</code> stays a directory.
+					<code>tab</code> completa una ruta aquí, que es lo que <code>tab</code> es en un prompt de
+					shell en todas las demás partes — así que en este modo deja de cambiar de panel, y el
+					camino a los otros paneles pasa por una línea vacía. Nada del completado se registra y
+					nada de él se ejecuta: se le pide al sandbox que lea un directorio con la palabra a medio
+					escribir entregada como argumento, así que un directorio al que el agente llamó{" "}
+					<code>; rm -rf ~</code> sigue siendo un directorio.
 				</p>
 				<p className="small muted">
-					It is independent of the turn, so an agent that is thinking can be looked at while it
-					thinks, which is when there is most to see — and the agent is not told it happened,
-					because looking around inside is not the same as saying something.
+					Es independiente del turno, así que a un agente que está pensando se le puede mirar
+					mientras piensa, que es cuando más hay que ver — y al agente no se le dice que ocurrió,
+					porque mirar por dentro no es lo mismo que decir algo.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Where a turn came from</span>
-				<h2>Everything not typed here wears a mark</h2>
+				<span className="eyebrow">De dónde vino un turno</span>
+				<h2>Todo lo que no se escribe aquí lleva una marca</h2>
 				<Screen>{`
 > how is the queue looking?
 four issues open, none of them blocked.
@@ -266,29 +275,32 @@ still the same.
 ‹webhook:github› the nightly build failed on main
 `}</Screen>
 				<p>
-					A turn nobody at a keyboard started appears in the conversation too — a schedule coming
-					due, a webhook arriving, a message you sent by mail, an agent waking itself — with a mark
-					saying where it came from. Your own mail is marked as well, and for the same reason: it is
-					you, and it is not you at this keyboard. An agent that answered its mail at four in the
-					morning would otherwise read back, hours later, as something you had sat down and typed.
+					Un turno que nadie inició ante un teclado aparece también en la conversación — un horario
+					que vence, un webhook que llega, un mensaje que enviaste por correo, un agente que se
+					despierta a sí mismo — con una marca que dice de dónde vino. Tu propio correo va marcado
+					también, y por la misma razón: eres tú, y no eres tú en este teclado. Un agente que
+					respondió a su correo a las cuatro de la mañana se leería si no, horas después, como algo
+					que te habías sentado a escribir.
 				</p>
 				<p>
-					The answer to it carries an arrow, because it is the half that went somewhere. An answer
-					written into the pane and an answer also sent are the same words, and without the mark the
-					pane is the same picture either way. What you typed here is answered here, and that is
-					left unmarked — marking it would mark nearly every line an agent ever says.
+					La respuesta a él lleva una flecha, porque es la mitad que se fue a algún sitio. Una
+					respuesta escrita en el panel y una respuesta que además se envió son las mismas palabras,
+					y sin la marca el panel es la misma imagen en cualquiera de los dos casos. Lo que
+					escribiste aquí se responde aquí, y eso se deja sin marcar — marcarlo marcaría casi todas
+					las líneas que un agente llega a decir.
 				</p>
 				<p className="small muted">
-					Only what arrives on the control socket is drawn as the operator. Everything else is named
-					for the channel it came in on, because the pane gets read back to work out who asked for
-					what, and a line from a stranger drawn the same way as the operator's is the one bug in a
-					chat window that matters. <Link href="/es/docs/trust/">Trust</Link> is that rule in full.
+					Solo lo que llega por el socket de control se dibuja como el operador. Todo lo demás se
+					nombra por el canal por el que entró, porque el panel se relee para averiguar quién pidió
+					qué, y una línea de un desconocido dibujada igual que la del operador es el único bug de
+					una ventana de chat que importa. <Link href="/es/docs/trust/">La confianza</Link> es esa
+					regla entera.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The feed</span>
-				<h2>What every agent runs, answers and spends</h2>
+				<span className="eyebrow">El feed</span>
+				<h2>Lo que cada agente ejecuta, responde y gasta</h2>
 				<Screen>{`
 18:12:53  maxi      bash        pnpm -r test
 18:12:53  maxi      bash      ✗ after 12.4s: FAIL test/turn.test.ts > carries the failure detail
@@ -298,21 +310,22 @@ still the same.
 18:12:53  maxi      spent       1m38s · 91.2k tokens · $0.02 · api.deepseek.com ×12
 `}</Screen>
 				<p>
-					The commands each agent runs inside its sandbox as it runs them, what a failed one printed
-					and how long it took to fail, the answer when the turn ends, and what the turn spent.
-					Model round-trips that worked are counted rather than printed, and the count arrives with
-					the turn that made them — one identical <code>allowed POST api.deepseek.com</code> per
-					request is what the lines that matter used to be buried in.
+					Los comandos que cada agente ejecuta dentro de su sandbox según los ejecuta, lo que
+					imprimió uno que falló y cuánto tardó en fallar, la respuesta cuando el turno acaba, y lo
+					que gastó el turno. Las idas y vueltas al modelo que funcionaron se cuentan en lugar de
+					imprimirse, y la cuenta llega con el turno que las hizo — un{" "}
+					<code>allowed POST api.deepseek.com</code> idéntico por petición es aquello en lo que
+					solían quedar enterradas las líneas que importan.
 				</p>
 				<p className="small muted">
-					A request that was denied, or came back 401 or 429, is said the moment it happens, because
-					it is the reason the agent is about to misbehave.
+					Una petición que fue denegada, o volvió con 401 o 429, se dice en el momento en que
+					ocurre, porque es la razón por la que el agente está a punto de portarse mal.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Asked for rather than typed</span>
-				<h2>An agent can ask for some of these</h2>
+				<span className="eyebrow">Pedido en lugar de escrito</span>
+				<h2>Un agente puede pedir algunos de estos</h2>
 				<Screen>{`
 ‹ask› /mcp add ahrefs https://mcp.ahrefs.com/mcp
 "ahrefs" is on the shelf, and this agent has it.
@@ -325,19 +338,19 @@ Log in to mcp.ahrefs.com here — opened already, if this console is somewhere w
   https://auth.ahrefs.com/authorize?response_type=code&client_id=…
 `}</Screen>
 				<p>
-					An agent that wanted one MCP server used to write out, patiently and correctly, the host
-					to add and the command that approves it — and then sit there until somebody read the
-					paragraph. <code>console_command</code> asks for console commands by name instead, and the
-					answer goes to the console rather than back to the agent, because the console runs on the
-					machine the person is at and the link ends in their browser.
+					Un agente que quería un servidor MCP escribía antes, con paciencia y corrección, el host
+					que añadir y el comando que lo aprueba — y luego se quedaba ahí hasta que alguien leyera
+					el párrafo. <code>console_command</code> pide en cambio comandos de consola por su nombre,
+					y la respuesta va a la consola y no de vuelta al agente, porque la consola corre en la
+					máquina en la que está la persona y el enlace termina en su navegador.
 				</p>
 				<p>
-					What it may ask for is decided outside the command, and the line is not "destructive" — it
-					is whether an agent talked into this by something it read could get anywhere by it.
-					Connecting a server, opening a consent screen, moving between configured models, serving a
-					port and being held to a <em>tighter</em> ceiling widen nothing. Deleting itself, raising
-					its ceiling, logging a server out, clearing its own conversation and opening{" "}
-					<code>/config</code> stay with the operator.
+					Lo que puede pedir se decide fuera del comando, y la línea no es "destructivo" — es si un
+					agente convencido de esto por algo que leyó podría llegar a alguna parte con ello.
+					Conectar un servidor, abrir una pantalla de consentimiento, moverse entre modelos
+					configurados, publicar un puerto y quedar sujeto a un techo <em>más estricto</em> no
+					ensanchan nada. Borrarse a sí mismo, subir su techo, cerrar la sesión de un servidor,
+					limpiar su propia conversación y abrir <code>/config</code> se quedan con el operador.
 				</p>
 				<Screen>{`
 ‹ask› /limit 50
@@ -345,11 +358,10 @@ This agent asked for a ceiling of $50.00 a day, which is above the $5.00 it has.
 be held to less, never to more: /limit $50.00, if you meant it.
 `}</Screen>
 				<p className="small muted">
-					A refusal prints the line the operator would have typed, which is the point rather than
-					the consolation: the operator finds out the command exists by being handed it, at the
-					moment it is the answer. With two exceptions — <code>/telegram</code> and{" "}
-					<code>/email</code> are refused without the line, because there the line <em>is</em> the
-					attack.
+					Un rechazo imprime la línea que el operador habría escrito, que es el objetivo y no el
+					consuelo: el operador se entera de que el comando existe porque se lo entregan, en el
+					momento en que es la respuesta. Con dos excepciones — <code>/telegram</code> y{" "}
+					<code>/email</code> se rechazan sin la línea, porque allí la línea <em>es</em> el ataque.
 				</p>
 			</section>
 		</Docs>

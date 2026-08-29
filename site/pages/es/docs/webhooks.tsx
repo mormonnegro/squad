@@ -6,37 +6,38 @@ export default function Webhooks() {
 	return (
 		<Docs
 			title="Webhooks"
-			lede="Port 8787 is the one thing published, and it takes signed requests only. A webhook wakes an agent; it never tells it what to do."
-			description="Wake an agent from anything that can make an HTTP request: declare a hook, sign the body, and know why a webhook can never carry operator trust."
+			lede="El puerto 8787 es lo único publicado, y solo acepta peticiones firmadas. Un webhook despierta a un agente; nunca le dice qué hacer."
+			description="Despertar a un agente desde cualquier cosa capaz de hacer una petición HTTP: declarar un hook, firmar el cuerpo y saber por qué un webhook nunca puede llevar confianza de operador."
 		>
 			<section>
-				<span className="eyebrow">Declared, not discovered</span>
-				<h2>A hook is a block in the config file</h2>
+				<span className="eyebrow">Declarado, no descubierto</span>
+				<h2>Un hook es un bloque en el archivo de configuración</h2>
 				<Code label="deploy/config.yaml">{`
 hooks:
   - id: deploys
     agentId: scout
-    # The name of an environment variable, not the secret itself.
+    # El nombre de una variable de entorno, no el secreto en sí.
     secretEnv: DEPLOY_HOOK_SECRET
-    # The default is "public". A hook may never be "operator".
+    # El valor por defecto es "public". Un hook nunca puede ser "operator".
     trust: participant
     replyUrl: https://acme.example.com/agent-replies
 `}</Code>
 				<p>
-					That makes <code>POST /hooks/deploys</code> exist and belong to <code>scout</code>. The
-					secret is named rather than written, so the file describing what can wake your agents
-					stays committable and diffable. <code>replyUrl</code> is where the agent's answer is
-					posted back, for a system that wants one.
+					Eso hace que <code>POST /hooks/deploys</code> exista y pertenezca a <code>scout</code>. El
+					secreto se nombra en vez de escribirse, así que el archivo que describe qué puede
+					despertar a tus agentes sigue cabiendo en un commit y leyéndose en un diff.{" "}
+					<code>replyUrl</code> es adonde se envía de vuelta la respuesta del agente, para un
+					sistema que quiera una.
 				</p>
 				<p className="small muted">
-					The installer writes a working hook and generates its secret into <code>.env</code>, so
-					there is one to try before you have written any of this.
+					El instalador escribe un hook que funciona y genera su secreto en <code>.env</code>, así
+					que hay uno que probar antes de que hayas escrito nada de esto.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Sending one</span>
-				<h2>The signature covers the timestamp and the body</h2>
+				<span className="eyebrow">Enviar uno</span>
+				<h2>La firma cubre el timestamp y el cuerpo</h2>
 				<Code wrap>{`
 BODY='{"text":"the nightly build failed"}'
 TS=$(date +%s)
@@ -48,42 +49,45 @@ curl -X POST http://localhost:8787/hooks/deploys \\
   -d "$BODY"
 `}</Code>
 				<p>
-					It is compared in constant time within a freshness window. An unknown hook id answers
-					exactly like a bad signature, and only after the body has been read, so the endpoint does
-					not enumerate — someone holding no secret cannot learn from it which hooks exist.
+					Se compara en tiempo constante dentro de una ventana de frescura. Un id de hook
+					desconocido responde exactamente igual que una firma incorrecta, y solo después de haber
+					leído el cuerpo, así que el endpoint no enumera — quien no tiene ningún secreto no puede
+					averiguar por él qué hooks existen.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">What arrives</span>
-				<h2>Authentic, and still written by anyone</h2>
+				<span className="eyebrow">Lo que llega</span>
+				<h2>Auténtico, y escrito aun así por cualquiera</h2>
 				<p>
-					A GitHub webhook is signed by GitHub and relays an issue body typed by a stranger. So a
-					webhook may not carry <Link href="/es/docs/trust/">operator trust</Link>, however well
-					signed: the secret proves which system sent the request, never that a human meant what is
-					inside it. The body arrives fenced, introduced as data, with a random nonce chosen after
-					the content is written so that nothing inside can close the fence.
+					Un webhook de GitHub lo firma GitHub y retransmite el cuerpo de un issue escrito por un
+					desconocido. Así que un webhook no puede llevar{" "}
+					<Link href="/es/docs/trust/">confianza de operador</Link>, por bien firmado que esté: el
+					secreto prueba qué sistema envió la petición, nunca que un humano quisiera decir lo que
+					hay dentro. El cuerpo llega vallado, presentado como datos, con un nonce aleatorio elegido
+					después de escribir el contenido para que nada de dentro pueda cerrar la valla.
 				</p>
 				<p>
-					Events queue per agent and are folded into a single turn, so an agent woken twenty times
-					while busy takes one turn about twenty things. A turn that fails leaves its events queued
-					rather than acknowledging them, so a bad API key costs a retry instead of the message.
+					Los eventos se encolan por agente y se pliegan en un único turno, así que un agente
+					despertado veinte veces mientras está ocupado toma un turno sobre veinte cosas. Un turno
+					que falla deja sus eventos encolados en vez de darlos por recibidos, así que una clave
+					incorrecta cuesta un reintento en lugar del mensaje.
 				</p>
 				<p className="small muted">
-					The reply is routed by the channel of the event that caused it, so an agent answering a
-					GitHub hook cannot be steered into replying on Telegram by anything in the payload.
+					La respuesta se enruta por el canal del evento que la causó, así que a un agente que
+					responde a un hook de GitHub nada en el payload puede llevarlo a responder por Telegram.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The other two ways in</span>
-				<h2>Neither of them needs a port</h2>
+				<span className="eyebrow">Las otras dos vías de entrada</span>
+				<h2>Ninguna de las dos necesita un puerto</h2>
 				<p>
-					<Link href="/es/docs/telegram/">Telegram</Link> and{" "}
-					<Link href="/es/docs/email/">email</Link> reach out rather than being reached, so neither
-					costs a domain, a certificate or anything published. They are also the two that can be
-					paired to a person, which is what lets them instruct. If nothing needs to wake your agents
-					from outside, port 8787 is a thing you never open.
+					<Link href="/es/docs/telegram/">Telegram</Link> y{" "}
+					<Link href="/es/docs/email/">el correo</Link> salen a buscar en vez de ser buscados, así
+					que ninguno cuesta un dominio, un certificado ni nada publicado. Son también los dos que
+					pueden emparejarse a una persona, que es lo que les permite instruir. Si nada necesita
+					despertar a tus agentes desde fuera, el puerto 8787 es algo que no abres nunca.
 				</p>
 			</section>
 		</Docs>

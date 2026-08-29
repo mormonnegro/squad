@@ -5,19 +5,19 @@ import { Screen } from "../../../components/Screen";
 export default function Email() {
 	return (
 		<Docs
-			title="Email"
-			lede="One mailbox for the whole plane, connected once. Every agent you have — and every agent you make after this — is reached at the same address with its own name tagged on."
-			description="Connect a mailbox to the plane: type the address, make an app password, pair yourself by a phrase, and list who else may write — an address at a time or a whole domain."
+			title="Correo"
+			lede="Un buzón para todo el plano, conectado una vez. A cada agente que tienes — y a cada agente que hagas después de esto — se le alcanza en la misma dirección con su propio nombre puesto como etiqueta."
+			description="Conecta un buzón al plano: escribe la dirección, crea una contraseña de aplicación, emparéjate mediante una frase, y enumera quién más puede escribir — una dirección a la vez o un dominio entero."
 		>
 			<section>
-				<span className="eyebrow">Why a mailbox you already read</span>
-				<h2>Nothing to buy, no domain, no DNS, no open port</h2>
+				<span className="eyebrow">Por qué un buzón que ya lees</span>
+				<h2>Nada que comprar, ni dominio, ni DNS, ni puerto abierto</h2>
 				<p>
-					The plane logs in and reads it the way a mail client does. Telegram is a bot per agent;
-					email is the whole plane at once, which is why it is connected once and covers the agents
-					that do not exist yet.
+					El plano inicia sesión y lo lee como lo hace un cliente de correo. Telegram es un bot por
+					agente; el correo es todo el plano de una vez, y por eso se conecta una sola vez y cubre a
+					los agentes que aún no existen.
 				</p>
-				<p>Type the address. Only the address:</p>
+				<p>Escribe la dirección. Solo la dirección:</p>
 				<Screen>{`
 /email agents@fastmail.com
 
@@ -34,35 +34,36 @@ Then paste it back:
     /email <the app password>
 `}</Screen>
 				<p>
-					The link is the point. Every provider buries that screen somewhere different and none of
-					them call it the same thing, so "make an app password" is an instruction that ends in a
-					search box — which is the longest part of connecting a mailbox and the part people give up
-					in.
+					El enlace es lo importante. Cada proveedor entierra esa pantalla en un lugar distinto y
+					ninguno la llama igual, así que "crea una contraseña de aplicación" es una instrucción que
+					termina en un cuadro de búsqueda — que es la parte más larga de conectar un buzón y la
+					parte en la que la gente se rinde.
 				</p>
 				<p className="small muted">
-					Where the mailbox lives is worked out from the address through autoconfig,{" "}
-					<code>.well-known</code>, the ISPDB and SRV before falling back to the conventional guess,
-					and when it is a guess the answer says so rather than stating it. Both servers are named
-					in one line because the question a password step raises is how many credentials this is
-					going to take: it is one, since a provider issues an app password for the account rather
-					than for a protocol.
+					Dónde vive el buzón se deduce de la dirección mediante autoconfig,{" "}
+					<code>.well-known</code>, la ISPDB y SRV antes de recurrir a la conjetura convencional, y
+					cuando es una conjetura la respuesta lo dice en vez de afirmarlo. Los dos servidores se
+					nombran en una línea porque la pregunta que plantea un paso de contraseña es cuántas
+					credenciales va a costar esto: es una, ya que un proveedor emite una contraseña de
+					aplicación para la cuenta y no para un protocolo.
 				</p>
 				<div className="note warn">
 					<p>
-						<strong>Three providers will not do this at all</strong>, and each is named at the
-						moment the address is typed rather than after a login fails. Microsoft retired password
-						logins for IMAP outright. Google closed Workspace to app passwords in May 2025 while
-						personal <code>@gmail.com</code> still takes one — nothing in the address says which of
-						the two a company domain is, so the MX is checked. Proton's autoconfig honestly
-						advertises <code>127.0.0.1:1143</code>, because the mail is only reachable through a
-						bridge on your own desktop.
+						<strong>Tres proveedores no harán esto en absoluto</strong>, y cada uno se nombra en el
+						momento en que se escribe la dirección y no después de que falle un inicio de sesión.
+						Microsoft retiró de plano los inicios de sesión con contraseña para IMAP. Google cerró
+						Workspace a las contraseñas de aplicación en mayo de 2025 mientras que una{" "}
+						<code>@gmail.com</code> personal todavía acepta una — nada en la dirección dice cuál de
+						las dos es un dominio de empresa, así que se consulta el MX. El autoconfig de Proton
+						anuncia honestamente <code>127.0.0.1:1143</code>, porque el correo solo es alcanzable a
+						través de un bridge en tu propio escritorio.
 					</p>
 				</div>
 			</section>
 
 			<section>
-				<span className="eyebrow">The second line</span>
-				<h2>Paste the password, then pair yourself</h2>
+				<span className="eyebrow">La segunda línea</span>
+				<h2>Pega la contraseña, y luego emparéjate</h2>
 				<Screen>{`
 /email abcd efgh ijkl mnop
 
@@ -83,25 +84,26 @@ one where every message read would spend a turn, so everyone else's mail is left
 on — and /email allow *@company.com lets a whole domain in at once.
 `}</Screen>
 				<p>
-					What makes the phrase mean anything is that a <code>From:</code> line is forgeable and the
-					plane does not read one on its own. It reads the <code>Authentication-Results</code>{" "}
-					header your own provider wrote at delivery time, when it checked DKIM and DMARC against
-					the sending domain with that domain's keys as they were then. RFC 8601 has the receiving
-					provider strip any foreign copy of that header on the way in, so the one left is the one
-					it wrote.
+					Lo que hace que la frase signifique algo es que una línea <code>From:</code> es
+					falsificable y el plano no lee ninguna por sí sola. Lee la cabecera{" "}
+					<code>Authentication-Results</code> que tu propio proveedor escribió en el momento de la
+					entrega, cuando comprobó DKIM y DMARC contra el dominio remitente con las claves de ese
+					dominio tal como estaban entonces. El RFC 8601 hace que el proveedor receptor elimine
+					cualquier copia ajena de esa cabecera a la entrada, así que la que queda es la que él
+					escribió.
 				</p>
 				<p>
-					Telegram fences strangers and publishes them as participants. Mail does not: only what
-					comes from the list below is read, and everyone else's is dropped. A chat is a room
-					someone let you into, while a mailbox is an address that leaks — every message read spends
-					a turn, so publishing whatever arrived would put the plane's bill in the hands of whoever
-					found it.
+					Telegram acorrala a los desconocidos y los publica como participantes. El correo no: solo
+					se lee lo que viene de la lista de abajo, y el de todos los demás se descarta. Un chat es
+					una sala a la que alguien te dejó entrar, mientras que un buzón es una dirección que se
+					filtra — cada mensaje leído gasta un turno, así que publicar lo que llegara pondría la
+					factura del plano en manos de quien la encontrara.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">One account, every agent</span>
-				<h2>The tag is the whole design</h2>
+				<span className="eyebrow">Una cuenta, todos los agentes</span>
+				<h2>La etiqueta es todo el diseño</h2>
 				<Screen>{`
 scout is reached at agents+scout@fastmail.com. Write to it and scout takes a turn.
 
@@ -119,34 +121,35 @@ address strangers already have is one where every message read would spend a tur
 a domain, and /email deny takes them off. /email off puts the mailbox down, for every agent.
 `}</Screen>
 				<p>
-					<code>agents+scout@</code> and <code>agents+clerk@</code> are one account to the provider
-					and two agents here, so an agent made tomorrow has an address without anybody going back
-					to a settings page. Mail arriving with no tag goes to the agent the mailbox was connected
-					at.
+					<code>agents+scout@</code> y <code>agents+clerk@</code> son una cuenta para el proveedor y
+					dos agentes aquí, así que un agente hecho mañana tiene dirección sin que nadie vuelva a
+					una página de ajustes. El correo que llega sin etiqueta va al agente en el que se conectó
+					el buzón.
 				</p>
 				<p>
-					The answer comes back from the tagged address rather than from the account, so a reply to
-					it returns to the agent that wrote it. Some providers rewrite a <code>From</code> that is
-					not the account they know, which is why the <code>Reply-To</code> says the same thing
-					again: between the two, one survives.
+					La respuesta vuelve desde la dirección etiquetada y no desde la cuenta, así que una
+					contestación a ella regresa al agente que la escribió. Algunos proveedores reescriben un{" "}
+					<code>From</code> que no es la cuenta que conocen, y por eso el <code>Reply-To</code> dice
+					lo mismo otra vez: entre los dos, uno sobrevive.
 				</p>
 				<p className="small muted">
-					It goes out twice over: as the markdown the agent wrote, and as the small piece of HTML
-					that markdown describes — a mailbox is not a terminal, and an answer sent as it stands
-					arrives reading <code>**Chiste #1:**</code> with a row of dashes under it. The drawing is
-					done here rather than by a parser that lets HTML through, and everything is escaped on the
-					way: an agent reads its mail, and a mail can tell it to write anything. Only{" "}
-					<code>http</code>, <code>https</code> and <code>mailto</code> become links.
+					Sale por duplicado: como el markdown que escribió el agente, y como el pequeño trozo de
+					HTML que ese markdown describe — un buzón no es una terminal, y una respuesta enviada tal
+					cual llega diciendo <code>**Chiste #1:**</code> con una fila de guiones debajo. El dibujo
+					se hace aquí y no con un parser que deje pasar HTML, y todo se escapa por el camino: un
+					agente lee su correo, y un correo puede decirle que escriba cualquier cosa. Solo{" "}
+					<code>http</code>, <code>https</code> y <code>mailto</code> se convierten en enlaces.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Who else</span>
-				<h2>A list, not one address</h2>
+				<span className="eyebrow">Quién más</span>
+				<h2>Una lista, no una dirección</h2>
 				<p>
-					Pairing binds the first person. The second is a colleague, and waiting for them to mail a
-					phrase in is a worse answer than typing their address — so the list is a list, and it is
-					edited from the console or from any agent's prompt while the mailbox stays connected.
+					El emparejamiento vincula a la primera persona. La segunda es un compañero, y esperar a
+					que envíe una frase por correo es peor respuesta que escribir su dirección — así que la
+					lista es una lista, y se edita desde la consola o desde el prompt de cualquier agente
+					mientras el buzón sigue conectado.
 				</p>
 				<Screen>{`
 /email allow ana@company.com
@@ -157,36 +160,39 @@ each message, the same as whoever connected the mailbox.
 /email deny ana@company.com stops it.
 `}</Screen>
 				<p>
-					A whole company at once is <code>/email allow *@company.com</code>, and a domain typed
-					bare means the same thing. That is only two shapes — an address or a domain — because this
-					list is what the mailbox is checked against on every message, and a pattern language here
-					would be a security decision written in something nobody proofreads.
+					Una empresa entera de una vez es <code>/email allow *@company.com</code>, y un dominio
+					escrito a secas significa lo mismo. Solo hay dos formas — una dirección o un dominio —
+					porque esta lista es contra lo que se comprueba el buzón en cada mensaje, y un lenguaje de
+					patrones aquí sería una decisión de seguridad escrita en algo que nadie revisa.
 				</p>
 				<p>
-					The wildcard is safe for the same reason the pairing phrase is. The signature is checked
-					against the domain in <code>From:</code> before the list is consulted at all, so{" "}
-					<code>*@company.com</code> means whoever that company's mail server signed for — not
-					whoever typed an address at that company into a header. Which is also why a wildcard over
-					gmail, iCloud or Proton is refused: anybody can hold an address at one by this afternoon,
-					so it would not name a company, it would name the internet.
+					El comodín es seguro por la misma razón que lo es la frase de emparejamiento. La firma se
+					comprueba contra el dominio del <code>From:</code> antes de consultar siquiera la lista,
+					así que <code>*@company.com</code> significa aquel por quien firmó el servidor de correo
+					de esa empresa — no quien escribió en una cabecera una dirección de esa empresa. Que es
+					también por lo que se rechaza un comodín sobre gmail, iCloud o Proton: cualquiera puede
+					tener una dirección en uno esta misma tarde, así que no nombraría una empresa, nombraría
+					internet.
 				</p>
 				<div className="note">
 					<p>
-						<strong>There is one rung.</strong> Everybody on this list spends turns and instructs
-						agents, the same as whoever connected the mailbox. There is no lesser tier that can ask
-						but not tell, so a domain is a decision about the bill as much as about trust.
+						<strong>Hay un solo peldaño.</strong> Todo el que está en esta lista gasta turnos e
+						instruye a los agentes, igual que quien conectó el buzón. No hay un nivel menor que
+						pueda preguntar pero no mandar, así que un dominio es una decisión sobre la factura
+						tanto como sobre la confianza.
 					</p>
 				</div>
 			</section>
 
 			<section>
-				<span className="eyebrow">The way out</span>
-				<h2>Somebody else can carry the mail</h2>
+				<span className="eyebrow">La salida</span>
+				<h2>El correo lo puede llevar otro</h2>
 				<p>
-					A submission server that refuses the same password is one reason. Volume is another — a
-					consumer mailbox has a daily cap somewhere and does not tell you where — and knowing
-					whether it landed is the third: a submission server accepts the message and the story ends
-					there, while a company that carries mail for a living has an answer about every one.
+					Un servidor de submission que rechaza esa misma contraseña es una razón. El volumen es
+					otra — un buzón de consumo tiene un tope diario en alguna parte y no te dice dónde — y
+					saber si llegó es la tercera: un servidor de submission acepta el mensaje y la historia
+					termina ahí, mientras que una empresa que lleva correo para vivir tiene una respuesta
+					sobre cada uno.
 				</p>
 				<Screen>{`
 │ config                                                         │
@@ -213,59 +219,60 @@ each message, the same as whoever connected the mailbox.
 │ + an address                                                   │
 `}</Screen>
 				<p>
-					Mailgun, Resend, Postmark and SendGrid each take a message over HTTP, and which one is a
-					row on <Link href="/es/docs/config/">the config screen's</Link> <code>email</code>{" "}
-					section. There is a dot for each half because the two halves fail for unrelated reasons: a
-					mailbox nobody connected reaches nothing, and a carrier nobody paid for reads fine and
-					cannot answer.
+					Mailgun, Resend, Postmark y SendGrid aceptan cada uno un mensaje por HTTP, y cuál de ellos
+					es una fila de la sección <code>email</code> de{" "}
+					<Link href="/es/docs/config/">la pantalla de configuración</Link>. Hay un punto para cada
+					mitad porque las dos mitades fallan por razones no relacionadas: un buzón que nadie
+					conectó no alcanza nada, y un transportista que nadie pagó lee bien y no puede responder.
 				</p>
 				<p>
-					Naming a carrier changes who hands the message over and nothing else. The{" "}
-					<code>From</code> is still the agent's tagged address, the subject and message id of what
-					came in are still kept, so a reply still comes back to the agent that wrote it. What
-					changes is the reputation the message goes out on: your own provider's, which you already
-					have, or a domain of yours at a carrier, which you warm up yourself.
+					Nombrar un transportista cambia quién entrega el mensaje y nada más. El <code>From</code>{" "}
+					sigue siendo la dirección etiquetada del agente, el asunto y el message id de lo que entró
+					se siguen guardando, así que una respuesta sigue volviendo al agente que la escribió. Lo
+					que cambia es la reputación con la que sale el mensaje: la de tu propio proveedor, que ya
+					tienes, o un dominio tuyo en un transportista, que calientas tú mismo.
 				</p>
 				<div className="note">
 					<p>
-						<strong>The carrier's key is not a proxy grant.</strong> The plane sends the mail, not
-						the sandbox — there is no container on that path to write a header into — so the key
-						stays in the same <code>0600</code> file every other provider key is typed into and is
-						read at the moment of sending.
+						<strong>La clave del transportista no es una concesión del proxy.</strong> El plano
+						envía el correo, no el sandbox — no hay contenedor en ese camino en el que escribir una
+						cabecera — así que la clave se queda en el mismo archivo <code>0600</code> en el que se
+						escriben todas las demás claves de proveedor y se lee en el momento del envío.
 					</p>
 				</div>
 				<p className="small muted">
-					<strong>Cloudflare belongs on the other side of this.</strong> Email Routing receives and
-					forwards; it does not send. What it is good for is the half the plane was already doing by
-					IMAP: point the MX for a domain of yours at Cloudflare, forward into the ordinary mailbox
-					above, and the agents are reachable at your own domain. The tag does not survive a
-					catch-all, though — a forward rewrites the delivery to the mailbox it was given, so
-					reaching a particular agent through one takes a rule per agent addressed to that agent's
-					tagged address.
+					<strong>Cloudflare pertenece al otro lado de esto.</strong> Email Routing recibe y
+					reenvía; no envía. Para lo que sirve es para la mitad que el plano ya hacía por IMAP:
+					apunta el MX de un dominio tuyo a Cloudflare, reenvía al buzón corriente de arriba, y los
+					agentes son alcanzables en tu propio dominio. La etiqueta no sobrevive a un catch-all, eso
+					sí — un reenvío reescribe la entrega al buzón que se le dio, así que alcanzar a un agente
+					concreto a través de uno exige una regla por agente dirigida a la dirección etiquetada de
+					ese agente.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">What is not read</span>
-				<h2>An inbox is mostly not for you</h2>
+				<span className="eyebrow">Lo que no se lee</span>
+				<h2>La mayor parte de una bandeja de entrada no es para ti</h2>
 				<Screen>{`
 09:14:02  email     dropped     not on the list ×212
 09:14:02  email     dropped     no agent "billing" ×3
 `}</Screen>
 				<p>
-					Anyone not on the list, anything auto-submitted, a tag that names no agent, and the
-					mailbox's own mail — without that last one an agent Cc'd on its own answer would wake
-					itself, read its own words as somebody's, and do it again. Drops are counted by reason
-					rather than listed, because a mailbox declining two hundred newsletters is worth one line
-					in the feed and is not worth two hundred.
+					Cualquiera que no esté en la lista, cualquier cosa auto-enviada, una etiqueta que no
+					nombra a ningún agente, y el correo del propio buzón — sin esto último un agente en copia
+					de su propia respuesta se despertaría a sí mismo, leería sus propias palabras como las de
+					alguien, y lo volvería a hacer. Los descartes se cuentan por motivo en vez de listarse,
+					porque un buzón que rechaza doscientos boletines vale una línea en el feed y no vale
+					doscientas.
 				</p>
 				<p className="small muted">
-					The app password is a live credential and is treated like a bot token: never written into{" "}
-					<code>config.yaml</code>, and redacted in the transcript by which command it was rather
-					than by what it looked like — an app password is sixteen ordinary letters, and no pattern
-					that catches one leaves a sentence alone. An agent may not run <code>/email</code>, for
-					the reason it may not run <code>/telegram</code>: connecting a mailbox is choosing who may
-					instruct it.
+					La contraseña de aplicación es una credencial viva y se trata como un token de bot: nunca
+					se escribe en <code>config.yaml</code>, y se censura en la transcripción por qué comando
+					era y no por su aspecto — una contraseña de aplicación son dieciséis letras corrientes, y
+					ningún patrón que atrape una deja en paz a una frase. Un agente no puede ejecutar{" "}
+					<code>/email</code>, por la razón por la que no puede ejecutar <code>/telegram</code>:
+					conectar un buzón es elegir quién puede darle instrucciones.
 				</p>
 			</section>
 		</Docs>

@@ -6,13 +6,13 @@ import { Screen } from "../../../components/Screen";
 export default function Grants() {
 	return (
 		<Docs
-			title="Reach"
-			lede="Two questions get asked about every request, and the mistake is answering them together. What an agent may reach and whose credential goes with it have very different blast radii."
-			description="The egress proxy, the grants that answer where an agent may go, and the credentials it never holds."
+			title="Alcance"
+			lede="Sobre cada petición se hacen dos preguntas, y el error es responderlas juntas. Lo que un agente puede alcanzar y de quién es la credencial que va con ella tienen radios de explosión muy distintos."
+			description="El proxy de egress, las concesiones que responden adónde puede ir un agente, y las credenciales que nunca tiene."
 		>
 			<section>
-				<span className="eyebrow">The road is open</span>
-				<h2>Because a registry is never one host</h2>
+				<span className="eyebrow">El camino está abierto</span>
+				<h2>Porque un registro nunca es un solo host</h2>
 				<Code label="deploy/config.yaml">{`
 defaults:
   grants:
@@ -22,28 +22,31 @@ defaults:
         kind: none
 `}</Code>
 				<p>
-					An agent asked for a hello-world page needs <code>npm install</code> before it needs
-					anything else, and a registry is never one host — npm is a registry and a CDN, PyPI is an
-					index and a file server, a <code>git clone</code> is three names before it is a checkout.
-					A list of them is a list that is wrong by one, and wrong by one is worse than either end:
-					it looks like it works until the afternoon it doesn't, and what the agent does then is not
-					raise its hand. It reads the deny as the internet being down and writes the page it was
-					asked for as a paragraph about not being able to write it.
+					A un agente al que se le pide una página hello-world le hace falta{" "}
+					<code>npm install</code> antes que ninguna otra cosa, y un registro nunca es un solo host
+					— npm es un registro y una CDN, PyPI es un índice y un servidor de archivos, un{" "}
+					<code>git clone</code> son tres nombres antes de ser un checkout. Una lista de ellos es
+					una lista equivocada por uno, y equivocada por uno es peor que cualquiera de los dos
+					extremos: parece que funciona hasta la tarde en que no, y lo que el agente hace entonces
+					no es levantar la mano. Lee la denegación como que internet se ha caído y escribe la
+					página que le pidieron como un párrafo sobre no poder escribirla.
 				</p>
 				<p>
-					Every request still crosses the proxy, is still matched, and still lands in the audit log
-					with the host and the path it went to. Delete the <code>web</code> grant and the plane is
-					deny-by-default again, host by host, exactly as it was.
+					Toda petición sigue cruzando el proxy, sigue siendo cotejada, y sigue cayendo en el
+					registro de auditoría con el host y la ruta a la que fue. Borra la concesión{" "}
+					<code>web</code> y el plano vuelve a denegar por defecto, host por host, exactamente como
+					estaba.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The keys are not</span>
-				<h2>kind: none is the whole of why that line is safe to write down</h2>
+				<span className="eyebrow">Las claves no lo están</span>
+				<h2>kind: none es toda la razón por la que esa línea es segura de escribir</h2>
 				<p>
-					Nothing of yours is attached to anything reached through the open grant. A grant on{" "}
-					<code>*</code> that carried a credential would put that secret on every server the agent
-					reaches, so it is refused where the config is read rather than discovered later:
+					Nada tuyo se adjunta a nada que se alcance por la concesión abierta. Una concesión sobre{" "}
+					<code>*</code> que llevara una credencial pondría ese secreto en todos los servidores que
+					el agente alcanza, así que se rechaza donde se lee la configuración en vez de descubrirse
+					más tarde:
 				</p>
 				<Screen>{`
 Invalid configuration:
@@ -51,10 +54,10 @@ Invalid configuration:
     every server the agent reaches. Name the host, or use injection: { kind: none }
 `}</Screen>
 				<p>
-					A named host always wins the request over the open one, so the model's key goes to the
-					model and nowhere else. The token is written onto the request after it has matched, on the
-					way out — the agent never holds it, and an agent talked into posting its environment
-					somewhere has nothing to post.
+					Un host con nombre siempre gana la petición frente al abierto, así que la clave del modelo
+					va al modelo y a ningún otro sitio. El token se escribe sobre la petición una vez que ha
+					coincidido, de salida — el agente nunca lo tiene, y a un agente al que convenzan de
+					publicar su entorno en algún sitio no le queda nada que publicar.
 				</p>
 				<Code label="deploy/config.yaml">{`
 agents:
@@ -69,16 +72,16 @@ agents:
           token: { ref: GITHUB_TOKEN }
 `}</Code>
 				<p className="small muted">
-					<code>ref</code> names a variable of the control plane's own environment, never a value.
-					An agent's own block adds to the defaults rather than replacing them, and a grant it
-					declares with the same id wins — which is how one agent is narrowed without narrowing the
-					rest.
+					<code>ref</code> nombra una variable del entorno del propio plano de control, nunca un
+					valor. El bloque propio de un agente se suma a los defaults en lugar de reemplazarlos, y
+					una concesión que declare con el mismo id gana — que es como se estrecha un agente sin
+					estrechar el resto.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Adding a host</span>
-				<h2>The refusal arrives in a turn, and the answer should not be a deploy</h2>
+				<span className="eyebrow">Añadir un host</span>
+				<h2>El rechazo llega en un turno, y la respuesta no debería ser un despliegue</h2>
 				<Screen>{`
 │ config                                                         │
 │                                                                │
@@ -102,38 +105,39 @@ agents:
 │ ╰────────────────────────────────────────────────────────────╯ │
 `}</Screen>
 				<p>
-					Host by host is a fine way to run this, and it stops being one the moment a host has to be
-					added by editing a file on the server and putting the plane back up. What that costs is
-					not the minute: it is that the refusal arrives in an agent's turn, hours after the file
-					was last thought about.
+					Host por host es una buena manera de llevar esto, y deja de serlo en cuanto añadir un host
+					exige editar un archivo en el servidor y volver a levantar el plano. Lo que eso cuesta no
+					es el minuto: es que el rechazo llega en el turno de un agente, horas después de la última
+					vez que se pensó en el archivo.
 				</p>
 				<p>
-					One box and one word — <code>api.chess.com</code>, or the whole URL you were looking at
-					when the refusal happened, since the host is read out of it. What a person has to hand at
-					that moment is the address in the error and not the host in it. There is no field for a
-					path, a method, an id or a key. The last of those is the point: this screen writes{" "}
-					<code>injection: {"{ kind: none }"}</code> and has nowhere to express anything else, so
-					the console can widen where an agent goes and can never decide what it spends. That half
-					stays in the file, which is why the rows that came from it refuse <code>⌫</code> and say
-					which list to change them on instead.
+					Una casilla y una palabra — <code>api.chess.com</code>, o la URL entera que estabas
+					mirando cuando ocurrió el rechazo, ya que el host se lee de ella. Lo que una persona tiene
+					a mano en ese momento es la dirección del error y no el host que hay en ella. No hay campo
+					para una ruta, un método, un id o una clave. Lo último es el punto: esta pantalla escribe{" "}
+					<code>injection: {"{ kind: none }"}</code> y no tiene dónde expresar otra cosa, así que la
+					consola puede ampliar adónde va un agente y nunca puede decidir lo que gasta. Esa mitad se
+					queda en el archivo, y por eso las filas que vinieron de él rechazan <code>⌫</code> y
+					dicen en qué lista cambiarlas.
 				</p>
 				<p className="small muted">
-					A grant the plane derived is marked for what derived it — <code>with a model</code>,{" "}
-					<code>for searching</code> — because a host you cannot account for is one nobody dares
-					close. <Link href="/es/docs/models/">Models</Link> and{" "}
-					<Link href="/es/docs/search/">web search</Link> are where those two come from.
+					Una concesión que dedujo el plano está marcada con lo que la dedujo —{" "}
+					<code>with a model</code>, <code>for searching</code> — porque un host del que no puedes
+					dar cuenta es uno que nadie se atreve a cerrar.{" "}
+					<Link href="/es/docs/models/">Modelos</Link> y{" "}
+					<Link href="/es/docs/search/">búsqueda web</Link> son de donde vienen esos dos.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">What it does not claim</span>
-				<h2>The boundary that carries weight is the one around the secrets</h2>
+				<span className="eyebrow">Lo que no pretende</span>
+				<h2>El límite que sostiene el peso es el que rodea los secretos</h2>
 				<p>
-					An agent that can run code in a sandbox and reach the internet can send what it read to
-					somewhere you did not choose. That was already true of any grant broad enough to be
-					useful, and it is the reason the credential is the thing held away from it rather than the
-					address. A stolen agent gets the reach it had; it does not get your account.{" "}
-					<Link href="/es/docs/trust/">Trust</Link> is the rest of that.
+					Un agente que puede ejecutar código en un sandbox y alcanzar internet puede mandar lo que
+					leyó a algún sitio que no elegiste. Eso ya era cierto de cualquier concesión lo bastante
+					amplia para ser útil, y es la razón por la que lo que se mantiene lejos de él es la
+					credencial y no la dirección. Un agente robado obtiene el alcance que tenía; no obtiene tu
+					cuenta. <Link href="/es/docs/trust/">Confianza</Link> es el resto de eso.
 				</p>
 			</section>
 		</Docs>

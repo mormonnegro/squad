@@ -4,49 +4,49 @@ import { Docs } from "../../../components/Docs";
 import { Screen } from "../../../components/Screen";
 
 const SELF: [string, string][] = [
-	["agent.yaml", "name, model, and the capabilities it asks an operator for"],
-	["soul.md", "who it is; appended to the system prompt on every turn"],
-	["skills/", "SKILL.md folders, loaded by pi"],
-	["memory/", "what it chose to remember, partitioned by users, projects and reference"],
-	["tools/", "scripts it wrote for itself"],
+	["agent.yaml", "nombre, modelo y las capacidades que le pide a un operador"],
+	["soul.md", "quién es; se añade al prompt de sistema en cada turno"],
+	["skills/", "carpetas con SKILL.md, cargadas por pi"],
+	["memory/", "lo que eligió recordar, dividido por usuarios, proyectos y referencia"],
+	["tools/", "scripts que escribió para sí mismo"],
 ];
 
 export default function Agents() {
 	return (
 		<Docs
-			title="Agents"
-			lede="A container that stays running, a repository it owns, and a name. Making one is a row on a screen; what it may reach was decided before it existed."
-			description="Making an agent, what its repository holds, clearing a conversation, and the difference between an agent you declared and one made at the keyboard."
+			title="Agentes"
+			lede="Un contenedor que queda en marcha, un repositorio propio y un nombre. Crear uno es una fila en una pantalla; lo que puede alcanzar se decidió antes de que existiera."
+			description="Crear un agente, qué guarda su repositorio, borrar una conversación y la diferencia entre un agente que declaraste y uno hecho desde el teclado."
 		>
 			<section>
-				<span className="eyebrow">Making one</span>
-				<h2>The row under the last agent</h2>
+				<span className="eyebrow">Crear uno</span>
+				<h2>La fila debajo del último agente</h2>
 				<p>
-					It is a row rather than a command because that is where somebody who wants an agent is
-					already looking — with none at all it is the only row there is, and the console opens on
-					it. The panel behind it takes a name and <code>⏎</code> builds it: a container, a
-					repository of its own, nothing in its memory, and exactly what <code>defaults</code> in
-					the config allows it to reach.
+					Es una fila y no un comando porque es donde ya está mirando quien quiere un agente — sin
+					ninguno es la única fila que hay, y la consola abre en ella. El panel que hay detrás toma
+					un nombre y <code>⏎</code> lo construye: un contenedor, un repositorio propio, nada en su
+					memoria, y exactamente lo que <code>defaults</code> en la configuración le permite
+					alcanzar.
 				</p>
 				<p>
-					The name is the whole of what the keyboard decides here, which is why the pane says so. It
-					may name an agent and it may not grant it a thing. A name that is taken, or that is not a
-					name, is refused in the pane with the name still in the prompt to be fixed, and what is
-					built appears where the <code>+</code> was, which is where the cursor already is.
+					El nombre es todo lo que el teclado decide aquí, y por eso el panel lo dice. Puede nombrar
+					a un agente y no puede concederle nada. Un nombre ya tomado, o que no es un nombre, se
+					rechaza en el panel con el nombre todavía en el prompt para corregirlo, y lo que se
+					construye aparece donde estaba el <code>+</code>, que es donde ya está el cursor.
 				</p>
 				<p className="small muted">
-					A plane with no <code>defaults</code> makes an agent that cannot reach the model, and says
-					so at the moment it is made rather than mid-turn. <code>squad chat maxi</code> at a shell
-					is the same offer from the other end: naming an agent that does not exist is what someone
-					types when they want one, so it asks.
+					Un plano sin <code>defaults</code> hace un agente que no puede alcanzar el modelo, y lo
+					dice en el momento en que se crea y no a mitad de un turno. <code>squad chat maxi</code>{" "}
+					en un shell es la misma oferta desde el otro extremo: nombrar un agente que no existe es
+					lo que alguien escribe cuando quiere uno, así que pregunta.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">What one is made of</span>
-				<h2>A repository it owns</h2>
+				<span className="eyebrow">De qué está hecho</span>
+				<h2>Un repositorio propio</h2>
 				<p>
-					On its first boot an agent gets a repository in its own volume, at{" "}
+					En su primer arranque un agente recibe un repositorio en su propio volumen, en{" "}
 					<code>/home/agent/.self</code>:
 				</p>
 				<table className="table">
@@ -60,40 +60,42 @@ export default function Agents() {
 					</tbody>
 				</table>
 				<p>
-					It is scaffolded once, git-initialised, and then left alone: what the agent learns and
-					what it can do are files it edits and commits itself. The control plane never writes there
-					again, because the second write would be the control plane overwriting the agent's own
-					work.
+					Se genera una vez, se inicializa con git y luego se deja en paz: lo que el agente aprende
+					y lo que sabe hacer son archivos que él mismo edita y de los que hace commit. El plano de
+					control no vuelve a escribir ahí, porque la segunda escritura sería el plano de control
+					sobrescribiendo el trabajo del propio agente.
 				</p>
 				<p>
-					That repository is the agent, not its desk. Turns start next door, in a second volume at{" "}
-					<code>/home/agent/workspace</code>, and the house rule goes in as argv on every turn: one
-					directory per project, nothing loose at the top, and tidy what you find untidy rather than
-					leaving it. It is said by the plane rather than written into <code>soul.md</code> because
-					the agent may rewrite its soul, and a rule the subject can edit is not a rule.
+					Ese repositorio es el agente, no su escritorio. Los turnos empiezan al lado, en un segundo
+					volumen en <code>/home/agent/workspace</code>, y la regla de la casa entra como argv en
+					cada turno: un directorio por proyecto, nada suelto en la raíz, y ordena lo que encuentres
+					desordenado en vez de dejarlo. Lo dice el plano en vez de estar escrito en{" "}
+					<code>soul.md</code> porque el agente puede reescribir su alma, y una regla que el sujeto
+					puede editar no es una regla.
 				</p>
 				<p className="small muted">
-					Both volumes outlive the container, which is replaced every time the image changes.
+					Los dos volúmenes sobreviven al contenedor, que se reemplaza cada vez que cambia la
+					imagen.
 				</p>
 				<div className="note">
 					<p>
-						<strong>Nothing in that repository grants anything.</strong> <code>agent.yaml</code>{" "}
-						lists capability <em>requests</em>, and an operator answers them in{" "}
-						<Link href="/es/docs/config/">the config file</Link> the agent cannot reach. An agent
-						that can edit its own definition can otherwise grant itself capabilities, which is one
-						of the three problems the whole design is shaped around.
+						<strong>Nada en ese repositorio concede nada.</strong> <code>agent.yaml</code> enumera{" "}
+						<em>peticiones</em> de capacidades, y un operador las responde en{" "}
+						<Link href="/es/docs/config/">el archivo de configuración</Link> que el agente no puede
+						alcanzar. Un agente que puede editar su propia definición puede, si no, concederse
+						capacidades a sí mismo, que es uno de los tres problemas que dan forma a todo el diseño.
 					</p>
 				</div>
 			</section>
 
 			<section>
-				<span className="eyebrow">Declared, or made here</span>
-				<h2>Two kinds of agent, and one of them is in your file</h2>
+				<span className="eyebrow">Declarado, o hecho aquí</span>
+				<h2>Dos clases de agente, y una de ellas está en tu archivo</h2>
 				<p>
-					An agent can be a block in <code>config.yaml</code>, which is where a description, its own
-					grants, its schedules and a tighter ceiling are written. Or it can be a name typed at the
-					row above, which the plane writes down in its state directory — since the config file is
-					the operator's and no plane may write it.
+					Un agente puede ser un bloque en <code>config.yaml</code>, que es donde se escriben una
+					descripción, sus propias concesiones, sus horarios y un techo más ajustado. O puede ser un
+					nombre escrito en la fila de arriba, que el plano anota en su directorio de estado —
+					porque el archivo de configuración es del operador y ningún plano puede escribirlo.
 				</p>
 				<Code label="deploy/config.yaml">{`
 agents:
@@ -109,17 +111,17 @@ agents:
           token: { ref: GITHUB_TOKEN }
 `}</Code>
 				<p className="small muted">
-					<code>description</code> is used the first time the agent boots, to write its{" "}
-					<code>soul.md</code>. After that the repository is the agent's and this file stops having
-					an opinion about who it is. An agent's own grants add to the defaults rather than
-					replacing them, and one it declares with the same id wins — which is how a single agent is
-					narrowed without narrowing the rest.
+					<code>description</code> se usa la primera vez que el agente arranca, para escribir su{" "}
+					<code>soul.md</code>. Después de eso el repositorio es del agente y este archivo deja de
+					opinar sobre quién es. Las concesiones propias de un agente se suman a las predeterminadas
+					en vez de reemplazarlas, y una que declare con el mismo id gana — que es como se estrecha
+					un solo agente sin estrechar el resto.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Starting over</span>
-				<h2>/clear throws the conversation away and leaves the agent standing</h2>
+				<span className="eyebrow">Empezar de nuevo</span>
+				<h2>/clear tira la conversación y deja al agente en pie</h2>
 				<Screen>{`
 > /clear
 scout has forgotten the conversation.
@@ -129,23 +131,23 @@ are what outlive a conversation, and are why throwing one away costs little. So 
 /model, /mcp, /limit and /serve have set. The next thing said starts it again on nothing.
 `}</Screen>
 				<p>
-					It says that every time, and the saying is half the command: a clear nobody is sure of the
-					cost of is one that gets put off until the context is a mess. An agent that has talked
-					itself into a corner is rarely one worth deleting, and before this the only way out of the
-					corner took the repository with it.
+					Lo dice cada vez, y decirlo es la mitad del comando: un clear cuyo costo nadie tiene claro
+					es uno que se pospone hasta que el contexto es un desastre. Un agente que se ha metido
+					hablando en un callejón sin salida rara vez es uno que valga la pena borrar, y antes de
+					esto la única salida del callejón se llevaba el repositorio por delante.
 				</p>
 				<p className="small muted">
-					A conversation lives in three places and all three go together — what the model is shown
-					at the start of the next turn, the transcript on disk that outlives the console, and the
-					pane you are reading. The turn in flight is stopped first, and that is not a courtesy: the
-					session is written out at the end of a turn, so a conversation deleted underneath a
-					running one would come straight back with everything in it a minute later.
+					Una conversación vive en tres lugares y los tres se van juntos — lo que se le muestra al
+					modelo al principio del turno siguiente, la transcripción en disco que sobrevive a la
+					consola, y el panel que estás leyendo. El turno en vuelo se detiene primero, y eso no es
+					una cortesía: la sesión se escribe al final de un turno, así que una conversación borrada
+					por debajo de una en marcha volvería tal cual, con todo dentro, un minuto después.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Taking one away</span>
-				<h2>There is one kind of delete and it is the whole one</h2>
+				<span className="eyebrow">Quitar uno</span>
+				<h2>Hay una sola clase de borrado y es el entero</h2>
 				<Screen>{`
 > /delete
 Deleting scout stops its container and throws it away, along with the repository inside
@@ -159,29 +161,29 @@ Nothing has been deleted yet.
  y delete   n cancel   ^C quit
 `}</Screen>
 				<p>
-					The container, the repository inside it, and the conversation — because a delete that left
-					the name sitting in the column is one you were told worked and have to do again. So it
-					asks first, in the prompt itself, and the question has the whole keyboard until it is
-					answered: <code>y</code> deletes and every other key walks away, including the return that
-					was pressed a moment ago to ask it.
+					El contenedor, el repositorio que hay dentro y la conversación — porque un borrado que
+					dejara el nombre ahí en la columna es uno que te dijeron que funcionó y tienes que volver
+					a hacer. Así que pregunta primero, en el propio prompt, y la pregunta se queda con todo el
+					teclado hasta que se responde: <code>y</code> borra y cualquier otra tecla se marcha,
+					incluido el retorno que se presionó hace un momento para preguntarla.
 				</p>
 				<p>
-					The asking lives in the console rather than in the plane, and that is the point of it: a
-					plane that took <code>/delete scout</code> from anywhere would let one line be the whole
-					of an agent. Whatever is typed after the command is dropped and the bare form goes down
-					first, so a command reaches no further than the conversation it was typed in.
+					La pregunta vive en la consola y no en el plano, y ese es su sentido: un plano que
+					aceptara <code>/delete scout</code> desde cualquier parte dejaría que una línea fuera un
+					agente entero. Lo que se escriba después del comando se descarta y la forma desnuda baja
+					primero, así que un comando no alcanza más allá de la conversación en la que se escribió.
 				</p>
 				<p className="small muted">
-					An agent you declared in the config goes the same way, which takes one more step than it
-					sounds: your file is yours and no plane may write it, so there is nowhere to take the name
-					out of. The deletion is written down instead, in <code>deleted.json</code> beside the
-					state, and every start from then on skips the name. The answer says so, because the line
-					is still in your file and taking it out is the only thing left to do about that agent.
+					Un agente que declaraste en la configuración se va igual, lo cual lleva un paso más de lo
+					que parece: tu archivo es tuyo y ningún plano puede escribirlo, así que no hay de dónde
+					sacar el nombre. En su lugar se anota el borrado, en <code>deleted.json</code> junto al
+					estado, y cada arranque a partir de entonces salta el nombre. La respuesta lo dice, porque
+					la línea sigue en tu archivo y sacarla es lo único que queda por hacer con ese agente.
 				</p>
 				<p className="small muted">
-					At a shell, <code>squad rm scout</code> takes the container and leaves the volume, because
-					the volume is the agent. <code>--purge</code> deletes that too, and asks for the agent's
-					name to be typed first so a reflexive <code>y</code> cannot do it.
+					En un shell, <code>squad rm scout</code> se lleva el contenedor y deja el volumen, porque
+					el volumen es el agente. <code>--purge</code> borra eso también, y pide que se escriba
+					antes el nombre del agente para que una <code>y</code> refleja no pueda hacerlo.
 				</p>
 			</section>
 		</Docs>

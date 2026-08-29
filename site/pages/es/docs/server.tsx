@@ -8,77 +8,77 @@ const HOSTS: [string, string, string][] = [
 	[
 		"Hetzner",
 		"https://www.hetzner.com/cloud",
-		"the most machine for the money — around €4.50 buys two cores and 4 GB, in Europe and the US",
+		"más máquina por el dinero — unos €4,50 compran dos núcleos y 4 GB, en Europa y Estados Unidos",
 	],
 	[
 		"Linode",
 		"https://www.linode.com/pricing/",
-		"$5 for one core and 1 GB, in eleven regions, and the plainest create screen of the four",
+		"$5 por un núcleo y 1 GB, en once regiones, y la pantalla de creación más sobria de las cuatro",
 	],
 	[
 		"Vultr",
 		"https://www.vultr.com/pricing/",
-		"from about $5, and in more places than the other three put together",
+		"desde unos $5, y en más lugares que los otros tres juntos",
 	],
 	[
 		"DigitalOcean",
 		"https://www.digitalocean.com/pricing/droplets",
-		"a few dollars more, and the most written about — worth it if this is your first server",
+		"unos dólares más, y del que más se ha escrito — vale la pena si este es tu primer servidor",
 	],
 ];
 
 const FORM: [string, string][] = [
 	[
-		"region",
-		"Where the machine physically is. Latency does not matter here — nobody is typing at this thing, and an agent that wakes at three in the morning does not care about forty milliseconds. Pick the country whose law you would rather your data sat under, or the one nearest you, and move on.",
+		"región",
+		"Dónde está físicamente la máquina. La latencia no importa aquí — nadie teclea en esta cosa, y a un agente que despierta a las tres de la mañana no le importan cuarenta milisegundos. Elige el país bajo cuya ley prefieras que estén tus datos, o el más cercano a ti, y sigue adelante.",
 	],
 	[
-		"image",
-		"The operating system. Ubuntu LTS or Debian stable, and this page assumes one of those. Anything with SSH and a package manager works; the installer brings Docker itself, so a picture that already says Docker on it buys you nothing.",
+		"imagen",
+		"El sistema operativo. Ubuntu LTS o Debian stable, y esta página asume uno de los dos. Sirve cualquiera con SSH y un gestor de paquetes; el instalador trae Docker por su cuenta, así que una imagen que ya diga Docker no te compra nada.",
 	],
 	[
-		"size",
-		"The bottom of the list. One vCPU, a gigabyte of memory and ten gigabytes of disk runs a few agents — that is the cheapest row on every provider's page, and the one to click.",
+		"tamaño",
+		"El fondo de la lista. Una vCPU, un gigabyte de memoria y diez gigabytes de disco corren unos cuantos agentes — es la fila más barata de la página de cualquier proveedor, y en la que hay que hacer clic.",
 	],
 	[
-		"authentication",
-		"An SSH key, or a root password. This is the only row on the form worth stopping at, and the next section is the whole of it.",
+		"autenticación",
+		"Una clave SSH, o una contraseña de root. Es la única fila del formulario en la que vale la pena detenerse, y la siguiente sección va entera de eso.",
 	],
 	[
-		"the rest",
-		"Backups, monitoring, private networking, a floating IP, a firewall. All off. None of them is needed to start and each is a line on the bill.",
+		"el resto",
+		"Copias de seguridad, monitorización, red privada, una IP flotante, un firewall. Todo apagado. Ninguno hace falta para empezar y cada uno es una línea en la factura.",
 	],
 ];
 
 export default function Server() {
 	return (
 		<Docs
-			title="A server"
-			lede="Agents are containers, and containers need a machine that stays on. The cheapest row on any provider's list is enough, and every one of those providers asks you the same five questions under different names."
-			description="Rent a five-dollar VPS at any host, get into it with an SSH key or the root password, and put the plane on it."
+			title="Un servidor"
+			lede="Los agentes son contenedores, y los contenedores necesitan una máquina que se quede encendida. La fila más barata de la lista de cualquier proveedor basta, y todos esos proveedores te hacen las mismas cinco preguntas con nombres distintos."
+			description="Alquila un VPS de cinco dólares en cualquier proveedor, entra con una clave SSH o la contraseña de root, y pon el plano en él."
 		>
 			<section>
-				<span className="eyebrow">Why there is a machine at all</span>
-				<h2>Something has to be awake when you are not</h2>
+				<span className="eyebrow">Por qué hay una máquina siquiera</span>
+				<h2>Algo tiene que estar despierto cuando tú no lo estás</h2>
 				<p>
-					An agent that wakes at nine on a weekday, or the moment a build fails, is an agent on a
-					computer that did not go to sleep with the lid. That is the whole argument for a server,
-					and it is why the requirement is so small: this is a machine that idles nearly all the
-					time and thinks in bursts, and the thinking happens at whichever model provider you gave a
-					key to rather than here.
+					Un agente que despierta a las nueve de un día laborable, o en el momento en que falla una
+					compilación, es un agente en un equipo que no se durmió con la tapa. Ese es todo el
+					argumento a favor de un servidor, y es por lo que el requisito es tan pequeño: esta es una
+					máquina que está ociosa casi todo el tiempo y piensa a ráfagas, y el pensar ocurre en el
+					proveedor de modelos al que le diste una clave, no aquí.
 				</p>
 				<p>
-					So the bottom of every list runs it.{" "}
-					<strong>One vCPU, a gigabyte of memory, ten gigabytes of disk</strong>, any Linux with SSH
-					on it. The installer brings Docker if the machine has none. An old laptop under the desk
-					does just as well, and so does a machine at work you can reach — nothing below is specific
-					to renting.
+					Así que el fondo de cualquier lista lo mueve.{" "}
+					<strong>Una vCPU, un gigabyte de memoria, diez gigabytes de disco</strong>, cualquier
+					Linux con SSH. El instalador trae Docker si la máquina no lo tiene. Un equipo viejo debajo
+					del escritorio sirve igual, y también una máquina del trabajo a la que llegues — nada de
+					lo que sigue es específico de alquilar.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Where to buy one</span>
-				<h2>Four that are cheap, and the difference between them is not squad</h2>
+				<span className="eyebrow">Dónde comprar uno</span>
+				<h2>Cuatro que son baratos, y la diferencia entre ellos no es squad</h2>
 				<table className="table">
 					<tbody>
 						{HOSTS.map(([who, href, what]) => (
@@ -92,21 +92,21 @@ export default function Server() {
 					</tbody>
 				</table>
 				<p className="small muted">
-					Prices move, so read those as the shape rather than the quote. What does not move is the
-					shape of the bill: the machine is a flat monthly number, and the only other cost is what
-					the agents think with — metered by the model provider, and capped by{" "}
-					<Link href="/es/docs/limits/">limitUsd</Link> at five dollars a day per agent until you
-					say otherwise. There is nothing to pay for squad itself.
+					Los precios se mueven, así que léelos como la forma y no como la cotización. Lo que no se
+					mueve es la forma de la factura: la máquina es un número mensual fijo, y el único otro
+					costo es aquello con lo que piensan los agentes — medido por el proveedor de modelos, y
+					limitado por <Link href="/es/docs/limits/">limitUsd</Link> a cinco dólares al día por
+					agente hasta que digas otra cosa. No hay nada que pagar por squad en sí.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The create screen</span>
-				<h2>Five questions, wearing four sets of names</h2>
+				<span className="eyebrow">La pantalla de creación</span>
+				<h2>Cinco preguntas, con cuatro juegos de nombres puestos</h2>
 				<p>
-					Every provider's form is the same form. Hetzner calls the machine a Cloud Server, Linode
-					calls it a Linode, DigitalOcean calls it a Droplet and Vultr calls it an Instance, and
-					underneath the words they ask you this:
+					El formulario de cada proveedor es el mismo formulario. Hetzner llama a la máquina Cloud
+					Server, Linode la llama Linode, DigitalOcean la llama Droplet y Vultr la llama Instance, y
+					debajo de las palabras te preguntan esto:
 				</p>
 				<table className="table">
 					<tbody>
@@ -119,51 +119,53 @@ export default function Server() {
 					</tbody>
 				</table>
 				<p>
-					A minute after you click create there is an IP address on the screen. That address, and a
-					way in, is everything squad needs from this provider — nothing here has to be configured
-					for it, and no port has to be opened.
+					Un minuto después de hacer clic en crear hay una dirección IP en la pantalla. Esa
+					dirección, y una manera de entrar, es todo lo que squad necesita de este proveedor — no
+					hay que configurarle nada aquí, y no hay que abrir ningún puerto.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The row worth stopping at</span>
-				<h2>A key and a password are both ways in, and one is not worse</h2>
+				<span className="eyebrow">La fila en la que vale la pena detenerse</span>
+				<h2>Una clave y una contraseña son ambas maneras de entrar, y una no es peor</h2>
 				<p>
-					A key is a file on your computer that the server recognises. A password is a string the
-					provider mails you or shows you once. Both get you in, both are what squad rides, and the
-					real difference is that a password has to be typed again and a key does not.
+					Una clave es un archivo en tu equipo que el servidor reconoce. Una contraseña es una
+					cadena que el proveedor te envía por correo o te muestra una vez. Las dos te dejan entrar,
+					las dos son sobre lo que viaja squad, y la diferencia real es que una contraseña hay que
+					volver a escribirla y una clave no.
 				</p>
 				<p>
-					<strong>If the form offers to take a key</strong>, give it one. Yours is probably already
-					there, and this prints it:
+					<strong>Si el formulario ofrece aceptar una clave</strong>, dale una. La tuya
+					probablemente ya está ahí, y esto la imprime:
 				</p>
 				<Code>{`
 $ cat ~/.ssh/id_ed25519.pub
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI… you@your-laptop
 `}</Code>
 				<p>
-					<code>No such file or directory</code> means this computer has never spoken SSH, which is
-					not unusual and is one command to fix:
+					<code>No such file or directory</code> significa que este equipo nunca ha hablado SSH, lo
+					cual no es raro y se arregla con un comando:
 				</p>
 				<Code>{`
 $ ssh-keygen -t ed25519
 `}</Code>
 				<p className="small muted">
-					Press return through its questions. It writes two files — <code>id_ed25519</code>, which
-					is the secret and never leaves this computer, and <code>id_ed25519.pub</code>, which is
-					the line you paste into the provider's box. An older machine may have{" "}
-					<code>id_rsa.pub</code> instead; that works too.
+					Pulsa intro en todas sus preguntas. Escribe dos archivos — <code>id_ed25519</code>, que es
+					el secreto y nunca sale de este equipo, y <code>id_ed25519.pub</code>, que es la línea que
+					pegas en la casilla del proveedor. Una máquina más antigua puede tener{" "}
+					<code>id_rsa.pub</code> en su lugar; también sirve.
 				</p>
 				<p>
-					<strong>If it does not, or you would rather not</strong>, take the root password. A server
-					bought this morning with a password in an email is a perfectly good starting point, and
-					squad expects exactly that case — the next section is what it does about it.
+					<strong>Si no lo hace, o prefieres que no</strong>, toma la contraseña de root. Un
+					servidor comprado esta mañana con una contraseña en un correo es un punto de partida
+					perfectamente bueno, y squad espera exactamente ese caso — la siguiente sección es lo que
+					hace al respecto.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">And then squad asks</span>
-				<h2>One address, and it finds out the rest by trying</h2>
+				<span className="eyebrow">Y entonces squad pregunta</span>
+				<h2>Una dirección, y el resto lo averigua probando</h2>
 				<Screen>{`
 Where should your agents live?
 
@@ -179,17 +181,17 @@ Which machine?
   root@203.0.113.9
 `}</Screen>
 				<p>
-					The prompt already reads <code>root@</code>, so the IP address the provider just gave you
-					finishes it. A name works as well as an address, and so does a host out of your{" "}
-					<code>~/.ssh/config</code> — anything <code>ssh</code> can reach. An empty line is the
-					answer for somebody who has not bought one yet, and prints the list above rather than an
-					error.
+					El prompt ya dice <code>root@</code>, así que la dirección IP que el proveedor acaba de
+					darte lo termina. Un nombre sirve igual que una dirección, y también un host de tu{" "}
+					<code>~/.ssh/config</code> — cualquier cosa a la que <code>ssh</code> pueda llegar. Una
+					línea vacía es la respuesta de quien todavía no ha comprado uno, e imprime la lista de
+					arriba en lugar de un error.
 				</p>
 				<p>
-					What happens next is one connection that tries the key and nothing else. If the machine
-					takes it, that connection is the one the install and the console then ride, and you were
-					never asked anything. If it turns the key down, there are exactly two things to do about
-					it and you are asked which:
+					Lo que pasa a continuación es una conexión que prueba la clave y nada más. Si la máquina
+					la acepta, esa conexión es sobre la que luego viajan la instalación y la consola, y nunca
+					se te preguntó nada. Si rechaza la clave, hay exactamente dos cosas que hacer al respecto
+					y se te pregunta cuál:
 				</p>
 				<Screen>{`
 203.0.113.9 does not take this computer's key.
@@ -200,96 +202,98 @@ Which machine?
   1 or 2
 `}</Screen>
 				<p>
-					<strong>Put one up</strong> spends the password once. Your public key goes up on the same
-					connection the password opens, appended to <code>authorized_keys</code> and nothing else
-					touched, and nothing after that asks — not the install, not the console, not a port
-					forwarded out of a sandbox later. Run it a second time and a key already in the file is
-					left where it is.
+					<strong>Subir una</strong> gasta la contraseña una vez. Tu clave pública sube por la misma
+					conexión que abre la contraseña, añadida a <code>authorized_keys</code> y sin tocar nada
+					más, y después de eso nada pregunta — ni la instalación, ni la consola, ni un puerto
+					reenviado desde un sandbox más tarde. Ejecútalo una segunda vez y una clave que ya esté en
+					el archivo se queda donde está.
 				</p>
 				<p>
-					<strong>Keep the password</strong> is a real answer and not the consolation. It is asked
-					once per connection, and a connection lasts ten idle minutes, so it is typed about as
-					often as you walk away from the machine — and never in the middle of anything, because the
-					connection is always opened first, on a bare terminal, before the console is drawn.
+					<strong>Quedarse con la contraseña</strong> es una respuesta real y no el consuelo. Se
+					pide una vez por conexión, y una conexión dura diez minutos de inactividad, así que se
+					escribe más o menos tan a menudo como te alejas de la máquina — y nunca en medio de nada,
+					porque la conexión siempre se abre primero, en una terminal desnuda, antes de que se
+					dibuje la consola.
 				</p>
 				<div className="note">
 					<p>
-						<strong>The question is asked as a preference, because it is one.</strong> A key does
-						not appear on your server because the program preferred it, and a password is not
-						treated as the weaker way in. Where the connection dies of something else — a name that
-						does not resolve, a host key that changed — you get what <code>ssh</code> said rather
-						than a password prompt on top of it.
+						<strong>La pregunta se hace como una preferencia, porque lo es.</strong> Una clave no
+						aparece en tu servidor porque el programa la prefiriera, y una contraseña no se trata
+						como la manera de entrar más débil. Cuando la conexión muere por otra cosa — un nombre
+						que no resuelve, una clave de host que cambió — obtienes lo que dijo <code>ssh</code> y
+						no un prompt de contraseña encima.
 					</p>
 				</div>
 			</section>
 
 			<section>
-				<span className="eyebrow">What lands there</span>
-				<h2>One script, and nothing of the console stays behind</h2>
+				<span className="eyebrow">Qué aterriza allí</span>
+				<h2>Un script, y nada de la consola se queda atrás</h2>
 				<p>
-					The console pipes a single shell script down that connection. It installs Docker if there
-					is none, puts the repository in <code>/opt/squad</code>, writes a config with one agent
-					and a ceiling of five dollars a day, starts the plane and leaves <code>squad</code> on
-					that machine's PATH. Then it drops you on the console, here, on your own computer.
+					La consola envía un único script de shell por esa conexión. Instala Docker si no hay, pone
+					el repositorio en <code>/opt/squad</code>, escribe una configuración con un agente y un
+					techo de cinco dólares al día, arranca el plano y deja <code>squad</code> en el PATH de
+					esa máquina. Luego te deja en la consola, aquí, en tu propio equipo.
 				</p>
 				<p>
-					That script stands alone, and running it at the server's own terminal is the same install
-					with the questions it can only ask when somebody is there to answer:
+					Ese script se sostiene solo, y ejecutarlo en la terminal del propio servidor es la misma
+					instalación con las preguntas que solo puede hacer cuando hay alguien para responder:
 				</p>
-				<Code label="on the server" wrap>{`
+				<Code label="en el servidor" wrap>{`
 $ curl -fsSL ${INSTALL} | sh
 `}</Code>
 				<p className="small muted">
-					Running it again is the update — it pulls, rebuilds and swaps the plane in, and never
-					touches <code>config.yaml</code> or <code>.env</code>. <code>squad update</code> does that
-					from your own keyboard, on whichever machine the plane is on.
+					Ejecutarlo otra vez es la actualización — hace pull, reconstruye y mete el plano en su
+					sitio, y nunca toca <code>config.yaml</code> ni <code>.env</code>.{" "}
+					<code>squad update</code> hace eso desde tu propio teclado, en la máquina en la que esté
+					el plano.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">What not to open</span>
-				<h2>There is no port, so there is no firewall to write</h2>
+				<span className="eyebrow">Qué no abrir</span>
+				<h2>No hay puerto, así que no hay firewall que escribir</h2>
 				<p>
-					The control surface is a unix socket in the state directory and it never leaves the
-					machine. Nothing is published, nothing listens for you, and there is no account to make or
-					token to issue: SSH already decides who may touch that host, and touching that host is the
-					whole of what holding the socket means. So the provider's firewall can stay exactly as
-					their default left it.
+					La superficie de control es un socket unix en el directorio de estado y nunca sale de la
+					máquina. Nada se publica, nada escucha por ti, y no hay cuenta que crear ni token que
+					emitir: SSH ya decide quién puede tocar ese host, y tocar ese host es todo lo que
+					significa tener ese socket. Así que el firewall del proveedor puede quedarse exactamente
+					como lo dejó su valor por defecto.
 				</p>
 				<p>
-					The one exception is deliberate and you opt into it.{" "}
-					<Link href="/es/docs/webhooks/">Webhooks</Link> publish port <code>8787</code>, which
-					takes signed requests only — and you only need it if something on the internet has to be
-					able to wake an agent. Telegram and mail need nothing published at all, because they reach
-					out rather than being reached.
+					La única excepción es deliberada y tú la eliges.{" "}
+					<Link href="/es/docs/webhooks/">Los webhooks</Link> publican el puerto <code>8787</code>,
+					que solo acepta peticiones firmadas — y solo lo necesitas si algo en internet tiene que
+					poder despertar a un agente. Telegram y el correo no necesitan nada publicado, porque
+					salen ellos en vez de ser alcanzados.
 				</p>
 				<div className="note">
 					<p>
-						<strong>Why there is no web UI to log into.</strong> The control plane holds the Docker
-						socket, so it is root-equivalent on the machine — the trust boundary is the sandbox
-						around the agent, not the process managing it. Publishing that control surface would be
-						putting root on the internet behind a password somebody chose.{" "}
-						<Link href="/es/docs/trust/">Trust</Link> has the rest of what that does and does not
-						claim.
+						<strong>Por qué no hay una interfaz web en la que iniciar sesión.</strong> El plano de
+						control tiene el socket de Docker, así que equivale a root en la máquina — la frontera
+						de confianza es el sandbox alrededor del agente, no el proceso que lo gestiona. Publicar
+						esa superficie de control sería poner root en internet detrás de una contraseña que
+						eligió alguien. <Link href="/es/docs/trust/">Confianza</Link> tiene el resto de lo que
+						eso afirma y no afirma.
 					</p>
 				</div>
 			</section>
 
 			<section>
-				<span className="eyebrow">If you change your mind</span>
-				<h2>The answer is remembered, and one command moves it</h2>
+				<span className="eyebrow">Si cambias de idea</span>
+				<h2>La respuesta se recuerda, y un comando la mueve</h2>
 				<p>
-					Where the agents live is asked once and kept in <code>~/.squad/plane.json</code>.{" "}
-					<code>squad connect</code> asks again — so a plane that started on your laptop moves to a
-					server you bought later, and a server you are done with is replaced by another, without
-					reinstalling the console.
+					Dónde viven los agentes se pregunta una vez y se guarda en{" "}
+					<code>~/.squad/plane.json</code>. <code>squad connect</code> vuelve a preguntar — así un
+					plano que empezó en tu equipo se muda a un servidor que compraste después, y un servidor
+					con el que ya terminaste se reemplaza por otro, sin reinstalar la consola.
 				</p>
 				<p className="small muted">
-					Everything after that question is the same program. A plane answers the same protocol
-					whether its socket is in a directory on this computer or at the far end of an SSH
-					connection, which is why <Link href="/es/docs/console/">the console</Link>,{" "}
-					<Link href="/es/docs/serve/">a forwarded port</Link> and the log feed all behave
-					identically either way.
+					Todo lo que viene después de esa pregunta es el mismo programa. Un plano responde al mismo
+					protocolo tanto si su socket está en un directorio de este equipo como al otro extremo de
+					una conexión SSH, y por eso <Link href="/es/docs/console/">la consola</Link>,{" "}
+					<Link href="/es/docs/serve/">un puerto reenviado</Link> y el feed de logs se comportan
+					igual en ambos casos.
 				</p>
 			</section>
 		</Docs>

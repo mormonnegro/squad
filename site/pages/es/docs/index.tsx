@@ -8,16 +8,16 @@ import { CLIENT, PI, SITE } from "../../../lib/site";
 
 const WHERE: [string, string][] = [
 	[
-		"the console",
-		"A slash command or the config screen. Keys, models, hosts, MCP servers, the mailbox and a ceiling, all holding from the next turn with nothing restarted.",
+		"la consola",
+		"Un comando de barra o la pantalla de configuración. Claves, modelos, hosts, servidores MCP, el buzón y un techo, todo vigente desde el turno siguiente y sin nada reiniciado.",
 	],
 	[
 		"config.yaml",
-		"The operator's file, on the machine the plane is on, which no plane may write: agents, schedules, webhooks, and every credential attached to a host by name.",
+		"El archivo del operador, en la máquina donde está el plano, que ningún plano puede escribir: agentes, horarios, webhooks, y cada credencial atada por nombre a un host.",
 	],
 	[
-		"the repository",
-		"Inside the agent's own volume: who it is, what it remembers, the skills it loaded and the tools it wrote for itself. Its own to edit, and nothing else's.",
+		"el repositorio",
+		"Dentro del volumen propio del agente: quién es, qué recuerda, las habilidades que cargó y las herramientas que se escribió. Suyo para editarlo, y de nada más.",
 	],
 ];
 
@@ -25,48 +25,49 @@ export default function DocsIndex() {
 	const { lang } = useLang();
 	return (
 		<Docs
-			title="Overview"
-			lede="An agent here is a container that stays running, wakes up when something happens, and reaches the outside world only through credentials it never sees."
-			description="What squad is, what an agent is made of, and where every setting lives: the console, the config file, and the agent's own repository."
+			title="Resumen"
+			lede="Un agente aquí es un contenedor que sigue en marcha, se despierta cuando pasa algo, y alcanza el mundo exterior solo a través de credenciales que nunca ve."
+			description="Qué es squad, de qué está hecho un agente, y dónde vive cada ajuste: la consola, el archivo de configuración y el repositorio propio del agente."
 		>
 			<section>
-				<span className="eyebrow">The shape of it</span>
-				<h2>Two halves, and one question between them</h2>
+				<span className="eyebrow">La forma que tiene</span>
+				<h2>Dos mitades, y una pregunta entre ellas</h2>
 				<p>
-					There is the console you type at, and the plane the agents live in. You install the
-					console on the computer you are sitting at, and the first run asks the one question the
-					halves differ on: whether the agents should live <strong>here</strong>, or{" "}
-					<strong>on a server</strong> you have SSH to.
+					Está la consola en la que tecleas, y el plano en el que viven los agentes. La consola se
+					instala en el equipo ante el que estás sentado, y la primera ejecución hace la única
+					pregunta en la que las mitades difieren: si los agentes deben vivir <strong>aquí</strong>,
+					o <strong>en un servidor</strong> al que tengas SSH.
 				</p>
-				<Code label="on your laptop" wrap>{`
+				<Code label="en tu equipo" wrap>{`
 $ curl -fsSL ${CLIENT} | sh
 $ squad
 `}</Code>
 				<p className="small muted">
-					Node 22.18 or newer, and nothing else on this computer — no Docker here whichever answer
-					you give. <Link href="/es/install">The install page</Link> is the long version, including
-					the same thing done by hand.
+					Node 22.18 o más nuevo, y nada más en este equipo — nada de Docker aquí, sea cual sea la
+					respuesta que des. <Link href="/es/install">La página de instalación</Link> es la versión
+					larga, incluida la misma cosa hecha a mano.
 				</p>
 				<p>
-					Everything after that question is the same program. A plane answers the same protocol
-					whether its socket is in a directory here or at the far end of{" "}
-					<code>ssh vps squad relay</code>, so the agent list, the log feed, the conversation and a
-					port forwarded out of a sandbox all run on this computer and reach the agents wherever
-					they are.
+					Todo lo que viene después de esa pregunta es el mismo programa. Un plano responde al mismo
+					protocolo tanto si su socket está en un directorio de aquí como si está al otro extremo de{" "}
+					<code>ssh vps squad relay</code>, así que la lista de agentes, el feed de logs, la
+					conversación y un puerto reenviado desde un sandbox corren todos en este equipo y llegan a
+					los agentes estén donde estén.
 				</p>
 				<p className="small muted">
-					It is a runtime rather than a harness. The thinking is done by <a href={PI}>pi</a>; squad
-					gives it a machine to live on, a way to be woken, and a boundary to work inside.
+					Es un runtime más que un harness. El pensar lo hace <a href={PI}>pi</a>; squad le da una
+					máquina en la que vivir, una manera de ser despertado, y un límite dentro del que
+					trabajar.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">The first five minutes</span>
-				<h2>Type its name, and make one</h2>
+				<span className="eyebrow">Los primeros cinco minutos</span>
+				<h2>Escribe su nombre, y crea uno</h2>
 				<p>
-					<code>squad</code> with nothing after it opens the console, because someone typing the
-					command with nothing after it is asking to see the thing rather than to be told a fact
-					about it. With no agents at all it opens on the one row there is:
+					<code>squad</code> sin nada detrás abre la consola, porque quien teclea el comando sin
+					nada detrás está pidiendo ver la cosa y no que le cuenten un hecho sobre ella. Sin ningún
+					agente se abre en la única fila que hay:
 				</p>
 				<Screen>{`
 ╭──────────────────────╮╭────────────────────────────────────────────────────────────────╮
@@ -82,23 +83,24 @@ $ squad
  ↑↓ agents   ⏎ build   ^C quit
 `}</Screen>
 				<p>
-					The name is the whole of what the keyboard decides there. What the new agent may reach is{" "}
-					<code>defaults</code> in the config, answered in advance by whoever wrote that file —
-					because the one thing a keyboard may never do here is grant. Then you talk to it, and it
-					takes a turn.
+					El nombre es todo lo que decide el teclado ahí. Lo que el agente nuevo puede alcanzar es{" "}
+					<code>defaults</code> en la configuración, respondido de antemano por quien escribió ese
+					archivo — porque lo único que un teclado nunca puede hacer aquí es conceder. Luego hablas
+					con él, y toma un turno.
 				</p>
 				<p className="small muted">
-					<Link href="/es/docs/console/">The console</Link> is every key and every command on that
-					screen. <Link href="/es/docs/agents/">Agents</Link> is what one turns out to be made of.
+					<Link href="/es/docs/console/">La consola</Link> es todas las teclas y todos los comandos
+					de esa pantalla. <Link href="/es/docs/agents/">Agentes</Link> es de qué acaba estando
+					hecho uno.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Before you go looking</span>
-				<h2>Three places a setting lives</h2>
+				<span className="eyebrow">Antes de ponerte a buscar</span>
+				<h2>Tres sitios donde vive un ajuste</h2>
 				<p>
-					Nearly every question that starts "where do I put…" is answered by which of these three it
-					belongs to, and they are told apart by who may write them.
+					Casi toda pregunta que empieza por «dónde pongo…» se responde con a cuál de estos tres
+					pertenece, y se distinguen por quién puede escribirlos.
 				</p>
 				<table className="table">
 					<tbody>
@@ -111,15 +113,16 @@ $ squad
 					</tbody>
 				</table>
 				<p className="small muted">
-					The console keeps what it is given in a store beside <code>config.yaml</code> and never in
-					it, so the operator's file stays the operator's: what a redeploy brings back is what was
-					written there, and what was typed at the console survives the redeploy on its own.
+					La consola guarda lo que se le da en un almacén junto a <code>config.yaml</code> y nunca
+					dentro de él, así que el archivo del operador sigue siendo del operador: lo que trae de
+					vuelta un redespliegue es lo que se escribió allí, y lo que se tecleó en la consola
+					sobrevive al redespliegue por su cuenta.
 				</p>
 			</section>
 
 			<section>
-				<span className="eyebrow">Everything there is</span>
-				<h2>The map</h2>
+				<span className="eyebrow">Todo lo que hay</span>
+				<h2>El mapa</h2>
 				{DOCS.map((group) => (
 					<div className="docs-map" key={group.name.en}>
 						<h3>{group.name[lang]}</h3>
@@ -140,21 +143,23 @@ $ squad
 			</section>
 
 			<section>
-				<span className="eyebrow">Reading this without a browser</span>
-				<h2>One address hands an agent the whole of it</h2>
+				<span className="eyebrow">Leer esto sin un navegador</span>
+				<h2>Una sola dirección le entrega a un agente todo esto</h2>
 				<p>
-					Every page here is also written as markdown at the same address with <code>.md</code> on
-					the end, and all {DOC_PAGES.length} of them are in one file. That file is the thing to
-					paste when what you are explaining squad to is a coding agent rather than a person:
+					Cada página de aquí está escrita también como markdown en la misma dirección con{" "}
+					<code>.md</code> al final, y las {DOC_PAGES.length} están en un solo archivo. Ese archivo
+					es lo que hay que pegar cuando a quien le estás explicando squad es un agente de código y
+					no una persona:
 				</p>
-				<Code label="the whole documentation" wrap>{`
+				<Code label="toda la documentación" wrap>{`
 ${SITE}/llms-full.txt
 `}</Code>
 				<p className="small muted">
-					<a href="/llms.txt">/llms.txt</a> is the index instead — the same list as the map above,
-					with a link to each page's markdown, for a reader that would rather fetch the one page it
-					needs. Both are converted from these pages at build time rather than written beside them,
-					so neither can be a version behind what you are reading now.
+					<a href="/llms.txt">/llms.txt</a> es en cambio el índice — la misma lista que el mapa de
+					arriba, con un enlace al markdown de cada página, para un lector que prefiera traerse la
+					única página que necesita. Los dos se convierten de estas páginas en el build en vez de
+					escribirse al lado, así que ninguno puede ir una versión por detrás de lo que estás
+					leyendo ahora.
 				</p>
 			</section>
 		</Docs>
