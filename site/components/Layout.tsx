@@ -82,10 +82,21 @@ export function Layout({
 			</Head>
 
 			<nav className="nav">
-				<Link href={at("/")} className="nav-brand">
-					<Mark />
-					squad
-				</Link>
+				{/* Beside the name rather than at the end of the row, because it is not a place on the site
+				    but which site you are on — the same standing as the name itself, and the first thing a
+				    reader who cannot read this page needs to find. */}
+				<div className="nav-here">
+					<Link href={at("/")} className="nav-brand">
+						<Mark />
+						squad
+					</Link>
+					{/* The same page, not the other language's front door: a reader who wants this page in
+					    Spanish wants this page. It says the language it goes to, in that language, because
+					    a reader looking for it will not be scanning for the name of the one they are in. */}
+					<Link href={inLang(here, other)} className="nav-lang" hrefLang={other} lang={other}>
+						{LANG_NAME[other]}
+					</Link>
+				</div>
 				<div className="nav-links">
 					{NAV.map(([href, label]) => (
 						<Link
@@ -97,12 +108,6 @@ export function Layout({
 						</Link>
 					))}
 					<a href={REPO}>{SOURCE[lang]}</a>
-					{/* The same page, not the other language's front door: a reader who wants this page in
-					    Spanish wants this page. It says the language it goes to, in that language, because
-					    a reader looking for it will not be scanning for the name of the one they are in. */}
-					<Link href={inLang(here, other)} className="nav-lang" hrefLang={other} lang={other}>
-						{LANG_NAME[other]}
-					</Link>
 				</div>
 			</nav>
 
