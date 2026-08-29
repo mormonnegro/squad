@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
 import { useCopy } from "../lib/copy";
+import { type Text, useLang } from "../lib/lang";
+
+const COPY: Readonly<Record<"idle" | "done", Text>> = {
+	idle: { en: "copy", es: "copiar" },
+	done: { en: "copied", es: "copiado" },
+};
 
 // Enough colour to tell a typed command from its output, and no more. A highlighter that knew the
 // language would be a dependency and a build step for two rules.
@@ -54,13 +60,14 @@ export function Code({
 }) {
 	const code = children.trim();
 	const { done, copy } = useCopy(code);
+	const { lang } = useLang();
 
 	return (
 		<div className="code" data-wrap={wrap ? "true" : undefined}>
 			<div className="code-head">
 				<span>{label ?? "sh"}</span>
 				<button type="button" className="copy" data-done={done} onClick={copy}>
-					{done ? "copied" : "copy"}
+					{COPY[done ? "done" : "idle"][lang]}
 				</button>
 			</div>
 			<pre>

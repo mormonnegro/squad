@@ -10,6 +10,7 @@
 // in the console they are in the feed.
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type Text, useLang } from "../lib/lang";
 import { useReveal } from "../lib/reveal";
 
 // One line of the pane, in the order it appeared: typed at this console, arrived from a channel, or
@@ -21,7 +22,9 @@ type Line = { said: string } | { via: string; text: string } | { text: string; t
 // and every case opens with the thing an operator asked for — the part a visitor is deciding about.
 type Use = {
 	name: string;
-	label: string;
+	// The tab is the site's own word for the example, not something the console prints, so it is
+	// written in both languages while everything inside the pane stays as the program says it.
+	label: Text;
 	spend: string;
 	// A spend is dim until it is worth reading: amber at four fifths of the ceiling, red at it.
 	heat?: "warn";
@@ -42,7 +45,7 @@ type Use = {
 const USES: [Use, ...Use[]] = [
 	{
 		name: "market",
-		label: "track a competitor",
+		label: { en: "track a competitor", es: "seguir a un rival" },
 		spend: "$1.10",
 		next: { day: 1, hour: 8 },
 		model: "deepseek-v4-flash",
@@ -68,7 +71,7 @@ const USES: [Use, ...Use[]] = [
 	},
 	{
 		name: "builds",
-		label: "fix a failing check",
+		label: { en: "fix a failing check", es: "arreglar un check roto" },
 		spend: "$4.80",
 		heat: "warn",
 		model: "deepseek-v4-flash",
@@ -97,7 +100,7 @@ const USES: [Use, ...Use[]] = [
 	},
 	{
 		name: "deploy",
-		label: "connect Telegram",
+		label: { en: "connect Telegram", es: "conectar Telegram" },
 		spend: "$0.18",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
@@ -121,7 +124,7 @@ const USES: [Use, ...Use[]] = [
 	},
 	{
 		name: "tickets",
-		label: "connect an MCP",
+		label: { en: "connect an MCP", es: "conectar un MCP" },
 		spend: "$0.42",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
@@ -144,7 +147,7 @@ const USES: [Use, ...Use[]] = [
 	},
 	{
 		name: "server",
-		label: "ask it anything",
+		label: { en: "ask it anything", es: "preguntarle lo que sea" },
 		spend: "$0.06",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
@@ -235,6 +238,7 @@ function Came({ via, text, here }: { via: string; text: string; here: boolean })
 
 export function Console() {
 	const [ref, shown] = useReveal<HTMLDivElement>();
+	const { lang } = useLang();
 	const [use, setUse] = useState<Use>(USES[0]);
 	const [n, setN] = useState(0);
 	// The clock the standing appointment is counted down from, read after mounting rather than at
@@ -335,7 +339,7 @@ export function Console() {
 						aria-pressed={u === use}
 						onClick={() => pick(u)}
 					>
-						{u.label}
+						{u.label[lang]}
 					</button>
 				))}
 			</div>
