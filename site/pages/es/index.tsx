@@ -46,20 +46,20 @@ const JOBS: [string, ReactNode][] = [
 		"vigilar un repositorio",
 		<>
 			Un check se pone en rojo. Lee el fallo, lo arregla, hace push y cuenta lo que hizo en el pull
-			request — mientras tú almorzabas.
+			request — mientras vos almorzabas.
 		</>,
 	],
 	[
 		"seguir a un rival",
 		<>
-			Cada lunes a las ocho: tres páginas de precios, tres changelogs. Recibes un correo, y es lo
+			Cada lunes a las ocho: tres páginas de precios, tres changelogs. Recibís un correo, y es lo
 			que se movió.
 		</>,
 	],
 	[
 		"un encargo largo",
 		<>
-			<em>Despliega cuando CI se ponga en verde</em> no es un turno. Comprueba, se reserva otro
+			<em>Desplegá cuando CI se ponga en verde</em> no es un turno. Comprueba, se reserva otro
 			turno, y te escribe cuando está en producción.
 		</>,
 	],
@@ -73,7 +73,7 @@ const JOBS: [string, ReactNode][] = [
 	[
 		"un mostrador donde preguntar",
 		<>
-			Escríbele un correo, o mensajea a su bot desde el aeropuerto. Tiene el repositorio, las
+			Mandale un correo, o escribile al bot desde el aeropuerto. Tiene el repositorio, las
 			herramientas y cuatro meses de lo que le contaste.
 		</>,
 	],
@@ -82,7 +82,7 @@ const JOBS: [string, ReactNode][] = [
 const SELF: [string, string][] = [
 	["soul.md", "quién es; se añade al prompt en cada turno"],
 	["memory/", "lo que eligió recordar"],
-	["skills/", "cómo se hacen aquí las cosas, escrito una sola vez"],
+	["skills/", "cómo se hacen acá las cosas, escrito una sola vez"],
 	["tools/", "scripts que se escribió a sí mismo"],
 	["agent.yaml", "las capacidades que le pide a un operador"],
 ];
@@ -134,7 +134,7 @@ const PROBLEMS: { problem: string; body: ReactNode; rule: string }[] = [
 		body: (
 			<>
 				Un webhook de GitHub es auténtico y aun así retransmite el cuerpo de un issue escrito por
-				cualquiera. Todo lo que no vino de ti llega delimitado, como datos.
+				cualquiera. Todo lo que no vino de vos llega delimitado, como datos.
 			</>
 		),
 		rule: "Solo un operador da instrucciones.",
@@ -175,7 +175,7 @@ $ curl -fsSL ${CLIENT} | sh
 $ squad
 `}</Code>
 						<p className="small muted">
-							Puedes elegir dónde viven tus agentes: en tu propia computadora o en la nube. Es lo
+							Podés elegir dónde viven tus agentes: en tu propia computadora o en la nube. Es lo
 							primero que pregunta — este equipo, o un servidor al que tengas SSH. Con un VPS de $5
 							alcanza para unos cuantos.
 						</p>
@@ -247,13 +247,13 @@ $ squad
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">Mientras duermes</span>
+					<span className="eyebrow">Mientras dormís</span>
 					<h2>Se reserva su propio turno siguiente, y el día tiene un techo</h2>
 					<p>
-						Dos relojes. Uno que escribiste tú — cron, en una zona horaria que nombras. Uno que se
+						Dos relojes. Uno que escribiste vos — cron, en una zona horaria que nombrás. Uno que se
 						pone él mismo: <code>wake_me</code> pide otro turno dentro de tres minutos o tres días y
 						deja una nota para la versión de sí mismo que se despierte. Por eso un trabajo largo es
-						algo que puedes delegar en vez de algo que hay que aguantar sentado.
+						algo que podés delegar en vez de algo que hay que aguantar sentado.
 					</p>
 					<Screen>{`
 > /limit 5
@@ -266,7 +266,7 @@ Spending limit set to $5.00 a day. $0.42 spent today, of $5.00 a day.
 					</p>
 					<p className="small muted">
 						Con qué piensa es un comando y no un redespliegue. La clave es tuya y la factura es de
-						tu proveedor — aquí no hay cuenta que sostenga ninguna de las dos.{" "}
+						tu proveedor — acá no hay cuenta que sostenga ninguna de las dos.{" "}
 						<Link href="/es/docs/schedules/">Horarios</Link>,{" "}
 						<Link href="/es/docs/limits/">gasto</Link> y{" "}
 						<Link href="/es/docs/models/">modelos</Link>.
@@ -427,19 +427,19 @@ Any other agent can have it too, with /mcp linear.
 							ejecutaría.
 						</li>
 						<li>
-							<strong>Nada alojado.</strong> No hay cuenta, ni panel, ni factura nuestra. Tú pones
+							<strong>Nada alojado.</strong> No hay cuenta, ni panel, ni factura nuestra. Vos ponés
 							una máquina y una clave de modelo, y lo que cuesta es lo que cobre tu proveedor.
 						</li>
 					</ul>
 					<div className="jump-row">
 						<Link href="/es/install" className="jump">
-							ponlo en un VPS →
+							ponelo en un VPS →
 						</Link>
 						<Link href="/es/docs" className="jump">
-							lee la documentación
+							leé la documentación
 						</Link>
 						<a href={REPO} className="jump">
-							lee el código
+							leé el código
 						</a>
 					</div>
 				</div>

@@ -80,8 +80,8 @@ Spending limit set to $5.00 a day. $0.42 spent today, of $5.00 a day.
 					el día" es una pregunta sobre todos a la vez y la cabecera solo puede responderla sobre
 					aquel en el que estás parado. La cifra se pone amarilla a cuatro quintos del techo y roja
 					al llegar. Un agente que no ha gastado nada no dice nada — una columna de{" "}
-					<code>$0.00</code> es ruido que hay que saltarse al leer, y lo que se busca aquí es la
-					fila que no es como las demás.
+					<code>$0.00</code> es ruido que hay que saltarse al leer, y lo que se busca acá es la fila
+					que no es como las demás.
 				</p>
 				<p className="small muted">
 					La fila de título dice con qué está pensando el agente seleccionado y cuánto ha costado

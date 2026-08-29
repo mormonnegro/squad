@@ -41,14 +41,14 @@ export default function Install() {
 	return (
 		<Layout
 			title="instalar"
-			description="Instala la consola en el equipo ante el que estás sentado. Pregunta dónde deben vivir los agentes — aquí, o en un servidor al que tengas SSH — y pone un plano allí."
+			description="Instalá la consola en el equipo ante el que estás sentado. Pregunta dónde deben vivir los agentes — acá, o en un servidor al que tengas SSH — y pone un plano ahí."
 		>
 			<section className="hero">
 				<div className="wrap">
 					<h1>Instalar</h1>
 					<p className="lede">
-						Dos mitades: la consola en la que escribes, y el plano en el que viven los agentes.
-						Instalas la consola, y hace la única pregunta en la que las mitades difieren.
+						Dos mitades: la consola en la que escribís, y el plano en el que viven los agentes.
+						Instalás la consola, y hace la única pregunta en la que las mitades difieren.
 					</p>
 					<div className="hero-meta">
 						<span>Una pregunta</span>
@@ -67,7 +67,7 @@ $ curl -fsSL ${CLIENT} | sh
 $ squad
 `}</Code>
 					<p className="small muted">
-						Necesita Node 22.18 o más nuevo y nada más — aquí no hay Docker, sea cual sea la
+						Necesita Node 22.18 o más nuevo y nada más — acá no hay Docker, sea cual sea la
 						respuesta que des. <a href={`${REPO}/blob/main/deploy/client.sh`}>deploy/client.sh</a>{" "}
 						trae el árbol, instala lo que la consola importa, y deja <code>squad</code> en tu PATH.
 						No hay paso de compilación, así que lo que aterriza es lo que se ejecuta.
@@ -76,15 +76,15 @@ $ squad
 						Lo que pregunta es dónde deben vivir tus agentes: <strong>en este equipo</strong>, lo
 						que significa Docker y un directorio de estado bajo <code>~/.squad</code>, o{" "}
 						<strong>en un servidor</strong> al que tengas SSH, lo que significa la instalación
-						corriendo por la conexión que ya tienes. En cualquiera de los dos casos aterriza allí lo
+						corriendo por la conexión que ya tenés. En cualquiera de los dos casos aterriza ahí lo
 						mismo — Docker si no hay, el repositorio, una configuración con un agente y un techo de
 						cinco dólares al día — y en cualquiera de los dos termina en la consola.{" "}
 						<code>squad connect</code> mueve la respuesta.
 					</p>
 					<p>
 						Todo lo que viene después de esa pregunta es el mismo programa. Un plano responde al
-						mismo protocolo esté su socket en un directorio de aquí o al otro extremo de{" "}
-						<code>ssh vps squad relay</code>, y por eso un puerto que expones desde un agente se
+						mismo protocolo esté su socket en un directorio de acá o al otro extremo de{" "}
+						<code>ssh vps squad relay</code>, y por eso un puerto que exponés desde un agente se
 						abre en la máquina donde está tu navegador.
 					</p>
 					<p className="small muted">
@@ -97,7 +97,7 @@ $ squad
 						<p>
 							<strong>Nada de la consola se queda en el servidor.</strong> Canaliza un solo script
 							de shell — <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a> — por
-							la conexión SSH, y ese script se sostiene solo: es el mismo que corre cuando eliges
+							la conexión SSH, y ese script se sostiene solo: es el mismo que corre cuando elegís
 							este equipo. <a href="#by-hand">La misma instalación a mano</a> está al pie de esta
 							página.
 						</p>
@@ -107,7 +107,7 @@ $ squad
 
 			<section id="a-machine">
 				<div className="wrap">
-					<span className="eyebrow">Si aún no tienes una</span>
+					<span className="eyebrow">Si aún no tenés una</span>
 					<h2>La máquina cuesta cinco dólares al mes</h2>
 					<p>
 						Una vCPU, un gigabyte de memoria y diez gigabytes de disco bastan para unos cuantos
@@ -138,7 +138,7 @@ $ squad
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">O la otra mitad, tú mismo</span>
+					<span className="eyebrow">O la otra mitad, vos mismo</span>
 					<h2>Lo que corre en la máquina que les toca a los agentes</h2>
 					<p>
 						Ejecutado en una terminal en vez de por una tubería, el instalador pide las claves sobre
@@ -179,7 +179,7 @@ $ curl -fsSL ${INSTALL} | sh
 			<section>
 				<div className="wrap">
 					<span className="eyebrow">Una vez que estás en ella</span>
-					<h2>Entonces escribes su nombre</h2>
+					<h2>Entonces escribís su nombre</h2>
 					<p>
 						La superficie de control es un socket unix dentro del directorio de estado y nunca sale
 						de la máquina. No hay puerto que abrir, ni token que emitir, ni nada en lo que iniciar
@@ -195,7 +195,7 @@ $ curl -fsSL ${INSTALL} | sh
 						<code>/serve 3000</code> es esa conexión leída al revés. La red del sandbox no tiene
 						rutas, así que la consola abre el puerto en <em>tu</em> loopback e imprime{" "}
 						<code>http://scout.localhost:3000</code> — un enlace que funciona en el equipo en el que
-						se imprimió y en ningún otro sitio, y que se cierra cuando cierras la consola.
+						se imprimió y en ningún otro sitio, y que se cierra cuando cerrás la consola.
 					</p>
 					<div className="note">
 						<p>
@@ -213,7 +213,7 @@ $ curl -fsSL ${INSTALL} | sh
 			<section>
 				<div className="wrap">
 					<span className="eyebrow">El único archivo que editar</span>
-					<h2>Di qué puede alcanzar un agente</h2>
+					<h2>Decí qué puede alcanzar un agente</h2>
 					<p>
 						<code>/opt/squad/deploy/config.yaml</code> es toda la superficie: los agentes, qué puede
 						alcanzar cada uno, qué modelos hay con los que pensar, cuándo despierta cada uno, qué
@@ -250,7 +250,7 @@ defaults:
 						Qué se puede alcanzar y qué se puede gastar son dos preguntas, y solo la primera se
 						responde con "donde sea". Una concesión sobre <code>*</code> que llevara una credencial
 						se rechaza cuando se lee el archivo: la carretera está abierta, las claves se dan a un
-						sitio por su nombre. Borra la concesión <code>web</code> y el plano vuelve a denegar por
+						sitio por su nombre. Borrá la concesión <code>web</code> y el plano vuelve a denegar por
 						defecto, host por host.
 					</p>
 					<p className="small">
@@ -266,10 +266,10 @@ defaults:
 					</p>
 					<p className="small">
 						Esa pantalla también añade modelos, y les pregunta a los proveedores en vez de
-						preguntarte a ti: a cada proveedor del que tiene una clave se le pregunta a qué
+						preguntarte a vos: a cada proveedor del que tiene una clave se le pregunta a qué
 						responde, y lo que vuelve es una lista por la que moverse con las flechas. Así que este
 						archivo es donde va un modelo para sobrevivir a un redespliegue, y la consola es donde
-						va uno cuando lo quieres en el turno siguiente.
+						va uno cuando lo querés en el turno siguiente.
 					</p>
 					<p className="small muted">
 						Se lee cuando arranca el plano, así que una edición surte efecto con{" "}
@@ -277,7 +277,7 @@ defaults:
 					</p>
 					<div className="note warn">
 						<p>
-							<strong>El techo ya está ahí. Déjalo.</strong> Un agente puede reservar su propio
+							<strong>El techo ya está ahí. Dejalo.</strong> Un agente puede reservar su propio
 							turno siguiente, así que sin <code>limitUsd</code> lo primero que se sabe de un bucle
 							es la factura. Está bajo <code>defaults</code> para que cubra también a los agentes
 							creados después desde el teclado, que son exactamente aquellos a los que nadie se
@@ -330,7 +330,7 @@ curl -X POST https://your-vps:8787/hooks/ping \\
 			<section>
 				<div className="wrap">
 					<span className="eyebrow">Antes del VPS</span>
-					<h2>O prueba todo esto en tu equipo</h2>
+					<h2>O probá todo esto en tu equipo</h2>
 					<p>
 						La demo construye las imágenes, arranca un plano de control en una red desechable,
 						muestra qué puede y qué no puede alcanzar el agente, lo despierta con un webhook firmado
@@ -352,10 +352,10 @@ $ ./deploy/demo.sh up
 
 			<section id="by-hand">
 				<div className="wrap">
-					<span className="eyebrow">Si prefieres no canalizar un script a un shell</span>
+					<span className="eyebrow">Si preferís no canalizar un script a un shell</span>
 					<h2>La misma instalación, a mano</h2>
 					<p>
-						Cuatro comandos y los dos archivos que el instalador habría escrito por ti. Todo lo de
+						Cuatro comandos y los dos archivos que el instalador habría escrito por vos. Todo lo de
 						arriba sigue valiendo — esto es solo la parte que trae y arranca.
 					</p>
 					<Code>{`
@@ -368,7 +368,7 @@ $ docker compose up -d --build
 `}</Code>
 					<p className="small muted">
 						<code>config.example.yaml</code> es la referencia, con todas las opciones comentadas, y
-						su agente de ejemplo alcanza hosts que no son tuyos — léelo entero antes de arrancar y
+						su agente de ejemplo alcanza hosts que no son tuyos — leelo entero antes de arrancar y
 						no después. Sin el instalador tampoco hay <code>squad</code> en el PATH, así que la
 						consola es <code>docker compose exec control-plane squad</code>.
 					</p>
@@ -377,7 +377,7 @@ $ docker compose up -d --build
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">Si editas el archivo de compose</span>
+					<span className="eyebrow">Si editás el archivo de compose</span>
 					<h2>Dos cosas son estructurales</h2>
 					<ul className="list">
 						<li>

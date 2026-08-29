@@ -118,7 +118,7 @@ still the same.
 					El plano de control tiene el socket de Docker, así que es equivalente a root en la
 					máquina: la frontera de confianza es el sandbox alrededor del agente, no el proceso que lo
 					gestiona. Y un agente que puede ejecutar código en un sandbox y alcanzar internet puede
-					enviar lo que leyó a algún sitio que tú no elegiste — eso vale para{" "}
+					enviar lo que leyó a algún sitio que vos no elegiste — eso vale para{" "}
 					<Link href="/es/docs/grants/">
 						cualquier concesión lo bastante amplia como para ser útil
 					</Link>

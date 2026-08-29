@@ -118,7 +118,7 @@ export default function Console() {
 					cada agente que tiene el plano — <code>●</code> en marcha, <code>○</code> parado,{" "}
 					<code>◐</code> a mitad de turno — luego la fila que crea uno, luego el feed de logs y la
 					pantalla de configuración. Pensar recibe una marca propia porque con varios agentes en
-					pantalla es lo único que no puedes averiguar volviendo a preguntar dentro de un segundo.
+					pantalla es lo único que no podés averiguar volviendo a preguntar dentro de un segundo.
 				</p>
 				<p>
 					El feed y la pantalla de configuración están al pie de la columna y no detrás de un agente
@@ -205,7 +205,7 @@ export default function Console() {
 				</table>
 				<p className="small muted">
 					<code>↑↓</code> mueven entre las entradas y <code>⏎</code> o <code>tab</code> toma una. Un
-					primer retorno elige y un segundo envía, porque a todo comando de aquí se le puede dar un
+					primer retorno elige y un segundo envía, porque a todo comando de acá se le puede dar un
 					argumento y un retorno que disparara en cuanto se resaltara un nombre haría de{" "}
 					<code>/limit 5</code> lo único que el menú no serviría para escribir. Donde el argumento
 					es a su vez un nombre sacado de una lista — <code>/model</code>, y los modelos — el
@@ -235,7 +235,7 @@ exit 56
 `}</Screen>
 				<p>
 					Pulsar <code>!</code> en un prompt vacío te mete dentro, y el prompt dice dónde estás
-					parado. Sigues dentro hasta que borras hacia atrás desde la línea vacía, porque nadie mira
+					parado. Seguís dentro hasta que borrás hacia atrás desde la línea vacía, porque nadie mira
 					una máquina de un comando en un comando, y <code>cd</code> te mueve como lo hace en
 					cualquier otro sitio — cada comando es su propio <code>sh</code>, así que el plano lleva
 					el directorio de uno al siguiente.
@@ -248,7 +248,7 @@ exit 56
 					socket de Docker sobre el que corre el plano y podría abrir la misma shell dando el rodeo.
 				</p>
 				<p className="small muted">
-					<code>tab</code> completa una ruta aquí, que es lo que <code>tab</code> es en un prompt de
+					<code>tab</code> completa una ruta acá, que es lo que <code>tab</code> es en un prompt de
 					shell en todas las demás partes — así que en este modo deja de cambiar de panel, y el
 					camino a los otros paneles pasa por una línea vacía. Nada del completado se registra y
 					nada de él se ejecuta: se le pide al sandbox que lea un directorio con la palabra a medio
@@ -264,7 +264,7 @@ exit 56
 
 			<section>
 				<span className="eyebrow">De dónde vino un turno</span>
-				<h2>Todo lo que no se escribe aquí lleva una marca</h2>
+				<h2>Todo lo que no se escribe acá lleva una marca</h2>
 				<Screen>{`
 > how is the queue looking?
 four issues open, none of them blocked.
@@ -278,7 +278,7 @@ still the same.
 					Un turno que nadie inició ante un teclado aparece también en la conversación — un horario
 					que vence, un webhook que llega, un mensaje que enviaste por correo, un agente que se
 					despierta a sí mismo — con una marca que dice de dónde vino. Tu propio correo va marcado
-					también, y por la misma razón: eres tú, y no eres tú en este teclado. Un agente que
+					también, y por la misma razón: sos vos, y no sos vos en este teclado. Un agente que
 					respondió a su correo a las cuatro de la mañana se leería si no, horas después, como algo
 					que te habías sentado a escribir.
 				</p>
@@ -286,7 +286,7 @@ still the same.
 					La respuesta a él lleva una flecha, porque es la mitad que se fue a algún sitio. Una
 					respuesta escrita en el panel y una respuesta que además se envió son las mismas palabras,
 					y sin la marca el panel es la misma imagen en cualquiera de los dos casos. Lo que
-					escribiste aquí se responde aquí, y eso se deja sin marcar — marcarlo marcaría casi todas
+					escribiste acá se responde acá, y eso se deja sin marcar — marcarlo marcaría casi todas
 					las líneas que un agente llega a decir.
 				</p>
 				<p className="small muted">
@@ -361,7 +361,7 @@ be held to less, never to more: /limit $50.00, if you meant it.
 					Un rechazo imprime la línea que el operador habría escrito, que es el objetivo y no el
 					consuelo: el operador se entera de que el comando existe porque se lo entregan, en el
 					momento en que es la respuesta. Con dos excepciones — <code>/telegram</code> y{" "}
-					<code>/email</code> se rechazan sin la línea, porque allí la línea <em>es</em> el ataque.
+					<code>/email</code> se rechazan sin la línea, porque ahí la línea <em>es</em> el ataque.
 				</p>
 			</section>
 		</Docs>

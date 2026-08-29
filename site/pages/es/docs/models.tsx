@@ -34,7 +34,7 @@ defaults:
 					decisiones que nadie pueda tomar, así que no se escriben.
 				</p>
 				<p className="small muted">
-					Un proveedor que aquí no conoce nadie funciona igual diciendo las dos cosas que habría
+					Un proveedor que acá no conoce nadie funciona igual diciendo las dos cosas que habría
 					dicho la tabla: un <code>host</code> y un <code>keyEnv</code>. La clave en sí nunca está
 					en este archivo ni en el agente — <code>keyEnv</code> nombra una variable del entorno del
 					propio plano de control, y la concesión que produce cada modelo es lo que la escribe en la
@@ -58,9 +58,9 @@ defaults:
 					Cada fila dice los dos hechos sobre un modelo que no son su nombre — de quién es y cómo lo
 					llaman — más el que decide si el turno siguiente responde siquiera. Un modelo del que este
 					plano no tiene clave se ofrece y se marca, no se esconde, porque está configurado y la
-					mitad que falta es una clave que puedes pegar dos paneles más allá. Al escribir se
-					estrecha la lista contra el id, el proveedor y el nombre propio del proveedor a la vez,
-					así que <code>/model anthropic</code> encuentra el que se llama <code>sonnet</code>.
+					mitad que falta es una clave que podés pegar dos paneles más allá. Al escribir se estrecha
+					la lista contra el id, el proveedor y el nombre propio del proveedor a la vez, así que{" "}
+					<code>/model anthropic</code> encuentra el que se llama <code>sonnet</code>.
 				</p>
 				<p>
 					Todos los modelos de esa lista ya son alcanzables por todos los agentes — configurar uno
@@ -113,7 +113,7 @@ defaults:
 					<code>⏎</code> sobre una clave la toma, enmascarada mientras se escribe y nunca vuelta a
 					mostrar. Va al plano por el mismo socket por el que va un shell, y por la misma razón:
 					tener ese socket es lo que hace a alguien el operador, y una clave que llegara por webhook
-					sería un desconocido pagando con tu cuenta. Una clave pegada aquí rige desde el turno
+					sería un desconocido pagando con tu cuenta. Una clave pegada acá rige desde el turno
 					siguiente, sin nada reiniciado y nada redesplegado; una línea vacía la retira, y la
 					pregunta vuelve a ir al entorno propio del plano.
 				</p>
@@ -121,7 +121,7 @@ defaults:
 
 			<section>
 				<span className="eyebrow">Añadir uno desde el teclado</span>
-				<h2>+ a model pregunta a los proveedores en vez de preguntarte a ti</h2>
+				<h2>+ a model pregunta a los proveedores en vez de preguntarte a vos</h2>
 				<Screen>{`
 │ 3 on offer                                                     │
 │ › gpt-5-mini   openai                                          │
@@ -150,12 +150,12 @@ defaults:
 					<p>
 						<strong>Lo que declaró el archivo está para leerse y no para cambiarse.</strong>{" "}
 						<code>from the file</code> es una fila que esta pantalla no va a tapar y no va a soltar.
-						Todo lo que se da aquí vive en un almacén junto a <code>config.yaml</code> y nunca
-						dentro, así que un redespliegue devuelve lo que se escribió ahí y lo que se escribió
-						aquí sobrevive al redespliegue por su cuenta. Esta es la única pantalla donde el teclado
+						Todo lo que se da acá vive en un almacén junto a <code>config.yaml</code> y nunca
+						dentro, así que un redespliegue devuelve lo que se escribió ahí y lo que se escribió acá
+						sobrevive al redespliegue por su cuenta. Esta es la única pantalla donde el teclado
 						concede en vez de pagar, y es deliberado: llegar a ella significa tener el socket de
 						control del plano, que es todo lo que es ser{" "}
-						<Link href="/es/docs/trust/">el operador</Link> aquí.
+						<Link href="/es/docs/trust/">el operador</Link> acá.
 					</p>
 				</div>
 			</section>

@@ -33,7 +33,7 @@ defaults:
 				</p>
 				<p>
 					Toda petición sigue cruzando el proxy, sigue siendo cotejada, y sigue cayendo en el
-					registro de auditoría con el host y la ruta a la que fue. Borra la concesión{" "}
+					registro de auditoría con el host y la ruta a la que fue. Borrá la concesión{" "}
 					<code>web</code> y el plano vuelve a denegar por defecto, host por host, exactamente como
 					estaba.
 				</p>
@@ -122,7 +122,7 @@ agents:
 				</p>
 				<p className="small muted">
 					Una concesión que dedujo el plano está marcada con lo que la dedujo —{" "}
-					<code>with a model</code>, <code>for searching</code> — porque un host del que no puedes
+					<code>with a model</code>, <code>for searching</code> — porque un host del que no podés
 					dar cuenta es uno que nadie se atreve a cerrar.{" "}
 					<Link href="/es/docs/models/">Modelos</Link> y{" "}
 					<Link href="/es/docs/search/">búsqueda web</Link> son de donde vienen esos dos.

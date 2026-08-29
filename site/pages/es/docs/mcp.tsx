@@ -28,10 +28,10 @@ export default function Mcp() {
 				<span className="eyebrow">Dónde está el cliente</span>
 				<h2>Una extensión, en la imagen del sandbox</h2>
 				<p>
-					pi no tiene cliente MCP y lo dice a propósito: construye una extensión, responde su
-					README. Así que <code>mcp.ts</code> está en la imagen del sandbox junto a{" "}
-					<code>wake_me</code> y <code>web_search</code> y es uno completo — el handshake, los tres
-					transportes, y las herramientas que vuelven registradas como propias de pi.
+					pi no tiene cliente MCP y lo dice a propósito: hacete una extensión, responde su README.
+					Así que <code>mcp.ts</code> está en la imagen del sandbox junto a <code>wake_me</code> y{" "}
+					<code>web_search</code> y es uno completo — el handshake, los tres transportes, y las
+					herramientas que vuelven registradas como propias de pi.
 				</p>
 			</section>
 

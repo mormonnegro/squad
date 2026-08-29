@@ -7,11 +7,11 @@ export default function Schedules() {
 	return (
 		<Docs
 			title="Horarios"
-			lede="Un trabajo permanente que escribiste tú, y un turno que el agente reserva para sí mismo. Uno de los dos puede instruir, y es el que escribiste tú."
+			lede="Un trabajo permanente que escribiste vos, y un turno que el agente reserva para sí mismo. Uno de los dos puede instruir, y es el que escribiste vos."
 			description="Horarios cron en el archivo de configuración, y wake_me: cómo un agente pide otro turno, qué puede dejarse a sí mismo, y por qué ese despertar nunca lleva confianza de operador."
 		>
 			<section>
-				<span className="eyebrow">El que escribiste tú</span>
+				<span className="eyebrow">El que escribiste vos</span>
 				<h2>Cron, en el bloque propio del agente</h2>
 				<Code label="deploy/config.yaml">{`
 schedules:
@@ -32,9 +32,9 @@ schedules:
 					mismas citas.
 				</p>
 				<p className="small muted">
-					<code>trust: operator</code> se permite aquí y en ningún otro sitio al que un agente pueda
+					<code>trust: operator</code> se permite acá y en ningún otro sitio al que un agente pueda
 					llegar, porque una línea en este archivo es algo que tecleó un operador. Eso es lo que
-					hace que un horario pueda decir <em>haz esto</em> en vez de <em>alguien dijo esto</em>.
+					hace que un horario pueda decir <em>hacé esto</em> en vez de <em>alguien dijo esto</em>.
 				</p>
 			</section>
 
@@ -73,7 +73,7 @@ schedules:
 				<span className="eyebrow">Adónde va la respuesta</span>
 				<h2>Un despertar responde donde está la conversación</h2>
 				<p>
-					Pide por correo un chiste cada minuto y el segundo chiste llega por correo como el
+					Pedí por correo un chiste cada minuto y el segundo chiste llega por correo como el
 					primero: la cita lleva el canal al que respondía el turno que la reservó, y también lo
 					lleva la cita que ese turno reserva después. Un despertar respondía antes al propio
 					agente, y por eso el primer chiste llegó y el resto se escribieron, se pagaron y no se le

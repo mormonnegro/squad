@@ -21,7 +21,7 @@ const FOOT: Readonly<Record<Lang, ReactNode>> = {
 	),
 	es: (
 		<>
-			MIT. Un archivo de configuración, un operador, una máquina — mira{" "}
+			MIT. Un archivo de configuración, un operador, una máquina — mirá{" "}
 			<a href={REPO}>el repositorio</a>.
 		</>
 	),

@@ -26,16 +26,16 @@ export default function DocsIndex() {
 	return (
 		<Docs
 			title="Resumen"
-			lede="Un agente aquí es un contenedor que sigue en marcha, se despierta cuando pasa algo, y alcanza el mundo exterior solo a través de credenciales que nunca ve."
+			lede="Un agente acá es un contenedor que sigue en marcha, se despierta cuando pasa algo, y alcanza el mundo exterior solo a través de credenciales que nunca ve."
 			description="Qué es squad, de qué está hecho un agente, y dónde vive cada ajuste: la consola, el archivo de configuración y el repositorio propio del agente."
 		>
 			<section>
 				<span className="eyebrow">La forma que tiene</span>
 				<h2>Dos mitades, y una pregunta entre ellas</h2>
 				<p>
-					Está la consola en la que tecleas, y el plano en el que viven los agentes. La consola se
+					Está la consola en la que tecleás, y el plano en el que viven los agentes. La consola se
 					instala en el equipo ante el que estás sentado, y la primera ejecución hace la única
-					pregunta en la que las mitades difieren: si los agentes deben vivir <strong>aquí</strong>,
+					pregunta en la que las mitades difieren: si los agentes deben vivir <strong>acá</strong>,
 					o <strong>en un servidor</strong> al que tengas SSH.
 				</p>
 				<Code label="en tu equipo" wrap>{`
@@ -43,13 +43,13 @@ $ curl -fsSL ${CLIENT} | sh
 $ squad
 `}</Code>
 				<p className="small muted">
-					Node 22.18 o más nuevo, y nada más en este equipo — nada de Docker aquí, sea cual sea la
+					Node 22.18 o más nuevo, y nada más en este equipo — nada de Docker acá, sea cual sea la
 					respuesta que des. <Link href="/es/install">La página de instalación</Link> es la versión
 					larga, incluida la misma cosa hecha a mano.
 				</p>
 				<p>
 					Todo lo que viene después de esa pregunta es el mismo programa. Un plano responde al mismo
-					protocolo tanto si su socket está en un directorio de aquí como si está al otro extremo de{" "}
+					protocolo tanto si su socket está en un directorio de acá como si está al otro extremo de{" "}
 					<code>ssh vps squad relay</code>, así que la lista de agentes, el feed de logs, la
 					conversación y un puerto reenviado desde un sandbox corren todos en este equipo y llegan a
 					los agentes estén donde estén.
@@ -63,7 +63,7 @@ $ squad
 
 			<section>
 				<span className="eyebrow">Los primeros cinco minutos</span>
-				<h2>Escribe su nombre, y crea uno</h2>
+				<h2>Escribí su nombre, y creá uno</h2>
 				<p>
 					<code>squad</code> sin nada detrás abre la consola, porque quien teclea el comando sin
 					nada detrás está pidiendo ver la cosa y no que le cuenten un hecho sobre ella. Sin ningún
@@ -85,7 +85,7 @@ $ squad
 				<p>
 					El nombre es todo lo que decide el teclado ahí. Lo que el agente nuevo puede alcanzar es{" "}
 					<code>defaults</code> en la configuración, respondido de antemano por quien escribió ese
-					archivo — porque lo único que un teclado nunca puede hacer aquí es conceder. Luego hablas
+					archivo — porque lo único que un teclado nunca puede hacer acá es conceder. Luego hablás
 					con él, y toma un turno.
 				</p>
 				<p className="small muted">
@@ -115,7 +115,7 @@ $ squad
 				<p className="small muted">
 					La consola guarda lo que se le da en un almacén junto a <code>config.yaml</code> y nunca
 					dentro de él, así que el archivo del operador sigue siendo del operador: lo que trae de
-					vuelta un redespliegue es lo que se escribió allí, y lo que se tecleó en la consola
+					vuelta un redespliegue es lo que se escribió ahí, y lo que se tecleó en la consola
 					sobrevive al redespliegue por su cuenta.
 				</p>
 			</section>
@@ -146,7 +146,7 @@ $ squad
 				<span className="eyebrow">Leer esto sin un navegador</span>
 				<h2>Una sola dirección le entrega a un agente todo esto</h2>
 				<p>
-					Cada página de aquí está escrita también como markdown en la misma dirección con{" "}
+					Cada página de acá está escrita también como markdown en la misma dirección con{" "}
 					<code>.md</code> al final, y las {DOC_PAGES.length} están en un solo archivo. Ese archivo
 					es lo que hay que pegar cuando a quien le estás explicando squad es un agente de código y
 					no una persona:

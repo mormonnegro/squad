@@ -65,7 +65,7 @@ const USES: [Use, ...Use[]] = [
 			{
 				said: {
 					en: "every morning at 8, read the board and mail me the things that are stuck on me",
-					es: "todas las mañanas a las 8, lee el tablero y mándame por correo lo que está frenado en mí",
+					es: "todas las mañanas a las 8, leé el tablero y mandame por mail lo que está frenado en mí",
 				},
 			},
 			{
@@ -93,7 +93,7 @@ const USES: [Use, ...Use[]] = [
 			["linear", "list_issues · ENG"],
 			["github", "list_pull_requests · squad"],
 			["read", "memory/brief/yesterday.md"],
-			["email", { en: "you · “Two things are on you”", es: "a ti · «Dos cosas dependen de ti»" }],
+			["email", { en: "you · “Two things are on you”", es: "a vos · «Dos cosas dependen de vos»" }],
 		],
 		took: 141,
 	},
@@ -108,7 +108,7 @@ const USES: [Use, ...Use[]] = [
 			{
 				said: {
 					en: "when a check fails on a pull request, work out why and fix it",
-					es: "cuando falle un check en un pull request, averigua por qué y arréglalo",
+					es: "cuando falle un check en un pull request, averiguá por qué y arreglalo",
 				},
 			},
 			{
@@ -156,7 +156,7 @@ const USES: [Use, ...Use[]] = [
 			{
 				said: {
 					en: "when a bug lands on the ENG board, try to reproduce it before I look at it",
-					es: "cuando entre un bug al tablero ENG, intenta reproducirlo antes de que yo lo mire",
+					es: "cuando entre un bug al tablero ENG, intentá reproducirlo antes de que yo lo mire",
 				},
 			},
 			{
@@ -199,13 +199,13 @@ const USES: [Use, ...Use[]] = [
 			{
 				said: {
 					en: "every signup on a company domain: find out what they do and draft me the first mail",
-					es: "cada alta con dominio de empresa: averigua a qué se dedican y escríbeme el primer correo",
+					es: "cada alta con dominio de empresa: averiguá a qué se dedican y escribime el primer mail",
 				},
 			},
 			{
 				text: {
 					en: "I will send none of them. You get the drafts and press send — I hold the mailbox, you hold that button.",
-					es: "No voy a enviar ninguno. Los borradores te llegan a ti y tú das a enviar: el buzón es mío, ese botón es tuyo.",
+					es: "No voy a mandar ninguno. Los borradores te llegan a vos y vos apretás enviar: el buzón es mío, ese botón es tuyo.",
 				},
 			},
 			{
@@ -237,7 +237,7 @@ const USES: [Use, ...Use[]] = [
 				"email",
 				{
 					en: "you · “Four drafts, ready to send”",
-					es: "a ti · «Cuatro borradores, listos para enviar»",
+					es: "a vos · «Cuatro borradores, listos para mandar»",
 				},
 			],
 		],
@@ -262,7 +262,7 @@ const USES: [Use, ...Use[]] = [
 					es: "38 de los 40 GB son /var/lib/docker, y 21 de esos son caché de build de imágenes que ya nadie etiqueta.",
 				},
 			},
-			{ said: { en: "prune it", es: "límpialo" } },
+			{ said: { en: "prune it", es: "limpialo" } },
 			{
 				text: {
 					en: "21 GB back, and the box is at 45%. That ran as root on this agent's own machine, so there was nothing outside it to get wrong.",

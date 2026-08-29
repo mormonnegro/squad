@@ -87,7 +87,7 @@ curl -X POST http://localhost:8787/hooks/deploys \\
 					<Link href="/es/docs/email/">el correo</Link> salen a buscar en vez de ser buscados, así
 					que ninguno cuesta un dominio, un certificado ni nada publicado. Son también los dos que
 					pueden emparejarse a una persona, que es lo que les permite instruir. Si nada necesita
-					despertar a tus agentes desde fuera, el puerto 8787 es algo que no abres nunca.
+					despertar a tus agentes desde fuera, el puerto 8787 es algo que no abrís nunca.
 				</p>
 			</section>
 		</Docs>

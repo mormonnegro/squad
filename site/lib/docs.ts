@@ -67,7 +67,7 @@ export const DOCS: readonly DocGroup[] = [
 				title: { en: "Telegram", es: "Telegram" },
 				blurb: {
 					en: "a bot per agent, paired to you by a phrase",
-					es: "un bot por agente, emparejado contigo por una frase",
+					es: "un bot por agente, emparejado con vos por una frase",
 				},
 			},
 			{

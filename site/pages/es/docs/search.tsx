@@ -57,7 +57,7 @@ export default function Search() {
 					Todo agente la recibe, porque es una herramienta y no un alcance: la pregunta va a un solo
 					host y la respuesta vuelve, y ningún agente se estrecha por quedarse sin ella. Escribir la
 					concesión a mano en <code>deploy/config.yaml</code> sigue funcionando y sigue ganando, si
-					quieres el endpoint fijado en un sitio que una consola no pueda mover.
+					querés el endpoint fijado en un sitio que una consola no pueda mover.
 				</p>
 			</section>
 

@@ -30,7 +30,7 @@ const HOSTS: [string, string, string][] = [
 const FORM: [string, string][] = [
 	[
 		"región",
-		"Dónde está físicamente la máquina. La latencia no importa aquí — nadie teclea en esta cosa, y a un agente que despierta a las tres de la mañana no le importan cuarenta milisegundos. Elige el país bajo cuya ley prefieras que estén tus datos, o el más cercano a ti, y sigue adelante.",
+		"Dónde está físicamente la máquina. La latencia no importa acá — nadie teclea en esta cosa, y a un agente que despierta a las tres de la mañana no le importan cuarenta milisegundos. Elegí el país bajo cuya ley prefieras que estén tus datos, o el más cercano a vos, y seguí adelante.",
 	],
 	[
 		"imagen",
@@ -55,17 +55,17 @@ export default function Server() {
 		<Docs
 			title="Un servidor"
 			lede="Los agentes son contenedores, y los contenedores necesitan una máquina que se quede encendida. La fila más barata de la lista de cualquier proveedor basta, y todos esos proveedores te hacen las mismas cinco preguntas con nombres distintos."
-			description="Alquila un VPS de cinco dólares en cualquier proveedor, entra con una clave SSH o la contraseña de root, y pon el plano en él."
+			description="Alquilá un VPS de cinco dólares en cualquier proveedor, entrá con una clave SSH o la contraseña de root, y poné el plano en él."
 		>
 			<section>
 				<span className="eyebrow">Por qué hay una máquina siquiera</span>
-				<h2>Algo tiene que estar despierto cuando tú no lo estás</h2>
+				<h2>Algo tiene que estar despierto cuando vos no lo estás</h2>
 				<p>
 					Un agente que despierta a las nueve de un día laborable, o en el momento en que falla una
 					compilación, es un agente en un equipo que no se durmió con la tapa. Ese es todo el
 					argumento a favor de un servidor, y es por lo que el requisito es tan pequeño: esta es una
 					máquina que está ociosa casi todo el tiempo y piensa a ráfagas, y el pensar ocurre en el
-					proveedor de modelos al que le diste una clave, no aquí.
+					proveedor de modelos al que le diste una clave, no acá.
 				</p>
 				<p>
 					Así que el fondo de cualquier lista lo mueve.{" "}
@@ -92,7 +92,7 @@ export default function Server() {
 					</tbody>
 				</table>
 				<p className="small muted">
-					Los precios se mueven, así que léelos como la forma y no como la cotización. Lo que no se
+					Los precios se mueven, así que leelos como la forma y no como la cotización. Lo que no se
 					mueve es la forma de la factura: la máquina es un número mensual fijo, y el único otro
 					costo es aquello con lo que piensan los agentes — medido por el proveedor de modelos, y
 					limitado por <Link href="/es/docs/limits/">limitUsd</Link> a cinco dólares al día por
@@ -121,7 +121,7 @@ export default function Server() {
 				<p>
 					Un minuto después de hacer clic en crear hay una dirección IP en la pantalla. Esa
 					dirección, y una manera de entrar, es todo lo que squad necesita de este proveedor — no
-					hay que configurarle nada aquí, y no hay que abrir ningún puerto.
+					hay que configurarle nada acá, y no hay que abrir ningún puerto.
 				</p>
 			</section>
 
@@ -150,16 +150,16 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI… you@your-laptop
 $ ssh-keygen -t ed25519
 `}</Code>
 				<p className="small muted">
-					Pulsa intro en todas sus preguntas. Escribe dos archivos — <code>id_ed25519</code>, que es
+					Pulsá intro en todas sus preguntas. Escribe dos archivos — <code>id_ed25519</code>, que es
 					el secreto y nunca sale de este equipo, y <code>id_ed25519.pub</code>, que es la línea que
-					pegas en la casilla del proveedor. Una máquina más antigua puede tener{" "}
+					pegás en la casilla del proveedor. Una máquina más antigua puede tener{" "}
 					<code>id_rsa.pub</code> en su lugar; también sirve.
 				</p>
 				<p>
-					<strong>Si no lo hace, o prefieres que no</strong>, toma la contraseña de root. Un
-					servidor comprado esta mañana con una contraseña en un correo es un punto de partida
-					perfectamente bueno, y squad espera exactamente ese caso — la siguiente sección es lo que
-					hace al respecto.
+					<strong>Si no lo hace, o preferís que no</strong>, tomá la contraseña de root. Un servidor
+					comprado esta mañana con una contraseña en un correo es un punto de partida perfectamente
+					bueno, y squad espera exactamente ese caso — la siguiente sección es lo que hace al
+					respecto.
 				</p>
 			</section>
 
@@ -205,13 +205,13 @@ Which machine?
 					<strong>Subir una</strong> gasta la contraseña una vez. Tu clave pública sube por la misma
 					conexión que abre la contraseña, añadida a <code>authorized_keys</code> y sin tocar nada
 					más, y después de eso nada pregunta — ni la instalación, ni la consola, ni un puerto
-					reenviado desde un sandbox más tarde. Ejecútalo una segunda vez y una clave que ya esté en
+					reenviado desde un sandbox más tarde. Ejecutalo una segunda vez y una clave que ya esté en
 					el archivo se queda donde está.
 				</p>
 				<p>
 					<strong>Quedarse con la contraseña</strong> es una respuesta real y no el consuelo. Se
 					pide una vez por conexión, y una conexión dura diez minutos de inactividad, así que se
-					escribe más o menos tan a menudo como te alejas de la máquina — y nunca en medio de nada,
+					escribe más o menos tan a menudo como te alejás de la máquina — y nunca en medio de nada,
 					porque la conexión siempre se abre primero, en una terminal desnuda, antes de que se
 					dibuje la consola.
 				</p>
@@ -220,20 +220,20 @@ Which machine?
 						<strong>La pregunta se hace como una preferencia, porque lo es.</strong> Una clave no
 						aparece en tu servidor porque el programa la prefiriera, y una contraseña no se trata
 						como la manera de entrar más débil. Cuando la conexión muere por otra cosa — un nombre
-						que no resuelve, una clave de host que cambió — obtienes lo que dijo <code>ssh</code> y
+						que no resuelve, una clave de host que cambió — obtenés lo que dijo <code>ssh</code> y
 						no un prompt de contraseña encima.
 					</p>
 				</div>
 			</section>
 
 			<section>
-				<span className="eyebrow">Qué aterriza allí</span>
+				<span className="eyebrow">Qué aterriza ahí</span>
 				<h2>Un script, y nada de la consola se queda atrás</h2>
 				<p>
 					La consola envía un único script de shell por esa conexión. Instala Docker si no hay, pone
 					el repositorio en <code>/opt/squad</code>, escribe una configuración con un agente y un
 					techo de cinco dólares al día, arranca el plano y deja <code>squad</code> en el PATH de
-					esa máquina. Luego te deja en la consola, aquí, en tu propio equipo.
+					esa máquina. Luego te deja en la consola, acá, en tu propio equipo.
 				</p>
 				<p>
 					Ese script se sostiene solo, y ejecutarlo en la terminal del propio servidor es la misma
@@ -255,15 +255,15 @@ $ curl -fsSL ${INSTALL} | sh
 				<h2>No hay puerto, así que no hay firewall que escribir</h2>
 				<p>
 					La superficie de control es un socket unix en el directorio de estado y nunca sale de la
-					máquina. Nada se publica, nada escucha por ti, y no hay cuenta que crear ni token que
+					máquina. Nada se publica, nada escucha por vos, y no hay cuenta que crear ni token que
 					emitir: SSH ya decide quién puede tocar ese host, y tocar ese host es todo lo que
 					significa tener ese socket. Así que el firewall del proveedor puede quedarse exactamente
 					como lo dejó su valor por defecto.
 				</p>
 				<p>
-					La única excepción es deliberada y tú la eliges.{" "}
+					La única excepción es deliberada y vos la elegís.{" "}
 					<Link href="/es/docs/webhooks/">Los webhooks</Link> publican el puerto <code>8787</code>,
-					que solo acepta peticiones firmadas — y solo lo necesitas si algo en internet tiene que
+					que solo acepta peticiones firmadas — y solo lo necesitás si algo en internet tiene que
 					poder despertar a un agente. Telegram y el correo no necesitan nada publicado, porque
 					salen ellos en vez de ser alcanzados.
 				</p>
@@ -280,7 +280,7 @@ $ curl -fsSL ${INSTALL} | sh
 			</section>
 
 			<section>
-				<span className="eyebrow">Si cambias de idea</span>
+				<span className="eyebrow">Si cambiás de idea</span>
 				<h2>La respuesta se recuerda, y un comando la mueve</h2>
 				<p>
 					Dónde viven los agentes se pregunta una vez y se guarda en{" "}

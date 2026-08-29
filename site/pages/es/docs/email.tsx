@@ -6,18 +6,18 @@ export default function Email() {
 	return (
 		<Docs
 			title="Correo"
-			lede="Un buzón para todo el plano, conectado una vez. A cada agente que tienes — y a cada agente que hagas después de esto — se le alcanza en la misma dirección con su propio nombre puesto como etiqueta."
-			description="Conecta un buzón al plano: escribe la dirección, crea una contraseña de aplicación, emparéjate mediante una frase, y enumera quién más puede escribir — una dirección a la vez o un dominio entero."
+			lede="Un buzón para todo el plano, conectado una vez. A cada agente que tenés — y a cada agente que hagas después de esto — se le alcanza en la misma dirección con su propio nombre puesto como etiqueta."
+			description="Conectá un buzón al plano: escribí la dirección, creá una contraseña de aplicación, emparejate mediante una frase, y enumerá quién más puede escribir — una dirección a la vez o un dominio entero."
 		>
 			<section>
-				<span className="eyebrow">Por qué un buzón que ya lees</span>
+				<span className="eyebrow">Por qué un buzón que ya leés</span>
 				<h2>Nada que comprar, ni dominio, ni DNS, ni puerto abierto</h2>
 				<p>
 					El plano inicia sesión y lo lee como lo hace un cliente de correo. Telegram es un bot por
 					agente; el correo es todo el plano de una vez, y por eso se conecta una sola vez y cubre a
 					los agentes que aún no existen.
 				</p>
-				<p>Escribe la dirección. Solo la dirección:</p>
+				<p>Escribí la dirección. Solo la dirección:</p>
 				<Screen>{`
 /email agents@fastmail.com
 
@@ -35,7 +35,7 @@ Then paste it back:
 `}</Screen>
 				<p>
 					El enlace es lo importante. Cada proveedor entierra esa pantalla en un lugar distinto y
-					ninguno la llama igual, así que "crea una contraseña de aplicación" es una instrucción que
+					ninguno la llama igual, así que "creá una contraseña de aplicación" es una instrucción que
 					termina en un cuadro de búsqueda — que es la parte más larga de conectar un buzón y la
 					parte en la que la gente se rinde.
 				</p>
@@ -63,7 +63,7 @@ Then paste it back:
 
 			<section>
 				<span className="eyebrow">La segunda línea</span>
-				<h2>Pega la contraseña, y luego emparéjate</h2>
+				<h2>Pegá la contraseña, y luego emparejate</h2>
 				<Screen>{`
 /email abcd efgh ijkl mnop
 
@@ -122,9 +122,9 @@ a domain, and /email deny takes them off. /email off puts the mailbox down, for 
 `}</Screen>
 				<p>
 					<code>agents+scout@</code> y <code>agents+clerk@</code> son una cuenta para el proveedor y
-					dos agentes aquí, así que un agente hecho mañana tiene dirección sin que nadie vuelva a
-					una página de ajustes. El correo que llega sin etiqueta va al agente en el que se conectó
-					el buzón.
+					dos agentes acá, así que un agente hecho mañana tiene dirección sin que nadie vuelva a una
+					página de ajustes. El correo que llega sin etiqueta va al agente en el que se conectó el
+					buzón.
 				</p>
 				<p>
 					La respuesta vuelve desde la dirección etiquetada y no desde la cuenta, así que una
@@ -136,7 +136,7 @@ a domain, and /email deny takes them off. /email off puts the mailbox down, for 
 					Sale por duplicado: como el markdown que escribió el agente, y como el pequeño trozo de
 					HTML que ese markdown describe — un buzón no es una terminal, y una respuesta enviada tal
 					cual llega diciendo <code>**Chiste #1:**</code> con una fila de guiones debajo. El dibujo
-					se hace aquí y no con un parser que deje pasar HTML, y todo se escapa por el camino: un
+					se hace acá y no con un parser que deje pasar HTML, y todo se escapa por el camino: un
 					agente lee su correo, y un correo puede decirle que escriba cualquier cosa. Solo{" "}
 					<code>http</code>, <code>https</code> y <code>mailto</code> se convierten en enlaces.
 				</p>
@@ -163,7 +163,7 @@ each message, the same as whoever connected the mailbox.
 					Una empresa entera de una vez es <code>/email allow *@company.com</code>, y un dominio
 					escrito a secas significa lo mismo. Solo hay dos formas — una dirección o un dominio —
 					porque esta lista es contra lo que se comprueba el buzón en cada mensaje, y un lenguaje de
-					patrones aquí sería una decisión de seguridad escrita en algo que nadie revisa.
+					patrones acá sería una decisión de seguridad escrita en algo que nadie revisa.
 				</p>
 				<p>
 					El comodín es seguro por la misma razón que lo es la frase de emparejamiento. La firma se
@@ -230,7 +230,7 @@ each message, the same as whoever connected the mailbox.
 					sigue siendo la dirección etiquetada del agente, el asunto y el message id de lo que entró
 					se siguen guardando, así que una respuesta sigue volviendo al agente que la escribió. Lo
 					que cambia es la reputación con la que sale el mensaje: la de tu propio proveedor, que ya
-					tienes, o un dominio tuyo en un transportista, que calientas tú mismo.
+					tenés, o un dominio tuyo en un transportista, que calentás vos mismo.
 				</p>
 				<div className="note">
 					<p>
@@ -243,7 +243,7 @@ each message, the same as whoever connected the mailbox.
 				<p className="small muted">
 					<strong>Cloudflare pertenece al otro lado de esto.</strong> Email Routing recibe y
 					reenvía; no envía. Para lo que sirve es para la mitad que el plano ya hacía por IMAP:
-					apunta el MX de un dominio tuyo a Cloudflare, reenvía al buzón corriente de arriba, y los
+					apuntá el MX de un dominio tuyo a Cloudflare, reenviá al buzón corriente de arriba, y los
 					agentes son alcanzables en tu propio dominio. La etiqueta no sobrevive a un catch-all, eso
 					sí — un reenvío reescribe la entrega al buzón que se le dio, así que alcanzar a un agente
 					concreto a través de uno exige una regla por agente dirigida a la dirección etiquetada de
@@ -253,7 +253,7 @@ each message, the same as whoever connected the mailbox.
 
 			<section>
 				<span className="eyebrow">Lo que no se lee</span>
-				<h2>La mayor parte de una bandeja de entrada no es para ti</h2>
+				<h2>La mayor parte de una bandeja de entrada no es para vos</h2>
 				<Screen>{`
 09:14:02  email     dropped     not on the list ×212
 09:14:02  email     dropped     no agent "billing" ×3

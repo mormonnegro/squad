@@ -6,16 +6,16 @@ export default function Telegram() {
 	return (
 		<Docs
 			title="Telegram"
-			lede="Un bot por agente, conectado con un solo comando y emparejado contigo por una frase. Desde un teléfono, sin una dirección pública, un certificado ni un puerto abierto — porque el bot sale hacia Telegram y no al revés."
+			lede="Un bot por agente, conectado con un solo comando y emparejado con vos por una frase. Desde un teléfono, sin una dirección pública, un certificado ni un puerto abierto — porque el bot sale hacia Telegram y no al revés."
 			description="Conectar un bot de Telegram a un agente: crearlo con BotFather, pegar el token, emparejarte con el enlace o la frase y saber a quién más se escucha en el chat."
 		>
 			<section>
 				<span className="eyebrow">Dos pasos</span>
-				<h2>Crea un bot, y pega de vuelta lo que BotFather te dé</h2>
+				<h2>Creá un bot, y pegá de vuelta lo que BotFather te dé</h2>
 				<p>
-					Envía <code>/newbot</code> a <a href="https://t.me/BotFather">@BotFather</a>, responde las
+					Enviá <code>/newbot</code> a <a href="https://t.me/BotFather">@BotFather</a>, respondé las
 					dos preguntas que hace y te entrega un token. Ese token va a la consola, en el prompt del
-					agente que quieres que sea:
+					agente que querés que sea:
 				</p>
 				<Screen>{`
 /telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw

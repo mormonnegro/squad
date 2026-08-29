@@ -29,7 +29,7 @@ export default function Agents() {
 					alcanzar.
 				</p>
 				<p>
-					El nombre es todo lo que el teclado decide aquí, y por eso el panel lo dice. Puede nombrar
+					El nombre es todo lo que el teclado decide acá, y por eso el panel lo dice. Puede nombrar
 					a un agente y no puede concederle nada. Un nombre ya tomado, o que no es un nombre, se
 					rechaza en el panel con el nombre todavía en el prompt para corregirlo, y lo que se
 					construye aparece donde estaba el <code>+</code>, que es donde ya está el cursor.
@@ -68,7 +68,7 @@ export default function Agents() {
 				<p>
 					Ese repositorio es el agente, no su escritorio. Los turnos empiezan al lado, en un segundo
 					volumen en <code>/home/agent/workspace</code>, y la regla de la casa entra como argv en
-					cada turno: un directorio por proyecto, nada suelto en la raíz, y ordena lo que encuentres
+					cada turno: un directorio por proyecto, nada suelto en la raíz, y ordená lo que encuentres
 					desordenado en vez de dejarlo. Lo dice el plano en vez de estar escrito en{" "}
 					<code>soul.md</code> porque el agente puede reescribir su alma, y una regla que el sujeto
 					puede editar no es una regla.
@@ -89,7 +89,7 @@ export default function Agents() {
 			</section>
 
 			<section>
-				<span className="eyebrow">Declarado, o hecho aquí</span>
+				<span className="eyebrow">Declarado, o hecho acá</span>
 				<h2>Dos clases de agente, y una de ellas está en tu archivo</h2>
 				<p>
 					Un agente puede ser un bloque en <code>config.yaml</code>, que es donde se escriben una
@@ -162,8 +162,8 @@ Nothing has been deleted yet.
 `}</Screen>
 				<p>
 					El contenedor, el repositorio que hay dentro y la conversación — porque un borrado que
-					dejara el nombre ahí en la columna es uno que te dijeron que funcionó y tienes que volver
-					a hacer. Así que pregunta primero, en el propio prompt, y la pregunta se queda con todo el
+					dejara el nombre ahí en la columna es uno que te dijeron que funcionó y tenés que volver a
+					hacer. Así que pregunta primero, en el propio prompt, y la pregunta se queda con todo el
 					teclado hasta que se responde: <code>y</code> borra y cualquier otra tecla se marcha,
 					incluido el retorno que se presionó hace un momento para preguntarla.
 				</p>

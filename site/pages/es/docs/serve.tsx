@@ -30,7 +30,7 @@ is still as unrouted as it was.
 					equipo. Los agentes corren donde está el demonio de Docker — un VPS — y la consola es el{" "}
 					<code>squad</code> de tu propio PATH. Así que el puerto sale en <em>tu</em> loopback, por
 					el socket de control por el que la consola ya hablaba. No se publica nada en el servidor,
-					no cambia ninguna regla de firewall, y el enlace muere cuando cierras la consola en vez de
+					no cambia ninguna regla de firewall, y el enlace muere cuando cerrás la consola en vez de
 					quedarse abierto en una máquina que nadie mira.
 				</p>
 				<p>

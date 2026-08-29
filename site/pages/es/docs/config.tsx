@@ -84,7 +84,7 @@ hooks:                    # los endpoints firmados, y a qué agente llega cada u
 					viniste. La línea bajo la lista es cómo está esa sección de verdad —{" "}
 					<code>1 of 4 providers paid for</code>, la dirección a la que llega el correo — que es el
 					hecho que no puede llevar una fila que dice para qué sirve, y suele ser la razón por la
-					que estás aquí.
+					que estás acá.
 				</p>
 				<p>
 					Hay dos maneras de entrar. La columna es una — la pantalla es su última fila, así que{" "}
@@ -96,11 +96,11 @@ hooks:                    # los endpoints firmados, y a qué agente llega cada u
 
 			<section>
 				<span className="eyebrow">Cuál de los dos gana</span>
-				<h2>Lo que declara el archivo se lee aquí y se cambia solo allí</h2>
+				<h2>Lo que declara el archivo se lee acá y se cambia solo ahí</h2>
 				<p>
 					Todo lo que se da en la consola vive en un almacén junto a <code>config.yaml</code> y
 					nunca dentro de él, así que el archivo del operador sigue siendo del operador. Un
-					redespliegue trae de vuelta lo que se escribió allí, y lo que se tecleó aquí sobrevive al
+					redespliegue trae de vuelta lo que se escribió ahí, y lo que se tecleó acá sobrevive al
 					redespliegue por su cuenta. <code>from the file</code> es una fila que la pantalla no va a
 					tapar y no va a quitar, y lo dice en vez de negarse después.
 				</p>
