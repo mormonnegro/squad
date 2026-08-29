@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Code } from "../../components/Code";
-import { Docs } from "../../components/Docs";
-import { Screen } from "../../components/Screen";
-import { DOC_PAGES, DOCS } from "../../lib/docs";
-import { inLang, useLang } from "../../lib/lang";
-import { CLIENT, PI, SITE } from "../../lib/site";
+import { Code } from "../../../components/Code";
+import { Docs } from "../../../components/Docs";
+import { Screen } from "../../../components/Screen";
+import { DOC_PAGES, DOCS } from "../../../lib/docs";
+import { inLang, useLang } from "../../../lib/lang";
+import { CLIENT, PI, SITE } from "../../../lib/site";
 
 const WHERE: [string, string][] = [
 	[
@@ -44,8 +44,8 @@ $ squad
 `}</Code>
 				<p className="small muted">
 					Node 22.18 or newer, and nothing else on this computer — no Docker here whichever answer
-					you give. <Link href="/install">The install page</Link> is the long version, including the
-					same thing done by hand.
+					you give. <Link href="/es/install">The install page</Link> is the long version, including
+					the same thing done by hand.
 				</p>
 				<p>
 					Everything after that question is the same program. A plane answers the same protocol
@@ -88,8 +88,8 @@ $ squad
 					takes a turn.
 				</p>
 				<p className="small muted">
-					<Link href="/docs/console/">The console</Link> is every key and every command on that
-					screen. <Link href="/docs/agents/">Agents</Link> is what one turns out to be made of.
+					<Link href="/es/docs/console/">The console</Link> is every key and every command on that
+					screen. <Link href="/es/docs/agents/">Agents</Link> is what one turns out to be made of.
 				</p>
 			</section>
 

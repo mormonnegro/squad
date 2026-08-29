@@ -16,10 +16,16 @@ import {
  * with is the thing the rail lists and the thing the URL says, and there is no third name to keep.
  */
 export function anchorOf(eyebrow: string): string {
-	return eyebrow
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-|-$/g, "");
+	return (
+		eyebrow
+			.toLowerCase()
+			// An accent is a spelling, not a letter of its own, so it comes off rather than becoming a
+			// dash: an address is a thing people retype, and `qué` is `que` to everyone who would.
+			.normalize("NFD")
+			.replace(/\p{Diacritic}/gu, "")
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-|-$/g, "")
+	);
 }
 
 export type Anchor = { readonly id: string; readonly label: string };

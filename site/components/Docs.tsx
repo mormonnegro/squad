@@ -1,19 +1,19 @@
 import Link from "next/link";
-import { useRouter } from "next/router";
 import type { ReactNode } from "react";
 import { DOCS, docsAround, docsGroupOf, markdownOf } from "../lib/docs";
+import { inLang, type Lang, useLang } from "../lib/lang";
 import { anchored, useReading } from "../lib/toc";
 import { Layout } from "./Layout";
 
-function Menu({ here }: { here: string }) {
+function Menu({ here, lang }: { here: string; lang: Lang }) {
 	return (
 		<>
 			{DOCS.map((group) => (
-				<div className="docs-group" key={group.name}>
-					<span className="docs-group-name">{group.name}</span>
+				<div className="docs-group" key={group.name.en}>
+					<span className="docs-group-name">{group.name[lang]}</span>
 					{group.pages.map((page) => (
-						<Link key={page.href} href={page.href} data-current={page.href === here}>
-							{page.title}
+						<Link key={page.href} href={inLang(page.href, lang)} data-current={page.href === here}>
+							{page.title[lang]}
 						</Link>
 					))}
 				</div>
@@ -46,31 +46,33 @@ export function Docs({
 	children: ReactNode;
 }) {
 	// The router gives the route rather than the address, so it is the one without the trailing slash
-	// the export writes. The menu is written with them, and this is where the two are made the same.
-	const here = `${useRouter().pathname.replace(/\/$/, "")}/`;
+	// the export writes, and in Spanish it is the one with `/es` on the front. The menu is written
+	// with a trailing slash and without a language, and this is where the three are made the same.
+	const { lang, here: path } = useLang();
+	const here = `${path.replace(/\/$/, "")}/`;
 	const { previous, next } = docsAround(here);
 	const { body, anchors } = anchored(children);
 	const reading = useReading(anchors.map((anchor) => anchor.id));
 
 	return (
-		<Layout title={title} description={description} markdown={markdownOf(here)}>
+		<Layout title={title} description={description} markdown={markdownOf(here, lang)}>
 			<div className="docs">
 				<details className="docs-menu">
 					<summary>docs</summary>
 					<nav className="docs-nav">
-						<Menu here={here} />
+						<Menu here={here} lang={lang} />
 					</nav>
 				</details>
 
 				<aside className="docs-side">
 					<nav className="docs-nav">
-						<Menu here={here} />
+						<Menu here={here} lang={lang} />
 					</nav>
 				</aside>
 
 				<article className="docs-body">
 					<header className="docs-head">
-						<span className="docs-crumb">{docsGroupOf(here)}</span>
+						<span className="docs-crumb">{docsGroupOf(here, lang)}</span>
 						<h1>{title}</h1>
 						<p className="lede">{lede}</p>
 					</header>
@@ -81,13 +83,13 @@ export function Docs({
 						{previous === undefined ? (
 							<span />
 						) : (
-							<Link href={previous.href} className="jump">
-								← {previous.title}
+							<Link href={inLang(previous.href, lang)} className="jump">
+								← {previous.title[lang]}
 							</Link>
 						)}
 						{next !== undefined && (
-							<Link href={next.href} className="jump">
-								{next.title} →
+							<Link href={inLang(next.href, lang)} className="jump">
+								{next.title[lang]} →
 							</Link>
 						)}
 					</div>
@@ -98,7 +100,9 @@ export function Docs({
 				    of it. */}
 				{anchors.length > 1 && (
 					<aside className="docs-toc">
-						<span className="docs-toc-name">On this page</span>
+						<span className="docs-toc-name">
+							{lang === "es" ? "En esta página" : "On this page"}
+						</span>
 						<nav>
 							{anchors.map((anchor) => (
 								<a key={anchor.id} href={`#${anchor.id}`} data-current={anchor.id === reading}>

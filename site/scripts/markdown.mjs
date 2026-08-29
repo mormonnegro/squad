@@ -247,9 +247,9 @@ const index = [
 	HOW,
 	"",
 	...DOCS.flatMap((group) => [
-		`## ${group.name}`,
+		`## ${group.name.en}`,
 		"",
-		...group.pages.map((page) => `- [${page.title}](${MD.get(page.href)}): ${page.blurb}`),
+		...group.pages.map((page) => `- [${page.title.en}](${MD.get(page.href)}): ${page.blurb.en}`),
 		"",
 	]),
 	"## Elsewhere",

@@ -1,9 +1,31 @@
 import Head from "next/head";
 import Link from "next/link";
-import { useRouter } from "next/router";
 import type { ReactNode } from "react";
-import { REPO, TITLE } from "../lib/site";
+import { inLang, LANG_NAME, type Lang, type Text, useLang } from "../lib/lang";
+import { REPO, SITE, TITLE } from "../lib/site";
 import { Mark } from "./Mark";
+
+const NAV: readonly [string, Text][] = [
+	["/", { en: "overview", es: "resumen" }],
+	["/install/", { en: "install", es: "instalar" }],
+	["/docs/", { en: "docs", es: "docs" }],
+];
+
+const SOURCE: Text = { en: "source", es: "código" };
+
+const FOOT: Readonly<Record<Lang, ReactNode>> = {
+	en: (
+		<>
+			MIT. One config file, one operator, one machine — see <a href={REPO}>the repository</a>.
+		</>
+	),
+	es: (
+		<>
+			MIT. Un archivo de configuración, un operador, una máquina — mira{" "}
+			<a href={REPO}>el repositorio</a>.
+		</>
+	),
+};
 
 export function Layout({
 	children,
@@ -17,7 +39,8 @@ export function Layout({
 	/** This page written for a reader without a browser, where there is one. */
 	markdown?: string;
 }) {
-	const { pathname } = useRouter();
+	const { lang, here, at } = useLang();
+	const other: Lang = lang === "en" ? "es" : "en";
 	const full = title ? `${title} — ${TITLE}` : TITLE;
 
 	return (
@@ -42,6 +65,11 @@ export function Layout({
 				{markdown !== undefined && (
 					<link rel="alternate" type="text/markdown" title={full} href={markdown} />
 				)}
+				{/* The same page in the other language, named so a search engine offers a reader the one
+				    they can read rather than treating the two as a page duplicated. */}
+				<link rel="alternate" hrefLang="en" href={`${SITE}${inLang(here, "en")}`} />
+				<link rel="alternate" hrefLang="es" href={`${SITE}${inLang(here, "es")}`} />
+				<link rel="alternate" hrefLang="x-default" href={`${SITE}${inLang(here, "en")}`} />
 				{/* The consoles arrive a row at a time once they are scrolled to, and the chat pane prints
 				    itself out, which are things only a script can do. Without one they are simply there. */}
 				<noscript>
@@ -54,21 +82,27 @@ export function Layout({
 			</Head>
 
 			<nav className="nav">
-				<Link href="/" className="nav-brand">
+				<Link href={at("/")} className="nav-brand">
 					<Mark />
 					squad
 				</Link>
 				<div className="nav-links">
-					<Link href="/" data-current={pathname === "/"}>
-						overview
+					{NAV.map(([href, label]) => (
+						<Link
+							key={href}
+							href={at(href)}
+							data-current={href === "/" ? here === "/" : here.startsWith(href)}
+						>
+							{label[lang]}
+						</Link>
+					))}
+					<a href={REPO}>{SOURCE[lang]}</a>
+					{/* The same page, not the other language's front door: a reader who wants this page in
+					    Spanish wants this page. It says the language it goes to, in that language, because
+					    a reader looking for it will not be scanning for the name of the one they are in. */}
+					<Link href={inLang(here, other)} className="nav-lang" hrefLang={other} lang={other}>
+						{LANG_NAME[other]}
 					</Link>
-					<Link href="/install" data-current={pathname.startsWith("/install")}>
-						install
-					</Link>
-					<Link href="/docs" data-current={pathname.startsWith("/docs")}>
-						docs
-					</Link>
-					<a href={REPO}>source</a>
 				</div>
 			</nav>
 
@@ -76,9 +110,7 @@ export function Layout({
 
 			<footer>
 				<div className="wrap footer-row">
-					<span>
-						MIT. One config file, one operator, one machine — see <a href={REPO}>the repository</a>.
-					</span>
+					<span>{FOOT[lang]}</span>
 					<span>squad</span>
 				</div>
 			</footer>

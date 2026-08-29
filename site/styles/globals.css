@@ -152,6 +152,20 @@ section[id] {
 	color: var(--text-strong);
 }
 
+/* The one link in the row that does not go to another page but to the same one, so it is set off
+   from the four that do rather than sitting among them as a fifth destination. */
+.nav-links .nav-lang {
+	padding: 0.1rem 0.55rem;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	line-height: 1.5;
+}
+
+.nav-links .nav-lang:hover {
+	color: var(--green);
+	border-color: var(--green);
+}
+
 main {
 	flex: 1;
 }
