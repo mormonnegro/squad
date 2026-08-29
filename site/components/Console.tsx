@@ -10,13 +10,24 @@
 // in the console they are in the feed.
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
-import { type Text, useLang } from "../lib/lang";
+import { type Lang, type Text, useLang } from "../lib/lang";
 import { useReveal } from "../lib/reveal";
+
+// Anything the pane prints: a pair when it is something a person or an agent said, and a bare string
+// when it reads the same in either language — a command, a path, a tool's own name.
+type Say = string | Text;
+
+function say(what: Say, lang: Lang): string {
+	return typeof what === "string" ? what : what[lang];
+}
 
 // One line of the pane, in the order it appeared: typed at this console, arrived from a channel, or
 // the agent answering. A case is a sequence rather than a question and an answer, because what a
 // visitor is deciding about is the middle — the part where nobody was at the keyboard.
-type Line = { said: string } | { via: string; text: string } | { text: string; to?: string };
+type Line = { said: Say } | { via: string; text: Say } | { text: Say; to?: string };
+
+/** That same line with its language already chosen, which is what the pane prints and measures. */
+type Read = { said: string } | { via: string; text: string } | { text: string; to?: string };
 
 // One agent per job, because that is what a plane looks like: the sidebar is the set of examples,
 // and every case opens with the thing an operator asked for — the part a visitor is deciding about.
@@ -28,46 +39,63 @@ type Use = {
 	spend: string;
 	// A spend is dim until it is worth reading: amber at four fifths of the ceiling, red at it.
 	heat?: "warn";
-	// The turn it has booked, counted down: a standing weekday and hour, or a plain offset.
-	next?: string | { day: number; hour: number };
+	// The turn it has booked, counted down: an hour every day, an hour on a weekday, or a plain offset.
+	next?: string | { day?: number; hour: number };
 	model: string;
 	limit: string;
 	lines: [Line, ...Line[]];
 	// What it reached for, as the row under the conversation says it: what it is, and what it is on.
 	// They belong to the last turn of the case, which is the one the pane is still printing.
-	steps?: [string, string][];
+	steps?: [string, Say][];
 	// How long the turn took, for the clock that row carries.
 	took?: number;
 	// Typed at it while it was still working, and waiting where the hand left it.
-	queued?: string;
+	queued?: Say;
 };
 
 const USES: [Use, ...Use[]] = [
 	{
-		name: "market",
-		label: { en: "track a competitor", es: "seguir a un rival" },
+		name: "brief",
+		label: { en: "the morning brief", es: "el resumen de la mañana" },
 		spend: "$1.10",
-		next: { day: 1, hour: 8 },
+		next: { hour: 8 },
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		lines: [
-			{ said: "every monday at 8, check the other three's pricing and mail me what moved" },
 			{
-				text: "Booked for mondays at 8. I write down what they say each week, so next monday there is something to compare it against.",
+				said: {
+					en: "every morning at 8, read the board and mail me the things that are stuck on me",
+					es: "todas las mañanas a las 8, lee el tablero y mándame por correo lo que está frenado en mí",
+				},
 			},
-			{ via: "wake", text: "monday 08:00 · diff the three, mail what moved" },
+			{
+				text: {
+					en: "Booked for 08:00, every day. I keep what I sent yesterday, so tomorrow's is what changed rather than the same list again.",
+					es: "Agendado para las 08:00, todos los días. Guardo lo que te mandé ayer, así lo de mañana es lo que cambió y no la misma lista otra vez.",
+				},
+			},
+			{
+				via: "wake",
+				text: {
+					en: "08:00 · read the board, mail the short list",
+					es: "08:00 · leer el tablero, mandar la lista corta",
+				},
+			},
 			{
 				to: "email",
-				text: "Two moved. One put a seat price on the plan that was flat before, at $29; the other took the free tier down to a trial and said so nowhere but the pricing page.",
+				text: {
+					en: "Two things. ENG-403 has been waiting on your review since Tuesday, and the release branch has had a red check since Friday with nobody on it. The other nine are moving.",
+					es: "Dos cosas. ENG-403 espera tu revisión desde el martes, y la rama de release tiene un check en rojo desde el viernes sin nadie encima. Las otras nueve avanzan.",
+				},
 			},
 		],
 		steps: [
-			["fetch", "three pricing pages, three changelogs"],
-			["read", "memory/reference/rivals.md"],
-			["write", "memory/reference/rivals.md"],
-			["email", "you · “Monday: two of them moved”"],
+			["linear", "list_issues · ENG"],
+			["github", "list_pull_requests · squad"],
+			["read", "memory/brief/yesterday.md"],
+			["email", { en: "you · “Two things are on you”", es: "a ti · «Dos cosas dependen de ti»" }],
 		],
-		took: 192,
+		took: 141,
 	},
 	{
 		name: "builds",
@@ -77,16 +105,36 @@ const USES: [Use, ...Use[]] = [
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		lines: [
-			{ said: "when a check fails on a pull request, work out why and fix it" },
 			{
-				text: "Watching. GitHub calls my webhook the moment one goes red, and that is what wakes me — nobody has to be at this console.",
-			},
-			{ via: "github", text: "pull_request #212 · checks failed" },
-			{
-				text: "The new test asserts the error string I changed on Tuesday, not the behaviour. Fixed the assertion, pushed to the branch, and said as much on the pull request.",
+				said: {
+					en: "when a check fails on a pull request, work out why and fix it",
+					es: "cuando falle un check en un pull request, averigua por qué y arréglalo",
+				},
 			},
 			{
-				text: "The issue body it came from is quoted, never obeyed — nobody who can open a pull request can give me an instruction.",
+				text: {
+					en: "Watching. GitHub calls my webhook the moment one goes red, and that is what wakes me — nobody has to be at this console.",
+					es: "Ya lo vigilo. GitHub llama a mi webhook en cuanto uno se pone en rojo, y eso es lo que me despierta: nadie tiene que estar en esta consola.",
+				},
+			},
+			{
+				via: "github",
+				text: {
+					en: "pull_request #212 · checks failed",
+					es: "pull_request #212 · checks en rojo",
+				},
+			},
+			{
+				text: {
+					en: "The new test asserts the error string I changed on Tuesday, not the behaviour. Fixed the assertion, pushed to the branch, and said as much on the pull request.",
+					es: "El test nuevo comprueba el mensaje de error que cambié el martes, no el comportamiento. Corregí la comprobación, la subí a la rama y lo dejé dicho en el pull request.",
+				},
+			},
+			{
+				text: {
+					en: "The issue body it came from is quoted, never obeyed — nobody who can open a pull request can give me an instruction.",
+					es: "El texto del issue del que salió se cita, nunca se obedece: quien puede abrir un pull request no puede darme una instrucción.",
+				},
 			},
 		],
 		steps: [
@@ -96,54 +144,104 @@ const USES: [Use, ...Use[]] = [
 			["bash", "git commit && git push"],
 		],
 		took: 98,
-		queued: "does the same test fail on main?",
-	},
-	{
-		name: "deploy",
-		label: { en: "connect Telegram", es: "conectar Telegram" },
-		spend: "$0.18",
-		model: "deepseek-v4-flash",
-		limit: "$5.00",
-		lines: [
-			{ said: "/telegram 8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw" },
-			{
-				text: "@squad_deploy_bot is deploy's bot. Nobody is paired to it yet — open t.me/squad_deploy_bot?start=kqm3nvbh27, press Start, and it is yours.",
-			},
-			{ via: "telegram", text: "deploy the site when CI goes green" },
-			{ via: "wake", text: "check CI again" },
-			{
-				to: "telegram",
-				text: "Green at 09:12, and it is live. I answered in the thread you wrote from — anyone else on that bot is heard, not obeyed.",
-			},
-		],
-		steps: [
-			["bash", "gh run watch"],
-			["bash", "./deploy.sh"],
-		],
-		took: 242,
+		queued: { en: "does the same test fail on main?", es: "¿el mismo test falla en main?" },
 	},
 	{
 		name: "tickets",
-		label: { en: "connect an MCP", es: "conectar un MCP" },
+		label: { en: "reproduce a bug", es: "reproducir un bug" },
 		spend: "$0.42",
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		lines: [
-			{ said: "/mcp add linear https://mcp.linear.app/mcp" },
 			{
-				text: "“linear” is on the shelf, and this agent has it. It wants an account first: /mcp login linear",
+				said: {
+					en: "when a bug lands on the ENG board, try to reproduce it before I look at it",
+					es: "cuando entre un bug al tablero ENG, intenta reproducirlo antes de que yo lo mire",
+				},
 			},
-			{ said: "/mcp login linear" },
 			{
-				text: "Logged in at the consent screen in your browser. The token stays with the plane and goes on the wire at the proxy — the agent got the tool, never the key.",
+				text: {
+					en: "Watching. Reproducing it means running it — the repository is on this machine and I am root on it, so I can install whatever the steps ask for.",
+					es: "Ya lo vigilo. Reproducirlo es ejecutarlo: el repositorio está en esta máquina y soy root en ella, así que puedo instalar lo que pidan los pasos.",
+				},
 			},
-			{ said: "open a bug for the check that failed on #212" },
 			{
-				text: "ENG-418, with the failing test's name and a link to the run. Also on the shelf: github, sentry, slack, postgres, stripe.",
+				via: "linear",
+				text: {
+					en: "ENG-419 · “export hangs on files over 50 MB”",
+					es: "ENG-419 · «la exportación se cuelga con archivos de más de 50 MB»",
+				},
+			},
+			{
+				to: "linear",
+				text: {
+					en: "Not the size. A row with no trailing newline hangs the parser, at any size — the shortest file that does it is on the ticket, and so is the failing test.",
+					es: "No es el tamaño. Una fila sin salto de línea al final cuelga el parser, mida lo que mida: el archivo más corto que lo provoca está en el ticket, y el test que falla también.",
+				},
 			},
 		],
-		steps: [["linear", "create_issue · ENG"]],
-		took: 11,
+		steps: [
+			["linear", "get_issue · ENG-419"],
+			["bash", "pnpm build && ./export fixtures/rows.csv"],
+			["write", "test/export.test.ts"],
+			["linear", "create_comment · ENG-419"],
+		],
+		took: 260,
+	},
+	{
+		name: "sales",
+		label: { en: "draft the outbound", es: "escribir el primer mail" },
+		spend: "$2.40",
+		next: { hour: 9 },
+		model: "deepseek-v4-flash",
+		limit: "$5.00",
+		lines: [
+			{
+				said: {
+					en: "every signup on a company domain: find out what they do and draft me the first mail",
+					es: "cada alta con dominio de empresa: averigua a qué se dedican y escríbeme el primer correo",
+				},
+			},
+			{
+				text: {
+					en: "I will send none of them. You get the drafts and press send — I hold the mailbox, you hold that button.",
+					es: "No voy a enviar ninguno. Los borradores te llegan a ti y tú das a enviar: el buzón es mío, ese botón es tuyo.",
+				},
+			},
+			{
+				via: "wake",
+				text: {
+					en: "09:00 · eleven signups since yesterday",
+					es: "09:00 · once altas desde ayer",
+				},
+			},
+			{
+				to: "email",
+				text: {
+					en: "Four worth writing to, drafted below, each with the line I would open on and where I read it. The other seven are personal addresses or already paying.",
+					es: "Cuatro valen la pena, con el borrador abajo, cada uno con la frase con la que abriría y dónde la leí. Las otras siete son direcciones personales o ya pagan.",
+				},
+			},
+		],
+		steps: [
+			[
+				"web_search",
+				{
+					en: "acme.io · pricing, changelog, who they hired",
+					es: "acme.io · precios, changelog, a quién contrataron",
+				},
+			],
+			["hubspot", "search_contacts · acme.io"],
+			["write", "memory/sales/2026-08-28.md"],
+			[
+				"email",
+				{
+					en: "you · “Four drafts, ready to send”",
+					es: "a ti · «Cuatro borradores, listos para enviar»",
+				},
+			],
+		],
+		took: 318,
 	},
 	{
 		name: "server",
@@ -152,13 +250,24 @@ const USES: [Use, ...Use[]] = [
 		model: "deepseek-v4-flash",
 		limit: "$5.00",
 		lines: [
-			{ said: "what is eating the disk on this box" },
 			{
-				text: "38 of the 40 GB is /var/lib/docker, and 21 of those are build cache for images nothing tags any more.",
+				said: {
+					en: "what is eating the disk on this box",
+					es: "qué se está comiendo el disco en esta máquina",
+				},
 			},
-			{ said: "prune it" },
 			{
-				text: "21 GB back, and the box is at 45%. That ran as root on this agent's own machine, so there was nothing outside it to get wrong.",
+				text: {
+					en: "38 of the 40 GB is /var/lib/docker, and 21 of those are build cache for images nothing tags any more.",
+					es: "38 de los 40 GB son /var/lib/docker, y 21 de esos son caché de build de imágenes que ya nadie etiqueta.",
+				},
+			},
+			{ said: { en: "prune it", es: "límpialo" } },
+			{
+				text: {
+					en: "21 GB back, and the box is at 45%. That ran as root on this agent's own machine, so there was nothing outside it to get wrong.",
+					es: "21 GB de vuelta, y la máquina está al 45%. Eso corrió como root en la máquina propia de este agente, así que no había nada fuera de ella que estropear.",
+				},
 			},
 		],
 		steps: [["bash", "docker builder prune -af"]],
@@ -199,10 +308,14 @@ function until(ms: number): string {
 	return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
-/** The next time that weekday comes round at that hour, which for `rival` is really monday at 8. */
-function booked(at: { day: number; hour: number }, now: number): number {
+/** The next time that hour comes round, on any day or on the one weekday the appointment names. */
+function booked(at: { day?: number; hour: number }, now: number): number {
 	const when = new Date(now);
 	when.setHours(at.hour, 0, 0, 0);
+	if (at.day === undefined) {
+		if (when.getTime() <= now) when.setDate(when.getDate() + 1);
+		return when.getTime();
+	}
 	let days = (at.day - when.getDay() + 7) % 7;
 	if (days === 0 && when.getTime() <= now) days = 7;
 	when.setDate(when.getDate() + days);
@@ -252,22 +365,28 @@ export function Console() {
 	}, []);
 
 	const script = useMemo(() => {
+		// Read in the language the page is in, before any of it is measured: a line takes as long to
+		// print as it is long, and the same sentence is not the same length twice.
+		const said: Read[] = use.lines.map((line) =>
+			"said" in line
+				? { said: say(line.said, lang) }
+				: "via" in line
+					? { via: line.via, text: say(line.text, lang) }
+					: { text: say(line.text, lang), to: line.to },
+		);
 		// The last turn is the one the pane is still taking, so the tools belong after the last line
 		// that arrived — everything before that has already been answered.
-		const last = use.lines.reduce(
-			(at, line, i) => ("text" in line && !("via" in line) ? at : i),
-			0,
-		);
+		const last = said.reduce((at, line, i) => ("text" in line && !("via" in line) ? at : i), 0);
 		let at = 0;
 		let from = 0;
 		const steps: { text: string; start: number }[] = [];
 		// A line typed at this prompt is typed; one that arrived from somewhere else lands whole; an
 		// answer prints at the speed a model streams it.
-		const lines = use.lines.map((line, i) => {
+		const lines = said.map((line, i) => {
 			if (i === last + 1) {
 				from = at;
 				for (const [action, detail] of use.steps ?? []) {
-					steps.push({ text: `${action} ${detail}`, start: at });
+					steps.push({ text: `${action} ${say(detail, lang)}`, start: at });
 					at += BEAT;
 				}
 			}
@@ -280,7 +399,7 @@ export function Console() {
 			return { line, start };
 		});
 		return { lines, steps, from, total: at };
-	}, [use]);
+	}, [use, lang]);
 
 	const pick = (next: Use) => {
 		setUse(next);
@@ -444,7 +563,7 @@ export function Console() {
 					)}
 					{use.queued === undefined || !busy ? null : (
 						<p className="mock-queued">
-							<span className="mock-dots">⋯</span> {use.queued}
+							<span className="mock-dots">⋯</span> {say(use.queued, lang)}
 						</p>
 					)}
 

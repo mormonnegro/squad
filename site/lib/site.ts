@@ -22,4 +22,4 @@ export const TITLE = "squad";
 // The hero reads this and so does the meta description, because a page that describes itself one way
 // to a reader and another way to a search result is describing two different projects.
 export const TAGLINE =
-	"Cloud agents that keep working while you sleep. Give one a standing job — watch a repo, track a rival, fix a check that broke — and it wakes on its own to do it, then writes back to tell you how it went.";
+	"Cloud agents on a machine you own. Give one a standing job: it wakes on its own, does it, and writes back.";

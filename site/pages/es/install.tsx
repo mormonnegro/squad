@@ -70,8 +70,7 @@ $ squad
 						Necesita Node 22.18 o más nuevo y nada más — aquí no hay Docker, sea cual sea la
 						respuesta que des. <a href={`${REPO}/blob/main/deploy/client.sh`}>deploy/client.sh</a>{" "}
 						trae el árbol, instala lo que la consola importa, y deja <code>squad</code> en tu PATH.
-						No hay paso de compilación, así que lo que aterriza es lo que se ejecuta, y volver a
-						ejecutarlo es como se actualiza la consola.
+						No hay paso de compilación, así que lo que aterriza es lo que se ejecuta.
 					</p>
 					<p>
 						Lo que pregunta es dónde deben vivir tus agentes: <strong>en este equipo</strong>, lo
@@ -79,33 +78,28 @@ $ squad
 						<strong>en un servidor</strong> al que tengas SSH, lo que significa la instalación
 						corriendo por la conexión que ya tienes. En cualquiera de los dos casos aterriza allí lo
 						mismo — Docker si no hay, el repositorio, una configuración con un agente y un techo de
-						cinco dólares al día, y el plano arrancado — y en cualquiera de los dos termina en la
-						consola. La respuesta se recuerda, y <code>squad connect</code> la mueve.
+						cinco dólares al día — y en cualquiera de los dos termina en la consola.{" "}
+						<code>squad connect</code> mueve la respuesta.
 					</p>
 					<p>
 						Todo lo que viene después de esa pregunta es el mismo programa. Un plano responde al
 						mismo protocolo esté su socket en un directorio de aquí o al otro extremo de{" "}
-						<code>ssh vps squad relay</code>, así que la lista de agentes, el feed de logs, la
-						consola y un puerto reenviado fuera de un sandbox corren todos en este equipo y alcanzan
-						a los agentes estén donde estén. Por eso también un puerto que expones desde un agente
-						se abre en la máquina donde está tu navegador, que es el único sitio donde sirve de
-						algo.
+						<code>ssh vps squad relay</code>, y por eso un puerto que expones desde un agente se
+						abre en la máquina donde está tu navegador.
 					</p>
 					<p className="small muted">
-						No pide ninguna clave. Todas se dan después en la pantalla de configuración de{" "}
-						<code>squad</code>, porque tres secretos en el primer minuto son un primer minuto peor
-						que una pantalla de configuración vacía en el segundo. Ejecuta la instalación otra vez
-						cuando quieras y se convierte en la actualización: hace pull, reconstruye, sustituye el
-						plano, y deja <code>config.yaml</code> y <code>.env</code> en paz — la segunda ejecución
-						es la que desharía en silencio una concesión que alguien añadió.
+						No pide ninguna clave — todas se dan después en la pantalla de configuración de{" "}
+						<code>squad</code>. Volver a ejecutar la instalación es la actualización: hace pull,
+						reconstruye, sustituye el plano, y deja <code>config.yaml</code> y <code>.env</code> en
+						paz.
 					</p>
 					<div className="note">
 						<p>
 							<strong>Nada de la consola se queda en el servidor.</strong> Canaliza un solo script
 							de shell — <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a> — por
-							la conexión SSH, y ese script se sostiene solo: está abajo, y es el mismo que corre
-							cuando eliges este equipo. <a href="#by-hand">La misma instalación a mano</a> está al
-							pie de esta página.
+							la conexión SSH, y ese script se sostiene solo: es el mismo que corre cuando eliges
+							este equipo. <a href="#by-hand">La misma instalación a mano</a> está al pie de esta
+							página.
 						</p>
 					</div>
 				</div>
@@ -118,8 +112,8 @@ $ squad
 					<p>
 						Una vCPU, un gigabyte de memoria y diez gigabytes de disco bastan para unos cuantos
 						agentes, y eso es lo más bajo de la lista de cualquier proveedor. Necesita un Linux con
-						SSH encima y nada más — el instalador trae Docker. Cualquiera de estas sirve, y también
-						un equipo viejo debajo del escritorio o una máquina del trabajo a la que puedas llegar.
+						SSH encima y nada más — el instalador trae Docker. Un equipo viejo debajo del escritorio
+						también sirve.
 					</p>
 					<table className="table">
 						<tbody>
@@ -134,11 +128,10 @@ $ squad
 						</tbody>
 					</table>
 					<p className="small muted">
-						Los precios se mueven, así que tómalos como la forma y no como la cifra. Lo que no se
-						mueve es la forma de la factura: la máquina es un número mensual fijo, y el único otro
-						costo es aquello con lo que piensan los agentes, que mide el proveedor de modelos al que
-						le des una clave y que <code>limitUsd</code> limita a cinco dólares al día por agente
-						hasta que digas otra cosa. No hay nada que pagar por squad en sí.
+						Los precios se mueven; la forma de la factura no. La máquina es un número mensual fijo,
+						y el único otro costo es aquello con lo que piensan los agentes — lo mide el proveedor
+						de modelos al que le des una clave, y <code>limitUsd</code> lo limita a cinco dólares al
+						día por agente. No hay nada que pagar por squad en sí.
 					</p>
 				</div>
 			</section>
@@ -149,8 +142,7 @@ $ squad
 					<h2>Lo que corre en la máquina que les toca a los agentes</h2>
 					<p>
 						Ejecutado en una terminal en vez de por una tubería, el instalador pide las claves sobre
-						la marcha. Esa es toda la diferencia — el mismo script, y las preguntas existen solo
-						porque ahora hay alguien ahí para responderlas.
+						la marcha. Esa es toda la diferencia — el mismo script, con alguien ahí para responder.
 					</p>
 					<Code label="en tu VPS" wrap>{`
 $ curl -fsSL ${INSTALL} | sh
@@ -171,24 +163,15 @@ $ curl -fsSL ${INSTALL} | sh
 						configuración. No se pregunta nada más.
 					</p>
 					<p className="small muted">
-						Deja <code>squad</code> también en el PATH de esa máquina — los mismos comandos escritos
-						allí, y la puerta por la que entra la consola de aquí. Tres variables de entorno son lo
-						que la consola sobrescribe cuando el plano va a vivir a su lado: <code>SQUAD_DIR</code>,{" "}
-						<code>SQUAD_STATE</code> y <code>SQUAD_SHIM</code>. Esa es toda la diferencia entre un
-						equipo y un VPS.
+						Deja <code>squad</code> también en el PATH de esa máquina, e imprime tu propia dirección
+						cuando termina. En cualquiera de los dos extremos que lo hayas ejecutado, esta máquina
+						es una respuesta que la consola guarda en <code>~/.squad/plane.json</code>, y{" "}
+						<code>squad connect</code> vuelve a preguntar.
 					</p>
 					<p className="small muted">
-						En cualquiera de los dos extremos que lo hayas ejecutado, la consola es el comando de
-						arriba y esta máquina es una respuesta que guarda — en <code>~/.squad/plane.json</code>,
-						escrita una vez y nunca vuelta a preguntar. <code>squad connect</code> vuelve a
-						preguntar, y el instalador imprime tu propia dirección cuando termina, así que no hay
-						nada que ir a buscar.
-					</p>
-					<p className="small muted">
-						Volver a ejecutar ese instalador es la actualización, y <code>squad update</code> lo
-						ejecuta en la máquina donde esté el plano. Trae lo último, reconstruye las dos imágenes
-						y sustituye el plano; <code>config.yaml</code> y <code>.env</code> se quedan exactamente
-						como están, así que nada de lo que concediste o le diste desaparece.
+						<code>squad update</code> vuelve a ejecutar ese instalador en la máquina donde esté el
+						plano: trae lo último, reconstruye las dos imágenes y sustituye el plano, dejando{" "}
+						<code>config.yaml</code> y <code>.env</code> exactamente como están.
 					</p>
 				</div>
 			</section>
@@ -200,10 +183,8 @@ $ curl -fsSL ${INSTALL} | sh
 					<p>
 						La superficie de control es un socket unix dentro del directorio de estado y nunca sale
 						de la máquina. No hay puerto que abrir, ni token que emitir, ni nada en lo que iniciar
-						sesión: cuando el plano está en un servidor, SSH ya decide quién puede tocar ese host, y
-						tocar ese host es lo que significa tener el socket. <code>squad relay</code> es la vía
-						de entrada de la consola — el mismo socket sobre un par de tuberías, corriendo por la
-						conexión que ya tienes.
+						sesión: SSH ya decide quién puede tocar ese host, y tocar ese host es lo que significa
+						tener el socket. <code>squad relay</code> es la vía de entrada de la consola.
 					</p>
 					<p>
 						Todo lo que hace la consola viaja por esa única conexión: la lista de agentes, el feed
@@ -211,19 +192,10 @@ $ curl -fsSL ${INSTALL} | sh
 						<code>/serve</code>, y <code>!</code> hacia el sandbox mismo.
 					</p>
 					<p className="small muted">
-						<code>/serve 3000</code> es esa conexión leída al revés. Un agente que construye una
-						página no tiene dónde ponerla — la red del sandbox no tiene rutas y nada se publica
-						fuera del servidor — así que la consola abre el puerto en <em>tu</em> loopback en su
-						lugar, e imprime <code>http://scout.localhost:3000</code>. El enlace funciona en el
-						equipo en el que se imprimió y en ningún otro sitio, y se cierra cuando cierras la
-						consola.
-					</p>
-					<p className="small muted">
-						No tienes que saber que esos comandos existen. Un agente que necesita un servidor de
-						herramientas puede pedirlo él mismo, y la pantalla de consentimiento se abre en tu
-						navegador de aquí — el agente no llega más allá de ponerte la pregunta delante.
-						Cualquier cosa que ampliara su alcance sigue estando en tus manos escribirla, y pedir
-						una te imprime la línea.
+						<code>/serve 3000</code> es esa conexión leída al revés. La red del sandbox no tiene
+						rutas, así que la consola abre el puerto en <em>tu</em> loopback e imprime{" "}
+						<code>http://scout.localhost:3000</code> — un enlace que funciona en el equipo en el que
+						se imprimió y en ningún otro sitio, y que se cierra cuando cierras la consola.
 					</p>
 					<div className="note">
 						<p>
@@ -288,27 +260,16 @@ defaults:
 					</p>
 					<p className="small">
 						Los tres están listados tenga o no este plano sus claves, porque listar uno es la
-						aprobación y la clave es solo lo que lo hace responder. Un modelo al que le falta su
-						clave se rechaza en el proxy hasta que alguien dé una, y la pantalla de configuración de{" "}
-						<code>squad</code> — <code>tab</code> pasados los logs — es la lista de cuáles están
-						esperando, y donde se pega una clave. Vale desde el turno siguiente, sin reiniciar nada
-						y sin tocar este archivo.
+						aprobación y la clave es solo lo que lo hace responder. La pantalla de configuración de{" "}
+						<code>squad</code> — <code>tab</code> pasados los logs — es donde se pega una clave, y
+						vale desde el turno siguiente, sin reiniciar nada y sin tocar este archivo.
 					</p>
 					<p className="small">
-						Esa pantalla también añade modelos, en la fila que dice <code>+ a model</code> — y les
-						pregunta a los proveedores en vez de preguntarte a ti. Que te den una clave y luego te
-						pidan un nombre de modelo es que te pidan el único dato que la clave acaba de permitirle
-						consultar al plano, así que a cada proveedor del que tiene una clave se le pregunta a
-						qué responde, y lo que vuelve es una lista por la que moverse con las flechas. Escribir
-						la estrecha contra el proveedor y el id a la vez, de modo que <code>openai mini</code>{" "}
-						llega sin recordar el id exacto. Escribir uno entero sigue funcionando, para un
-						proveedor sin catálogo al que preguntar.
-					</p>
-					<p className="small">
-						Así que este archivo es donde va un modelo para sobrevivir a un redespliegue, y la
-						consola es donde va uno cuando lo quieres en el turno siguiente. Un modelo añadido allí
-						se guarda junto a este archivo en vez de escribirse dentro, y un modelo que este archivo
-						declara es uno que la consola leerá y se negará a tocar.
+						Esa pantalla también añade modelos, y les pregunta a los proveedores en vez de
+						preguntarte a ti: a cada proveedor del que tiene una clave se le pregunta a qué
+						responde, y lo que vuelve es una lista por la que moverse con las flechas. Así que este
+						archivo es donde va un modelo para sobrevivir a un redespliegue, y la consola es donde
+						va uno cuando lo quieres en el turno siguiente.
 					</p>
 					<p className="small muted">
 						Se lee cuando arranca el plano, así que una edición surte efecto con{" "}

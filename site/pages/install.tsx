@@ -61,41 +61,34 @@ $ squad
 						It needs Node 22.18 or newer and nothing else — no Docker here, whichever answer you
 						give. <a href={`${REPO}/blob/main/deploy/client.sh`}>deploy/client.sh</a> fetches the
 						tree, installs what the console imports, and leaves <code>squad</code> on your PATH.
-						There is no build step, so what lands is what runs, and running it again is how the
-						console updates.
+						There is no build step, so what lands is what runs.
 					</p>
 					<p>
 						The thing it asks is where your agents should live: <strong>on this computer</strong>,
 						which means Docker and a state directory under <code>~/.squad</code>, or{" "}
 						<strong>on a server</strong> you have SSH to, which means the install running down the
 						connection you already have. Either way the same thing lands there — Docker if there is
-						none, the repository, a config with one agent and a ceiling of five dollars a day, and
-						the plane started — and either way it ends on the console. The answer is remembered, and{" "}
-						<code>squad connect</code> moves it.
+						none, the repository, a config with one agent and a ceiling of five dollars a day — and
+						either way it ends on the console. <code>squad connect</code> moves the answer.
 					</p>
 					<p>
 						Everything after that question is the same program. A plane answers the same protocol
 						whether its socket is in a directory here or at the far end of{" "}
-						<code>ssh vps squad relay</code>, so the agent list, the log feed, the console and a
-						port forwarded out of a sandbox all run on this computer and reach the agents wherever
-						they are. That is also why a port you expose from an agent opens on the machine your
-						browser is on, which is the one place it is of any use.
+						<code>ssh vps squad relay</code>, which is why a port you expose from an agent opens on
+						the machine your browser is on.
 					</p>
 					<p className="small muted">
-						It asks for no keys. Every one of them is given later on the config screen in{" "}
-						<code>squad</code>, because three secrets in the first minute is a worse first minute
-						than an empty setup screen in the second. Run the install again any time and it becomes
-						the update: it pulls, rebuilds, swaps the plane in, and leaves <code>config.yaml</code>{" "}
-						and <code>.env</code> alone — the second run is the one that would quietly undo a grant
-						somebody added.
+						It asks for no keys — every one of them is given later on the config screen in{" "}
+						<code>squad</code>. Running the install again is the update: it pulls, rebuilds, swaps
+						the plane in, and leaves <code>config.yaml</code> and <code>.env</code> alone.
 					</p>
 					<div className="note">
 						<p>
 							<strong>Nothing of the console stays on the server.</strong> It pipes one shell script
 							— <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a> — down the SSH
-							connection, and that script stands alone: it is below, and it is the same one that
-							runs when you pick this computer. <a href="#by-hand">The same install by hand</a> is
-							at the bottom of this page.
+							connection, and that script stands alone: it is the same one that runs when you pick
+							this computer. <a href="#by-hand">The same install by hand</a> is at the bottom of
+							this page.
 						</p>
 					</div>
 				</div>
@@ -108,8 +101,7 @@ $ squad
 					<p>
 						One vCPU, a gigabyte of memory and ten gigabytes of disk is enough for a few agents, and
 						that is the bottom of every provider's list. It needs a Linux with SSH on it and nothing
-						else — the installer brings Docker. Any of these work, and so does an old laptop under
-						the desk or a machine at work you can reach.
+						else — the installer brings Docker. An old laptop under the desk works too.
 					</p>
 					<table className="table">
 						<tbody>
@@ -124,11 +116,10 @@ $ squad
 						</tbody>
 					</table>
 					<p className="small muted">
-						Prices move, so treat those as the shape rather than the quote. What does not move is
-						the shape of the bill: the machine is a flat monthly number, and the only other cost is
-						what the agents think with, which is metered by whichever model provider you give a key
-						to and capped by <code>limitUsd</code> at five dollars a day per agent until you say
-						otherwise. There is nothing to pay for squad itself.
+						Prices move; the shape of the bill does not. The machine is a flat monthly number, and
+						the only other cost is what the agents think with — metered by whichever model provider
+						you give a key to, and capped by <code>limitUsd</code> at five dollars a day per agent.
+						There is nothing to pay for squad itself.
 					</p>
 				</div>
 			</section>
@@ -139,8 +130,7 @@ $ squad
 					<h2>What it runs on the machine the agents get</h2>
 					<p>
 						Run at a terminal instead of down a pipe, the installer asks for the keys as it goes.
-						That is the whole difference — same script, and the questions exist only because there
-						is now somebody there to answer them.
+						That is the whole difference — same script, with somebody there to answer.
 					</p>
 					<Code label="on your VPS" wrap>{`
 $ curl -fsSL ${INSTALL} | sh
@@ -161,23 +151,14 @@ $ curl -fsSL ${INSTALL} | sh
 						Nothing else is asked.
 					</p>
 					<p className="small muted">
-						It leaves <code>squad</code> on that machine's PATH too — the same commands typed there,
-						and the door the console here comes through. Three environment variables are what the
-						console overrides when the plane is going to live beside it instead:{" "}
-						<code>SQUAD_DIR</code>, <code>SQUAD_STATE</code> and <code>SQUAD_SHIM</code>. That is
-						the whole of the difference between a laptop and a VPS.
+						It leaves <code>squad</code> on that machine's PATH too, and prints your own address
+						when it finishes. Whichever end you ran it at, this machine is an answer the console
+						keeps in <code>~/.squad/plane.json</code>, and <code>squad connect</code> asks again.
 					</p>
 					<p className="small muted">
-						Whichever end you ran it at, the console is the command above and this machine is an
-						answer it keeps — in <code>~/.squad/plane.json</code>, written once and never asked
-						again. <code>squad connect</code> asks again, and the installer prints your own address
-						when it finishes so there is nothing to go and look up.
-					</p>
-					<p className="small muted">
-						Running that installer again is the update, and <code>squad update</code> runs it on
-						whichever machine the plane is on. It pulls the latest, rebuilds both images and swaps
-						the plane in; <code>config.yaml</code> and <code>.env</code> are left exactly as they
-						are, so nothing you granted or gave it goes away.
+						<code>squad update</code> runs that installer again on whichever machine the plane is
+						on: it pulls the latest, rebuilds both images and swaps the plane in, leaving{" "}
+						<code>config.yaml</code> and <code>.env</code> exactly as they are.
 					</p>
 				</div>
 			</section>
@@ -188,10 +169,9 @@ $ curl -fsSL ${INSTALL} | sh
 					<h2>Then you type its name</h2>
 					<p>
 						The control surface is a unix socket inside the state directory and it never leaves the
-						machine. There is no port to open, no token to issue and nothing to log into: when the
-						plane is on a server, SSH already decides who may touch that host, and touching that
-						host is what holding the socket means. <code>squad relay</code> is the console's way in
-						— the same socket on a pair of pipes, run over the connection you already have.
+						machine. There is no port to open, no token to issue and nothing to log into: SSH
+						already decides who may touch that host, and touching that host is what holding the
+						socket means. <code>squad relay</code> is the console's way in.
 					</p>
 					<p>
 						Everything the console does travels that one connection: the agent list, the log feed,
@@ -199,17 +179,10 @@ $ curl -fsSL ${INSTALL} | sh
 						<code>/serve</code>, and <code>!</code> into the sandbox itself.
 					</p>
 					<p className="small muted">
-						<code>/serve 3000</code> is that connection read backwards. An agent that builds a page
-						has nowhere to put it — the sandbox network is unrouted and nothing is published off the
-						server — so the console opens the port on <em>your</em> loopback instead, and prints{" "}
-						<code>http://scout.localhost:3000</code>. The link works on the laptop it was printed on
-						and nowhere else, and it closes when you close the console.
-					</p>
-					<p className="small muted">
-						You do not have to know those commands exist. An agent that needs a tool server can ask
-						for one itself, and the consent screen opens in your browser here — the agent gets no
-						further than putting the question in front of you. Anything that would widen its reach
-						is still yours to type, and asking for one prints you the line.
+						<code>/serve 3000</code> is that connection read backwards. The sandbox network is
+						unrouted, so the console opens the port on <em>your</em> loopback instead and prints{" "}
+						<code>http://scout.localhost:3000</code> — a link that works on the laptop it was
+						printed on and nowhere else, and closes when you close the console.
 					</p>
 					<div className="note">
 						<p>
@@ -272,26 +245,15 @@ defaults:
 					</p>
 					<p className="small">
 						All three are listed whether or not this plane holds their keys, because listing one is
-						the approval and the key is only what makes it answer. A model missing its key is
-						refused at the proxy until somebody supplies one, and the setup screen in{" "}
-						<code>squad</code> — <code>tab</code> past logs — is the list of which ones are waiting,
-						and where a key is pasted in. It holds from the next turn, with nothing restarted and
-						this file untouched.
+						the approval and the key is only what makes it answer. The setup screen in{" "}
+						<code>squad</code> — <code>tab</code> past logs — is where a key is pasted in, and it
+						holds from the next turn with nothing restarted and this file untouched.
 					</p>
 					<p className="small">
-						That screen adds models too, on the row that says <code>+ a model</code> — and it asks
-						the providers rather than asking you. Being handed a key and then asked for a model name
-						is being asked for the one fact the key just made the plane able to look up, so every
+						That screen adds models too, and it asks the providers rather than asking you: every
 						provider it holds a key for is asked what it answers to, and what comes back is a list
-						to arrow through. Typing narrows it against the provider and the id together, so{" "}
-						<code>openai mini</code> gets there without remembering the exact id. Writing one out in
-						full still works, for a provider with no catalog to ask.
-					</p>
-					<p className="small">
-						So this file is where a model goes to survive a redeploy, and the console is where one
-						goes when you want it on the next turn. A model added there is kept beside this file
-						rather than written into it, and a model this file declares is one the console will read
-						and refuse to touch.
+						to arrow through. So this file is where a model goes to survive a redeploy, and the
+						console is where one goes when you want it on the next turn.
 					</p>
 					<p className="small muted">
 						It is read when the plane starts, so an edit takes hold on{" "}
