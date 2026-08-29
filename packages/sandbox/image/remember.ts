@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { heldLessons, lessonsFile, MOST_LESSONS, record } from "./lessons.ts";
+import { heldLessons, lessonsFile, MOST_LESSONS, record, reminder } from "./lessons.ts";
 
 /**
  * The agent's own file, unlike every other file these extensions touch.
@@ -18,6 +18,39 @@ import { heldLessons, lessonsFile, MOST_LESSONS, record } from "./lessons.ts";
 const LESSONS_FILE = process.env.SQUAD_LESSONS_FILE ?? "/home/agent/.self/memory/lessons.md";
 
 export default function (pi: ExtensionAPI): void {
+	// One pi process is one turn, so these live as long as the thing they describe and no longer.
+	let failed: string | undefined;
+	let reminded = false;
+	let wrote = false;
+
+	pi.on("tool_execution_end", (event) => {
+		// Remember's own failures are the list refusing a lesson, and asking for a lesson about that
+		// would be a loop. Everything else that failed is a candidate for one.
+		if (event.isError && event.toolName !== "remember") failed = event.toolName;
+	});
+
+	// Fires before each call to the model, which is the only place where something can be put in
+	// front of the agent between the failure and the end of the turn.
+	pi.on("context", (event) => {
+		const say = reminder({ failed, reminded, wrote });
+		if (say === undefined) return;
+		reminded = true;
+		return {
+			messages: [
+				...event.messages,
+				{
+					role: "custom" as const,
+					customType: "squad-lesson",
+					content: say,
+					// Not shown: an operator reading the conversation wants what the agent did, and this is
+					// the harness talking to itself. The lesson it produces is visible in the file.
+					display: false,
+					timestamp: Date.now(),
+				},
+			],
+		};
+	});
+
 	pi.registerTool({
 		name: "remember",
 		label: "Remember",
@@ -50,6 +83,9 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_toolCallId, params) {
 			const { lesson } = params as { lesson: string };
+			// Before the write and not after it: an agent that tried and was refused for a full list has
+			// answered the reminder, and telling it again to write one down is telling it what it just did.
+			wrote = true;
 
 			let raw: string | undefined;
 			try {

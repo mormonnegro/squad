@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { heldLessons, LESSON_CHARS, lessonsFile, MOST_LESSONS, record } from "../image/lessons.ts";
+import {
+	heldLessons,
+	LESSON_CHARS,
+	lessonsFile,
+	MOST_LESSONS,
+	record,
+	reminder,
+} from "../image/lessons.ts";
 
 const WHERE = "/home/agent/.self/memory/lessons.md";
 
@@ -59,6 +66,36 @@ describe("record", () => {
 		const recorded = record("LESSON NUMBER 0", holding, WHERE);
 
 		expect(recorded.changed).toBe(false);
+	});
+});
+
+/**
+ * A live turn with only the tool proved the point of this: the agent hit two failures, diagnosed
+ * both of them correctly, said so, and wrote nothing down. Nothing had asked it to.
+ */
+describe("reminder", () => {
+	it("says nothing when the turn has gone fine", () => {
+		expect(reminder({ failed: undefined, reminded: false, wrote: false })).toBeUndefined();
+	});
+
+	it("names the tool that failed, so the agent knows which failure is being asked about", () => {
+		const say = reminder({ failed: "bash", reminded: false, wrote: false });
+
+		expect(say).toContain("bash");
+		expect(say).toContain("remember");
+	});
+
+	/** Half the value is the permission to say no. A lesson written to satisfy a nag costs a slot. */
+	it("offers leaving it, for a failure that taught nothing", () => {
+		expect(reminder({ failed: "bash", reminded: false, wrote: false })).toMatch(/leave it/);
+	});
+
+	it("asks once, and not again for the rest of the turn", () => {
+		expect(reminder({ failed: "bash", reminded: true, wrote: false })).toBeUndefined();
+	});
+
+	it("stays quiet once a lesson has been written", () => {
+		expect(reminder({ failed: "bash", reminded: false, wrote: true })).toBeUndefined();
 	});
 });
 

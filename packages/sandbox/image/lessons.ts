@@ -107,3 +107,36 @@ export function record(lesson: string, holding: readonly string[], where: string
 		text: `Written down. You are carrying ${lessons.length} of ${MOST_LESSONS} lessons.`,
 	};
 }
+
+/** What a turn has been through, as far as it bears on whether to say anything about it. */
+export interface TurnSoFar {
+	/** The tool that failed. Undefined until one does. */
+	readonly failed: string | undefined;
+	/** Whether the agent has already been reminded this turn. */
+	readonly reminded: boolean;
+	/** Whether a lesson was written this turn, which answers the failure and ends the matter. */
+	readonly wrote: boolean;
+}
+
+/**
+ * What to put in front of the agent after something failed, if anything.
+ *
+ * A tool nobody mentions is a tool nobody calls. An agent that has just diagnosed a failure is
+ * already writing the sentence this is asking for, and then it moves on to the next thing and the
+ * sentence goes nowhere — which is what a live turn does when only the tool exists.
+ *
+ * Once per turn, because the alternative is the same paragraph appended over and over to a
+ * conversation that is being cached, and because an agent that says no the first time means it.
+ * Leaving is spelled out for the same reason the list is capped: a lesson written to satisfy a
+ * reminder costs a slot forever and teaches nothing.
+ */
+export function reminder(turn: TurnSoFar): string | undefined {
+	if (turn.failed === undefined || turn.reminded || turn.wrote) return undefined;
+	return [
+		`${turn.failed} failed earlier in this turn.`,
+		"",
+		"If you worked out why, and the reason is the kind of thing that would catch you again on a",
+		"turn where you will not remember this one, write it down with remember before you finish.",
+		"If it was a one-off, or something you would find by looking, leave it.",
+	].join("\n");
+}
