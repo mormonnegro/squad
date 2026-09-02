@@ -67,6 +67,12 @@ export const PROVIDERS: Readonly<
 	mistral: { host: "api.mistral.ai", keyEnv: "MISTRAL_API_KEY", catalog: "/v1/models" },
 	openrouter: { host: "openrouter.ai", keyEnv: "OPENROUTER_API_KEY", catalog: "/api/v1/models" },
 	xai: { host: "api.x.ai", keyEnv: "XAI_API_KEY", catalog: "/v1/models" },
+	// GLM, under the name pi calls it by. No catalog: z.ai documents the completions endpoint and
+	// nothing that says what a key answers to, and every path is authenticated before it is routed, so
+	// a guess could not even be checked from here — it would come back 401 or 404 on a screen where
+	// that reads as the key being wrong. The models get written out instead, which the row for a
+	// provider with nothing to offer already says how to do.
+	zai: { host: "api.z.ai", keyEnv: "ZAI_API_KEY" },
 };
 
 /**
