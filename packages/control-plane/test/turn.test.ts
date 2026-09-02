@@ -21,6 +21,7 @@ interface Invocation {
 	readonly cmd: readonly string[];
 	readonly input: string;
 	readonly timeoutMs: number | undefined;
+	readonly idleMs: number | undefined;
 	readonly workingDir: string | undefined;
 }
 
@@ -64,6 +65,7 @@ class StubSandbox implements TurnSandbox {
 		input: string,
 		options: {
 			timeoutMs?: number;
+			idleMs?: number;
 			workingDir?: string;
 			onStdout?: (chunk: string) => void;
 			signal?: AbortSignal;
@@ -74,6 +76,7 @@ class StubSandbox implements TurnSandbox {
 			cmd,
 			input,
 			timeoutMs: options.timeoutMs,
+			idleMs: options.idleMs,
 			workingDir: options.workingDir,
 		});
 		if (cmd[0] === "find") return this.#find(cmd);
@@ -391,10 +394,11 @@ describe("PiTurnRunner", () => {
 		expect(ran[1]?.cmd).toEqual(expect.arrayContaining(["--model", "claude-haiku-4-5"]));
 	});
 
-	it("bounds a turn so a stuck agent cannot hold its sandbox forever", async () => {
+	it("bounds a turn by its silence rather than by how long it takes", async () => {
 		const sandbox = new StubSandbox();
-		await new PiTurnRunner({ sandbox, timeoutMs: 1000 }).run("a1", "hi");
-		expect(piCall(sandbox)?.timeoutMs).toBe(1000);
+		await new PiTurnRunner({ sandbox, idleMs: 1000 }).run("a1", "hi");
+		expect(piCall(sandbox)?.idleMs).toBe(1000);
+		expect(piCall(sandbox)?.timeoutMs).toBeUndefined();
 	});
 
 	it("reports a failed turn instead of returning empty output", async () => {

@@ -234,7 +234,18 @@ export class DockerSandboxManager {
 		cmd: readonly string[],
 		input: string,
 		options: {
+			/** The longest it may run, however busy it looks. For a command nobody can interrupt. */
 			timeoutMs?: number;
+			/**
+			 * The longest it may go without saying anything, restarted by every byte it writes.
+			 *
+			 * The clock above is the wrong instrument for work whose length is not known in advance: a
+			 * turn spent reading a hundred documents is cut off for being long, which is the one thing
+			 * it was asked to be. Silence is the thing actually worth giving up on — a command still
+			 * printing is a command still working, and one that has said nothing for this long has
+			 * either wedged or is waiting for something that is not coming.
+			 */
+			idleMs?: number;
 			workingDir?: string;
 			/** Called with stdout as it arrives, for a caller that cannot wait for the exit. */
 			onStdout?: (chunk: string) => void;
@@ -268,7 +279,10 @@ export class DockerSandboxManager {
 		// unlucky enough to straddle one into two replacement characters.
 		const outDecoder = new StringDecoder("utf8");
 		const errDecoder = new StringDecoder("utf8");
+		/** Set while there is a silence to break. Anything arriving at all is proof of life. */
+		let spoke: (() => void) | undefined;
 		const collect = (chunk: Buffer): void => {
+			spoke?.();
 			for (const frame of splitter.push(chunk)) {
 				if (frame.stream === STDERR) stderr.push(errDecoder.write(frame.payload));
 				else {
@@ -281,6 +295,7 @@ export class DockerSandboxManager {
 
 		collect(stream.head);
 		let timer: NodeJS.Timeout | undefined;
+		let silence: NodeJS.Timeout | undefined;
 		// Killed inside the container, and not merely disconnected from. Dropping our end of the pipe
 		// takes the output away from us and leaves the process running on the other side of it — which,
 		// when the process is a model taking a turn, means it goes on thinking and goes on being paid
@@ -297,11 +312,30 @@ export class DockerSandboxManager {
 		};
 		try {
 			await new Promise<void>((resolve, reject) => {
+				// Through the same kill as a stop, and not merely by dropping the socket, for the reason
+				// written above it: giving up on a turn while leaving the model running is how a command
+				// somebody was told had ended goes on thinking and goes on being paid for.
+				const giveUp = (why: string): void => {
+					abort();
+					reject(new SandboxTimeoutError(why));
+				};
 				if (options.timeoutMs !== undefined) {
-					timer = setTimeout(() => {
-						stream.socket.destroy();
-						reject(new SandboxTimeoutError(`Command timed out after ${options.timeoutMs}ms`));
-					}, options.timeoutMs);
+					timer = setTimeout(
+						() => giveUp(`Command timed out after ${options.timeoutMs}ms`),
+						options.timeoutMs,
+					);
+				}
+				const idleMs = options.idleMs;
+				if (idleMs !== undefined) {
+					const wait = (): void => {
+						clearTimeout(silence);
+						silence = setTimeout(
+							() => giveUp(`Command said nothing for ${Math.round(idleMs / 1000)}s`),
+							idleMs,
+						);
+					};
+					spoke = wait;
+					wait();
 				}
 
 				stream.socket.on("data", collect);
@@ -317,6 +351,8 @@ export class DockerSandboxManager {
 			});
 		} finally {
 			if (timer) clearTimeout(timer);
+			if (silence) clearTimeout(silence);
+			spoke = undefined;
 			options.signal?.removeEventListener("abort", abort);
 			stream.socket.removeListener("data", collect);
 		}

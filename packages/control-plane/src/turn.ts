@@ -24,7 +24,7 @@ export interface TurnSandbox {
 		cmd: readonly string[],
 		input: string,
 		options?: {
-			timeoutMs?: number;
+			idleMs?: number;
 			workingDir?: string;
 			onStdout?: (chunk: string) => void;
 			signal?: AbortSignal;
@@ -155,7 +155,8 @@ export interface PiTurnRunnerOptions {
 	readonly repoPath?: string;
 	/** Where the agent works, and where a turn starts. Its projects, not itself. */
 	readonly workspacePath?: string;
-	readonly timeoutMs?: number;
+	/** How long a turn may go without a word before it is given up on. Not how long it may take. */
+	readonly idleMs?: number;
 	readonly command?: readonly string[];
 	/** Called with each thing the agent does inside the sandbox, while it is still doing it. */
 	readonly onStep?: (agentId: string, step: AgentStep) => void;
@@ -173,7 +174,23 @@ export interface PiTurnRunnerOptions {
 }
 
 const DEFAULT_REPO_PATH = SANDBOX_REPO_PATH;
-const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * How long a turn may go without saying anything before the plane gives up on it.
+ *
+ * There is deliberately no limit on how long a turn may take. An agent asked to read every document
+ * on a website is being asked for hours of small steps, and a clock that stopped it at ten minutes
+ * threw away the ten minutes as well as the answer — the work was never wrong, only long.
+ *
+ * What is worth giving up on is silence, and this is a generous amount of it: pi writes an event
+ * for every step, a search inside the sandbox is capped at two minutes and so is a call to an MCP
+ * server, so nothing an agent legitimately does is quiet for anything like this long. A turn that
+ * is, is wedged or waiting on something that will never arrive.
+ *
+ * Nothing else needs a clock to be safe. A hand at the console stops a turn with escape, and the
+ * spending ceiling is what stops an agent nobody is watching.
+ */
+const DEFAULT_IDLE_MS = 10 * 60_000;
 
 /**
  * The house rule, said by the plane every turn rather than written into the agent.
@@ -251,7 +268,7 @@ export class PiTurnRunner {
 	readonly #sessionDir: string;
 	readonly #repoPath: string;
 	readonly #workspacePath: string;
-	readonly #timeoutMs: number;
+	readonly #idleMs: number;
 	readonly #command: readonly string[];
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 	readonly #wakeFile: string;
@@ -271,7 +288,7 @@ export class PiTurnRunner {
 		this.#repoPath = options.repoPath ?? DEFAULT_REPO_PATH;
 		this.#workspacePath = options.workspacePath ?? SANDBOX_WORKSPACE_PATH;
 		this.#sessionDir = options.sessionDir ?? `${this.#repoPath}/.sessions`;
-		this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+		this.#idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
 		this.#command = options.command ?? ["pi"];
 		this.#onStep = options.onStep;
 		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
@@ -402,7 +419,7 @@ export class PiTurnRunner {
 				this.commandFor(agentId, thinksWith, lessons),
 				prompt,
 				{
-					timeoutMs: this.#timeoutMs,
+					idleMs: this.#idleMs,
 					workingDir: this.#workspacePath,
 					onStdout: (chunk) => output.push(chunk),
 					signal: stopping.signal,

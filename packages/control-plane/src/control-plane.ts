@@ -199,7 +199,8 @@ export interface ControlPlaneOptions {
 	 */
 	readonly proxyOrigin?: string;
 	readonly webhookPort?: number;
-	readonly turnTimeoutMs?: number;
+	/** How long a turn may go without a word before it is given up on. Not how long it may take. */
+	readonly turnIdleMs?: number;
 	readonly onAudit?: (entry: AuditEntry) => void;
 	readonly onError?: (context: string, error: Error) => void;
 	/** Called with whatever the agent said. Without it a running control plane is silent. */
@@ -482,7 +483,7 @@ export class ControlPlane {
 	readonly #proxyPort: number;
 	readonly #proxyOrigin: string;
 	readonly #webhookPort: number;
-	readonly #turnTimeoutMs: number | undefined;
+	readonly #turnIdleMs: number | undefined;
 	readonly #tokens = new Map<string, string>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
 	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
@@ -498,7 +499,7 @@ export class ControlPlane {
 		this.#proxyPort = options.proxyPort ?? DEFAULT_PROXY_PORT;
 		this.#proxyOrigin = options.proxyOrigin ?? `egress:${this.#proxyPort}`;
 		this.#webhookPort = options.webhookPort ?? DEFAULT_WEBHOOK_PORT;
-		this.#turnTimeoutMs = options.turnTimeoutMs;
+		this.#turnIdleMs = options.turnIdleMs;
 		this.#onError = options.onError;
 		this.#onTurn = options.onTurn;
 		this.#created = new AgentNameStore(join(this.#stateDir, "agents.json"), "createdAt");
@@ -2083,7 +2084,7 @@ export class ControlPlane {
 			// And again for the same reason: a search provider chosen at the console searches on the
 			// next turn rather than on the next container.
 			search: () => this.search(),
-			...(this.#turnTimeoutMs !== undefined ? { timeoutMs: this.#turnTimeoutMs } : {}),
+			...(this.#turnIdleMs !== undefined ? { idleMs: this.#turnIdleMs } : {}),
 		});
 		await this.attach(agent.id, runner);
 

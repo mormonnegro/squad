@@ -87,6 +87,26 @@ suite("taking a turn in a live sandbox", () => {
 		);
 	}, 60_000);
 
+	it("gives up on a command that has gone quiet", async () => {
+		await expect(manager.run(AGENT_ID, ["sleep", "60"], "", { idleMs: 500 })).rejects.toThrow(
+			SandboxTimeoutError,
+		);
+	}, 60_000);
+
+	it("lets a command that keeps talking outlive the silence it is allowed", async () => {
+		// The property the whole idle rule exists for: long is not the same as stuck, and a turn that
+		// is still printing steps must not be cut off for having taken a while over them.
+		const result = await manager.run(
+			AGENT_ID,
+			["sh", "-c", "for i in 1 2 3 4 5 6; do echo $i; sleep 0.3; done"],
+			"",
+			{ idleMs: 600 },
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout.trim().split("\n")).toHaveLength(6);
+	}, 60_000);
+
 	it("has pi installed and answering in the sandbox", async () => {
 		const result = await manager.exec(AGENT_ID, ["pi", "--version"]);
 		expect(result.exitCode).toBe(0);
@@ -99,7 +119,7 @@ suite("taking a turn in a live sandbox", () => {
 		const runner = new PiTurnRunner({
 			sandbox: manager,
 			model: async () => ({ provider: "anthropic" }),
-			timeoutMs: 60_000,
+			idleMs: 60_000,
 		});
 
 		await expect(runner.run(AGENT_ID, "say hi")).rejects.toThrow(TurnError);
