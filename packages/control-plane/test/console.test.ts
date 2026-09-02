@@ -791,6 +791,7 @@ describe("Column", () => {
 		limitUsd: undefined,
 		model: undefined,
 		served: [],
+		asking: [],
 		bot: undefined,
 		mail: undefined,
 	});
@@ -1106,6 +1107,7 @@ describe("reached", () => {
 		limitUsd: undefined,
 		model: undefined,
 		served: [],
+		asking: [],
 		bot: { username: "demo_bot", paired: true },
 		mail: { address: "agents+demo@squad.dev", writes: true },
 	};
@@ -1159,6 +1161,7 @@ describe("standing", () => {
 		limitUsd: 5,
 		model: "deepseek-v4-flash",
 		served: [],
+		asking: [],
 		bot: { username: "demo_bot", paired: true },
 		mail: { address: "agents+demo@squad.dev", writes: true },
 	};
@@ -1239,6 +1242,7 @@ describe("Chat", () => {
 		top?: number | undefined;
 		shell?: string | undefined;
 		confirm?: string | undefined;
+		asking?: string | undefined;
 		menu?: readonly Command[];
 		pick?: number;
 		held?: Span | undefined;
@@ -1253,6 +1257,7 @@ describe("Chat", () => {
 				top: undefined,
 				shell: undefined,
 				confirm: undefined,
+				asking: undefined,
 				menu: [],
 				pick: 0,
 				held: undefined,

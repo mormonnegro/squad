@@ -414,6 +414,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
    /model [<name>]                           what it thinks with, and what else there is
    /mcp [<name>|add …|login …]               the MCP servers it has, and the shelf to add from
    /serve [<port>|stop <port>]               open a port inside it on the machine you are sitting at
+   /reach <host>                             ask to open a host on the way out, answered here with one key
    /telegram [<token>|off]                   the Telegram bot it answers on, and how to pair one
    /email [<address>|<password>|off]         the address it is reached at, and how to connect a mailbox
    /clear                                    forget the conversation, and start it again on nothing
@@ -1427,6 +1428,29 @@ those is the point: this screen writes `injection: { kind: none }` and has nowhe
 anything else, so the console can widen where an agent goes and can never decide what it spends.
 That half stays in the file, which is also why three of the four rows above refuse `⌫` and say which
 list to change them on instead.
+
+The agent hits the refusal before you do, and it is the one that knows which host it wanted. So it
+can say so: `/reach <host>` is on the list of commands it may ask for, and what it writes down is a
+question rather than a grant. The question is drawn on the prompt of whoever is at the console, in
+red, with the host in it:
+
+```
+╭──────────────────────────────────────────────────────────────────────╮
+│ open www.jursoc.unlp.edu.ar?  y / n                                  │
+╰──────────────────────────────────────────────────────────────────────╯
+ y open   n leave closed   ^C quit
+```
+
+`y` opens it, to every agent on this plane, exactly as the box on the config screen would have. Any
+other key leaves it closed, which is why a question that arrives under a hand already typing is safe:
+an accident can only ever refuse. Either answer is written into that agent's conversation, and until
+one is given the agent is marked `?` in the column, so a question raised on a pane nobody is looking
+at is still visible from the one they are.
+
+The agent cannot answer its own question — nothing it may ask for widens what it may reach, and that
+rule is the same one that lets it ask at all. What this replaces is the paragraph it used to write
+instead, telling its operator to go and find this screen: a paragraph read hours later, by which time
+the turn that needed the host is over.
 
 What this does not claim: an agent that can run code in a sandbox and reach the internet can send
 what it read to somewhere you did not choose. That was already true of any grant broad enough to be

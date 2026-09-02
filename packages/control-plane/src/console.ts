@@ -109,6 +109,7 @@ const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
 
 /** What each mark means, said in colour as well as in shape, for whoever is scanning rather than reading. */
 const MARKS = {
+	asking: { glyph: "?", color: "red" },
 	busy: { glyph: "◐", color: "yellow" },
 	running: { glyph: "●", color: "green" },
 	stopped: { glyph: "○", color: "gray" },
@@ -919,8 +920,17 @@ export function Column({
 		.slice(0, spaced ? agents.length : Math.max(0, budget - 3 - (head ? 1 : 0)))
 		.map((agent, index) => {
 			// Thinking is worth a different mark from merely being up: with several agents on screen it
-			// is the one thing you cannot find out by asking again in a second.
-			const mark = busy.has(agent.id) ? MARKS.busy : agent.running ? MARKS.running : MARKS.stopped;
+			// is the one thing you cannot find out by asking again in a second. A question outranks
+			// even that, because it is the one state on this column that will not resolve itself: an
+			// agent waiting on an answer is stopped until somebody comes to this row and gives it.
+			const mark =
+				agent.asking.length > 0
+					? MARKS.asking
+					: busy.has(agent.id)
+						? MARKS.busy
+						: agent.running
+							? MARKS.running
+							: MARKS.stopped;
 			const here = index === cursor;
 			const row = laid(agent);
 			return h(
@@ -1139,6 +1149,7 @@ export function Chat({
 	top,
 	shell,
 	confirm,
+	asking,
 	menu,
 	pick,
 	held,
@@ -1156,6 +1167,8 @@ export function Chat({
 	readonly shell: string | undefined;
 	/** The name being asked for before a delete goes through, or nothing while none was asked for. */
 	readonly confirm: string | undefined;
+	/** The host the agent has asked to reach and nobody has answered, or nothing while it asks for none. */
+	readonly asking: string | undefined;
 	/** What the line being typed could still turn out to be, which is empty unless it began with a slash. */
 	readonly menu: readonly Command[];
 	readonly pick: number;
@@ -1181,12 +1194,21 @@ export function Chat({
 	// only asked left an empty red box with nothing to say what would close it. It names the agent out
 	// loud too, since `delete?` on a pane you may have scrolled or arrowed to is a question about
 	// nothing.
+	//
+	// The agent's own question is drawn the same way and answered with the same key, because it is the
+	// same kind of thing: something that cannot be undone by looking at it afterwards. It gives way to
+	// the delete, which was typed here a keystroke ago and is the more recent hand. Three words and a
+	// host, because a host is already twenty-odd characters and what a yes is worth — every agent on
+	// this plane, until somebody closes it — is a sentence, which is why it is in the line above
+	// rather than in a prompt that would truncate before it reached the keys that answer it.
 	const mark =
 		confirm !== undefined
 			? `delete ${confirm}?  y / n `
-			: shell !== undefined
-				? `! ${here(shell)} `
-				: "> ";
+			: asking !== undefined
+				? `open ${asking}?  y / n `
+				: shell !== undefined
+					? `! ${here(shell)} `
+					: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
@@ -1194,7 +1216,12 @@ export function Chat({
 	const room = Math.max(0, width - mark.length - 1);
 	// Red is the whole warning, and the border carries it too: the box the hand is in changes colour
 	// under a line already half typed, which is what stops the answer from being reflex.
-	const hue = confirm !== undefined ? "red" : shell !== undefined ? "magenta" : "cyan";
+	const hue =
+		confirm !== undefined || asking !== undefined
+			? "red"
+			: shell !== undefined
+				? "magenta"
+				: "cyan";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -2408,6 +2435,11 @@ export function App({
 	// happen at a keyboard: a plane that answered `/delete <name>` without ever having been asked the
 	// question would let a single line through, and that line is the whole of an agent.
 	const [deleting, setDeleting] = useState<string | undefined>(undefined);
+	// The questions answered here that the plane has not been heard to drop yet. The list of agents is
+	// polled every two seconds, so without this the question stays on the prompt after it was answered,
+	// over a keyboard that has already moved on — and the next keystroke would answer it a second time.
+	// Emptied out of the answers themselves, so a host asked for again later is asked again here.
+	const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
 	// The providers, as the plane last answered. Asked for when the screen is opened rather than kept
 	// up to date: nothing else changes them, and the one thing that does is on this keyboard.
 	const [providers, setProviders] = useState<readonly ProviderStanding[]>([]);
@@ -2481,6 +2513,14 @@ export function App({
 	// Undefined on the row under the agents, which is not an agent but the way to make one, and on the
 	// plane's two below it.
 	const selected = agents[spot];
+	/**
+	 * The host the agent on screen is waiting on, if it is waiting on one nobody here has answered.
+	 *
+	 * Only the agent under the cursor, and only its oldest question, because there is one prompt to ask
+	 * it on and a question is a thing you answer about something you can see. The others keep their
+	 * mark in the column and are asked the moment their row is walked to.
+	 */
+	const asking = selected?.asking.find((host) => !answered.has(`${selected.id} ${host}`));
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
 	const walk = configRows(section, providers, models, servers, grants, mail);
@@ -2668,6 +2708,19 @@ export function App({
 		return () => clearInterval(timer);
 	}, [client]);
 
+	// An answer is remembered only until the plane stops mentioning the question, which is the only
+	// thing that can tell this console the plane heard it. Kept from growing by the same line.
+	useEffect(() => {
+		setAnswered((prev) => {
+			if (prev.size === 0) return prev;
+			const open = new Set(
+				agents.flatMap((agent) => agent.asking.map((host) => `${agent.id} ${host}`)),
+			);
+			const kept = [...prev].filter((one) => open.has(one));
+			return kept.length === prev.size ? prev : new Set(kept);
+		});
+	}, [agents]);
+
 	// The operator's end of `/serve`. The plane records which ports should be reachable and this opens
 	// them, here, because this is the machine with the browser on it — an agent running on a server
 	// somewhere gets a link that works on a laptop without a single port being opened on the server.
@@ -2798,6 +2851,24 @@ export function App({
 	const closeHost = useCallback(
 		async (host: string): Promise<void> => say(() => client.dropGrant(host)),
 		[client, say],
+	);
+
+	/**
+	 * Answers a host an agent asked to reach: opens it to every agent here, or leaves it closed.
+	 *
+	 * What comes of it is written into that agent's conversation by the plane, where the question was
+	 * raised and where whoever answered it is looking. Only a socket that never carried the answer is
+	 * reported here — the one failure the plane cannot write down, because it never heard the key.
+	 */
+	const answerReach = useCallback(
+		(agentId: string, host: string, open: boolean): void => {
+			setAnswered((prev) => new Set([...prev, `${agentId} ${host}`]));
+			client.answerReach(agentId, host, open).catch((error: Error) => {
+				setAnswered((prev) => new Set([...prev].filter((one) => one !== `${agentId} ${host}`)));
+				feed.note(agentId, "reach", error.message, true);
+			});
+		},
+		[client, feed],
 	);
 
 	/**
@@ -3185,6 +3256,21 @@ export function App({
 		if (deleting !== undefined) {
 			setDeleting(undefined);
 			if (input === "y" || input === "Y") void ask(deleting, `/delete ${deleting}`, "say");
+			return;
+		}
+		/**
+		 * The agent's own question, which takes the keyboard the same way and for the same reason.
+		 *
+		 * The one difference is who asked, and it is why this is safe to put under a hand that was in the
+		 * middle of something else: every key but `y` means no, so a keystroke that meant to be a letter
+		 * of a sentence closes the question and opens nothing. It can only ever refuse by accident.
+		 *
+		 * Nothing gates this on which pane is up, because the host being asked about is the one on the
+		 * agent under the cursor — on the log feed and the plane's rows there is no agent, so there is no
+		 * question here to answer either, and the config screen's own keys are left alone.
+		 */
+		if (asking !== undefined && selected !== undefined) {
+			answerReach(selected.id, asking, input === "y" || input === "Y");
 			return;
 		}
 		// The same question, about a model or a host, and modal for the same reason: it is asked with the
@@ -4005,6 +4091,7 @@ export function App({
 											? (cwd.get(selected.id) ?? SANDBOX_REPO_PATH)
 											: undefined,
 									confirm: deleting,
+									asking,
 									menu,
 									pick: at,
 									held,
@@ -4156,36 +4243,42 @@ export function App({
 															["n", "cancel"],
 															["^C", "quit"],
 														]
-													: selected === undefined
-														? // Nothing else the row usually offers is true here: there is no conversation to
-															// scroll, no shell to open and no commands, until the name has been given.
-															[
-																["↑↓", "agents"],
-																["⏎", "create"],
+													: asking !== undefined
+														? [
+																["y", "open"],
+																["n", "leave closed"],
 																["^C", "quit"],
 															]
-														: [
-																["↑↓", "agents"],
-																// Only while there is a line to walk back to: left and right do nothing in a
-																// conversation nobody has typed into yet, and a hint for a key that does nothing
-																// is the same lie as a hint for a key the menu has taken.
-																...(typed(said).length > 0 ? [["←→", "history"]] : []),
-																["^U^D", "scroll"],
-																// A key nobody guesses is pressable. The rest of this row is what to press to move
-																// around; this one is what to press to be told what else there is. In the shell the
-																// two of them say nothing true, and the way back out is worth saying instead.
-																...(shell
-																	? [["⌫", "chat"]]
-																	: [
-																			["/", "commands"],
-																			["!", "shell"],
-																		]),
-																["^C", "quit"],
-																// Last, so that the rest of the row does not move as it comes and goes, and shown
-																// only while there is something to stop: the key does nothing at any other time,
-																// and offering it then is how a hint becomes a thing that lies.
-																...(busy.size > 0 ? [["esc", "stop"]] : []),
-															]
+														: selected === undefined
+															? // Nothing else the row usually offers is true here: there is no conversation to
+																// scroll, no shell to open and no commands, until the name has been given.
+																[
+																	["↑↓", "agents"],
+																	["⏎", "create"],
+																	["^C", "quit"],
+																]
+															: [
+																	["↑↓", "agents"],
+																	// Only while there is a line to walk back to: left and right do nothing in a
+																	// conversation nobody has typed into yet, and a hint for a key that does nothing
+																	// is the same lie as a hint for a key the menu has taken.
+																	...(typed(said).length > 0 ? [["←→", "history"]] : []),
+																	["^U^D", "scroll"],
+																	// A key nobody guesses is pressable. The rest of this row is what to press to move
+																	// around; this one is what to press to be told what else there is. In the shell the
+																	// two of them say nothing true, and the way back out is worth saying instead.
+																	...(shell
+																		? [["⌫", "chat"]]
+																		: [
+																				["/", "commands"],
+																				["!", "shell"],
+																			]),
+																	["^C", "quit"],
+																	// Last, so that the rest of the row does not move as it comes and goes, and shown
+																	// only while there is something to stop: the key does nothing at any other time,
+																	// and offering it then is how a hint becomes a thing that lies.
+																	...(busy.size > 0 ? [["esc", "stop"]] : []),
+																]
 			).flatMap(([stroke, does], index) => [
 				h(Text, { color: "cyan", key: `stroke${index}` }, stroke),
 				h(Text, { dimColor: true, key: `does${index}` }, ` ${does}   `),

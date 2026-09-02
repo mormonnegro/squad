@@ -304,6 +304,14 @@ export interface AgentSummary {
 	 */
 	readonly served: readonly Served[];
 	/**
+	 * The hosts it has asked to reach and nobody has answered, oldest first.
+	 *
+	 * On the summary rather than sent as an event for the reason the ports are: this row is read
+	 * every two seconds anyway, and a question that only ever arrived as an event would be a question
+	 * missed by every console that was not running when it was asked.
+	 */
+	readonly asking: readonly string[];
+	/**
 	 * The Telegram bot it answers on, if one is connected, and whether anybody has paired with it.
 	 *
 	 * Here rather than asked for per agent because the column draws the whole fleet at once, and a
@@ -485,6 +493,16 @@ export class ControlPlane {
 	readonly #webhookPort: number;
 	readonly #turnIdleMs: number | undefined;
 	readonly #tokens = new Map<string, string>();
+	/**
+	 * The hosts each agent has asked to reach and nobody has answered yet, oldest first.
+	 *
+	 * Held for as long as this plane runs and no longer. A question is worth keeping while there is
+	 * somebody who might answer it, and a plane that has just restarted has told every console it had
+	 * that it went away — while the agent, which is the thing that actually knows whether it still
+	 * needs the host, finds out the moment it is refused again and can ask again then. What survives
+	 * either way is the asking itself, which is written into the conversation like everything else.
+	 */
+	readonly #asking = new Map<string, string[]>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
 	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
 	readonly #watchers = new Set<(event: PlaneEvent) => void>();
@@ -658,6 +676,7 @@ export class ControlPlane {
 			created: this.#createdIds.has(agent.id),
 			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
 			served: await this.#served.of(agent.id),
+			asking: this.asking(agent.id),
 			bot: bot === undefined ? undefined : { username: bot.username, paired: bot.paired },
 			// Cut down to the two facts a row can draw. The rest of a standing is a pairing link and a
 			// host and a port, which are answers to `/telegram` and `/email` and belong in a sentence.
@@ -725,6 +744,9 @@ export class ControlPlane {
 		this.#tokens.delete(agentId);
 		// The directory was inside the container that just went. Whatever comes back is at its door.
 		this.#cwd.delete(agentId);
+		// A question about an agent that is no longer running is a question with no answer worth
+		// having, and one left here would be asked again about whoever takes the name next.
+		this.#asking.delete(agentId);
 
 		if (options.purge === true) {
 			if (this.#createdIds.delete(agentId)) await this.#created.forget(agentId);
@@ -965,6 +987,67 @@ export class ControlPlane {
 		}
 		if (!(await this.#addedGrants.drop(host))) throw new Error(`No host "${host}" was opened here`);
 		await this.#reregisterAll();
+	}
+
+	/**
+	 * Writes down that an agent wants a host, which is all an agent gets to do about its own reach.
+	 *
+	 * The refusal it met is a 403 with `no_matching_host` in it, and an agent reads that as the
+	 * internet being broken. Before this the only thing it could do about it was write a paragraph
+	 * telling its operator to go and find the grants screen — a paragraph that is read hours later,
+	 * by which time the turn that needed the host is over.
+	 */
+	async #askReach(agentId: string, host: string): Promise<void> {
+		const waiting = this.#asking.get(agentId) ?? [];
+		// Asked twice is asked once. A turn that met the same refusal on four URLs asked for one
+		// thing four times, and four identical questions is a console nobody reads to the end of.
+		if (waiting.includes(host)) return;
+		this.#asking.set(agentId, [...waiting, host]);
+	}
+
+	/** The hosts an agent has asked for that nobody has answered yet, oldest first. */
+	asking(agentId: string): readonly string[] {
+		return this.#asking.get(agentId) ?? [];
+	}
+
+	/**
+	 * Answers one of those questions, which is the only thing that opens a host on an agent's asking.
+	 *
+	 * Both answers are written into the conversation, because a question that disappeared off the
+	 * screen having done something is worse than one that disappeared having done nothing: the yes
+	 * opened a host to every agent on this plane, and that belongs in the record next to the asking.
+	 *
+	 * A host nobody is waiting on is not answered at all. Two consoles watching the same agent both
+	 * see the question, and the second `y` must not be a second grant.
+	 */
+	async answerReach(agentId: string, host: string, open: boolean): Promise<void> {
+		const waiting = this.#asking.get(agentId) ?? [];
+		if (!waiting.includes(host)) return;
+		this.#asking.set(
+			agentId,
+			waiting.filter((one) => one !== host),
+		);
+		if (!open) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `${host} stays closed. Nothing was opened, and the agent is not told to try again.`,
+			});
+			return;
+		}
+		try {
+			const opened = await this.addGrant(host);
+			await this.#record(agentId, {
+				from: "plane",
+				text: `${opened} is open, to every agent on this plane. /config grants takes it back.`,
+			});
+		} catch (error) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `${host} was not opened: ${(error as Error).message}`,
+			});
+		}
 	}
 
 	/**
@@ -1641,6 +1724,7 @@ export class ControlPlane {
 			// agent will actually meet — rather than a second opinion that can be right while the wire
 			// says otherwise.
 			granted: async (host) => new GrantSet(await this.#grantsFor(agentId)).allowsHost(host),
+			askReach: async (host) => this.#askReach(agentId, host),
 			addServer: (name, server) => this.#mcp.add(name, server),
 			// Attaching and dropping change what the agent may reach, because a login's grant lasts only
 			// as long as the agent is holding the server it was made for.

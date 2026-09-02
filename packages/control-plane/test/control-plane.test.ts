@@ -557,6 +557,104 @@ describe("a host opened at the console", () => {
 });
 
 /**
+ * A host an agent asked for, which is a question and not a grant until somebody answers it.
+ *
+ * The distinction is the whole feature. An agent stopped by the proxy used to write a paragraph
+ * telling its operator to go and edit an allowlist, which is a day of waiting if the paragraph is
+ * ever read at all — so it can raise the host itself. What it cannot do is answer, and every test
+ * here that ends with the grants unchanged is that half of it holding.
+ */
+describe("a host an agent asked to reach", () => {
+	let stateDir: string;
+	const planeWith = () => new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "squad-reach-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const hosts = async (plane: ControlPlane) => (await plane.grants()).map((grant) => grant.host);
+
+	it("waits on the operator, and opens nothing on its own", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/reach www.jursoc.unlp.edu.ar");
+
+		expect(plane.asking("scout")).toEqual(["www.jursoc.unlp.edu.ar"]);
+		expect(await hosts(plane)).not.toContain("www.jursoc.unlp.edu.ar");
+	});
+
+	// The agent gets a turn to itself between the ask and the answer, and it can spend it asking
+	// again. A second row would be a second modal for a question already on the screen.
+	it("counts one host once, however often it is asked for", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/reach www.jursoc.unlp.edu.ar");
+		await plane.command("scout", "/reach https://www.jursoc.unlp.edu.ar/carreras");
+
+		expect(plane.asking("scout")).toEqual(["www.jursoc.unlp.edu.ar"]);
+	});
+
+	it("opens it when the answer is yes, and stops waiting", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/reach www.jursoc.unlp.edu.ar");
+		await plane.answerReach("scout", "www.jursoc.unlp.edu.ar", true);
+
+		expect(await hosts(plane)).toContain("www.jursoc.unlp.edu.ar");
+		expect(plane.asking("scout")).toEqual([]);
+	});
+
+	it("opens nothing when the answer is no, and stops waiting", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/reach www.jursoc.unlp.edu.ar");
+		await plane.answerReach("scout", "www.jursoc.unlp.edu.ar", false);
+
+		expect(await hosts(plane)).not.toContain("www.jursoc.unlp.edu.ar");
+		expect(plane.asking("scout")).toEqual([]);
+	});
+
+	// Both answers, because the agent is not woken for either: what became of the question is read
+	// off the conversation on its next turn, and a no that said nothing looks like a no that was
+	// never asked — which is the paragraph all over again.
+	it("writes down what became of it either way", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/reach opened.example.com");
+		await plane.answerReach("scout", "opened.example.com", true);
+		await plane.command("scout", "/reach closed.example.com");
+		await plane.answerReach("scout", "closed.example.com", false);
+
+		const said = ((await plane.transcripts()).scout ?? []).map((one) => one.text).join("\n");
+		expect(said).toContain("opened.example.com is open");
+		expect(said).toContain("closed.example.com stays closed");
+	});
+
+	// A question about an agent that is gone is a question with no answer worth having, and one left
+	// behind would be asked again about whoever takes the name next.
+	it("goes when the agent does", async () => {
+		const plane = planeWith();
+
+		await plane.command("scout", "/reach www.jursoc.unlp.edu.ar");
+		await plane.remove("scout", { purge: true });
+
+		expect(plane.asking("scout")).toEqual([]);
+	});
+
+	it("answers nothing nobody asked for", async () => {
+		const plane = planeWith();
+
+		await plane.answerReach("scout", "www.jursoc.unlp.edu.ar", true);
+
+		expect(await hosts(plane)).not.toContain("www.jursoc.unlp.edu.ar");
+	});
+});
+
+/**
  * What an agent inherits, and what it does not.
  *
  * The rule these keep honest: a grant is only ever something the operator wrote. Defaults are how

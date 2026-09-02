@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { LoginStatus, Reachability } from "@squad/proxy";
+import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
 import { type Served, servedAt, unservable } from "./ports.ts";
@@ -143,6 +144,16 @@ export interface CommandContext {
 	 */
 	granted(host: string): Promise<boolean>;
 	/**
+	 * Puts a host in front of the operator as a question, and opens nothing.
+	 *
+	 * The way out of the rule above without breaking it. An agent that hits a host it may not reach
+	 * has no move except describing the problem to somebody who then has to go and find the screen
+	 * that fixes it, and a request answered a day later is a request that may as well have been
+	 * refused. What this writes down is a question, which widens nothing on its own: the reach is
+	 * opened by a key pressed on a modal with the host name in it, and by nothing else.
+	 */
+	askReach(host: string): Promise<void>;
+	/**
 	 * Takes this agent away: the container, the repository inside it, and the conversation.
 	 *
 	 * The one destructive thing in here, and the exception that says what the rest of this interface
@@ -260,6 +271,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/serve",
 		takes: "[<port>|stop <port>]",
 		does: "open a port inside it on the machine you are sitting at",
+	},
+	{
+		name: "/reach",
+		takes: "<host>",
+		does: "ask to open a host on the way out, answered here with one key",
 	},
 	{
 		name: "/telegram",
@@ -1427,6 +1443,21 @@ export async function runCommand(line: string, context: CommandContext): Promise
 		return `"${argument}" is not a part of this plane. /config takes ${CONFIG_SECTIONS.join(", ")}, or nothing at all for the list of them.`;
 	}
 
+	if (name === "reach") {
+		const read = readHost(argument);
+		if ("refused" in read) return `/reach takes ${read.refused}.`;
+		// Answered rather than asked again. A host already open is the answer to what the asker
+		// actually wanted to know, and putting a question in front of an operator to have them open
+		// something that is open is spending the one thing this whole path is careful with.
+		if (await context.granted(read.host)) {
+			return `${read.host} is already open to this agent. Whatever failed was not the proxy refusing it.`;
+		}
+		await context.askReach(read.host);
+		// The prompt below this has room for the host and the two keys and not for what a yes costs, so
+		// it is said here, on the line the question is asked directly under.
+		return `Asked to open ${read.host}. Nothing is open yet: it is a question at the console until somebody answers it there, and a yes opens the host to every agent on this plane.`;
+	}
+
 	if (name === "limit") {
 		if (argument === "") return spentAgainst(await context.account());
 		if (argument === "off" || argument === "none") {
@@ -1468,6 +1499,10 @@ export interface AgentAsking {
  * much as a person at a consent screen decides it does, with the host name in front of them. Serving
  * a port is the same test read the other way round: it opens a way in rather than a way out, from a
  * console whose operator could already have run anything they liked inside that sandbox.
+ *
+ * `/reach` is the same test again and the clearest case of it: asking to reach a host widens nothing,
+ * because all it writes down is a question. What opens the host is a key pressed on a modal with the
+ * host name on it — the consent screen again, drawn on the operator's own terminal.
  *
  * A refusal is not a dead end, which is the other half of why this is a list and not a ban. It
  * prints the line the operator would type, in their console, under the reason the agent wanted it —

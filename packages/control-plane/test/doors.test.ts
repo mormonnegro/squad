@@ -67,6 +67,7 @@ const summary = (id: string, served: Door["served"][]): AgentSummary => ({
 	limitUsd: undefined,
 	model: undefined,
 	served,
+	asking: [],
 	bot: undefined,
 	mail: undefined,
 });

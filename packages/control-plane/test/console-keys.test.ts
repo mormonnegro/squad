@@ -74,6 +74,7 @@ const listed = (id: string): AgentSummary => ({
 	limitUsd: undefined,
 	model: undefined,
 	served: [],
+	asking: [],
 	bot: undefined,
 	mail: undefined,
 });
@@ -117,6 +118,8 @@ function plane(
 	const unshelved: string[] = [];
 	const opened: string[] = [];
 	const closed: string[] = [];
+	/** What was answered about a host an agent asked for, which is not the same list as `opened`. */
+	const answers: [string, string, boolean][] = [];
 	const offered: string[] = [];
 	const connected: [string, string][] = [];
 	const carried: (CarrierSpec | undefined)[] = [];
@@ -212,6 +215,17 @@ function plane(
 			closed.push(host);
 			reached = reached.filter((grant) => grant.host !== host);
 		},
+		// Answered the way the plane answers it: the question comes off the agent's row, so what the
+		// screen shows afterwards is what the plane says rather than what the keyboard did.
+		answerReach: async (agentId: string, host: string, open: boolean) => {
+			answers.push([agentId, host, open]);
+			roster = roster.map((one) =>
+				one.id === agentId
+					? { ...one, asking: one.asking.filter((waiting) => waiting !== host) }
+					: one,
+			);
+			if (open) reached = [...reached, { id: `reach:${host}`, host, origin: "here" as const }];
+		},
 		addServer: async (name: string, server: McpServer) => {
 			shelved.push([name, server]);
 		},
@@ -290,6 +304,7 @@ function plane(
 		unshelved,
 		opened,
 		closed,
+		answers,
 		offered,
 		connected,
 		carried,
@@ -682,6 +697,99 @@ describe("the console, pressed at", () => {
 
 			expect(showing(console_.screen())).toBe("demo");
 			expect(console_.screen()).toContain("! shell");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
+/**
+ * A host the agent asked for, answered at the console with the one key that means yes.
+ *
+ * The screen is the whole feature. An agent stopped by the proxy can write down which host it
+ * wanted, and that is all it can do — what opens the host is a person reading the name off their
+ * own terminal and pressing a key. So these tests are about the two things that makes true: that
+ * the name is on the screen before anything is opened, and that only `y` opens it.
+ */
+describe("a host an agent asked for", () => {
+	const waiting = (id: string, ...hosts: string[]): AgentSummary => ({
+		...listed(id),
+		asking: hosts,
+	});
+
+	it("names the host on the prompt, and says which keys answer it", async () => {
+		const { client, answers } = plane({ has: [waiting("demo", "www.jursoc.unlp.edu.ar")] });
+		const console_ = open(client, [waiting("demo", "www.jursoc.unlp.edu.ar")]);
+		try {
+			expect(console_.screen()).toContain("open www.jursoc.unlp.edu.ar?");
+			expect(console_.screen()).toContain("y / n");
+			expect(console_.screen()).toContain("y open");
+			// The name being on the screen is not the host being open. Nothing has been answered.
+			expect(answers).toEqual([]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("opens it on a y", async () => {
+		const { client, answers } = plane({ has: [waiting("demo", "www.jursoc.unlp.edu.ar")] });
+		const console_ = open(client, [waiting("demo", "www.jursoc.unlp.edu.ar")]);
+		try {
+			await console_.press("y");
+
+			expect(answers).toEqual([["demo", "www.jursoc.unlp.edu.ar", true]]);
+			expect(console_.screen()).not.toContain("open www.jursoc.unlp.edu.ar");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/**
+	 * The half that makes it safe to raise under a hand that was in the middle of something else.
+	 *
+	 * This question is not asked by the operator, so it can land mid-sentence — and it takes the
+	 * keyboard the moment it does. That is only tolerable because every key but `y` is a no: a
+	 * keystroke meant as a letter closes the question and opens nothing, which is the one direction
+	 * an accident is allowed to go.
+	 */
+	it("takes anything that is not y for a no, and opens nothing", async () => {
+		const { client, answers } = plane({ has: [waiting("demo", "www.jursoc.unlp.edu.ar")] });
+		const console_ = open(client, [waiting("demo", "www.jursoc.unlp.edu.ar")]);
+		try {
+			await console_.press(ENTER);
+
+			expect(answers).toEqual([["demo", "www.jursoc.unlp.edu.ar", false]]);
+			expect(console_.screen()).not.toContain("open www.jursoc.unlp.edu.ar");
+		} finally {
+			console_.close();
+		}
+	});
+
+	// The list is polled every couple of seconds and this test does not wait that long. A question
+	// still on the prompt after it was answered is a second modal over a hand that has moved on, and
+	// the next keystroke would answer it again.
+	it("comes off the prompt before the plane is asked again", async () => {
+		const { client } = plane({ has: [waiting("demo", "one.example.com", "two.example.com")] });
+		const console_ = open(client, [waiting("demo", "one.example.com", "two.example.com")]);
+		try {
+			await console_.press("y");
+
+			// The second question, and only the second: they are asked oldest first, one at a time.
+			expect(console_.screen()).not.toContain("open one.example.com");
+			expect(console_.screen()).toContain("open two.example.com");
+		} finally {
+			console_.close();
+		}
+	});
+
+	// A question raised on a pane nobody is looking at is a question nobody answers. The column is
+	// the only thing on this screen that says anything about an agent the cursor is not on.
+	it("marks the agent in the column, over anything else its row would say", async () => {
+		const { client } = plane({ has: [listed("demo"), waiting("scout", "www.jursoc.unlp.edu.ar")] });
+		const console_ = open(client, [listed("demo"), waiting("scout", "www.jursoc.unlp.edu.ar")]);
+		try {
+			expect(console_.screen()).toContain("? scout");
+			expect(console_.screen()).toContain("● demo");
 		} finally {
 			console_.close();
 		}

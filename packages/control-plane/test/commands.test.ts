@@ -96,6 +96,8 @@ function context(
 	/** The entries the plane wrote down, which is what a typed line turned into rather than what it was. */
 	const admitted: string[] = [];
 	const denied: string[] = [];
+	/** The hosts put in front of the operator as questions, which is not the same list as the grants. */
+	const asked: string[] = [];
 	const here = start.agentId ?? "scout";
 	const named = (name: string) => {
 		const server = shelf.get(name);
@@ -162,6 +164,9 @@ function context(
 			},
 			listening: async (port: number) => (start.bound ?? []).includes(port),
 			granted: async (host: string) => (start.grants ?? []).includes(host),
+			askReach: async (host: string) => {
+				asked.push(host);
+			},
 			addServer: async (name: string, server: McpServer) => {
 				shelf.set(name, server);
 			},
@@ -294,6 +299,7 @@ function context(
 		passwords,
 		admitted,
 		denied,
+		asked,
 	};
 }
 
@@ -782,6 +788,50 @@ describe("/serve", () => {
 
 	it("asks which port when the close has none", async () => {
 		expect(await runCommand("/serve stop", context().context)).toContain("Which port?");
+	});
+});
+
+/**
+ * The one command whose whole value is that it does not do the thing it is named after.
+ *
+ * Every test here that ends in nothing being granted is the command working. What it writes is a
+ * question, and the host is opened by a key pressed on a modal that names it — so a command that
+ * quietly opened anything would have taken the one decision this path exists to leave with a person.
+ */
+describe("/reach", () => {
+	it("files the question and grants nothing", async () => {
+		const plane = context();
+		const said = await runCommand("/reach www.jursoc.unlp.edu.ar", plane.context);
+
+		expect(plane.asked).toEqual(["www.jursoc.unlp.edu.ar"]);
+		expect(said).toContain("Nothing is open yet");
+		// What a yes is worth, said here because the prompt that asks it has room for a host and two
+		// keys and nothing else. An operator who read this as "opened for this agent" was told wrong.
+		expect(said).toContain("every agent on this plane");
+	});
+
+	// A refusal is pasted whole, because a URL is what the proxy said no to and what a hand copies.
+	it("takes the host out of a URL", async () => {
+		const plane = context();
+		await runCommand("/reach https://www.jursoc.unlp.edu.ar/carreras?x=1", plane.context);
+
+		expect(plane.asked).toEqual(["www.jursoc.unlp.edu.ar"]);
+	});
+
+	// Spending an operator's attention on a question with a known answer is the one cost of asking.
+	it("answers rather than asks when the host is already open", async () => {
+		const plane = context({ grants: ["docs.python.org"] });
+		const said = await runCommand("/reach docs.python.org", plane.context);
+
+		expect(plane.asked).toEqual([]);
+		expect(said).toContain("already open");
+	});
+
+	it("says what it takes when it was given nothing", async () => {
+		const plane = context();
+
+		expect(await runCommand("/reach", plane.context)).toContain("/reach takes");
+		expect(plane.asked).toEqual([]);
 	});
 });
 
@@ -1895,6 +1945,13 @@ describe("agentMayNot", () => {
 		expect(agentMayNot("/serve 3000", scout)).toBeUndefined();
 		expect(agentMayNot("/serve stop 3000", scout)).toBeUndefined();
 		expect(agentMayNot("/serve", scout)).toBeUndefined();
+	});
+
+	// The one that looks like it widens reach and does not: what it writes is a question, and the key
+	// that opens the host is pressed on a modal naming it. Refused here, an agent that hit the proxy
+	// would be back to writing a paragraph nobody reads — which is the thing this list exists to end.
+	it("lets it ask for a host, because asking opens nothing", () => {
+		expect(agentMayNot("/reach www.jursoc.unlp.edu.ar", scout)).toBeUndefined();
 	});
 
 	it("lets it ask to be held to less than it is", () => {

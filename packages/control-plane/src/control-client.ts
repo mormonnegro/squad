@@ -218,6 +218,11 @@ export class ControlClient {
 		await this.#once({ op: "drop-grant", host });
 	}
 
+	/** Answers a host this agent asked for: open it to every agent here, or leave it closed. */
+	async answerReach(agentId: string, host: string, open: boolean): Promise<void> {
+		await this.#once({ op: "reach", agentId, host, open });
+	}
+
 	/** Where the web_search tool goes, what it drives, and whether this plane can pay for it. */
 	async search(): Promise<SearchStanding> {
 		const response = await this.#once({ op: "search" });

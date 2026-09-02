@@ -86,6 +86,20 @@ export type ControlRequest =
 	 */
 	| { readonly id: string; readonly op: "add-grant"; readonly host: string }
 	| { readonly id: string; readonly op: "drop-grant"; readonly host: string }
+	/**
+	 * The answer to a host an agent asked for: open it, or leave it closed.
+	 *
+	 * Separate from `add-grant` although a yes ends in the same place, because this one is only an
+	 * answer. It opens a host the agent named and that the plane is still holding a question about,
+	 * so a console cannot turn an answer into a grant for something nobody asked for.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "reach";
+			readonly agentId: string;
+			readonly host: string;
+			readonly open: boolean;
+	  }
 	/** What every provider this plane holds a key for says it will answer to. */
 	| { readonly id: string; readonly op: "offers" }
 	/** Which provider the web_search tool goes through, and whether this plane can pay for it. */
@@ -441,6 +455,9 @@ export class ControlServer {
 				this.#write(socket, { id: request.id, ok: true, text: host });
 			} else if (request.op === "drop-grant") {
 				await this.#plane.dropGrant(request.host);
+				this.#write(socket, { id: request.id, ok: true, text: request.host });
+			} else if (request.op === "reach") {
+				await this.#plane.answerReach(request.agentId, request.host, request.open);
 				this.#write(socket, { id: request.id, ok: true, text: request.host });
 			} else if (request.op === "offers") {
 				this.#write(socket, { id: request.id, ok: true, catalog: await this.#plane.offers() });
