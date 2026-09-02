@@ -108,6 +108,18 @@ describe("the control socket", () => {
 		expect((await client.agents())[0]).toMatchObject({ id: "scout", running: false });
 	});
 
+	// The console and the plane are upgraded apart: the plane is a process that has been up for days,
+	// and the console runs from whatever is on the machine somebody typed `squad` on. A field the older
+	// half does not send yet has to arrive as the empty thing it means, because a screen that read it
+	// as a list went down over a row it could have drawn.
+	it("fills in what an older plane does not say, so a new console can still draw it", async () => {
+		const old = await plane.agents();
+		for (const agent of old) delete (agent as { asking?: unknown }).asking;
+		vi.spyOn(plane, "agents").mockResolvedValue(old);
+
+		expect((await client.agents())[0]?.asking).toEqual([]);
+	});
+
 	it("answers the operator with what the agent said", async () => {
 		await answerWith("scout", () => "four issues are open");
 

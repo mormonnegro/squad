@@ -103,6 +103,20 @@ export function dialLocal(stateDir: string): Dial {
 }
 
 /**
+ * A summary with the hosts an older plane does not send yet put back as no hosts at all.
+ *
+ * The two halves are updated apart. The plane is a process that has been up for days, and this runs
+ * from whatever is on the machine somebody typed `squad` on — so a field added on one side arrives
+ * undefined from the other until the other is restarted, which is a normal minute of any upgrade and
+ * not a broken plane. Filled in here, at the one door every summary comes through, because a screen
+ * that read it as a list took the whole console down over a row it could have drawn: an agent from a
+ * plane that never heard of `/reach` is asking for nothing, which is what an empty list says.
+ */
+function whole(agent: AgentSummary): AgentSummary {
+	return { ...agent, asking: agent.asking ?? [] };
+}
+
+/**
  * Talks to a running control plane over its control socket.
  *
  * Requests are numbered because `logs` streams: responses for it keep arriving while another
@@ -157,7 +171,7 @@ export class ControlClient {
 
 	async agents(): Promise<readonly AgentSummary[]> {
 		const response = await this.#once({ op: "agents" });
-		if ("agents" in response) return response.agents;
+		if ("agents" in response) return response.agents.map(whole);
 		throw new ControlError("unexpected answer to agents");
 	}
 
@@ -171,7 +185,7 @@ export class ControlClient {
 	/** Makes an agent that was not in the config, and waits for its sandbox to be up. */
 	async create(agentId: string): Promise<AgentSummary> {
 		const response = await this.#once({ op: "create", agentId });
-		if ("agent" in response) return response.agent;
+		if ("agent" in response) return whole(response.agent);
 		throw new ControlError("unexpected answer to create");
 	}
 
