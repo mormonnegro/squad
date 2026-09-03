@@ -4,6 +4,14 @@ import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
 import { type Served, servedAt, unservable } from "./ports.ts";
+import {
+	looksLikeGithubToken,
+	type RepoHold,
+	type RepoSpec,
+	type RepoStanding,
+	readPush,
+	readRepo,
+} from "./repos.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -153,6 +161,22 @@ export interface CommandContext {
 	 * opened by a key pressed on a modal with the host name in it, and by nothing else.
 	 */
 	askReach(host: string): Promise<void>;
+	/** The repositories this agent holds, from the operator's file and from here. */
+	repos(): Promise<readonly RepoStanding[]>;
+	/**
+	 * Gives this agent a repository, after asking GitHub whether the plane's token can see it.
+	 *
+	 * The one command here that spends a credential, and it is allowed to because of what it cannot
+	 * do: the token is the plane's, pasted once by the operator, and what this decides is only what it
+	 * is spent on — which repository, and which branches. Answers that the token is missing rather
+	 * than throwing, because a missing token is the ordinary first time and the next line is where it
+	 * gets pasted.
+	 */
+	holdRepo(spec: RepoSpec): Promise<RepoHold>;
+	/** Keeps a GitHub token typed here, and finishes the repository that was waiting on one, if one was. */
+	keepGithubToken(token: string): Promise<RepoHold | undefined>;
+	/** Takes a repository back. Answers whether this agent held it here rather than in the file. */
+	dropRepo(repo: string): Promise<boolean>;
 	/**
 	 * Takes this agent away: the container, the repository inside it, and the conversation.
 	 *
@@ -276,6 +300,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/reach",
 		takes: "<host>",
 		does: "ask to open a host on the way out, answered here with one key",
+	},
+	{
+		name: "/repo",
+		takes: "[<owner/name> [<branch>…]|drop <owner/name>]",
+		does: "the GitHub repositories it holds, and which branches it may push",
 	},
 	{
 		name: "/telegram",
@@ -945,8 +974,11 @@ export function withoutSecrets(line: string): string {
 		if (/^(allow|deny)\b/i.test(rest)) return line;
 		return `${email[1] ?? ""}${spent(rest)}`;
 	}
-	return line.replace(BOT_TOKEN, (_whole, id: string) => `${id}:…`);
+	return line.replace(BOT_TOKEN, (_whole, id: string) => `${id}:…`).replace(GITHUB_TOKEN, "…");
 }
+
+/** GitHub's shapes, which say what they are from the first four letters and so can be struck out anywhere. */
+const GITHUB_TOKEN = /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g;
 
 function spent(rest: string): string {
 	return rest
@@ -1420,6 +1452,98 @@ async function clear(words: readonly string[], context: CommandContext): Promise
  * Every answer is a full sentence rather than an acknowledgement, because this goes where the
  * agent's answers go: "ok" under a line nobody can see any more says nothing at all.
  */
+/** Where a fine-grained token is made, said once wherever one is asked for. */
+const NEW_TOKEN_AT = "https://github.com/settings/personal-access-tokens/new";
+
+function askForToken(repo: string): string {
+	return [
+		`This plane holds no GitHub token. Make a fine-grained one at ${NEW_TOKEN_AT} with`,
+		`Contents: read and write on ${repo} — and Pull requests: read and write, if it should open`,
+		"them — then paste it here:",
+		"/repo github_pat_…",
+		"",
+		"It is kept here, spent by the proxy, and never given to an agent.",
+	].join("\n");
+}
+
+/** What holding a repository comes to, in the words the operator reads under the line they typed. */
+function heldSaid(id: string, hold: RepoHold): string {
+	if (hold.kind === "token-needed") return askForToken(hold.spec.repo);
+	if (hold.kind === "refused") return `Nothing was held: ${hold.why}.`;
+	const { standing } = hold;
+	return [
+		`${id} holds ${standing.url}. It can clone it and push to ${standing.push.join(", ")};`,
+		"a push to any other branch is refused before it leaves, and it can open pull requests.",
+		"The token stays here, never in the sandbox.",
+		...(hold.warning !== undefined ? ["", hold.warning] : []),
+	].join("\n");
+}
+
+const NEW_REPO = [
+	"Give it one, and it pushes to its own branches there and nowhere else:",
+	"/repo acme/website",
+	"/repo acme/website fix/* docs        to name the branches instead",
+].join("\n");
+
+function holdingSaid(id: string, repos: readonly RepoStanding[]): string {
+	if (repos.length === 0) return `${id} holds no repository.\n\n${NEW_REPO}`;
+	const widest = Math.max(...repos.map((held) => held.url.length));
+	return [
+		`${id} holds:`,
+		...repos.map(
+			(held) =>
+				`  ${held.url.padEnd(widest + 2)}push ${held.push.join(" ")}  ${held.origin === "file" ? "from the file" : "from here"}`,
+		),
+		"",
+		"/repo drop <owner/name> takes one back; /repo <owner/name> <branch>… changes what it may push.",
+	].join("\n");
+}
+
+/**
+ * The repositories an agent holds, and the line that gives it one.
+ *
+ * Two forms share the command because they are two halves of one act: the first time a repository is
+ * given there is no token yet, and the token is pasted on the next line the way an app password is
+ * after `/email <address>`. A token is unmistakable by shape, so the two are told apart without a
+ * verb, and the line the token was on is written down without it.
+ */
+async function repo(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", ...rest] = words;
+
+	if (first === "") return holdingSaid(id, await context.repos());
+
+	if (first === "drop" || first === "off") {
+		const read = readRepo(rest.join(" "));
+		if ("refused" in read) return `/repo drop takes ${read.refused}.`;
+		try {
+			const had = await context.dropRepo(read.repo);
+			return had
+				? `${id} no longer holds ${read.repo}. Whatever it cloned is still in its workspace; the credential to push it is not.`
+				: `${id} does not hold ${read.repo}.`;
+		} catch (error) {
+			return (error as Error).message;
+		}
+	}
+
+	if (looksLikeGithubToken(first)) {
+		const finished = await context.keepGithubToken(first);
+		if (finished === undefined) {
+			return "Kept, as GITHUB_TOKEN, for every repository given here. Now say which: /repo <owner/name>";
+		}
+		return heldSaid(id, finished);
+	}
+
+	const read = readRepo(first);
+	if ("refused" in read) return `/repo takes ${read.refused}.`;
+	// `push` may be said or left out: `/repo acme/website push fix/*` reads the same as without it.
+	const push = readPush(rest[0] === "push" ? rest.slice(1) : rest);
+	if ("refused" in push)
+		return `After the repository come the branches it may push: ${push.refused}.`;
+	const spec: RepoSpec = { repo: read.repo, ...(push.push.length > 0 ? { push: push.push } : {}) };
+	return heldSaid(id, await context.holdRepo(spec));
+}
+
 export async function runCommand(line: string, context: CommandContext): Promise<string> {
 	const [name = "", ...rest] = line.trim().slice(1).split(/\s+/);
 	const argument = rest.join(" ");
@@ -1433,6 +1557,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "serve") return serve(rest, context);
 	if (name === "telegram") return telegram(rest, context);
 	if (name === "email") return email(rest, context);
+	if (name === "repo") return repo(rest, context);
 	if (name === "delete") return remove(rest, context);
 	if (name === "clear") return clear(rest, context);
 
@@ -1533,6 +1658,19 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 		// an agent that wants to be held to something tighter than nothing is asking for less.
 		if (asking.limitUsd === undefined || amount <= asking.limitUsd) return undefined;
 		return `This agent asked for a ceiling of ${money(amount)} a day, which is above the ${money(asking.limitUsd)} it has. It can ask to be held to less, never to more: /limit ${money(amount)}, if you meant it.`;
+	}
+
+	if (name === "repo") {
+		const [first = ""] = rest;
+		// Asking what it holds widens nothing; it is told the same list at the start of every turn.
+		if (first === "") return undefined;
+		// A token an agent is holding is a token it got from something it read, and the one thing it
+		// should not be able to do with it is put it into this plane. Not printed, for the reason a bot
+		// token is not.
+		if (looksLikeGithubToken(first)) {
+			return "This agent asked to keep a GitHub token, and nothing an agent can ask for may put a credential into this plane. If it needs a repository, that one is yours to give: /repo <owner/name>.";
+		}
+		return `This agent asked for a repository. That one stays with you, because holding one spends your GitHub token on it: /repo ${rest.join(" ")}, if you meant it.`;
 	}
 
 	if (name === "telegram") {

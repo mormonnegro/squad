@@ -5,6 +5,7 @@ import { ANY_HOST } from "@squad/proxy";
 import { parse as parseYaml } from "yaml";
 import type { AgentConfig, AgentDefaults, ControlPlaneOptions } from "./control-plane.ts";
 import { type Model, modelEnv, modelGrants, PROVIDERS, resolveModel } from "./models.ts";
+import { readPush, readRepo } from "./repos.ts";
 
 export class ConfigError extends Error {
 	readonly issues: readonly string[];
@@ -150,6 +151,39 @@ function checkGrants(raw: unknown, label: string, issues: string[]): void {
  * decisions the operator gets to make. What is left is the part that is theirs — which models they
  * want, and what to call each one at the console.
  */
+/**
+ * A repository is four words and the grants are derived from them, so what is checked here is the
+ * four words: a repository GitHub could have, and branch patterns git could match. Checked rather than
+ * passed through because the alternative is an agent told it holds a repository that no request will
+ * ever match, which it finds out on the turn it was asked to use it.
+ */
+function checkRepos(raw: unknown, label: string, issues: string[]): void {
+	if (raw === undefined) return;
+	if (!Array.isArray(raw)) {
+		issues.push(`${label}.repos must be a list, each with a repo like acme/website`);
+		return;
+	}
+	raw.forEach((entry, index) => {
+		const where = `${label}.repos[${index}]`;
+		if (!isRecord(entry) || typeof entry.repo !== "string") {
+			issues.push(`${where} must be a mapping with a repo, like { repo: acme/website }`);
+			return;
+		}
+		const read = readRepo(entry.repo);
+		if ("refused" in read) {
+			issues.push(`${where}.repo: ${read.refused}`);
+			return;
+		}
+		if (entry.push === undefined) return;
+		if (!Array.isArray(entry.push) || !entry.push.every((one) => typeof one === "string")) {
+			issues.push(`${where}.push must be a list of branch patterns, like [scout/*]`);
+			return;
+		}
+		const push = readPush(entry.push);
+		if ("refused" in push) issues.push(`${where}.push: ${push.refused}`);
+	});
+}
+
 function parseModel(raw: unknown, index: number, issues: string[]): Model | undefined {
 	const label = `models[${index}]`;
 	if (!isRecord(raw)) {
@@ -251,6 +285,7 @@ function parseAgent(
 	};
 	checkLimit(raw.limitUsd, label, issues);
 	checkGrants(raw.grants, label, issues);
+	checkRepos(raw.repos, label, issues);
 
 	// Grants and schedules are handed to the proxy and scheduler as written; both validate their
 	// own shape and report better errors than a second copy of their rules would.
@@ -288,6 +323,7 @@ function parseDefaults(
 	};
 	checkLimit(raw.limitUsd, "defaults", issues);
 	checkGrants(raw.grants, "defaults", issues);
+	checkRepos(raw.repos, "defaults", issues);
 
 	return {
 		...rest,

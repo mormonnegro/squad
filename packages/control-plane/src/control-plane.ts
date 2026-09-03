@@ -94,6 +94,16 @@ import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import {
+	checkRepo,
+	GITHUB_TOKEN_ENV,
+	HeldRepos,
+	type RepoHold,
+	type RepoSpec,
+	type RepoStanding,
+	repoGrants,
+	standingOf as repoStanding,
+} from "./repos.ts";
+import {
 	DEFAULT_SEARCH_PROVIDER,
 	resolveSearch,
 	SEARCH_PROVIDERS,
@@ -125,6 +135,11 @@ export interface AgentConfig {
 	 * would be a grant the agent wrote itself.
 	 */
 	readonly grants?: readonly Grant[];
+	/**
+	 * GitHub repositories it holds, each with the branches it may push. Four words that become three
+	 * grants, derived where the model grants are — see repos.ts for which three and why.
+	 */
+	readonly repos?: readonly RepoSpec[];
 	readonly provider?: string;
 	readonly model?: string;
 	readonly env?: Readonly<Record<string, string>>;
@@ -443,6 +458,15 @@ export class ControlPlane {
 	readonly #addedModels: AddedModels;
 	/** The hosts opened at the console, on top of the ones the file grants every agent. */
 	readonly #addedGrants: AddedGrants;
+	/** The repositories given to agents at the console, on top of the ones their file declares. */
+	readonly #repos: HeldRepos;
+	/**
+	 * The repository `/repo` last asked for and could not hold for want of a token, waiting for one.
+	 *
+	 * Held for the reason the email offer is: it was typed one line ago and the console is still
+	 * showing it. Not on disk, and cleared the moment it is held.
+	 */
+	#offeredRepo: { readonly agentId: string; readonly spec: RepoSpec } | undefined;
 	readonly #choices: ModelChoices;
 	/**
 	 * The same store the broker resolves grants against, kept so the plane can ask whether a key is
@@ -528,6 +552,7 @@ export class ControlPlane {
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
+		this.#repos = new HeldRepos(join(this.#stateDir, "repos.json"));
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
 		this.#keys = new ProviderKeys(
 			join(this.#stateDir, "keys.json"),
@@ -1246,11 +1271,102 @@ export class ControlPlane {
 		// host something of the operator's was meant to be attached for.
 		return [
 			...declared,
+			...(await this.#holding(agentId)),
 			...(await this.#thinking(declared)),
 			...(await this.#searching(declared)),
 			...earned,
 			...(await this.#reached(declared)),
 		];
+	}
+
+	/** The three grants each repository the agent holds comes to. Behind the declared ones, like every derived grant. */
+	async #holding(agentId: string): Promise<readonly Grant[]> {
+		return (await this.repos(agentId)).flatMap((held) => repoGrants(agentId, held));
+	}
+
+	/**
+	 * The repositories an agent holds, the file's first.
+	 *
+	 * A repository named in both places is the file's, so the console is told it is not theirs to
+	 * change rather than shown two rows for one thing — the same rule the grants follow by id.
+	 */
+	async repos(agentId: string): Promise<readonly RepoStanding[]> {
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.repos ?? [];
+		const here = (await this.#repos.of(agentId)).filter(
+			(held) => !declared.some((own) => own.repo === held.repo),
+		);
+		return [
+			...declared.map((spec) => repoStanding(agentId, spec, "file")),
+			...here.map((spec) => repoStanding(agentId, spec, "here")),
+		];
+	}
+
+	/**
+	 * Gives an agent a repository, once GitHub has said the plane's token can see it.
+	 *
+	 * Checked before it is written down, for the reason a bot token is: a token that was never given
+	 * the repository becomes an agent told it holds one, meeting a 404 on its first clone, and nothing
+	 * about that points back at the line it was pasted on. A token that can see it and not write to it
+	 * is held with a sentence about it, because the fix for that is on GitHub's side and not here.
+	 *
+	 * With no token at all the repository is kept as an offer, the way an address is kept while the
+	 * password is fetched: the next `/repo <token>` finishes it without the repository being retyped.
+	 */
+	async holdRepo(agentId: string, spec: RepoSpec): Promise<RepoHold> {
+		const agent = this.#agents.find((one) => one.id === agentId);
+		if (agent === undefined) throw new Error(`No agent "${agentId}" in this plane`);
+		if ((agent.repos ?? []).some((own) => own.repo === spec.repo)) {
+			return {
+				kind: "refused",
+				why: `${spec.repo} is in the config file for ${agentId}, so it is not ours to change`,
+			};
+		}
+		const token = await this.#secrets.resolve({ ref: GITHUB_TOKEN_ENV });
+		if (token === undefined || token.length === 0) {
+			this.#offeredRepo = { agentId, spec };
+			return { kind: "token-needed", spec };
+		}
+		const checked = await checkRepo(spec.repo, token);
+		if (checked.kind === "refused") return { kind: "refused", why: checked.why };
+		await this.#repos.hold(agentId, spec);
+		await this.#reregister(agentId);
+		this.#offeredRepo = undefined;
+		return {
+			kind: "held",
+			standing: repoStanding(agentId, spec, "here"),
+			...(checked.push
+				? {}
+				: {
+						warning: `The token can see ${spec.repo} and cannot write to it, so GitHub will refuse every push there until the token has Contents: read and write on it.`,
+					}),
+		};
+	}
+
+	/**
+	 * Keeps the GitHub token typed at a console, over the one the plane was started with if any, and
+	 * finishes the repository that was waiting on it.
+	 *
+	 * Kept before it is checked, unlike a bot token, because there is nothing to check it against on
+	 * its own: a fine-grained token answers for the repositories it was given and no others, so the
+	 * check is the repository's, and a wrong token comes back as that repository being refused — with
+	 * the offer still standing for the next paste.
+	 */
+	async keepGithubToken(agentId: string, token: string): Promise<RepoHold | undefined> {
+		await this.#keys.keep(GITHUB_TOKEN_ENV, token);
+		const offered = this.#offeredRepo;
+		if (offered === undefined || offered.agentId !== agentId) return undefined;
+		return this.holdRepo(agentId, offered.spec);
+	}
+
+	/** Takes a repository back from an agent, and its grants with it. */
+	async dropRepo(agentId: string, repo: string): Promise<boolean> {
+		const agent = this.#agents.find((one) => one.id === agentId);
+		if ((agent?.repos ?? []).some((own) => own.repo === repo)) {
+			throw new Error(`${repo} is in the config file for ${agentId}, so it is not ours to change`);
+		}
+		const had = await this.#repos.drop(agentId, repo);
+		if (had) await this.#reregister(agentId);
+		return had;
 	}
 
 	/**
@@ -1725,6 +1841,10 @@ export class ControlPlane {
 			// says otherwise.
 			granted: async (host) => new GrantSet(await this.#grantsFor(agentId)).allowsHost(host),
 			askReach: async (host) => this.#askReach(agentId, host),
+			repos: () => this.repos(agentId),
+			holdRepo: (spec) => this.holdRepo(agentId, spec),
+			keepGithubToken: (token) => this.keepGithubToken(agentId, token),
+			dropRepo: (repo) => this.dropRepo(agentId, repo),
 			addServer: (name, server) => this.#mcp.add(name, server),
 			// Attaching and dropping change what the agent may reach, because a login's grant lasts only
 			// as long as the agent is holding the server it was made for.
@@ -2168,6 +2288,9 @@ export class ControlPlane {
 			// And again for the same reason: a search provider chosen at the console searches on the
 			// next turn rather than on the next container.
 			search: () => this.search(),
+			// And the repositories, so one given at the console is in front of the agent on its next
+			// turn, with the branches it may push named before it tries one it may not.
+			repos: (agentId) => this.repos(agentId),
 			...(this.#turnIdleMs !== undefined ? { idleMs: this.#turnIdleMs } : {}),
 		});
 		await this.attach(agent.id, runner);

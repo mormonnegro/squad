@@ -85,6 +85,19 @@ export {
 	type PiSessionChannelOptions,
 	RELAY_PATH,
 } from "./pi-session.ts";
+export {
+	checkRepo,
+	GITHUB_TOKEN_ENV,
+	HeldRepos,
+	looksLikeGithubToken,
+	type RepoHold,
+	type RepoSpec,
+	type RepoStanding,
+	readPush,
+	readRepo,
+	repoGrants,
+	reposPrompt,
+} from "./repos.ts";
 export { type EnsureSelfRepoOptions, ensureSelfRepo } from "./self.ts";
 export { overheard, Transcript, type Utterance } from "./transcript.ts";
 export {

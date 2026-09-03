@@ -55,6 +55,45 @@ agents:
 		expect(config.agents[0]?.schedules).toHaveLength(1);
 	});
 
+	it("keeps the repositories an agent holds, checked for shape", () => {
+		const config = parseConfig(
+			`
+stateDir: /state
+agents:
+  - id: scout
+    repos:
+      - repo: acme/website
+      - repo: https://github.com/acme/api.git
+        push: [fix/*, docs]
+`,
+			{},
+		);
+		expect(config.agents[0]?.repos).toEqual([
+			{ repo: "acme/website" },
+			{ repo: "https://github.com/acme/api.git", push: ["fix/*", "docs"] },
+		]);
+	});
+
+	it("refuses a repository GitHub could not have, or a branch pattern git could not match", () => {
+		expect(() =>
+			parseConfig(
+				`
+stateDir: /state
+agents:
+  - id: scout
+    repos:
+      - repo: https://gitlab.com/acme/website
+      - repo: acme/api
+        push: [a..b]
+      - acme/website
+`,
+				{},
+			),
+		).toThrow(
+			/repos\[0\]\.repo: gitlab\.com[\s\S]*repos\[1\]\.push[\s\S]*repos\[2\] must be a mapping/,
+		);
+	});
+
 	it("puts named environment values into the sandbox without writing them down", () => {
 		const config = parseConfig(
 			`

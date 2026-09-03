@@ -182,6 +182,30 @@ describe("PiTurnRunner", () => {
 		]);
 	});
 
+	// A grant nobody mentions is a grant found by trial: the agent clones under the wrong name and
+	// meets a 403, or pushes to main and meets a refusal it did not know was coming.
+	it("tells the agent which repositories it holds, after the house rules", () => {
+		const runner = new PiTurnRunner({ sandbox: new StubSandbox() });
+		const held = [
+			{
+				repo: "acme/website",
+				url: "https://github.com/acme/website",
+				push: ["a1/*"],
+				origin: "here",
+			},
+		] as const;
+		const command = runner.commandFor("a1", undefined, undefined, held);
+		const prompts = command.filter((_, index) => command[index - 1] === "--append-system-prompt");
+
+		expect(prompts.indexOf(HOUSE_RULES)).toBeGreaterThan(0);
+		const about = prompts[prompts.indexOf(HOUSE_RULES) + 1] ?? "";
+		expect(about).toContain("https://github.com/acme/website");
+		expect(about).toContain("/home/agent/workspace/website");
+		expect(about).toContain("push to a1/*");
+		// And nothing at all when it holds none, for the reason the lessons are nothing when there are none.
+		expect(runner.commandFor("a1", undefined, undefined, [])).toEqual(runner.commandFor("a1"));
+	});
+
 	// The bug this exists for is silence rather than an error: search shipped in the image and was
 	// never named on the command, so the agent had no tool for the web and went at it with curl —
 	// and reported the proxy refusing every domain as though the internet were down.

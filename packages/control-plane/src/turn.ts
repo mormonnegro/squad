@@ -15,6 +15,7 @@ import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
+import { type RepoStanding, reposPrompt } from "./repos.ts";
 import type { Search } from "./search.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
@@ -169,6 +170,11 @@ export interface PiTurnRunnerOptions {
 	/** Which provider the web_search tool goes through, asked again at the start of every turn. */
 	readonly search?: () => Promise<Search | undefined>;
 	readonly searchFile?: string;
+	/**
+	 * The repositories this agent holds, asked for again at the start of every turn so one given at
+	 * the console is in front of the agent on its next turn rather than its next container.
+	 */
+	readonly repos?: (agentId: string) => Promise<readonly RepoStanding[]>;
 	/** The agent's own file of what it got wrong, read back to it at the start of every turn. */
 	readonly lessonsFile?: string;
 }
@@ -278,6 +284,7 @@ export class PiTurnRunner {
 	readonly #mcpFile: string;
 	readonly #search: (() => Promise<Search | undefined>) | undefined;
 	readonly #searchFile: string;
+	readonly #repos: ((agentId: string) => Promise<readonly RepoStanding[]>) | undefined;
 	readonly #lessonsFile: string;
 	/** The turn each agent is taking, while it is taking it, so that it can be stopped. */
 	readonly #running = new Map<string, AbortController>();
@@ -297,6 +304,7 @@ export class PiTurnRunner {
 		this.#servers = options.servers;
 		this.#mcpFile = options.mcpFile ?? SANDBOX_MCP_FILE;
 		this.#search = options.search;
+		this.#repos = options.repos;
 		this.#searchFile = options.searchFile ?? SANDBOX_SEARCH_FILE;
 		this.#lessonsFile = options.lessonsFile ?? SANDBOX_LESSONS_FILE;
 	}
@@ -309,8 +317,14 @@ export class PiTurnRunner {
 	 * The soul and skills are passed as paths rather than discovered, because discovery is gated on
 	 * pi trusting the project and the answer to "is this project trusted" is the agent itself.
 	 */
-	commandFor(agentId: string, thinksWith?: ModelChoice, lessons?: string): string[] {
+	commandFor(
+		agentId: string,
+		thinksWith?: ModelChoice,
+		lessons?: string,
+		repos?: readonly RepoStanding[],
+	): string[] {
 		const learned = lessons === undefined ? undefined : lessonsPrompt(lessons);
+		const holding = repos === undefined ? undefined : reposPrompt(repos, this.#workspacePath);
 		return [
 			...this.#command,
 			"--print",
@@ -329,8 +343,12 @@ export class PiTurnRunner {
 			// this flag more than once, and takes text where the line above takes a path.
 			"--append-system-prompt",
 			HOUSE_RULES,
-			// Last of the three, nearest the task, because it is the one that is about the work rather
-			// than about the agent: the soul is who it is, the house rules are where it lives, and this is
+			// After the house rules because it is more of them — where the agent's repositories are and
+			// what it may do to them are rules about where it lives, said by the plane for the reason the
+			// rest are: a grant nobody mentions is a grant found by trial.
+			...(holding !== undefined ? ["--append-system-prompt", holding] : []),
+			// Last of them, nearest the task, because it is the one that is about the work rather than
+			// about the agent: the soul is who it is, the house rules are where it lives, and this is
 			// what it found out by being wrong here.
 			...(learned !== undefined ? ["--append-system-prompt", learned] : []),
 			"--skill",
@@ -410,13 +428,15 @@ export class PiTurnRunner {
 			await this.#putSearch(agentId);
 			const thinksWith = await this.#model?.(agentId);
 			const lessons = await this.#lessons(agentId);
+			// A failed read leaves the turn to happen without the list, which is the turn there was before.
+			const repos = await this.#repos?.(agentId).catch(() => undefined);
 			// In the workspace, because a turn works where it is standing and the repository is not a
 			// workspace: standing there is what had agents building projects inside their own soul. The
 			// soul, the skills and the session are named by absolute path above, so none of them needs
 			// this to be the repository — and the agent can still walk into it when it means to.
 			executed = await this.#sandbox.run(
 				agentId,
-				this.commandFor(agentId, thinksWith, lessons),
+				this.commandFor(agentId, thinksWith, lessons, repos),
 				prompt,
 				{
 					idleMs: this.#idleMs,

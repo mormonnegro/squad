@@ -21,6 +21,7 @@ import {
 import type { McpServer } from "../src/mcp.ts";
 import type { Model } from "../src/models.ts";
 import type { Served } from "../src/ports.ts";
+import type { RepoSpec, RepoStanding } from "../src/repos.ts";
 
 /** Where a started login says it is listening, which is the address a paste has to come back to. */
 const WAITING_AT = "http://localhost:54321/callback";
@@ -66,6 +67,14 @@ function context(
 		mailRefuses?: string;
 		/** What clearing turns out to have come to: a turn stopped, a conversation there to forget. */
 		clearing?: { readonly stopped: boolean; readonly remembered: boolean };
+		/** Repositories this agent already holds, as an earlier `/repo` or the file would have left them. */
+		repos?: readonly RepoStanding[];
+		/** Whether the plane already holds a GitHub token, which decides whether `/repo` asks for one. */
+		tokenHeld?: boolean;
+		/** What GitHub says about the token against a repository it will not have. */
+		githubRefuses?: string;
+		/** A token that can see the repository and not write to it. */
+		readOnlyToken?: boolean;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -99,6 +108,43 @@ function context(
 	/** The hosts put in front of the operator as questions, which is not the same list as the grants. */
 	const asked: string[] = [];
 	const here = start.agentId ?? "scout";
+	const repos = [...(start.repos ?? [])];
+	const github: { tokenHeld: boolean; offered: RepoSpec | undefined } = {
+		tokenHeld: start.tokenHeld ?? false,
+		offered: undefined,
+	};
+	/** Every token that got as far as the plane, which is how the redaction is checked from outside. */
+	const kept: string[] = [];
+	const holdRepo = async (spec: RepoSpec) => {
+		if (repos.some((held) => held.repo === spec.repo && held.origin === "file")) {
+			return {
+				kind: "refused" as const,
+				why: `${spec.repo} is in the config file for ${here}, so it is not ours to change`,
+			};
+		}
+		if (!github.tokenHeld) {
+			github.offered = spec;
+			return { kind: "token-needed" as const, spec };
+		}
+		if (start.githubRefuses !== undefined) {
+			return { kind: "refused" as const, why: start.githubRefuses };
+		}
+		const standing = {
+			repo: spec.repo,
+			url: `https://github.com/${spec.repo}`,
+			push: spec.push ?? [`${here}/*`],
+			origin: "here" as const,
+		};
+		const at = repos.findIndex((held) => held.repo === spec.repo);
+		if (at === -1) repos.push(standing);
+		else repos[at] = standing;
+		github.offered = undefined;
+		return {
+			kind: "held" as const,
+			standing,
+			...(start.readOnlyToken ? { warning: "The token can see it and cannot write to it." } : {}),
+		};
+	};
 	const named = (name: string) => {
 		const server = shelf.get(name);
 		return server === undefined ? [] : [{ name, server }];
@@ -118,6 +164,9 @@ function context(
 		serving,
 		bot,
 		offered,
+		repos,
+		kept,
+		github,
 		context: {
 			agent: { id: start.agentId ?? "scout", created: start.created ?? true },
 			remove: async () => {
@@ -166,6 +215,22 @@ function context(
 			granted: async (host: string) => (start.grants ?? []).includes(host),
 			askReach: async (host: string) => {
 				asked.push(host);
+			},
+			repos: async () => repos,
+			holdRepo,
+			keepGithubToken: async (token: string) => {
+				kept.push(token);
+				github.tokenHeld = true;
+				return github.offered === undefined ? undefined : holdRepo(github.offered);
+			},
+			dropRepo: async (repo: string) => {
+				const at = repos.findIndex((held) => held.repo === repo);
+				if (at === -1) return false;
+				if (repos[at]?.origin === "file") {
+					throw new Error(`${repo} is in the config file for ${here}, so it is not ours to change`);
+				}
+				repos.splice(at, 1);
+				return true;
 			},
 			addServer: async (name: string, server: McpServer) => {
 				shelf.set(name, server);
@@ -832,6 +897,173 @@ describe("/reach", () => {
 
 		expect(await runCommand("/reach", plane.context)).toContain("/reach takes");
 		expect(plane.asked).toEqual([]);
+	});
+});
+
+const PAT = `github_pat_${"A1b2".repeat(20)}`;
+
+/**
+ * The one command that spends a credential, allowed to because of what it cannot do: the token is
+ * the plane's, pasted once, and the command decides only what it is spent on. Every test that ends
+ * in `repos` being empty is a way somebody could have thought an agent held a repository and it did not.
+ */
+describe("/repo", () => {
+	it("says it holds nothing, and how to give it something", async () => {
+		const plane = context();
+		const said = await runCommand("/repo", plane.context);
+
+		expect(said).toContain("scout holds no repository");
+		expect(said).toContain("/repo acme/website");
+	});
+
+	it("asks for a token the first time, and finishes the repository when one is pasted", async () => {
+		const plane = context();
+		const asked = await runCommand("/repo acme/website", plane.context);
+
+		expect(asked).toContain("holds no GitHub token");
+		expect(asked).toContain("Contents: read and write on acme/website");
+		expect(asked).toContain("/repo github_pat_");
+		expect(plane.repos).toEqual([]);
+
+		const finished = await runCommand(`/repo ${PAT}`, plane.context);
+		expect(plane.kept).toEqual([PAT]);
+		expect(plane.repos).toEqual([
+			{
+				repo: "acme/website",
+				url: "https://github.com/acme/website",
+				push: ["scout/*"],
+				origin: "here",
+			},
+		]);
+		expect(finished).toContain("scout holds https://github.com/acme/website");
+		expect(finished).toContain("push to scout/*");
+		expect(finished).toContain("never in the sandbox");
+	});
+
+	it("keeps a token pasted with nothing waiting on it, and says what comes next", async () => {
+		const plane = context();
+		const said = await runCommand(`/repo ${PAT}`, plane.context);
+
+		expect(plane.kept).toEqual([PAT]);
+		expect(plane.repos).toEqual([]);
+		expect(said).toContain("Kept, as GITHUB_TOKEN");
+		expect(said).toContain("/repo <owner/name>");
+	});
+
+	it("holds it at once when the plane has a token, in whichever spelling was pasted", async () => {
+		for (const spelling of [
+			"acme/website",
+			"https://github.com/acme/website.git",
+			"git@github.com:acme/website.git",
+		]) {
+			const plane = context({ tokenHeld: true });
+			await runCommand(`/repo ${spelling}`, plane.context);
+			expect(plane.repos.map((held) => held.repo)).toEqual(["acme/website"]);
+			expect(plane.repos[0]?.push).toEqual(["scout/*"]);
+		}
+	});
+
+	it("pushes where it was told to, with or without the word push", async () => {
+		const plane = context({ tokenHeld: true });
+		await runCommand("/repo acme/website fix/* docs", plane.context);
+		expect(plane.repos[0]?.push).toEqual(["fix/*", "docs"]);
+
+		await runCommand("/repo acme/website push release-*", plane.context);
+		expect(plane.repos).toHaveLength(1);
+		expect(plane.repos[0]?.push).toEqual(["release-*"]);
+	});
+
+	it("refuses a branch pattern git could not match, and holds nothing", async () => {
+		const plane = context({ tokenHeld: true });
+		const said = await runCommand("/repo acme/website a..b", plane.context);
+
+		expect(said).toContain('"a..b" is not a branch pattern');
+		expect(plane.repos).toEqual([]);
+	});
+
+	it("passes on what GitHub said, and holds nothing", async () => {
+		const plane = context({ tokenHeld: true, githubRefuses: "GitHub does not know this token" });
+		const said = await runCommand("/repo acme/website", plane.context);
+
+		expect(said).toBe("Nothing was held: GitHub does not know this token.");
+		expect(plane.repos).toEqual([]);
+	});
+
+	it("holds it and says so when the token can only read", async () => {
+		const plane = context({ tokenHeld: true, readOnlyToken: true });
+		const said = await runCommand("/repo acme/website", plane.context);
+
+		expect(plane.repos).toHaveLength(1);
+		expect(said).toContain("cannot write to it");
+	});
+
+	it("lists what it holds, and where each came from", async () => {
+		const plane = context({
+			repos: [
+				{
+					repo: "acme/website",
+					url: "https://github.com/acme/website",
+					push: ["scout/*"],
+					origin: "here",
+				},
+				{
+					repo: "acme/api",
+					url: "https://github.com/acme/api",
+					push: ["fix/*", "docs"],
+					origin: "file",
+				},
+			],
+		});
+		const said = await runCommand("/repo", plane.context);
+
+		expect(said).toContain("https://github.com/acme/website");
+		expect(said).toContain("push scout/*");
+		expect(said).toContain("from here");
+		expect(said).toContain("push fix/* docs");
+		expect(said).toContain("from the file");
+		expect(said).toContain("/repo drop");
+	});
+
+	it("takes one back, and says when there was nothing to take", async () => {
+		const plane = context({
+			repos: [
+				{
+					repo: "acme/website",
+					url: "https://github.com/acme/website",
+					push: ["scout/*"],
+					origin: "here",
+				},
+			],
+		});
+		expect(await runCommand("/repo drop acme/website", plane.context)).toContain("no longer holds");
+		expect(plane.repos).toEqual([]);
+		expect(await runCommand("/repo drop acme/website", plane.context)).toContain(
+			"does not hold acme/website",
+		);
+	});
+
+	// The file is the operator's, and a repository that vanished on the next deploy would be worse
+	// than one the console refused to touch.
+	it("leaves what the file declares to the file", async () => {
+		const plane = context({
+			tokenHeld: true,
+			repos: [
+				{ repo: "acme/api", url: "https://github.com/acme/api", push: ["fix/*"], origin: "file" },
+			],
+		});
+		expect(await runCommand("/repo drop acme/api", plane.context)).toContain("not ours to change");
+		expect(await runCommand("/repo acme/api docs", plane.context)).toContain("not ours to change");
+		expect(plane.repos[0]?.push).toEqual(["fix/*"]);
+	});
+
+	it("says what it takes when it was given something else", async () => {
+		const plane = context();
+		expect(await runCommand("/repo https://gitlab.com/acme/website", plane.context)).toContain(
+			"gitlab.com is not github.com",
+		);
+		expect(await runCommand("/repo acme", plane.context)).toContain("/repo takes");
+		expect(await runCommand("/repo drop", plane.context)).toContain("/repo drop takes");
+		expect(plane.repos).toEqual([]);
 	});
 });
 
@@ -1719,6 +1951,14 @@ describe("withoutSecrets", () => {
 	it("leaves a line with nothing to hide exactly as it was typed", () => {
 		expect(withoutSecrets("/telegram off")).toBe("/telegram off");
 		expect(withoutSecrets("/serve 3000")).toBe("/serve 3000");
+		expect(withoutSecrets("/repo acme/website fix/*")).toBe("/repo acme/website fix/*");
+	});
+
+	// GitHub's shapes say what they are from the first letters, so they are struck out wherever they
+	// were typed — on the line meant for one and on a line that was not.
+	it("spends a GitHub token wherever it was pasted", () => {
+		expect(withoutSecrets(`/repo ${PAT}`)).toBe("/repo …");
+		expect(withoutSecrets(`push with ghp_${"k".repeat(36)} please`)).toBe("push with … please");
 	});
 
 	/**
@@ -1929,6 +2169,18 @@ describe("agentMayNot", () => {
 
 		expect(refusal).toContain("yours to make");
 		expect(refusal).toContain("/mcp login ahrefs <address>");
+	});
+
+	// Holding a repository spends the operator's GitHub token on it, which is the widening every other
+	// refusal here is about. Asking what it holds spends nothing.
+	it("does not let it give itself a repository, and never prints a token it was holding", () => {
+		expect(agentMayNot("/repo", scout)).toBeUndefined();
+		const refusal = agentMayNot("/repo acme/website fix/*", scout);
+		expect(refusal).toContain("stays with you");
+		expect(refusal).toContain("/repo acme/website fix/*");
+		const token = agentMayNot(`/repo ${PAT}`, scout);
+		expect(token).toContain("may put a credential");
+		expect(token).not.toContain(PAT);
 	});
 
 	it("lets it change what it thinks with, and give a server up", () => {
