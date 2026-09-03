@@ -12,13 +12,25 @@ export {
 } from "./ca.ts";
 export { type AgentRegistration, StaticAgentDirectory } from "./directory.ts";
 export {
+	type PushCommands,
+	type PushHead,
+	pushRefusal,
+	readPushCommands,
+	readPushHead,
+	type RefUpdate,
+	refMatches,
+	shortRef,
+} from "./git.ts";
+export {
 	ANY_HOST,
 	type DenyReason,
+	type GitScope,
 	type Grant,
 	type GrantDecision,
 	GrantSet,
 	type HttpMethod,
 	type Injection,
+	isPush,
 	normalizeHost,
 	normalizePath,
 	type RequestDescriptor,

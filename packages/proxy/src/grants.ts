@@ -21,6 +21,20 @@ export type Injection =
 			readonly password: SecretRef;
 	  };
 
+/**
+ * What a grant on a git repository lets through of a push.
+ *
+ * The path under the grant is the repository, and everything git does to one over HTTP is a GET and a
+ * POST under it — so the method cannot say whether the agent may write, and a plain grant on a repo
+ * host is a grant to push anywhere on it. This is the half the method could not carry: the branches,
+ * named the way a refspec names them, `scout/*` for the ones under that prefix and nothing for a
+ * repository the agent may only read.
+ */
+export interface GitScope {
+	/** Refs the agent may push. A bare name is under `refs/heads/`; `*` matches anything, slashes too. */
+	readonly push: readonly string[];
+}
+
 export interface Grant {
 	readonly id: string;
 	/** Exact ("api.github.com"), single-label wildcard ("*.slack.com"), or {@link ANY_HOST}. */
@@ -30,13 +44,27 @@ export interface Grant {
 	/** Allowed methods. Omitted means all methods. */
 	readonly methods?: readonly HttpMethod[];
 	readonly injection: Injection;
+	/**
+	 * Set when the path is a git repository, which makes two things true of the grant: it answers with
+	 * `.git` on the end of the path as well as without, because both are the same repository and the
+	 * agent will type whichever the clone box showed it; and a push through it is read before it is
+	 * passed, and passed only to the refs listed.
+	 */
+	readonly git?: GitScope;
 }
 
 export type GrantDecision =
 	| { readonly allow: true; readonly grant: Grant }
 	| { readonly allow: false; readonly reason: DenyReason };
 
-export type DenyReason = "no_matching_host" | "path_not_granted" | "method_not_granted";
+export type DenyReason =
+	| "no_matching_host"
+	| "path_not_granted"
+	| "method_not_granted"
+	/** A push to a ref the grant does not list. */
+	| "ref_not_granted"
+	/** A push whose commands the proxy could not read, and so would not pass. */
+	| "push_unreadable";
 
 export interface RequestDescriptor {
 	readonly host: string;
@@ -110,11 +138,23 @@ export function normalizePath(rawPath: string): string {
 	return `/${resolved.join("/")}`;
 }
 
-function pathMatches(prefix: string, path: string): boolean {
-	const normalizedPrefix = normalizePath(prefix);
+function under(prefix: string, path: string): boolean {
+	if (path === prefix) return true;
+	return path.startsWith(`${prefix}/`);
+}
+
+function pathMatches(grant: Grant, path: string): boolean {
+	const normalizedPrefix = normalizePath(grant.pathPrefix ?? "/");
 	if (normalizedPrefix === "/") return true;
-	if (path === normalizedPrefix) return true;
-	return path.startsWith(`${normalizedPrefix}/`);
+	if (under(normalizedPrefix, path)) return true;
+	// A repository is reached under its name and under its name with `.git` on the end, and a grant
+	// that covered one of the two would be a grant that works until the agent pastes the other.
+	return grant.git !== undefined && under(`${normalizedPrefix}.git`, path);
+}
+
+/** Whether this request is the one that writes to a repository, which is the one a push scope reads. */
+export function isPush(method: string, normalizedPath: string): boolean {
+	return method.toUpperCase() === "POST" && normalizedPath.endsWith("/git-receive-pack");
 }
 
 /**
@@ -161,7 +201,7 @@ export class GrantSet {
 		const hostMatched = this.grants.filter((grant) => hostMatches(grant.host, host));
 		if (hostMatched.length === 0) return { allow: false, reason: "no_matching_host" };
 
-		const pathMatched = hostMatched.filter((grant) => pathMatches(grant.pathPrefix ?? "/", path));
+		const pathMatched = hostMatched.filter((grant) => pathMatches(grant, path));
 		if (pathMatched.length === 0) return { allow: false, reason: "path_not_granted" };
 
 		const methodMatched = pathMatched.filter(

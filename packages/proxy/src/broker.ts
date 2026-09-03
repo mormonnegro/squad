@@ -3,7 +3,8 @@ import https from "node:https";
 import type { AddressInfo } from "node:net";
 import tls from "node:tls";
 import type { CertificateAuthority } from "./ca.ts";
-import { type DenyReason, type GrantSet, normalizeHost, normalizePath } from "./grants.ts";
+import { pushRefusal, readPushHead, refMatches } from "./git.ts";
+import { type DenyReason, type GrantSet, isPush, normalizeHost, normalizePath } from "./grants.ts";
 import { applyInjection } from "./inject.ts";
 import { MissingSecretError, type SecretStore } from "./secrets.ts";
 
@@ -18,6 +19,8 @@ export interface AuditEntry {
 	readonly reason?: DenyReason | "unauthenticated" | "missing_secret" | "upstream_error";
 	readonly grantId?: string | undefined;
 	readonly status?: number | undefined;
+	/** The refs a push was for, read off its body, which is the line worth having when it went wrong. */
+	readonly refs?: readonly string[] | undefined;
 }
 
 export interface AgentDirectory {
@@ -277,6 +280,70 @@ export class EgressBroker {
 			return;
 		}
 
+		// A push is read before it is passed. The branch is in the head of the body, so the body is read
+		// to the end of its commands and the upstream is opened only once every ref on it is granted —
+		// see git.ts for why a refusal is written as a receive-pack report rather than a 403.
+		let head: { readonly bytes: Buffer; readonly ended: boolean } | undefined;
+		let refs: readonly string[] | undefined;
+		const scope = decision.grant.git;
+		if (scope !== undefined && isPush(method, auditPath)) {
+			const encoding = req.headers["content-encoding"];
+			const push =
+				encoding !== undefined && encoding !== "identity"
+					? {
+							bytes: Buffer.alloc(0),
+							ended: false,
+							commands: { kind: "unreadable", why: `the body is ${encoding}-encoded` } as const,
+						}
+					: await readPushHead(req);
+			if (push.commands.kind !== "commands") {
+				this.audit({
+					at,
+					agentId: context.agentId,
+					host: context.host,
+					method,
+					path: auditPath,
+					outcome: "denied",
+					reason: "push_unreadable",
+					grantId: decision.grant.id,
+				});
+				res.writeHead(403, { "content-type": "application/json" });
+				res.end(
+					JSON.stringify({
+						error: "egress_denied",
+						reason: "push_unreadable",
+						why: push.commands.why,
+					}),
+				);
+				req.resume();
+				return;
+			}
+			const { updates, capabilities } = push.commands;
+			refs = updates.map((update) => update.ref);
+			const refused = refs.filter((ref) => !refMatches(scope.push, ref));
+			if (refused.length > 0) {
+				this.audit({
+					at,
+					agentId: context.agentId,
+					host: context.host,
+					method,
+					path: auditPath,
+					outcome: "denied",
+					reason: "ref_not_granted",
+					grantId: decision.grant.id,
+					refs,
+				});
+				res.writeHead(200, {
+					"content-type": "application/x-git-receive-pack-result",
+					"cache-control": "no-cache",
+				});
+				res.end(pushRefusal(updates, capabilities, refused, scope.push));
+				req.resume();
+				return;
+			}
+			head = { bytes: push.bytes, ended: push.ended };
+		}
+
 		let outbound: Awaited<ReturnType<typeof applyInjection>>;
 		try {
 			outbound = await applyInjection(decision.grant.injection, this.options.secrets, {
@@ -325,6 +392,7 @@ export class EgressBroker {
 				outcome: "allowed",
 				grantId: decision.grant.id,
 				status: upstreamRes.statusCode,
+				...(refs !== undefined ? { refs } : {}),
 			});
 			res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
 			upstreamRes.pipe(res);
@@ -345,6 +413,13 @@ export class EgressBroker {
 			res.end(JSON.stringify({ error: "upstream_unreachable" }));
 		});
 
-		req.pipe(upstream);
+		if (head === undefined) {
+			req.pipe(upstream);
+			return;
+		}
+		// What was read to decide goes first, and the body carries on from where the reading paused it.
+		upstream.write(head.bytes);
+		if (head.ended) upstream.end();
+		else req.pipe(upstream);
 	}
 }
