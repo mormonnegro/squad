@@ -132,6 +132,7 @@ describe("environment", () => {
 		expect(env.get("GIT_COMMITTER_NAME")).toBe("emma");
 		expect(env.get("GIT_AUTHOR_EMAIL")).toBe("emma@squad.local");
 		expect(env.get("GIT_TERMINAL_PROMPT")).toBe("0");
+		expect(env.get("GIT_HTTP_PROXY_AUTHMETHOD")).toBe("basic");
 	});
 
 	it("lets callers add variables but not override containment", () => {

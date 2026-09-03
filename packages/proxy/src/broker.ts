@@ -166,8 +166,13 @@ export class EgressBroker {
 				outcome: "denied",
 				reason: "unauthenticated",
 			});
+			// Closed after the answer, and said so. Node hands a CONNECT's socket over whole, so a second
+			// CONNECT on it — which is how curl answers a 407, credentials in hand — would never be read;
+			// without `Connection: close` curl reuses the connection anyway, meets the close, and gives up
+			// with "Proxy CONNECT aborted" rather than dialling again. git is the client that does this:
+			// it lets curl probe for the auth method instead of sending Basic outright.
 			socket.end(
-				'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="squad"\r\n\r\n',
+				'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="squad"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n',
 			);
 			return;
 		}
@@ -183,7 +188,7 @@ export class EgressBroker {
 				outcome: "denied",
 				reason: "no_matching_host",
 			});
-			socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+			socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
 			return;
 		}
 

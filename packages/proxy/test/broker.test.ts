@@ -229,6 +229,28 @@ describe("EgressBroker", () => {
 		expect(status).toBe(407);
 	});
 
+	/**
+	 * git lets curl probe the proxy for an auth method rather than sending Basic outright, so its
+	 * first CONNECT carries nothing and the 407 is the ordinary first exchange. A 407 that closed the
+	 * connection without saying so had curl retry on it and give up with "Proxy CONNECT aborted".
+	 */
+	it("answers an unauthenticated CONNECT with a close it announces, so curl dials again", async () => {
+		const socket = net.connect(proxyPort, "127.0.0.1");
+		await once(socket, "connect");
+		socket.write(`CONNECT localhost:${upstreamPort} HTTP/1.1\r\nHost: localhost\r\n\r\n`);
+		let buffer = Buffer.alloc(0);
+		while (!buffer.includes("\r\n\r\n")) {
+			const [chunk] = (await once(socket, "data")) as [Buffer];
+			buffer = Buffer.concat([buffer, chunk]);
+		}
+		const head = buffer.toString("utf8");
+		expect(head.startsWith("HTTP/1.1 407 ")).toBe(true);
+		expect(head).toContain('Proxy-Authenticate: Basic realm="squad"');
+		expect(head).toContain("Connection: close");
+		expect(head).toContain("Content-Length: 0");
+		await once(socket, "close");
+	});
+
 	it("never writes the secret to the audit log", () => {
 		expect(audit.length).toBeGreaterThan(0);
 		expect(JSON.stringify(audit)).not.toContain(SECRET);

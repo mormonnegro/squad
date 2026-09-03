@@ -178,6 +178,9 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		GIT_COMMITTER_NAME: spec.agentId,
 		GIT_COMMITTER_EMAIL: `${spec.agentId}@squad.local`,
 		GIT_TERMINAL_PROMPT: "0",
+		// Sent outright rather than probed for. Left to itself git has curl ask the proxy which auth it
+		// wants, which is a 407 and a second CONNECT on every connection before anything git-shaped.
+		GIT_HTTP_PROXY_AUTHMETHOD: "basic",
 		...spec.env,
 	};
 	return Object.entries(env).map(([key, value]) => `${key}=${value}`);
