@@ -4,11 +4,13 @@ import { CARRIERS } from "@squad/channels";
 import {
 	Box,
 	type DOMElement,
+	type Key,
 	measureElement,
 	render,
 	Text,
 	useApp,
 	useInput,
+	useStdout,
 	useWindowSize,
 } from "ink";
 import {
@@ -609,6 +611,27 @@ export function mouse(input: string): readonly Moved[] | undefined {
 		else if ((button & 3) === 0) moves.push({ did: "down", at });
 	}
 	return reported ? moves : undefined;
+}
+
+/**
+ * What a run of up-and-down arrows that arrived in one read is: the rows the wheel turned, or
+ * nothing at all when it was a hand.
+ *
+ * A hand presses one arrow at a time, and each is a read of its own. A run of them in a single read
+ * is a terminal translating the wheel for a console it has stopped reporting the mouse to: on the
+ * alternate screen there is no scrollback for the wheel to move, so the terminal sends an arrow for
+ * every line it would have scrolled, all at once. A terminal stops reporting the mouse without being
+ * asked to when it is rebuilt around a running console — a tab switched away from and back, in the
+ * terminals that keep a headless copy of the screen and draw it into a new one — because the request
+ * lives in the terminal, and the new one never heard it.
+ *
+ * Only a run all one way: the wheel does not turn around inside one read, and a run that does is a
+ * hand's, however it managed it.
+ */
+export function wheeled(run: readonly (-1 | 1)[]): number | undefined {
+	const [first] = run;
+	if (first === undefined || run.length < 2) return undefined;
+	return run.every((by) => by === first) ? first * run.length : undefined;
 }
 
 /**
@@ -2364,6 +2387,7 @@ export function App({
 }): ReactElement {
 	const { exit } = useApp();
 	const { rows, columns } = useWindowSize();
+	const { stdout } = useStdout();
 	const [agents, setAgents] = useState<readonly AgentSummary[]>(initial);
 	// One place in one list, which is the whole of where this console is pointed. The panel and the
 	// agent used to be two selections crossed with each other, and half of the pairs meant nothing:
@@ -2504,6 +2528,9 @@ export function App({
 	// Where the button went down, for as long as it is still down. A ref rather than state because a
 	// drag reports every row it crosses and re-rendering the anchor would be a render per row.
 	const pressed = useRef<At | undefined>(undefined);
+	// The up-and-down arrows of the read still being handled. A hand's arrive one to a read and a
+	// wheel's arrive together, and which of the two a run is cannot be told from its first.
+	const arrows = useRef<Key[] | undefined>(undefined);
 	// The rows the drag is holding, counted from the first one on screen.
 	const [held, setHeld] = useState<Span | undefined>(undefined);
 	// How many rows the last drag put on the clipboard, and whether a program took them. Said out
@@ -3095,7 +3122,21 @@ export function App({
 		[client],
 	);
 
-	useInput((input, key) => {
+	// Asks the terminal for the mouse. Not once, at the start, but whenever there is a sign that the
+	// terminal may not be the one that was asked: the request lives in the terminal, and one rebuilt
+	// around a running console — a tab switched away from and back, in the terminals that keep a
+	// headless copy of the screen and draw it into a new one — comes back never having heard it. What
+	// such a terminal does with the wheel on the alternate screen, where there is no scrollback for
+	// it to move, is send an arrow for every line it would have scrolled, and arrows walk the column.
+	// So it is asked again when the terminal changes shape, and again when the arrows a wheel sends
+	// arrive. Saying it to a terminal that already knows changes nothing.
+	const arm = useCallback((): void => {
+		if (stdout.isTTY) stdout.write(MOUSE_ON);
+	}, [stdout]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the shape is what this answers, not what it reads.
+	useEffect(arm, [arm, rows, columns]);
+
+	const onKey = (input: string, key: Key, gathered = false): void => {
 		if (key.ctrl && input === "c") {
 			exit();
 			return;
@@ -3237,6 +3278,36 @@ export function App({
 				setHeld(span);
 				if (span !== undefined) void take(span);
 			}
+			return;
+		}
+		// Up and down are held until the read they arrived in is over, because how many of them came
+		// together is the only thing that tells a hand from a wheel — and the column, walked on the
+		// first before the second was seen, would be a row away by the time that was known. A hand's
+		// come back through here one at a time once the read is over, and go on past this to whatever
+		// the arrows mean on the screen that is open.
+		if ((key.upArrow || key.downArrow) && !gathered) {
+			const run = arrows.current;
+			if (run !== undefined) {
+				run.push(key);
+				return;
+			}
+			arrows.current = [key];
+			queueMicrotask(() => {
+				const keys = arrows.current ?? [];
+				arrows.current = undefined;
+				// Asked for the mouse again either way: a wheel that arrived as arrows is a terminal that
+				// forgot it was asked, and a hand on the arrows is a hand that is not scrolling.
+				arm();
+				const by = wheeled(keys.map((one): -1 | 1 => (one.upArrow ? -1 : 1)));
+				if (by === undefined) {
+					for (const one of keys) onKey("", one, true);
+					return;
+				}
+				// What the wheel does, exactly: the rows being held are rows of the screen, and the screen
+				// is about to say something else on them.
+				setHeld(undefined);
+				scroll(by, 0);
+			});
 			return;
 		}
 		// Any key at all lets go of a selection, the way clicking elsewhere would: the rows under it are
@@ -3947,7 +4018,8 @@ export function App({
 		}
 		send(draft + first);
 		setDraft(rest.join(" ").trim());
-	});
+	};
+	useInput(onKey);
 
 	// The panel says which row of the column it belongs to, and nothing else: the three-way breadcrumb
 	// that used to stand here was a second copy of a selection the column already draws.
@@ -4325,12 +4397,13 @@ export async function openConsole(client: ControlClient): Promise<number> {
 		alternateScreen: true,
 		incrementalRendering: true,
 	});
-	process.stdout.write(MOUSE_ON);
 	try {
 		await app.waitUntilExit();
 	} finally {
-		// Whatever happened. A terminal left reporting its mouse prints an escape sequence at whoever
-		// clicks in it next, and they will be at a shell prompt with no idea what did that to them.
+		// Whatever happened. The screen is what asks the terminal for its mouse, and it asks as often
+		// as it has reason to; giving it back is done here, once, because a terminal left reporting its
+		// mouse prints an escape sequence at whoever clicks in it next, and they will be at a shell
+		// prompt with no idea what did that to them.
 		process.stdout.write(MOUSE_OFF);
 	}
 	return 0;

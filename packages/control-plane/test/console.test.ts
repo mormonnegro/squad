@@ -42,6 +42,7 @@ import {
 	visible,
 	type Walk,
 	walked,
+	wheeled,
 } from "../src/console.ts";
 import type { AgentSummary } from "../src/control-plane.ts";
 import type { GrantStanding } from "../src/grants.ts";
@@ -688,6 +689,28 @@ describe("recalled", () => {
 			walk: undefined,
 			draft: "medio escr",
 		});
+	});
+});
+
+/**
+ * The wheel, arriving as arrows: what a terminal that has stopped reporting the mouse sends for it
+ * on the alternate screen, one arrow a line, all in one read. A hand sends one arrow to a read.
+ */
+describe("wheeled", () => {
+	it("takes a run of arrows that arrived together for the wheel, a row per arrow", () => {
+		expect(wheeled([-1, -1, -1])).toBe(-3);
+		expect(wheeled([1, 1])).toBe(2);
+	});
+
+	it("takes one arrow for a hand", () => {
+		expect(wheeled([1])).toBeUndefined();
+		expect(wheeled([])).toBeUndefined();
+	});
+
+	// The wheel does not turn around inside one read.
+	it("takes a run that turns around for a hand", () => {
+		expect(wheeled([1, -1])).toBeUndefined();
+		expect(wheeled([-1, -1, 1])).toBeUndefined();
 	});
 });
 

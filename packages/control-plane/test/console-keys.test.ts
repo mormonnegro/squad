@@ -797,6 +797,66 @@ describe("a host an agent asked for", () => {
 });
 
 /**
+ * The wheel, arriving as arrows.
+ *
+ * A terminal that has stopped reporting the mouse — one rebuilt around the console, which is what a
+ * tab switch does in the terminals that keep a headless copy of the screen — turns the wheel into
+ * arrows on the alternate screen, one for every line, all in one read. The wheel scrolls; it never
+ * walks the column. A hand sends one arrow to a read, and a hand's still walks it.
+ */
+describe("the wheel, arrived as arrows", () => {
+	const long = (agentId: string): Talk =>
+		new Map([
+			[
+				agentId,
+				Array.from({ length: 60 }, (_, index) => ({
+					from: "operator" as const,
+					text: `line ${index}`,
+				})),
+			],
+		]);
+
+	it("scrolls the pane and leaves the column alone when a run of them arrives together", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo"), listed("maxi")], long("demo"));
+		try {
+			await console_.press(UP.repeat(3));
+
+			expect(showing(console_.screen())).toBe("demo");
+			expect(console_.screen()).toContain("↑ scrolled");
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("still walks the column on one that arrives alone", async () => {
+		const { client } = plane({ has: [listed("demo")] });
+		const console_ = open(client, [listed("demo"), listed("maxi")], long("demo"));
+		try {
+			await console_.press(DOWN);
+
+			expect(showing(console_.screen())).toBe("maxi");
+			expect(console_.screen()).not.toContain("↑ scrolled");
+		} finally {
+			console_.close();
+		}
+	});
+
+	// The wheel does not turn around inside one read, so a run that does is a hand's, every step of it.
+	it("walks the column on a run that turns around", async () => {
+		const { client } = plane();
+		const console_ = open(client, [listed("demo"), listed("maxi")]);
+		try {
+			await console_.press(DOWN + DOWN + UP);
+
+			expect(showing(console_.screen())).toBe("maxi");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
+/**
  * The prompt, walked back through and taken back from.
  *
  * Left and right rather than up and down, which cost the prompt nothing: this one takes no cursor,
