@@ -117,7 +117,7 @@ describe("a grant with a git scope", () => {
 			pathPrefix: "/acme/website",
 			injection: {
 				kind: "basic",
-				username: { ref: "GIT_USER" },
+				username: { literal: "x-access-token" },
 				password: { ref: "GITHUB_TOKEN" },
 			},
 			git: { push: ["scout/*"] },
@@ -152,7 +152,7 @@ describe("a grant with a git scope", () => {
 
 		broker = new EgressBroker({
 			ca: brokerCa,
-			secrets: new MemorySecretStore({ GIT_USER: "x-access-token", GITHUB_TOKEN: TOKEN }),
+			secrets: new MemorySecretStore({ GITHUB_TOKEN: TOKEN }),
 			directory: new StaticAgentDirectory([{ agentId: AGENT_ID, proxyToken: PROXY_TOKEN, grants }]),
 			onAudit: (entry) => audit.push(entry),
 			upstreamAgent: new https.Agent({ ca: upstreamCa.caCertPem }),

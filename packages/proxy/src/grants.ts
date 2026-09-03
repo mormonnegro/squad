@@ -6,6 +6,16 @@ export type HttpMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | 
  */
 export type SecretRef = { readonly ref: string };
 
+/**
+ * A value written into the grant itself, for the half of a credential that is not one.
+ *
+ * Basic auth carries two things and only one of them is ever secret: GitHub reads a token out of the
+ * password and asks that the username be `x-access-token`, which is a fact about GitHub rather than
+ * anything of the operator's. A grant should be able to say so without an environment variable being
+ * made up to hold a constant.
+ */
+export type Literal = { readonly literal: string };
+
 export type Injection =
 	| { readonly kind: "none" }
 	| { readonly kind: "bearer"; readonly token: SecretRef }
@@ -17,7 +27,7 @@ export type Injection =
 	| { readonly kind: "query"; readonly name: string; readonly value: SecretRef }
 	| {
 			readonly kind: "basic";
-			readonly username: SecretRef;
+			readonly username: SecretRef | Literal;
 			readonly password: SecretRef;
 	  };
 

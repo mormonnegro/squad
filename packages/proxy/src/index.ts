@@ -31,6 +31,7 @@ export {
 	type HttpMethod,
 	type Injection,
 	isPush,
+	type Literal,
 	normalizeHost,
 	normalizePath,
 	type RequestDescriptor,

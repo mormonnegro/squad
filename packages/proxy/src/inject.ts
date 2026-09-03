@@ -95,7 +95,10 @@ export async function applyInjection(
 		}
 
 		case "basic": {
-			const username = await requireSecret(store, injection.username);
+			const username =
+				"literal" in injection.username
+					? injection.username.literal
+					: await requireSecret(store, injection.username);
 			const password = await requireSecret(store, injection.password);
 			const encoded = Buffer.from(`${username}:${password}`, "utf8").toString("base64");
 			headers.authorization = `Basic ${encoded}`;

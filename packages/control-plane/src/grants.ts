@@ -27,7 +27,13 @@ export interface GrantStanding {
 export function carriedBy(injection: Injection): string | undefined {
 	if (injection.kind === "none") return undefined;
 	if (injection.kind === "bearer") return injection.token.ref;
-	if (injection.kind === "basic") return `${injection.username.ref} ${injection.password.ref}`;
+	if (injection.kind === "basic") {
+		// A username written into the grant is not the operator's, so it is not what the row is about.
+		const username = "literal" in injection.username ? undefined : injection.username.ref;
+		return username === undefined
+			? injection.password.ref
+			: `${username} ${injection.password.ref}`;
+	}
 	return injection.value.ref;
 }
 
