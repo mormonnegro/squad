@@ -123,6 +123,17 @@ describe("environment", () => {
 		expect(env.get("SQUAD_WORKSPACE")).toBe(SANDBOX_WORKSPACE_PATH);
 	});
 
+	/**
+	 * A push goes out with the credential put on by the proxy, so a git that stops to ask for one is
+	 * a turn hung on a question nobody will answer. The name is so a commit says which agent made it.
+	 */
+	it("gives git the agent's name and never a prompt", () => {
+		expect(env.get("GIT_AUTHOR_NAME")).toBe("emma");
+		expect(env.get("GIT_COMMITTER_NAME")).toBe("emma");
+		expect(env.get("GIT_AUTHOR_EMAIL")).toBe("emma@squad.local");
+		expect(env.get("GIT_TERMINAL_PROMPT")).toBe("0");
+	});
+
 	it("lets callers add variables but not override containment", () => {
 		const withExtra = buildEnv({ ...spec, env: { TZ: "America/Montevideo" } });
 		expect(withExtra).toContain("TZ=America/Montevideo");

@@ -171,6 +171,13 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		SSL_CERT_FILE: CA_CERT_PATH,
 		CURL_CA_BUNDLE: CA_CERT_PATH,
 		GIT_SSL_CAINFO: CA_CERT_PATH,
+		// Whose name the agent's commits carry, and a git that never stops to ask for a password: the
+		// proxy puts the credential on the wire, so a prompt is a turn hung on a question nobody answers.
+		GIT_AUTHOR_NAME: spec.agentId,
+		GIT_AUTHOR_EMAIL: `${spec.agentId}@squad.local`,
+		GIT_COMMITTER_NAME: spec.agentId,
+		GIT_COMMITTER_EMAIL: `${spec.agentId}@squad.local`,
+		GIT_TERMINAL_PROMPT: "0",
 		...spec.env,
 	};
 	return Object.entries(env).map(([key, value]) => `${key}=${value}`);
