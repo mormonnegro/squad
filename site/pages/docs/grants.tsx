@@ -135,6 +135,12 @@ agents:
 					address. A stolen agent gets the reach it had; it does not get your account.{" "}
 					<Link href="/docs/trust/">Trust</Link> is the rest of that.
 				</p>
+				<p className="small muted">
+					One kind of grant carries a scope the method cannot: a git repository, where a clone and a
+					push are both a GET and a POST under the same path.{" "}
+					<Link href="/docs/repos/">Repositories</Link> is how the branches are named, and how a
+					push to the wrong one is turned down.
+				</p>
 			</section>
 		</Docs>
 	);

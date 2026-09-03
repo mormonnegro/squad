@@ -415,6 +415,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
    /mcp [<name>|add …|login …]               the MCP servers it has, and the shelf to add from
    /serve [<port>|stop <port>]               open a port inside it on the machine you are sitting at
    /reach <host>                             ask to open a host on the way out, answered here with one key
+   /repo [<owner/name> [<branch>…]|drop …]   the GitHub repositories it holds, and which branches it may push
    /telegram [<token>|off]                   the Telegram bot it answers on, and how to pair one
    /email [<address>|<password>|off]         the address it is reached at, and how to connect a mailbox
    /clear                                    forget the conversation, and start it again on nothing

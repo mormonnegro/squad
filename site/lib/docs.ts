@@ -124,6 +124,14 @@ export const DOCS: readonly DocGroup[] = [
 				},
 			},
 			{
+				href: "/docs/repos/",
+				title: { en: "Repositories", es: "Repositorios" },
+				blurb: {
+					en: "a GitHub repository, the branches it may push, and the token it never holds",
+					es: "un repositorio de GitHub, las ramas a las que puede pushear, y el token que nunca tiene",
+				},
+			},
+			{
 				href: "/docs/serve/",
 				title: { en: "Serving a port", es: "Publicar un puerto" },
 				blurb: {

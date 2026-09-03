@@ -111,6 +111,16 @@ agents:
         injection:
           kind: none
 
+    # GitHub repositories it holds, each with the branches it may push. Four words that become three
+    # grants — the repository with the push scope on it, the API for reading, the API for pull
+    # requests alone for writing — spent with the token in GITHUB_TOKEN, which the agent never sees.
+    # The proxy reads every push and turns down one to a branch not listed; left out, the branches
+    # are the agent's own lane, scout/*. `/repo` in the console gives one without touching this file.
+    repos:
+      - repo: acme/website
+      - repo: acme/api
+        push: [fix/*, docs]
+
     # An MCP server the operator logged into needs nothing here. `/mcp login <name>` sends them to
     # that server's consent screen, and what comes back grants one host and that server's own path,
     # for as long as the agent holds the server. It is the only capability not in this file, and it

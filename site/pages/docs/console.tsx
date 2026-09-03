@@ -33,6 +33,11 @@ const SLASH: [string, string, string][] = [
 	["/model", "[<name>]", "what it thinks with, and what else there is"],
 	["/mcp", "[<name>|add …|login …]", "the MCP servers it has, and the shelf to add from"],
 	["/serve", "[<port>|stop <port>]", "open a port inside it on the machine you are sitting at"],
+	[
+		"/repo",
+		"[<owner/name> [<branch>…]|drop …]",
+		"the GitHub repositories it holds, and which branches it may push",
+	],
 	["/telegram", "[<token>|off]", "the bot it answers on, and how to pair one"],
 	[
 		"/email",

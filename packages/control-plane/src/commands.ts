@@ -303,7 +303,7 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/repo",
-		takes: "[<owner/name> [<branch>…]|drop <owner/name>]",
+		takes: "[<owner/name> [<branch>…]|drop …]",
 		does: "the GitHub repositories it holds, and which branches it may push",
 	},
 	{

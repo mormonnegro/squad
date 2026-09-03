@@ -139,6 +139,12 @@ agents:
 					credencial y no la dirección. Un agente robado obtiene el alcance que tenía; no obtiene tu
 					cuenta. <Link href="/es/docs/trust/">Confianza</Link> es el resto de eso.
 				</p>
+				<p className="small muted">
+					Hay una clase de concesión que lleva un alcance que el método no puede llevar: un
+					repositorio git, donde clonar y pushear son los dos un GET y un POST bajo la misma ruta.{" "}
+					<Link href="/es/docs/repos/">Repositorios</Link> es cómo se nombran las ramas, y cómo se
+					rechaza un push a la equivocada.
+				</p>
 			</section>
 		</Docs>
 	);
