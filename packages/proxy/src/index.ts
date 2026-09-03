@@ -15,9 +15,9 @@ export {
 	type PushCommands,
 	type PushHead,
 	pushRefusal,
+	type RefUpdate,
 	readPushCommands,
 	readPushHead,
-	type RefUpdate,
 	refMatches,
 	shortRef,
 } from "./git.ts";
