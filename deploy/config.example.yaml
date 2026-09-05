@@ -121,6 +121,14 @@ agents:
       - repo: acme/api
         push: [fix/*, docs]
 
+    # The other agents on this plane it may write to, without anybody being asked first. One way
+    # round: this says scout may write to ledger, not that ledger may start something with scout.
+    # What it sends arrives there as data from a named peer and never as an instruction, and it
+    # wakes that agent, spending that agent's ceiling — which is why the list is here rather than
+    # anywhere an agent can reach. `/team <name>` gives one at the console, and naming an agent
+    # with an @ in what you write to this one opens a door for that turn alone.
+    talksTo: [ledger]
+
     # An MCP server the operator logged into needs nothing here. `/mcp login <name>` sends them to
     # that server's consent screen, and what comes back grants one host and that server's own path,
     # for as long as the agent holds the server. It is the only capability not in this file, and it
@@ -138,6 +146,11 @@ agents:
         # itself cannot carry operator trust, however it asks.
         trust: operator
         createdBy: operator
+
+  # The one scout writes to above. An agent named in a talksTo has to be an agent here, or the
+  # plane refuses to start: a name with a typo in it opens nothing and says nothing about it.
+  - id: ledger
+    description: Keeps the books, and answers what things cost.
 
 # An HMAC-signed endpoint at POST /hooks/<id> on port 8787.
 hooks:
