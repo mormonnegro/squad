@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { alreadySent, MOST_SENT, type Sending, sendTo, team, type Teammate } from "./team.ts";
+import { alreadySent, MOST_SENT, type Sending, sendTo, type Teammate, team } from "./team.ts";
 
 /**
  * The file the control plane reads once the turn is over, for the reason the wakeup and the console

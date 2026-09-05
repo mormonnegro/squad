@@ -132,6 +132,14 @@ export const DOCS: readonly DocGroup[] = [
 				},
 			},
 			{
+				href: "/docs/team/",
+				title: { en: "Writing to another agent", es: "Escribirle a otro agente" },
+				blurb: {
+					en: "handing a piece of the work sideways, and who says it may go",
+					es: "pasarle un pedazo del trabajo al de al lado, y quién dice que puede ir",
+				},
+			},
+			{
 				href: "/docs/serve/",
 				title: { en: "Serving a port", es: "Publicar un puerto" },
 				blurb: {

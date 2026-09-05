@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alreadySent, MOST_SENT, NOTE_CHARS, sendTo, team, type Teammate } from "../image/team.ts";
+import { alreadySent, MOST_SENT, NOTE_CHARS, sendTo, type Teammate, team } from "../image/team.ts";
 
 const mates: readonly Teammate[] = [
 	{ id: "scout", description: "reads the web", open: true },

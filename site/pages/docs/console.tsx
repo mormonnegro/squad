@@ -38,6 +38,11 @@ const SLASH: [string, string, string][] = [
 		"[<owner/name> [<branch>…]|drop …]",
 		"the GitHub repositories it holds, and which branches it may push",
 	],
+	[
+		"/team",
+		"[<name>|drop <name>]",
+		"the agents it may write to, and what it has asked to write to",
+	],
 	["/telegram", "[<token>|off]", "the bot it answers on, and how to pair one"],
 	[
 		"/email",
