@@ -100,6 +100,20 @@ export type ControlRequest =
 			readonly host: string;
 			readonly open: boolean;
 	  }
+	/**
+	 * The answer to an agent this one asked to write to: send what it wrote, or drop it.
+	 *
+	 * Separate from anything that opens a door for its own sake, on `reach`'s terms: this only answers
+	 * a message the plane is already holding, so a console cannot turn an answer into a grant between
+	 * two agents nobody asked about.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "talk";
+			readonly agentId: string;
+			readonly to: string;
+			readonly open: boolean;
+	  }
 	/** What every provider this plane holds a key for says it will answer to. */
 	| { readonly id: string; readonly op: "offers" }
 	/** Which provider the web_search tool goes through, and whether this plane can pay for it. */
@@ -459,6 +473,9 @@ export class ControlServer {
 			} else if (request.op === "reach") {
 				await this.#plane.answerReach(request.agentId, request.host, request.open);
 				this.#write(socket, { id: request.id, ok: true, text: request.host });
+			} else if (request.op === "talk") {
+				await this.#plane.answerTalk(request.agentId, request.to, request.open);
+				this.#write(socket, { id: request.id, ok: true, text: request.to });
 			} else if (request.op === "offers") {
 				this.#write(socket, { id: request.id, ok: true, catalog: await this.#plane.offers() });
 			} else if (request.op === "search") {

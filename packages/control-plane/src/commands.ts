@@ -12,6 +12,7 @@ import {
 	readPush,
 	readRepo,
 } from "./repos.ts";
+import type { Teammate } from "./team.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -163,6 +164,18 @@ export interface CommandContext {
 	askReach(host: string): Promise<void>;
 	/** The repositories this agent holds, from the operator's file and from here. */
 	repos(): Promise<readonly RepoStanding[]>;
+	/** The other agents on this plane, and which of them this one may write to. */
+	team(): Promise<readonly Teammate[]>;
+	/**
+	 * Lets this agent write to another one. One-way: what is typed at planner is planner's to send.
+	 *
+	 * Refused to the agent itself for the reason a grant is. A message wakes another agent and spends
+	 * that agent's ceiling, so an agent that could name its own correspondents could spend a whole
+	 * plane's day without anyone deciding it should.
+	 */
+	holdTeam(to: string): Promise<void>;
+	/** Closes one opened here. Answers whether there was one to close. */
+	dropTeam(to: string): Promise<boolean>;
 	/**
 	 * Gives this agent a repository, after asking GitHub whether the plane's token can see it.
 	 *
@@ -305,6 +318,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/repo",
 		takes: "[<owner/name> [<branch>…]|drop …]",
 		does: "the GitHub repositories it holds, and which branches it may push",
+	},
+	{
+		name: "/team",
+		takes: "[<name>|drop <name>]",
+		does: "the agents it may write to, and what it has asked to write to",
 	},
 	{
 		name: "/telegram",
@@ -1544,6 +1562,69 @@ async function repo(words: readonly string[], context: CommandContext): Promise<
 	return heldSaid(id, await context.holdRepo(spec));
 }
 
+/**
+ * Who this agent may write to, and the two lines that change it.
+ *
+ * Written from the agent the line was typed at, in both directions of the sentence: `/team scout`
+ * typed at planner is planner writing to scout and not the other way round. Said out loud in every
+ * answer, because a list of names on a pane is otherwise a list that could be read either way — and
+ * the two are different grants.
+ */
+async function team(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", ...rest] = words;
+
+	if (first === "") return teamSaid(id, await context.team());
+
+	if (first === "drop" || first === "off") {
+		const name = rest.join(" ").trim();
+		if (name === "") return "/team drop takes the name of an agent.";
+		try {
+			return (await context.dropTeam(name))
+				? `${id} can no longer write to ${name}. Nothing else changed: ${name} may still answer whatever it was already asked.`
+				: `${id} was not given ${name} here.`;
+		} catch (error) {
+			return (error as Error).message;
+		}
+	}
+
+	const name = first.replace(/^@/, "");
+	try {
+		await context.holdTeam(name);
+	} catch (error) {
+		return (error as Error).message;
+	}
+	return [
+		`${id} may write to ${name} from now on, that way round.`,
+		"",
+		`What ${id} sends arrives there as data and not as an instruction — ${id} is not ${name}'s`,
+		`operator — and ${name}'s answer comes back as a turn of ${id}'s.`,
+	].join("\n");
+}
+
+/** The others as rows: who they are, what they are for, and which way a message may go. */
+function teamSaid(id: string, mates: readonly Teammate[]): string {
+	if (mates.length === 0) {
+		return `${id} is the only agent in this plane, so there is nobody to write to.`;
+	}
+	const open = mates.filter((mate) => mate.open);
+	const rows = laidOut(
+		mates.map(
+			(mate) =>
+				[`${mate.open ? "→" : " "} ${mate.id}`, mate.description ?? "no description"] as const,
+		),
+	);
+	return [
+		open.length === 0
+			? `${id} may write to none of them. A name after /team opens one:`
+			: `${id} may write to ${open.map((mate) => mate.id).join(", ")}. The whole plane:`,
+		"",
+		rows,
+		"",
+		"An agent may also be given one for a single turn, by naming it with an @ in what you write.",
+	].join("\n");
+}
+
 export async function runCommand(line: string, context: CommandContext): Promise<string> {
 	const [name = "", ...rest] = line.trim().slice(1).split(/\s+/);
 	const argument = rest.join(" ");
@@ -1558,6 +1639,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "telegram") return telegram(rest, context);
 	if (name === "email") return email(rest, context);
 	if (name === "repo") return repo(rest, context);
+	if (name === "team") return team(rest, context);
 	if (name === "delete") return remove(rest, context);
 	if (name === "clear") return clear(rest, context);
 
@@ -1658,6 +1740,19 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 		// an agent that wants to be held to something tighter than nothing is asking for less.
 		if (asking.limitUsd === undefined || amount <= asking.limitUsd) return undefined;
 		return `This agent asked for a ceiling of ${money(amount)} a day, which is above the ${money(asking.limitUsd)} it has. It can ask to be held to less, never to more: /limit ${money(amount)}, if you meant it.`;
+	}
+
+	// Listing widens nothing and is worth answering: an agent that knows who it may write to writes to
+	// them instead of describing the message it would have sent. Opening a door is the other half, and
+	// it is the whole grant — a message wakes another agent and spends that agent's ceiling, so an
+	// agent that could open one could put the plane to work on its own say-so. The line the operator
+	// would type is printed instead, which is what puts the two names in front of them.
+	if (name === "team" && rest.length > 0) {
+		const [first = "", ...after] = rest;
+		if (first === "drop" || first === "off") {
+			return `This agent asked to stop being able to write to ${after.join(" ") || "another agent"}. That one stays with you: /team drop ${after.join(" ")}, if you meant it.`;
+		}
+		return `This agent asked to be able to write to "${first}", which would wake ${first} and spend what ${first} may spend. That one stays with you: /team ${first}, if you meant it. Writing to ${first} is the thing it can do about this by itself: that puts the same question on your screen and opens nothing until you answer it.`;
 	}
 
 	if (name === "repo") {

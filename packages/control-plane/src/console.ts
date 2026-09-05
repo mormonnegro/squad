@@ -947,7 +947,7 @@ export function Column({
 			// even that, because it is the one state on this column that will not resolve itself: an
 			// agent waiting on an answer is stopped until somebody comes to this row and gives it.
 			const mark =
-				agent.asking.length > 0
+				agent.asking.length > 0 || agent.wants.length > 0
 					? MARKS.asking
 					: busy.has(agent.id)
 						? MARKS.busy
@@ -1173,6 +1173,7 @@ export function Chat({
 	shell,
 	confirm,
 	asking,
+	wanting,
 	menu,
 	pick,
 	held,
@@ -1192,6 +1193,8 @@ export function Chat({
 	readonly confirm: string | undefined;
 	/** The host the agent has asked to reach and nobody has answered, or nothing while it asks for none. */
 	readonly asking: string | undefined;
+	/** The agent this one has written to and may not, or nothing while it is waiting on nobody. */
+	readonly wanting: string | undefined;
 	/** What the line being typed could still turn out to be, which is empty unless it began with a slash. */
 	readonly menu: readonly Command[];
 	readonly pick: number;
@@ -1229,9 +1232,14 @@ export function Chat({
 			? `delete ${confirm}?  y / n `
 			: asking !== undefined
 				? `open ${asking}?  y / n `
-				: shell !== undefined
-					? `! ${here(shell)} `
-					: "> ";
+				: // Three words and a name, on the reach question's terms. What a yes is worth — this agent
+					// writing to that one, and the message it is holding going now — is a sentence, and the
+					// sentence is in the line above where it has room to be read.
+					wanting !== undefined
+					? `write to ${wanting}?  y / n `
+					: shell !== undefined
+						? `! ${here(shell)} `
+						: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
@@ -1240,7 +1248,7 @@ export function Chat({
 	// Red is the whole warning, and the border carries it too: the box the hand is in changes colour
 	// under a line already half typed, which is what stops the answer from being reflex.
 	const hue =
-		confirm !== undefined || asking !== undefined
+		confirm !== undefined || asking !== undefined || wanting !== undefined
 			? "red"
 			: shell !== undefined
 				? "magenta"
@@ -2548,6 +2556,9 @@ export function App({
 	 * mark in the column and are asked the moment their row is walked to.
 	 */
 	const asking = selected?.asking.find((host) => !answered.has(`${selected.id} ${host}`));
+	// The other question of the same kind, kept apart from it by the arrow in the key: a host and an
+	// agent can be called the same thing, and answering one is not answering the other.
+	const wanting = selected?.wants.find((to) => !answered.has(`${selected.id} > ${to}`));
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
 	const walk = configRows(section, providers, models, servers, grants, mail);
@@ -2741,7 +2752,10 @@ export function App({
 		setAnswered((prev) => {
 			if (prev.size === 0) return prev;
 			const open = new Set(
-				agents.flatMap((agent) => agent.asking.map((host) => `${agent.id} ${host}`)),
+				agents.flatMap((agent) => [
+					...agent.asking.map((host) => `${agent.id} ${host}`),
+					...agent.wants.map((to) => `${agent.id} > ${to}`),
+				]),
 			);
 			const kept = [...prev].filter((one) => open.has(one));
 			return kept.length === prev.size ? prev : new Set(kept);
@@ -2893,6 +2907,24 @@ export function App({
 			client.answerReach(agentId, host, open).catch((error: Error) => {
 				setAnswered((prev) => new Set([...prev].filter((one) => one !== `${agentId} ${host}`)));
 				feed.note(agentId, "reach", error.message, true);
+			});
+		},
+		[client, feed],
+	);
+
+	/**
+	 * Answers an agent this one wrote to: sends what it wrote and leaves the door open, or drops it.
+	 *
+	 * The reach answer's shape, and what comes of it is written into the same conversation for the same
+	 * reason: the question was raised on that agent's pane, and whoever pressed the key is looking at
+	 * it. Only a socket that never carried the answer is reported here.
+	 */
+	const answerTalk = useCallback(
+		(agentId: string, to: string, open: boolean): void => {
+			setAnswered((prev) => new Set([...prev, `${agentId} > ${to}`]));
+			client.answerTalk(agentId, to, open).catch((error: Error) => {
+				setAnswered((prev) => new Set([...prev].filter((one) => one !== `${agentId} > ${to}`)));
+				feed.note(agentId, "team", error.message, true);
 			});
 		},
 		[client, feed],
@@ -3342,6 +3374,12 @@ export function App({
 		 */
 		if (asking !== undefined && selected !== undefined) {
 			answerReach(selected.id, asking, input === "y" || input === "Y");
+			return;
+		}
+		// The same question about a different thing, answered with the same key and behind the reach one
+		// so that two waiting questions are asked in the order the prompt draws them.
+		if (wanting !== undefined && selected !== undefined) {
+			answerTalk(selected.id, wanting, input === "y" || input === "Y");
 			return;
 		}
 		// The same question, about a model or a host, and modal for the same reason: it is asked with the
@@ -4164,6 +4202,7 @@ export function App({
 											: undefined,
 									confirm: deleting,
 									asking,
+									wanting,
 									menu,
 									pick: at,
 									held,

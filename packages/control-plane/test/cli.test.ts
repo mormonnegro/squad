@@ -15,6 +15,7 @@ const summary = (id: string): AgentSummary => ({
 	model: undefined,
 	served: [],
 	asking: [],
+	wants: [],
 	bot: undefined,
 	mail: undefined,
 });

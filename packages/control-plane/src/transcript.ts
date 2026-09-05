@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentEvent, isOwnNote } from "@squad/events";
+import { AGENT_CHANNEL, type AgentEvent, fromAgent, isOwnNote } from "@squad/events";
 import { CLI_CHANNEL } from "./control-server.ts";
 
 /**
@@ -64,7 +64,9 @@ export function overheard(event: AgentEvent): Utterance {
 			? { from: "operator", text: event.body }
 			: { from: "operator", via: carried, text: event.body };
 	}
-	return { from: "other", via: event.channel, text: event.body };
+	// Another agent is named by its name rather than by its channel, because that is what it is to
+	// whoever is reading: `via scout` is who wrote, where `via agent:scout` is the address it came to.
+	return { from: "other", via: fromAgent(event) ?? event.channel, text: event.body };
 }
 
 /**
@@ -77,7 +79,10 @@ export function overheard(event: AgentEvent): Utterance {
 function carriedBy(channel: string): string | undefined {
 	const colon = channel.indexOf(":");
 	const name = colon === -1 ? channel : channel.slice(0, colon);
-	return name === CLI_CHANNEL ? undefined : name;
+	if (name === CLI_CHANNEL) return undefined;
+	// The same, read the other way: an answer that went to another agent went to that agent, and
+	// "agent" on its own is a category the operator would have to decode into a name.
+	return name === AGENT_CHANNEL ? channel.slice(colon + 1) : name;
 }
 
 /**

@@ -6,6 +6,15 @@ export type EventSource = "channel" | "schedule" | "webhook" | "system";
 
 export const EVENT_SOURCES: readonly EventSource[] = ["channel", "schedule", "webhook", "system"];
 
+/**
+ * The channel prefix a message from another agent on the same plane arrives on, as `agent:<name>`.
+ *
+ * Named here rather than where the plane names its other channels, because what depends on it is the
+ * renderer: a message from a peer is introduced as a peer's, and every other channel prefix is a
+ * routing detail this package has no opinion about.
+ */
+export const AGENT_CHANNEL = "agent";
+
 export interface EventActor {
 	/** Stable identifier within the channel, e.g. a Slack user id. */
 	readonly id: string;

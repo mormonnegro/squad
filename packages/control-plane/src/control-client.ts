@@ -113,7 +113,7 @@ export function dialLocal(stateDir: string): Dial {
  * plane that never heard of `/reach` is asking for nothing, which is what an empty list says.
  */
 function whole(agent: AgentSummary): AgentSummary {
-	return { ...agent, asking: agent.asking ?? [] };
+	return { ...agent, asking: agent.asking ?? [], wants: agent.wants ?? [] };
 }
 
 /**
@@ -235,6 +235,11 @@ export class ControlClient {
 	/** Answers a host this agent asked for: open it to every agent here, or leave it closed. */
 	async answerReach(agentId: string, host: string, open: boolean): Promise<void> {
 		await this.#once({ op: "reach", agentId, host, open });
+	}
+
+	/** Answers an agent this one wrote to: send the message and leave the door open, or drop it. */
+	async answerTalk(agentId: string, to: string, open: boolean): Promise<void> {
+		await this.#once({ op: "talk", agentId, to, open });
 	}
 
 	/** Where the web_search tool goes, what it drives, and whether this plane can pay for it. */

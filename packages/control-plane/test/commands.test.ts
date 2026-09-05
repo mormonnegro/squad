@@ -22,6 +22,7 @@ import type { McpServer } from "../src/mcp.ts";
 import type { Model } from "../src/models.ts";
 import type { Served } from "../src/ports.ts";
 import type { RepoSpec, RepoStanding } from "../src/repos.ts";
+import type { Teammate } from "../src/team.ts";
 
 /** Where a started login says it is listening, which is the address a paste has to come back to. */
 const WAITING_AT = "http://localhost:54321/callback";
@@ -43,6 +44,8 @@ function context(
 		agentId?: string;
 		/** Made at a keyboard rather than declared, which decides whether deleting it is the last of it. */
 		created?: boolean;
+		/** The other agents in this plane, and which of them this one may already write to. */
+		mates?: readonly Teammate[];
 		/** The models the operator configured, which is the whole of what `/model` may choose from. */
 		models?: readonly Model[];
 		/** The one this agent is on, by whatever name the plane knows it under. */
@@ -109,6 +112,7 @@ function context(
 	const asked: string[] = [];
 	const here = start.agentId ?? "scout";
 	const repos = [...(start.repos ?? [])];
+	const mates = [...(start.mates ?? [])];
 	const github: { tokenHeld: boolean; offered: RepoSpec | undefined } = {
 		tokenHeld: start.tokenHeld ?? false,
 		offered: undefined,
@@ -218,6 +222,19 @@ function context(
 			},
 			repos: async () => repos,
 			holdRepo,
+			team: async () => mates,
+			holdTeam: async (to: string) => {
+				if (to === here) throw new Error("An agent does not write to itself");
+				const at = mates.findIndex((mate) => mate.id === to);
+				if (at === -1) throw new Error(`No agent "${to}" in this plane`);
+				mates[at] = { ...(mates[at] as Teammate), open: true };
+			},
+			dropTeam: async (to: string) => {
+				const at = mates.findIndex((mate) => mate.id === to);
+				if (at === -1 || mates[at]?.open !== true) return false;
+				mates[at] = { ...(mates[at] as Teammate), open: false };
+				return true;
+			},
 			keepGithubToken: async (token: string) => {
 				kept.push(token);
 				github.tokenHeld = true;
@@ -1489,6 +1506,61 @@ describe("/mcp login", () => {
 	});
 });
 
+describe("/team", () => {
+	const mates = [
+		{ id: "ledger", description: "keeps the books", open: false },
+		{ id: "clerk", open: true },
+	];
+
+	it("says who there is and which way a message may go", async () => {
+		const { context: ctx } = context({ agentId: "planner", mates });
+
+		const said = await runCommand("/team", ctx);
+
+		expect(said).toContain("planner may write to clerk");
+		expect(said).toContain("keeps the books");
+		expect(said).toContain("naming it with an @");
+	});
+
+	it("says there is nobody, on a plane of one", async () => {
+		const { context: ctx } = context({ agentId: "planner", mates: [] });
+
+		expect(await runCommand("/team", ctx)).toContain("only agent in this plane");
+	});
+
+	// The direction is the grant. A sentence that left it out would be read as either of the two
+	// different things it could mean, and only one of them was typed.
+	it("opens the door from the agent it was typed at, and says so", async () => {
+		const { context: ctx } = context({ agentId: "planner", mates });
+
+		const said = await runCommand("/team ledger", ctx);
+
+		expect(said).toContain("planner may write to ledger from now on, that way round");
+		expect(await runCommand("/team", ctx)).toContain("planner may write to ledger, clerk");
+	});
+
+	it("takes a name written the way it is mentioned", async () => {
+		const { context: ctx } = context({ agentId: "planner", mates });
+
+		expect(await runCommand("/team @ledger", ctx)).toContain("may write to ledger");
+	});
+
+	it("refuses an agent that is not here, and one that is the agent itself", async () => {
+		const { context: ctx } = context({ agentId: "planner", mates });
+
+		expect(await runCommand("/team nobody", ctx)).toContain('No agent "nobody"');
+		expect(await runCommand("/team planner", ctx)).toContain("does not write to itself");
+	});
+
+	it("closes one, and tells a typo from a door already shut", async () => {
+		const { context: ctx } = context({ agentId: "planner", mates });
+
+		expect(await runCommand("/team drop clerk", ctx)).toContain("can no longer write to clerk");
+		expect(await runCommand("/team drop clerk", ctx)).toContain("was not given clerk here");
+		expect(await runCommand("/team drop", ctx)).toContain("takes the name of an agent");
+	});
+});
+
 describe("/telegram", () => {
 	/** Shaped like BotFather's: a public bot id, a colon, and the half that is the account. */
 	const TOKEN = "8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw";
@@ -2314,5 +2386,19 @@ describe("agentMayNot", () => {
 	// list having to know every command there is in order to say that one is not among them.
 	it("lets a command that does not exist be answered as one", () => {
 		expect(agentMayNot("/parametros", scout)).toBeUndefined();
+	});
+
+	/**
+	 * Listing widens nothing and answers the question an agent would otherwise write a paragraph
+	 * about. Opening a door is the whole grant: a message wakes another agent and spends that agent's
+	 * ceiling, so an agent that could open one could put a plane to work on its own say-so.
+	 */
+	it("lets an agent read who it may write to, and never open a door to one", () => {
+		expect(agentMayNot("/team", scout)).toBeUndefined();
+
+		const refusal = agentMayNot("/team ledger", scout);
+		expect(refusal).toContain("/team ledger, if you meant it");
+		expect(refusal).toContain("spend what ledger may spend");
+		expect(agentMayNot("/team drop ledger", scout)).toContain("/team drop ledger");
 	});
 });

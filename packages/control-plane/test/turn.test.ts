@@ -179,6 +179,8 @@ describe("PiTurnRunner", () => {
 			"/usr/local/lib/squad/extensions/console.ts",
 			"--extension",
 			"/usr/local/lib/squad/extensions/remember.ts",
+			"--extension",
+			"/usr/local/lib/squad/extensions/send.ts",
 		]);
 	});
 

@@ -26,7 +26,7 @@ import {
 	tooWide,
 	WebhookChannel,
 } from "@squad/channels";
-import { EventBus, FileEventStore, isOwnNote } from "@squad/events";
+import { type AgentEvent, EventBus, FileEventStore, isOwnNote } from "@squad/events";
 import {
 	type AuditEntry,
 	EgressBroker,
@@ -115,6 +115,17 @@ import {
 } from "./search.ts";
 import { ensureSelfRepo } from "./self.ts";
 import { SpendLedger } from "./spend.ts";
+import {
+	AgentChannel,
+	agentChannel,
+	agentIn,
+	hopsIn,
+	MOST_HOPS,
+	mentioned,
+	type Sent,
+	TeamEdges,
+	type Teammate,
+} from "./team.ts";
 import { TelegramBots } from "./telegram.ts";
 import { overheard, sentTo, Transcript, type Utterance } from "./transcript.ts";
 import {
@@ -146,6 +157,15 @@ export interface AgentConfig {
 	readonly memoryBytes?: number;
 	readonly nanoCpus?: number;
 	readonly schedules?: readonly Omit<NewSchedule, "agentId">[];
+	/**
+	 * The other agents on this plane it may write to, without anybody being asked first.
+	 *
+	 * The operator's, like every other capability here, and for a reason of its own: a message wakes
+	 * another agent and spends its ceiling, so an agent that could name its own correspondents could
+	 * spend a plane's whole day by asking everybody for something. What an agent may do about a name
+	 * that is not on this list is ask, which puts the name on a screen with a key to press.
+	 */
+	readonly talksTo?: readonly string[];
 	/**
 	 * The most this agent may spend in a day, in US dollars.
 	 *
@@ -327,6 +347,14 @@ export interface AgentSummary {
 	 */
 	readonly asking: readonly string[];
 	/**
+	 * The other agents it has written to and may not, oldest first, waiting on a yes or a no.
+	 *
+	 * Beside the hosts and for their reason: the console draws this row every two seconds anyway, and
+	 * a question that arrived only as an event is one that every console not running at that moment
+	 * never hears. The message itself is held by the plane until somebody answers.
+	 */
+	readonly wants: readonly string[];
+	/**
 	 * The Telegram bot it answers on, if one is connected, and whether anybody has paired with it.
 	 *
 	 * Here rather than asked for per agent because the column draws the whole fleet at once, and a
@@ -458,6 +486,7 @@ export class ControlPlane {
 	readonly #addedModels: AddedModels;
 	/** The hosts opened at the console, on top of the ones the file grants every agent. */
 	readonly #addedGrants: AddedGrants;
+	readonly #addedTeam: TeamEdges;
 	/** The repositories given to agents at the console, on top of the ones their file declares. */
 	readonly #repos: HeldRepos;
 	/**
@@ -527,6 +556,24 @@ export class ControlPlane {
 	 * either way is the asking itself, which is written into the conversation like everything else.
 	 */
 	readonly #asking = new Map<string, string[]>();
+	/**
+	 * The messages each agent has written to an agent it may not write to, held until somebody says.
+	 *
+	 * Held here rather than delivered-and-undone because there is no undoing a turn: the message is
+	 * what wakes the other agent, so holding it is the only place a question can be asked from. Kept
+	 * for as long as this plane runs, on the asking's terms — a plane that restarted told every
+	 * console it went away, and an agent still needing this writes again on a later turn.
+	 */
+	readonly #wanting = new Map<string, Sent[]>();
+	/**
+	 * What is true for the turn each agent is taking right now: who its operator named in it, and how
+	 * far the message that woke it had already travelled.
+	 *
+	 * Turn-scoped on purpose. A mention is consent for the turn it was typed into and not a standing
+	 * arrangement, and the hop count is what stops two agents answering each other all night — both
+	 * are facts about this turn, and both are gone when it ends.
+	 */
+	readonly #turn = new Map<string, { readonly opened: readonly string[]; readonly hops: number }>();
 	readonly #onError: ((context: string, error: Error) => void) | undefined;
 	readonly #onTurn: ((agentId: string, result: TurnResult) => void) | undefined;
 	readonly #watchers = new Set<(event: PlaneEvent) => void>();
@@ -552,6 +599,7 @@ export class ControlPlane {
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
+		this.#addedTeam = new TeamEdges(join(this.#stateDir, "added-team.json"));
 		this.#repos = new HeldRepos(join(this.#stateDir, "repos.json"));
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
 		this.#keys = new ProviderKeys(
@@ -646,6 +694,16 @@ export class ControlPlane {
 		this.router.register(this.telegram);
 		this.router.register(this.email);
 		this.router.register(new SelfChannel());
+		// The agents themselves, so that an answer to a peer goes back the way its message came. It is
+		// registered beside the others because from a turn's side that is all it is: somebody wrote,
+		// and the answer goes to whoever wrote.
+		this.router.register(
+			new AgentChannel({
+				publish: (event) => this.bus.publish(event),
+				has: (agentId) => this.#agents.some((agent) => agent.id === agentId),
+				hops: (agentId) => this.#turn.get(agentId)?.hops ?? 0,
+			}),
+		);
 	}
 
 	/** Host path of the CA certificate mounted into every sandbox. */
@@ -702,6 +760,7 @@ export class ControlPlane {
 			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
 			served: await this.#served.of(agent.id),
 			asking: this.asking(agent.id),
+			wants: this.wants(agent.id),
 			bot: bot === undefined ? undefined : { username: bot.username, paired: bot.paired },
 			// Cut down to the two facts a row can draw. The rest of a standing is a pairing link and a
 			// host and a port, which are answers to `/telegram` and `/email` and belong in a sentence.
@@ -772,6 +831,10 @@ export class ControlPlane {
 		// A question about an agent that is no longer running is a question with no answer worth
 		// having, and one left here would be asked again about whoever takes the name next.
 		this.#asking.delete(agentId);
+		// And the messages it wrote to agents it may not write to, for the same reason: they were held
+		// waiting on an answer about an agent that is gone, and a yes now would wake nobody.
+		this.#wanting.delete(agentId);
+		this.#turn.delete(agentId);
 
 		if (options.purge === true) {
 			if (this.#createdIds.delete(agentId)) await this.#created.forget(agentId);
@@ -787,6 +850,9 @@ export class ControlPlane {
 			// What it was given, not what was found: a server stays on the shelf for the agents that
 			// are left, and for the one somebody makes next.
 			await this.#mcp.forgetAgent(agentId);
+			// Doors opened at the console, from both ends. A name is reused, and an agent made again
+			// with this one would inherit correspondents nobody in this plane ever gave it.
+			await this.#addedTeam.forget(agentId);
 			// The bot is this agent as far as anyone writing to it is concerned, so it goes with the name.
 			// The token stays good at BotFather's end; what stops is this plane answering with it.
 			await this.disconnectTelegram(agentId);
@@ -838,6 +904,7 @@ export class ControlPlane {
 			onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
 			onWake: (id, wake, answering) => this.#applyWake(id, wake, answering),
 			onAsked: (id, asked) => this.#applyAsked(id, asked),
+			onSent: (id, sent) => this.#applySent(id, sent),
 			// Named by destination, not by agent, so an operator waiting on their own reply is not
 			// told that somebody else's channel is the reason.
 			onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
@@ -853,9 +920,21 @@ export class ControlPlane {
 				this.#reportError(agentId, new Error(refusal));
 				return;
 			}
+			// Read off the events before the turn starts, because both halves are about the turn rather
+			// than about the agent: who the operator named in what they wrote is consent for this turn,
+			// and how far the message that woke it had already come is what the next hop is counted from.
+			// Only operator lines are read for mentions — an `@` in a webhook body is a stranger typing
+			// one, which is the whole reason trust levels exist.
+			this.#turn.set(agentId, {
+				opened: this.#mentionedIn(wakeup.events),
+				hops: Math.max(0, ...wakeup.events.map((event) => hopsIn(event.metadata))),
+			});
 			try {
 				await handler(wakeup);
 			} finally {
+				// Gone the moment the turn is, so a door opened by a mention closes with the sentence that
+				// opened it, and the next turn counts its hops from whatever wakes it.
+				this.#turn.delete(agentId);
 				// However the turn ended, it has nothing further to hand in, so the next line to arrive
 				// belongs to the conversation starting here rather than to any that was thrown away.
 				this.#clearedMidTurn.delete(agentId);
@@ -1073,6 +1152,203 @@ export class ControlPlane {
 				text: `${host} was not opened: ${(error as Error).message}`,
 			});
 		}
+	}
+
+	/**
+	 * Every other agent on this plane, and whether this one may write to it as things stand.
+	 *
+	 * Three ways a door is open, and they are the same door: the operator's file said so, somebody
+	 * opened it at the console, or the operator named that agent in the message this turn is answering.
+	 * The third is why this is asked again every turn rather than read once — a mention is consent for
+	 * one turn, and the turn it is consent for is the one being taken.
+	 *
+	 * What is never here is the agent itself. An agent that could write to itself would have found a
+	 * way to give itself a turn on its own say-so, which is the one thing wake_me is careful about.
+	 */
+	async team(agentId: string): Promise<readonly Teammate[]> {
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.talksTo ?? [];
+		const added = await this.#addedTeam.open(agentId).catch(() => []);
+		const open = new Set([...declared, ...added, ...(this.#turn.get(agentId)?.opened ?? [])]);
+		return this.#agents
+			.filter((agent) => agent.id !== agentId)
+			.map((agent) => ({
+				id: agent.id,
+				...(agent.description !== undefined ? { description: agent.description } : {}),
+				open: open.has(agent.id),
+			}));
+	}
+
+	/** Which agents the operator named in what they wrote, out of the ones this plane has. */
+	#mentionedIn(events: readonly AgentEvent[]): readonly string[] {
+		const written = events
+			.filter((event) => event.trust === "operator")
+			.map((event) => event.body)
+			.join("\n");
+		if (written.length === 0) return [];
+		return mentioned(
+			written,
+			this.#agents.map((agent) => agent.id),
+		);
+	}
+
+	/**
+	 * Lets one agent write to another from the console, which is the standing half of the same grant.
+	 *
+	 * One-way, and that is the point rather than an omission: `/team scout` typed at planner says
+	 * planner may write to scout, and scout writing back is scout answering rather than scout deciding
+	 * to start something. A door that opened both ways would be two grants made by one keystroke, and
+	 * only one of them would be on the screen it was typed at.
+	 */
+	async holdTeam(agentId: string, to: string): Promise<void> {
+		if (to === agentId) throw new Error("An agent does not write to itself");
+		if (!this.#agents.some((agent) => agent.id === to)) {
+			throw new Error(`No agent "${to}" in this plane`);
+		}
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.talksTo ?? [];
+		if (declared.includes(to)) {
+			throw new Error(`${agentId} may already write to ${to}, from the config file`);
+		}
+		await this.#addedTeam.add(agentId, to);
+	}
+
+	/** Closes one opened here. One the file granted is refused, the way a declared grant is. */
+	async dropTeam(agentId: string, to: string): Promise<boolean> {
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.talksTo ?? [];
+		if (declared.includes(to)) {
+			throw new Error(`${to} is in the config file, so it is not ours to change`);
+		}
+		return await this.#addedTeam.drop(agentId, to);
+	}
+
+	/**
+	 * Sends what a turn wrote to the agents it wrote to, or asks about the ones it may not write to.
+	 *
+	 * Both halves are written into the sender's conversation, because a message that left this agent
+	 * is a thing it did and the operator reading that pane should find it there — and a message that
+	 * did not leave is a question they are about to be asked.
+	 */
+	async #applySent(agentId: string, sent: readonly Sent[]): Promise<void> {
+		const mates = await this.team(agentId);
+		// One further than the message that woke this turn, and one at all when a person did: what
+		// this counts is distance from somebody asking, not the number of agents involved.
+		const hops = (this.#turn.get(agentId)?.hops ?? 0) + 1;
+
+		for (const message of sent) {
+			await this.#record(agentId, { from: "agent", to: message.to, text: message.note });
+
+			const mate = mates.find((one) => one.id === message.to);
+			if (mate === undefined) {
+				await this.#record(agentId, {
+					from: "plane",
+					tone: "bad",
+					text: `There is no agent "${message.to}" in this plane, so nothing was sent.`,
+				});
+				continue;
+			}
+			if (hops > MOST_HOPS) {
+				await this.#record(agentId, {
+					from: "plane",
+					tone: "bad",
+					text: `Nothing was sent to ${message.to}: this would be hop ${hops} of a conversation that started ${MOST_HOPS} turns ago, and past that the agents are talking rather than working. Write to ${message.to} yourself, and the count starts again.`,
+				});
+				continue;
+			}
+			if (!mate.open) {
+				this.#want(agentId, message);
+				await this.#record(agentId, {
+					from: "plane",
+					text: `${agentId} wants to write to ${message.to}, which it may not. Nothing has gone: the message is held, and a yes below sends it and leaves ${agentId} able to write to ${message.to} from now on.`,
+				});
+				continue;
+			}
+			await this.#deliver(agentId, message, hops);
+		}
+	}
+
+	/** Puts one message in front of the agent it was written to, which is the whole of sending it. */
+	async #deliver(from: string, message: Sent, hops: number): Promise<void> {
+		try {
+			await this.bus.publish({
+				agentId: message.to,
+				source: "channel",
+				channel: agentChannel(from),
+				// Never operator, however it was asked for and whoever the sender answers to. One
+				// injection would otherwise be the whole plane: the agent that fell for it instructs
+				// every agent it can reach, in the plane's own voice, with nobody in the room.
+				trust: "participant",
+				actor: { id: from },
+				body: message.note,
+				metadata: { hops: String(hops) },
+			});
+		} catch (error) {
+			// Caught on the wakeup's terms: a throw here would leave the sender's events queued and its
+			// turn taken again, and an agent whose message could not be delivered would pay for that turn
+			// twice and send the message twice.
+			this.#reportError(
+				`${from} -> ${agentChannel(message.to)}`,
+				error instanceof Error ? error : new Error(String(error)),
+			);
+		}
+	}
+
+	/** Holds a message for an agent this one may not write to, once, however often it is written. */
+	#want(agentId: string, message: Sent): void {
+		const waiting = this.#wanting.get(agentId) ?? [];
+		// The last one written rather than the first: an agent that wrote twice while waiting has said
+		// the second thing more recently, and the operator answering is answering about that.
+		this.#wanting.set(agentId, [...waiting.filter((one) => one.to !== message.to), message]);
+	}
+
+	/** The agents this one has written to and may not, oldest question first. */
+	wants(agentId: string): readonly string[] {
+		return (this.#wanting.get(agentId) ?? []).map((one) => one.to);
+	}
+
+	/**
+	 * Answers one of those, which is the only thing that opens a door on an agent's asking.
+	 *
+	 * A yes does two things at once and says so: it sends the message that was held, and it leaves
+	 * this agent able to write to that one from now on. The alternative — opening the door and making
+	 * the agent write again — spends a turn to say a thing it has already said, and the operator has
+	 * already read what it wanted to send.
+	 *
+	 * Both answers go into the conversation. What a yes is worth is one agent writing to one other,
+	 * in that direction, which is a narrower thing than a host and still belongs in the record.
+	 */
+	async answerTalk(agentId: string, to: string, open: boolean): Promise<void> {
+		const waiting = this.#wanting.get(agentId) ?? [];
+		const held = waiting.filter((one) => one.to === to);
+		if (held.length === 0) return;
+		this.#wanting.set(
+			agentId,
+			waiting.filter((one) => one.to !== to),
+		);
+
+		if (!open) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `${to} was not written to. The message is dropped, ${agentId} is not told to try again, and nothing about what it may reach has changed.`,
+			});
+			return;
+		}
+		try {
+			await this.holdTeam(agentId, to);
+		} catch (error) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `${to} was not opened: ${(error as Error).message}`,
+			});
+			return;
+		}
+		// A turn that has been over for as long as it took somebody to answer, so the count starts from
+		// the person who just said yes rather than from wherever the sender had got to.
+		for (const message of held) await this.#deliver(agentId, message, 1);
+		await this.#record(agentId, {
+			from: "plane",
+			text: `Sent, and ${agentId} may write to ${to} from now on — that way round, and no other agent is affected. /team drop ${to} takes it back.`,
+		});
 	}
 
 	/**
@@ -1841,6 +2117,9 @@ export class ControlPlane {
 			// says otherwise.
 			granted: async (host) => new GrantSet(await this.#grantsFor(agentId)).allowsHost(host),
 			askReach: async (host) => this.#askReach(agentId, host),
+			team: () => this.team(agentId),
+			holdTeam: (to) => this.holdTeam(agentId, to),
+			dropTeam: (to) => this.dropTeam(agentId, to),
 			repos: () => this.repos(agentId),
 			holdRepo: (spec) => this.holdRepo(agentId, spec),
 			keepGithubToken: (token) => this.keepGithubToken(agentId, token),
@@ -2291,6 +2570,10 @@ export class ControlPlane {
 			// And the repositories, so one given at the console is in front of the agent on its next
 			// turn, with the branches it may push named before it tries one it may not.
 			repos: (agentId) => this.repos(agentId),
+			// And the other agents, asked again each turn because the answer changes within one: a door
+			// opened at the console, and the one an operator opens by naming an agent in the message
+			// that started this very turn.
+			team: (agentId) => this.team(agentId),
 			...(this.#turnIdleMs !== undefined ? { idleMs: this.#turnIdleMs } : {}),
 		});
 		await this.attach(agent.id, runner);

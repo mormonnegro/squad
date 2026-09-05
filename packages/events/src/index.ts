@@ -5,6 +5,7 @@ export {
 	type WakeupHandler,
 } from "./bus.ts";
 export {
+	AGENT_CHANNEL,
 	type AgentEvent,
 	createEvent,
 	EVENT_SOURCES,
@@ -13,7 +14,7 @@ export {
 	type EventSource,
 	type NewAgentEvent,
 } from "./event.ts";
-export { isOwnNote, renderEvent, renderTurn } from "./render.ts";
+export { fromAgent, isOwnNote, renderEvent, renderTurn } from "./render.ts";
 export {
 	type EventStore,
 	FileEventStore,

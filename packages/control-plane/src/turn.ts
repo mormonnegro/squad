@@ -8,6 +8,8 @@ import {
 	SANDBOX_LESSONS_FILE,
 	SANDBOX_MCP_FILE,
 	SANDBOX_SEARCH_FILE,
+	SANDBOX_SEND_FILE,
+	SANDBOX_TEAM_FILE,
 	SANDBOX_WAKE_FILE,
 	SANDBOX_WORKSPACE_PATH,
 } from "@squad/sandbox";
@@ -17,6 +19,7 @@ import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 import { type RepoStanding, reposPrompt } from "./repos.ts";
 import type { Search } from "./search.ts";
+import { parseSent, type Sent, type Teammate } from "./team.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
 export interface TurnSandbox {
@@ -65,6 +68,8 @@ export interface TurnResult {
 	readonly wake?: WakeChange;
 	/** The console commands the turn asked for, in the order it asked. Which of them may run is decided upstream. */
 	readonly asked?: readonly string[];
+	/** The messages it wrote to other agents. Which of them may be delivered is decided upstream. */
+	readonly sent?: readonly Sent[];
 	/** Set when the turn was stopped rather than finished. The text is as far as it had got. */
 	readonly stopped?: true;
 }
@@ -175,6 +180,16 @@ export interface PiTurnRunnerOptions {
 	 * the console is in front of the agent on its next turn rather than its next container.
 	 */
 	readonly repos?: (agentId: string) => Promise<readonly RepoStanding[]>;
+	/**
+	 * The other agents this one may write to, asked for again at the start of every turn.
+	 *
+	 * On the servers' terms and for the same reason: a door opened at the console — or by a mention in
+	 * the message that started this turn — is one the agent should find on this turn rather than on
+	 * its next container.
+	 */
+	readonly team?: (agentId: string) => Promise<readonly Teammate[]>;
+	readonly teamFile?: string;
+	readonly sendFile?: string;
 	/** The agent's own file of what it got wrong, read back to it at the start of every turn. */
 	readonly lessonsFile?: string;
 }
@@ -284,6 +299,9 @@ export class PiTurnRunner {
 	readonly #mcpFile: string;
 	readonly #search: (() => Promise<Search | undefined>) | undefined;
 	readonly #searchFile: string;
+	readonly #team: ((agentId: string) => Promise<readonly Teammate[]>) | undefined;
+	readonly #teamFile: string;
+	readonly #sendFile: string;
 	readonly #repos: ((agentId: string) => Promise<readonly RepoStanding[]>) | undefined;
 	readonly #lessonsFile: string;
 	/** The turn each agent is taking, while it is taking it, so that it can be stopped. */
@@ -306,6 +324,9 @@ export class PiTurnRunner {
 		this.#search = options.search;
 		this.#repos = options.repos;
 		this.#searchFile = options.searchFile ?? SANDBOX_SEARCH_FILE;
+		this.#team = options.team;
+		this.#teamFile = options.teamFile ?? SANDBOX_TEAM_FILE;
+		this.#sendFile = options.sendFile ?? SANDBOX_SEND_FILE;
 		this.#lessonsFile = options.lessonsFile ?? SANDBOX_LESSONS_FILE;
 	}
 
@@ -426,6 +447,7 @@ export class PiTurnRunner {
 		try {
 			await this.#putServers(agentId);
 			await this.#putSearch(agentId);
+			await this.#putTeam(agentId);
 			const thinksWith = await this.#model?.(agentId);
 			const lessons = await this.#lessons(agentId);
 			// A failed read leaves the turn to happen without the list, which is the turn there was before.
@@ -460,6 +482,10 @@ export class PiTurnRunner {
 		// it needed died for want of that server, and losing the request with the turn is how an agent
 		// stays broken across every retry.
 		const asked = await this.#takeAsked(agentId);
+		// And on the same terms again, with one more reason of its own: a message to another agent is
+		// the one thing a turn leaves behind that somebody else is waiting on, and a turn that died
+		// after writing it would have hung the agent it wrote to on a message that never came.
+		const sent = await this.#takeSent(agentId);
 
 		const result: TurnResult = {
 			text: output.text,
@@ -476,6 +502,10 @@ export class PiTurnRunner {
 			// stopped a turn stopped what it was doing, and a login opening in their browser afterwards is
 			// the turn carrying on without it.
 			...(asked !== undefined && !stopped ? { asked } : {}),
+			// Off the disk either way and dropped when the turn was stopped, on the asked list's terms:
+			// whoever stopped a turn stopped what it was doing, and waking another agent afterwards is
+			// this turn carrying on somewhere the hand that stopped it is not looking.
+			...(sent !== undefined && !stopped ? { sent } : {}),
 			...(stopped ? { stopped: true } : {}),
 		};
 		// A turn that was stopped did not fail. Its exit code says killed and its answer ends mid
@@ -546,6 +576,25 @@ export class PiTurnRunner {
 	}
 
 	/**
+	 * Puts the other agents this one may write to where the extension will look, before pi starts.
+	 *
+	 * On the servers' terms: written every turn because the list is the plane's rather than the
+	 * agent's, and a copy the agent kept would be a copy it could edit. A failed write leaves the turn
+	 * to happen with no team at all, which is the turn there was before anybody had one.
+	 */
+	async #putTeam(agentId: string): Promise<void> {
+		if (this.#team === undefined) return;
+		const mates = await this.#team(agentId).catch(() => []);
+		await this.#sandbox
+			.run(
+				agentId,
+				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#teamFile],
+				JSON.stringify(mates),
+			)
+			.catch(() => undefined);
+	}
+
+	/**
 	 * Reads back what the agent wrote down about its own mistakes, and no more of it than was agreed.
 	 *
 	 * Cut in the sandbox rather than after it arrives, so that a file somebody has filled with a
@@ -604,6 +653,16 @@ export class PiTurnRunner {
 		if (read === undefined || read.exitCode !== 0) return undefined;
 		return parseAsked(read.stdout);
 	}
+
+	/** And again, where leaving it in place would send the same message every turn from now on. */
+	async #takeSent(agentId: string): Promise<readonly Sent[] | undefined> {
+		const read = await this.#sandbox
+			.run(agentId, ["sh", "-c", 'cat "$1" && rm -f "$1"', "sh", this.#sendFile], "")
+			.catch(() => undefined);
+
+		if (read === undefined || read.exitCode !== 0) return undefined;
+		return parseSent(read.stdout);
+	}
 }
 
 export interface TurnRunner {
@@ -654,6 +713,11 @@ export interface TurnHandlerOptions {
 	 * there before the reply goes out saying that it is.
 	 */
 	readonly onAsked?: (agentId: string, asked: readonly string[]) => Promise<void>;
+	/**
+	 * The messages the turn wrote to other agents. Awaited, so the agent it wrote to is already awake
+	 * — or the question about it already on a screen — before the answer to this turn goes out.
+	 */
+	readonly onSent?: (agentId: string, sent: readonly Sent[]) => Promise<void>;
 	/** A reply that had nowhere to go. The turn still counts as taken. */
 	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
@@ -691,6 +755,10 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		// courtesy, and what it changes is what the agent has — which whoever reads the reply is about
 		// to be told about.
 		if (result.asked) await options.onAsked?.(agentId, result.asked);
+		// After those two and before the reply, for their reason and one more: a message to another
+		// agent is a turn starting somewhere else, and it should start from what this turn actually did
+		// rather than from a plane still settling what it asked for.
+		if (result.sent) await options.onSent?.(agentId, result.sent);
 		if (!options.router || result.text.length === 0) return;
 
 		// Every destination is tried, and none of them can undo the turn. The model has been paid and
