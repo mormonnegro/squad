@@ -256,6 +256,25 @@ ${extra}`;
 		expect(config.hooks?.[0]?.trust).toBe("participant");
 	});
 
+	/**
+	 * The setting whose failure is silence: a name misspelled here opens no door and says nothing,
+	 * and the operator is asked about a message their file was written to let through.
+	 */
+	it("takes the agents an agent may write to, and refuses the ones that are not agents", () => {
+		const planeOf = (talksTo: string) => `
+stateDir: /state
+agents:
+  - id: planner
+    talksTo: ${talksTo}
+  - id: scout
+`;
+
+		expect(parseConfig(planeOf("[scout]")).agents[0]?.talksTo).toEqual(["scout"]);
+		expect(() => parseConfig(planeOf("[ghost]"))).toThrow(/unknown agent "ghost"/);
+		expect(() => parseConfig(planeOf("[planner]"))).toThrow(/does not write to itself/);
+		expect(() => parseConfig(planeOf("scout"))).toThrow(/must be a list/);
+	});
+
 	it("refuses a hook pointing at an agent that does not exist", () => {
 		expect(() =>
 			parseConfig(

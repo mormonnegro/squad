@@ -260,6 +260,26 @@ function reaching(defaults: AgentDefaults | undefined, models: readonly Model[])
 	};
 }
 
+/**
+ * Checked rather than passed through, because this is the setting whose failure is silence.
+ *
+ * A name misspelled here opens no door and says nothing: the agent writes, the operator is asked
+ * about it as though the file had never mentioned it, and the line they wrote to avoid exactly that
+ * question is still sitting in the file looking right.
+ */
+function checkTalksTo(raw: unknown, label: string, issues: string[]): void {
+	if (raw === undefined) return;
+	if (!Array.isArray(raw)) {
+		issues.push(`${label}.talksTo must be a list of the agents it may write to, e.g. [scout]`);
+		return;
+	}
+	raw.forEach((name, index) => {
+		if (typeof name !== "string" || !AGENT_NAME_PATTERN.test(name)) {
+			issues.push(`${label}.talksTo[${index}] must be the name of an agent`);
+		}
+	});
+}
+
 function parseAgent(
 	raw: unknown,
 	index: number,
@@ -286,6 +306,7 @@ function parseAgent(
 	checkLimit(raw.limitUsd, label, issues);
 	checkGrants(raw.grants, label, issues);
 	checkRepos(raw.repos, label, issues);
+	checkTalksTo(raw.talksTo, label, issues);
 
 	// Grants and schedules are handed to the proxy and scheduler as written; both validate their
 	// own shape and report better errors than a second copy of their rules would.
@@ -324,6 +345,7 @@ function parseDefaults(
 	checkLimit(raw.limitUsd, "defaults", issues);
 	checkGrants(raw.grants, "defaults", issues);
 	checkRepos(raw.repos, "defaults", issues);
+	checkTalksTo(raw.talksTo, "defaults", issues);
 
 	return {
 		...rest,
@@ -411,6 +433,19 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 	for (const hook of parsedHooks) {
 		if (!known.has(hook.agentId))
 			issues.push(`hook "${hook.id}" points at unknown agent "${hook.agentId}"`);
+	}
+	// Checked here rather than where the agent was read, because this is the first point at which the
+	// answer is known: a plane is a list, and whether a name is on it is a question about the list.
+	for (const agent of parsedAgents) {
+		for (const to of agent.talksTo ?? []) {
+			if (to === agent.id) {
+				issues.push(
+					`agent "${agent.id}".talksTo names itself, and an agent does not write to itself`,
+				);
+			} else if (!known.has(to)) {
+				issues.push(`agent "${agent.id}".talksTo names unknown agent "${to}"`);
+			}
+		}
 	}
 
 	if (issues.length > 0) throw new ConfigError(issues);
