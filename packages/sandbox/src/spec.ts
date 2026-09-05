@@ -55,6 +55,15 @@ export const SANDBOX_CONSOLE_EXTENSION = "/usr/local/lib/squad/extensions/consol
 export const SANDBOX_REMEMBER_EXTENSION = "/usr/local/lib/squad/extensions/remember.ts";
 
 /**
+ * The extension that lets an agent write to another agent on this plane. Shipped in the image.
+ *
+ * The only one whose effect is a turn somebody else takes, which is why what it can reach is decided
+ * outside it: the plane writes down who this agent may write to before the turn starts, and an agent
+ * that writes to anybody else has written a question for its operator rather than a message.
+ */
+export const SANDBOX_SEND_EXTENSION = "/usr/local/lib/squad/extensions/send.ts";
+
+/**
  * Every extension the plane hands the agent, which is a list because there is more than one and
  * naming only the first is a silent way to lose the rest. An extension in the image that nothing
  * names is one the agent never finds, and what that looks like from outside is not an error: it is
@@ -67,6 +76,7 @@ export const SANDBOX_EXTENSIONS: readonly string[] = [
 	SANDBOX_MCP_EXTENSION,
 	SANDBOX_CONSOLE_EXTENSION,
 	SANDBOX_REMEMBER_EXTENSION,
+	SANDBOX_SEND_EXTENSION,
 ];
 
 /**
@@ -105,6 +115,25 @@ export const SANDBOX_SEARCH_FILE = `${SANDBOX_HOME}/.run/search.json`;
  * a turn waiting to be allowed to ask for the second.
  */
 export const SANDBOX_CONSOLE_FILE = `${SANDBOX_HOME}/.run/console.json`;
+
+/**
+ * Where the agent leaves the messages it is sending the others, read once the turn is over.
+ *
+ * A list rather than one message, for the console queue's reason and one of its own: splitting a
+ * piece of work between two agents is one intention, and an agent that could only write to the first
+ * of them would spend a turn — and one of somebody else's — waiting to be allowed to write to the
+ * second.
+ */
+export const SANDBOX_SEND_FILE = `${SANDBOX_HOME}/.run/send.json`;
+
+/**
+ * Where the plane leaves the other agents this one may write to, read at the start of every turn.
+ *
+ * Beside the servers and the search provider, and for their reason: who an agent may write to is the
+ * operator's to decide, and a copy on the agent's own volume would be a copy the agent could edit —
+ * which is to say a door it opened for itself to an agent nobody meant it to reach.
+ */
+export const SANDBOX_TEAM_FILE = `${SANDBOX_HOME}/.run/team.json`;
 
 /**
  * Where the agent writes down what it got wrong, and the plane reads it back to it every turn.
@@ -159,6 +188,8 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		SQUAD_MCP_FILE: SANDBOX_MCP_FILE,
 		SQUAD_SEARCH_FILE: SANDBOX_SEARCH_FILE,
 		SQUAD_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
+		SQUAD_SEND_FILE: SANDBOX_SEND_FILE,
+		SQUAD_TEAM_FILE: SANDBOX_TEAM_FILE,
 		SQUAD_LESSONS_FILE: SANDBOX_LESSONS_FILE,
 		HTTP_PROXY: spec.proxyUrl,
 		HTTPS_PROXY: spec.proxyUrl,
