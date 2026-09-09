@@ -121,6 +121,8 @@ function plane(
 	const closed: string[] = [];
 	/** What was answered about a host an agent asked for, which is not the same list as `opened`. */
 	const answers: [string, string, boolean][] = [];
+	/** And about an agent it wrote to, which is the same question about the other kind of thing. */
+	const sendings: [string, string, boolean][] = [];
 	const offered: string[] = [];
 	const connected: [string, string][] = [];
 	const carried: (CarrierSpec | undefined)[] = [];
@@ -227,6 +229,14 @@ function plane(
 			);
 			if (open) reached = [...reached, { id: `reach:${host}`, host, origin: "here" as const }];
 		},
+		// Answered off the agent's row like the reach one, so the screen shows what the plane says
+		// rather than what the keyboard did.
+		answerTalk: async (agentId: string, to: string, open: boolean) => {
+			sendings.push([agentId, to, open]);
+			roster = roster.map((one) =>
+				one.id === agentId ? { ...one, wants: one.wants.filter((waiting) => waiting !== to) } : one,
+			);
+		},
 		addServer: async (name: string, server: McpServer) => {
 			shelved.push([name, server]);
 		},
@@ -306,6 +316,7 @@ function plane(
 		opened,
 		closed,
 		answers,
+		sendings,
 		offered,
 		connected,
 		carried,
@@ -698,6 +709,74 @@ describe("the console, pressed at", () => {
 
 			expect(showing(console_.screen())).toBe("demo");
 			expect(console_.screen()).toContain("! shell");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
+/**
+ * An agent this one wrote to and may not, answered with the same key on the same prompt.
+ *
+ * The same screen doing the same work for the other thing an agent can be stopped by. What a yes is
+ * worth here is narrower than a host — one agent writing to one other, that way round — and the
+ * message it was holding goes with it, which is why the name has to be on the screen first.
+ */
+describe("an agent this one wrote to", () => {
+	const writing = (id: string, ...to: string[]): AgentSummary => ({ ...listed(id), wants: to });
+
+	it("names the agent on the prompt, and says which keys answer it", async () => {
+		const { client, sendings } = plane({ has: [writing("demo", "ledger")] });
+		const console_ = open(client, [writing("demo", "ledger")]);
+		try {
+			expect(console_.screen()).toContain("write to ledger?");
+			expect(console_.screen()).toContain("y / n");
+			// On the screen is not sent. Nothing has been answered.
+			expect(sendings).toEqual([]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("sends it on a y", async () => {
+		const { client, sendings } = plane({ has: [writing("demo", "ledger")] });
+		const console_ = open(client, [writing("demo", "ledger")]);
+		try {
+			await console_.press("y");
+
+			expect(sendings).toEqual([["demo", "ledger", true]]);
+			expect(console_.screen()).not.toContain("write to ledger?");
+		} finally {
+			console_.close();
+		}
+	});
+
+	/** Every key but `y` is a no, which is what makes it safe to raise under a typing hand. */
+	it("takes anything that is not y for a no, and sends nothing", async () => {
+		const { client, sendings } = plane({ has: [writing("demo", "ledger")] });
+		const console_ = open(client, [writing("demo", "ledger")]);
+		try {
+			await console_.press("k");
+
+			expect(sendings).toEqual([["demo", "ledger", false]]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	// Two questions and one prompt. The host is asked first because it is drawn first, and the
+	// second is still there afterwards rather than answered by the key that answered the first.
+	it("waits its turn behind a host the same agent is asking about", async () => {
+		const waiting = { ...listed("demo"), asking: ["example.com"], wants: ["ledger"] };
+		const { client, answers, sendings } = plane({ has: [waiting] });
+		const console_ = open(client, [waiting]);
+		try {
+			expect(console_.screen()).toContain("open example.com?");
+			await console_.press("y");
+
+			expect(answers).toEqual([["demo", "example.com", true]]);
+			expect(sendings).toEqual([]);
+			expect(console_.screen()).toContain("write to ledger?");
 		} finally {
 			console_.close();
 		}
