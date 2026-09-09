@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConfigError, loadConfig } from "./config.ts";
 import {
@@ -13,6 +15,7 @@ import { runningPlanes } from "./control-relay.ts";
 import { ControlServer, controlSocketPath } from "./control-server.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
+import { WEB_PORT, WebServer, webTokenPath } from "./web-server.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/squad";
 
@@ -28,6 +31,8 @@ const USAGE = `squad - run self-hosted cloud agents
   squad logs                   follow what every agent runs, answers and spends
   squad rm <name> [--purge]    take the sandbox away, and with --purge its
                                repository: soul, memory, skills, tools
+  squad web                    the address of this plane's console in a browser,
+                               with the token that opens it
   squad run <config.yaml>      start the control plane
   squad relay                  this plane's control socket, on stdin and stdout: the
                                door a console on another computer comes through
@@ -118,6 +123,22 @@ async function run(path: string): Promise<number> {
 	// should get an answer rather than find nothing listening.
 	await server.listen();
 	process.stdout.write(`control socket at ${server.socketPath}\n`);
+
+	// The browser's door, opened beside the socket and against it: the web server is a client of the
+	// same surface a console is, so nothing it can do is something a console could not.
+	const web = new WebServer({
+		dial: dialLocal(plane.stateDir),
+		stateDir: plane.stateDir,
+		root: bundlePath(),
+	});
+	await web.listen().then(
+		() =>
+			process.stdout.write(`web console at http://127.0.0.1:${WEB_PORT} — squad web to get in\n`),
+		// A port something else on this machine holds is not a reason to refuse to run the agents. The
+		// plane is the agents; this is a way of looking at them.
+		(error: Error) => process.stdout.write(`no web console: ${error.message}\n`),
+	);
+
 	await plane.start();
 	// Counted after starting, not from the config: the agents made from the CLI in an earlier life
 	// are not in that file, and a plane that reports fewer agents than it runs is worse than silence.
@@ -132,8 +153,41 @@ async function run(path: string): Promise<number> {
 		process.once("SIGTERM", shutdown);
 	});
 
+	await web.close();
 	await server.close();
 	await plane.stop();
+	return 0;
+}
+
+/**
+ * The built web console, beside the sources that serve it.
+ *
+ * Resolved from this file rather than from the working directory, because the plane is started by a
+ * container's entrypoint, by a compose file and by hand, and only one of those three is standing
+ * anywhere in particular when it does.
+ */
+function bundlePath(): string {
+	return join(import.meta.dirname, "..", "..", "web", "dist");
+}
+
+/**
+ * The address of this plane's web console, token and all.
+ *
+ * Read from the state directory rather than asked of the plane over the socket, because the token is
+ * the thing that stands in for holding a file — so it is answered by reading that file, and whoever
+ * cannot read it is exactly whoever should not be told.
+ */
+async function web(args: Args): Promise<number> {
+	const path = webTokenPath(args.stateDir);
+	const token = await readFile(path, "utf8").catch(() => undefined);
+	if (token === undefined) {
+		process.stderr.write(
+			`No web console token at ${path}. The plane writes one when it starts, so either it is\n` +
+				`not running or it is an older one that has no web console yet.\n`,
+		);
+		return 1;
+	}
+	process.stdout.write(`http://127.0.0.1:${WEB_PORT}/?t=${token.trim()}\n`);
 	return 0;
 }
 
@@ -676,7 +730,8 @@ async function main(argv: readonly string[], remote?: Remote): Promise<number> {
 	// at this machine's containers would answer about a different deployment.
 	const connects =
 		remote === undefined &&
-		(command === undefined || ["ls", "chat", "wake", "logs", "rm", "relay"].includes(command));
+		(command === undefined ||
+			["ls", "chat", "wake", "logs", "rm", "relay", "web"].includes(command));
 	const args: Args = connects
 		? { ...(await resolveStateDir(parsed)), rest: words }
 		: { ...parsed, rest: words };
@@ -700,6 +755,8 @@ async function main(argv: readonly string[], remote?: Remote): Promise<number> {
 			return logs(args);
 		case "rm":
 			return rm(args);
+		case "web":
+			return web(args);
 		case "relay":
 			// The door onto this machine's plane, so it cannot be held open on somebody else's behalf.
 			if (args.remote !== undefined) {
