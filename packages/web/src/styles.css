@@ -407,15 +407,17 @@ button {
 	background: var(--bg-raised);
 	margin-bottom: 0.4rem;
 	overflow: hidden;
-	max-height: 15rem;
-	overflow-y: auto;
+	/* Every command there is, rather than a window onto them. The list is thirteen rows and it is
+	   the same thirteen every time — one that scrolls hides the bottom of a menu somebody is
+	   reading to find out what there is. */
+	padding: 0.25rem 0;
 }
 
 .menu-row {
 	display: flex;
-	gap: 0.8rem;
+	gap: 0.9rem;
 	width: 100%;
-	padding: 0.3rem 0.8rem;
+	padding: 0.28rem 0.8rem;
 	font: 0.82rem var(--mono);
 	text-align: left;
 }
@@ -424,9 +426,12 @@ button {
 	background: #ffffff0f;
 }
 
+/* Padded to the longest of them, so the sentences line up whatever the names are — which is what
+   the terminal does with the same list, and the reason it can be read down rather than across. */
 .menu-name {
 	color: var(--cyan);
-	min-width: 9rem;
+	min-width: 49ch;
+	flex: none;
 }
 
 .menu-does {
@@ -458,9 +463,11 @@ button {
 	color: var(--muted);
 }
 
+/* Laid out rather than stretched: one card across a pane this wide is a button pretending to be a
+   section, and the row has to look the same whether it holds one of these or three. */
 .cards {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+	display: flex;
+	flex-wrap: wrap;
 	gap: 0.7rem;
 	margin-top: 0.4rem;
 }
@@ -474,6 +481,7 @@ button {
 	flex-direction: column;
 	gap: 0.45rem;
 	text-align: left;
+	flex: 0 1 10.5rem;
 }
 
 .card:hover {

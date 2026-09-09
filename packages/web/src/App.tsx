@@ -128,6 +128,12 @@ export function App() {
 
 	const agent = useMemo(() => agents.find((one) => one.id === chosen), [agents, chosen]);
 
+	// What the plane answered a command or a shell line with. It is said to whoever asked, on the
+	// connection they asked over, so no event carries it and no other console would show it.
+	const local = useCallback((agentId: string, one: Utterance) => {
+		setTalk((was) => ({ ...was, [agentId]: [...(was[agentId] ?? []), one] }));
+	}, []);
+
 	const create = useCallback(async (name: string) => {
 		const client = held.current;
 		if (client === undefined) return;
@@ -224,6 +230,7 @@ export function App() {
 						agent={agent}
 						said={talk[agent.id] ?? []}
 						live={live[agent.id] ?? QUIET}
+						onLocal={local}
 					/>
 				) : (
 					<Nothing onMake={() => setMaking(true)} />

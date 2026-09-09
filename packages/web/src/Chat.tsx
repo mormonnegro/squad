@@ -10,11 +10,13 @@ export function Chat({
 	agent,
 	said,
 	live,
+	onLocal,
 }: {
 	plane: Plane;
 	agent: AgentSummary;
 	said: readonly Utterance[];
 	live: Live;
+	onLocal: (agentId: string, said: Utterance) => void;
 }) {
 	const face = faceOf(agent.id);
 	const floor = useRef<HTMLDivElement>(null);
@@ -91,7 +93,7 @@ export function Chat({
 				))}
 			</div>
 
-			<Composer plane={plane} agent={agent} busy={live.thinking} />
+			<Composer plane={plane} agent={agent} busy={live.thinking} onLocal={onLocal} />
 		</>
 	);
 }
@@ -197,7 +199,17 @@ function Ask({ what, onAnswer }: { what: React.ReactNode; onAnswer: (open: boole
 	);
 }
 
-function Composer({ plane, agent, busy }: { plane: Plane; agent: AgentSummary; busy: boolean }) {
+function Composer({
+	plane,
+	agent,
+	busy,
+	onLocal,
+}: {
+	plane: Plane;
+	agent: AgentSummary;
+	busy: boolean;
+	onLocal: (agentId: string, said: Utterance) => void;
+}) {
 	const [draft, setDraft] = useState("");
 	const [pick, setPick] = useState(0);
 	const [cwd, setCwd] = useState<string | undefined>();
@@ -219,20 +231,35 @@ function Composer({ plane, agent, busy }: { plane: Plane; agent: AgentSummary; b
 		if (line.length === 0) return;
 		setDraft("");
 		setPick(0);
+		// A command and a shell line are answered to whoever asked, on the connection they asked over,
+		// and the plane records only the asking. So the answer is put into the conversation here —
+		// without it a `/limit` that worked looks exactly like one that did nothing.
 		try {
 			if (isShell(line)) {
 				const answered = await plane.shell(agent.id, line.slice(1));
 				setCwd(answered.cwd);
+				if (answered.text.length > 0) {
+					onLocal(agent.id, { from: "shell", text: answered.text, at: new Date().toISOString() });
+				}
 			} else if (isCommand(line)) {
-				await plane.command(agent.id, line);
+				const text = await plane.command(agent.id, line);
+				if (text.length > 0) {
+					onLocal(agent.id, { from: "plane", text, at: new Date().toISOString() });
+				}
 			} else {
 				// Not awaited for its text: the answer arrives as events, and the turn is longer than
 				// anybody wants a prompt to be locked for.
 				void plane.wake(agent.id, line);
 			}
-		} catch {
-			// The plane says what went wrong down the feed, in the pane this was typed into. Saying it
-			// twice, once here and once there, would be two failures for one.
+		} catch (error) {
+			// Refusals come back as the failed answer to the request rather than down the feed, so this
+			// is the only place they can be said. `tone` is what draws it as bad news.
+			onLocal(agent.id, {
+				from: "plane",
+				text: (error as Error).message,
+				tone: "bad",
+				at: new Date().toISOString(),
+			});
 		}
 	};
 
