@@ -19,7 +19,8 @@
 			"!.demo",
 			"!.claude",
 			"!site/.next",
-			"!site/out"
+			"!site/out",
+			"!packages/web/dist"
 		]
 	}
 }

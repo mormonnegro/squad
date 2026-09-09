@@ -34,6 +34,11 @@ services:
       # machine. `/mcp login` sends the operator to a consent screen that redirects to
       # localhost:8788, and without this the plane would be listening where nobody can knock.
       - "127.0.0.1:8788:8788"
+      # The web console, on loopback for the same reason and a stronger one: this is the whole
+      # control surface, and the plane holds the Docker socket. Reached from another machine by
+      # forwarding it down the SSH connection the operator already has — `squad web` does that —
+      # so that a console on a laptop still opens nothing on the server.
+      - "127.0.0.1:8789:8789"
     networks:
       egress:
         aliases:

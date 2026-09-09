@@ -1,3 +1,17 @@
+# The web console is the one thing here that is compiled, so it is compiled somewhere else.
+#
+# A browser cannot be handed TypeScript and a directory of workspace packages, which is what the
+# plane itself runs on. So this stage exists to turn one package into a handful of files, and
+# nothing it needed to do that — vite, react, the type definitions — reaches the image below.
+FROM node:24-bookworm-slim AS web
+
+RUN corepack enable
+WORKDIR /srv/squad
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages ./packages
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter @squad/web... \
+	&& pnpm --filter @squad/web build
+
 FROM node:24-bookworm-slim
 
 RUN corepack enable
@@ -9,6 +23,10 @@ COPY packages ./packages
 # Node runs the TypeScript sources directly, so there is nothing to build and nothing that needs a
 # compiler at runtime. Only the production dependencies are installed.
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
+
+# The built console, and only the built console. Everything the browser needs is inside these files,
+# which is why @squad/web declares no runtime dependencies for this install to have found.
+COPY --from=web /srv/squad/packages/web/dist ./packages/web/dist
 
 # So `docker compose exec control-plane squad ls` works: the socket is in the state directory,
 # which is reachable from inside the container as well as from the host.

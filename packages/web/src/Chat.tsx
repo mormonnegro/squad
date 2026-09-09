@@ -1,0 +1,308 @@
+import type { AgentSummary, Utterance } from "@squad/control-plane";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Live } from "./App.tsx";
+import { type Command, completions, isCommand, isShell } from "./commands.ts";
+import { faceOf, nameOf } from "./face.ts";
+import type { Plane } from "./plane.ts";
+
+export function Chat({
+	plane,
+	agent,
+	said,
+	live,
+}: {
+	plane: Plane;
+	agent: AgentSummary;
+	said: readonly Utterance[];
+	live: Live;
+}) {
+	const face = faceOf(agent.id);
+	const floor = useRef<HTMLDivElement>(null);
+
+	// Before paint rather than after, so a turn arriving never shows the previous bottom of the
+	// conversation for a frame on its way past. The two named here are triggers rather than inputs:
+	// the effect reads the DOM and nothing else, and a change in them is the reason to run it.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: what changed is why it must scroll
+	useLayoutEffect(() => {
+		floor.current?.scrollTo({ top: floor.current.scrollHeight });
+	}, [said, live]);
+
+	return (
+		<>
+			<header className="pane-head">
+				<span className="face" style={{ color: `var(--${face.accent})` }} aria-hidden="true">
+					{face.glyph}
+				</span>
+				<span className="pane-title">{nameOf(agent.id)}</span>
+				<div className="pane-facts">
+					{agent.model !== undefined && <span>{agent.model}</span>}
+					{agent.served.map((one) => (
+						<a
+							key={one.port}
+							href={`http://${agent.id}.localhost:${one.at}`}
+							target="_blank"
+							rel="noreferrer"
+						>
+							:{one.port}
+						</a>
+					))}
+					<span>
+						${agent.spentUsd.toFixed(2)}
+						{agent.limitUsd !== undefined && ` / $${agent.limitUsd.toFixed(2)}`}
+					</span>
+				</div>
+			</header>
+
+			<div className="scroll" ref={floor}>
+				{said.map((one, index) => (
+					// Nothing in an utterance is unique — the same agent can say the same word twice in a
+					// row — and the list only ever grows at the end, so the position is the identity.
+					// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
+					<Said key={index} said={one} agentId={agent.id} />
+				))}
+
+				{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
+					<Turn agentId={agent.id} live={live} />
+				)}
+
+				{agent.asking.map((host) => (
+					<Ask
+						key={`reach:${host}`}
+						what={
+							<>
+								<strong>{nameOf(agent.id)}</strong> wants to reach <code>{host}</code> on its way
+								out.
+							</>
+						}
+						onAnswer={(open) => void plane.answerReach(agent.id, host, open)}
+					/>
+				))}
+				{agent.wants.map((to) => (
+					<Ask
+						key={`talk:${to}`}
+						what={
+							<>
+								<strong>{nameOf(agent.id)}</strong> wants to write to <code>{to}</code>. A message
+								wakes that agent and spends its ceiling.
+							</>
+						}
+						onAnswer={(open) => void plane.answerTalk(agent.id, to, open)}
+					/>
+				))}
+			</div>
+
+			<Composer plane={plane} agent={agent} busy={live.thinking} />
+		</>
+	);
+}
+
+function Said({ said, agentId }: { said: Utterance; agentId: string }) {
+	const mine = said.from === "agent";
+	const face = faceOf(agentId);
+	const who =
+		said.from === "operator"
+			? "You"
+			: said.from === "agent"
+				? nameOf(agentId)
+				: said.from === "shell"
+					? "sandbox"
+					: said.from === "other"
+						? (said.via ?? "another agent")
+						: "squad";
+
+	return (
+		<article className="said" data-from={said.from} data-tone={said.tone}>
+			<span
+				className="face"
+				data-size="big"
+				style={{ color: mine ? `var(--${face.accent})` : "var(--muted)" }}
+				aria-hidden="true"
+			>
+				{mine ? face.glyph : said.from === "operator" ? "◍" : "·"}
+			</span>
+			<div>
+				<div className="said-who">
+					<span className="said-name">{who}</span>
+					{/* Where it came from, or where it went. A message that left this agent is a thing it
+					    did, and the pane it was typed in is where a person looks for it. */}
+					{said.via !== undefined && said.from !== "other" && (
+						<span className="said-via">‹{said.via}›</span>
+					)}
+					{said.to !== undefined && <span className="said-via">→ {said.to}</span>}
+					{said.at !== undefined && <span className="said-when">{clock(said.at)}</span>}
+				</div>
+				<div className="said-body">{said.text}</div>
+			</div>
+		</article>
+	);
+}
+
+/** The turn as it happens: what it is doing, and the answer arriving a piece at a time. */
+function Turn({ agentId, live }: { agentId: string; live: Live }) {
+	const face = faceOf(agentId);
+	return (
+		<article className="said" data-from="agent">
+			<span
+				className="face"
+				data-size="big"
+				style={{ color: `var(--${face.accent})` }}
+				aria-hidden="true"
+			>
+				{face.glyph}
+			</span>
+			<div>
+				<div className="said-who">
+					<span className="said-name">{nameOf(agentId)}</span>
+					{live.thinking && live.text.length === 0 && <span className="said-when">working…</span>}
+				</div>
+				{live.text.length > 0 && <div className="said-body">{live.text}</div>}
+				{live.steps.length > 0 && (
+					<div className="steps">
+						{live.steps.slice(-8).map((step, index) => (
+							// biome-ignore lint/suspicious/noArrayIndexKey: append-only within one turn
+							<div className="step" key={index} data-failed={step.failed === true}>
+								<span className="step-action">{step.action}</span>
+								<span className="step-detail">
+									{step.failed === true && "✗ "}
+									{step.detail}
+								</span>
+							</div>
+						))}
+					</div>
+				)}
+			</div>
+		</article>
+	);
+}
+
+/**
+ * A question the agent raised, where it raised it.
+ *
+ * The agent writes the question and never the answer: this draws what it asked for and the two keys
+ * that answer it, and neither of them is something the agent can press.
+ */
+function Ask({ what, onAnswer }: { what: React.ReactNode; onAnswer: (open: boolean) => void }) {
+	return (
+		<div className="ask">
+			<div className="ask-what">{what}</div>
+			<div className="ask-keys">
+				<button type="button" className="key" data-yes="true" onClick={() => onAnswer(true)}>
+					y open
+				</button>
+				<button type="button" className="key" onClick={() => onAnswer(false)}>
+					n keep it shut
+				</button>
+			</div>
+		</div>
+	);
+}
+
+function Composer({ plane, agent, busy }: { plane: Plane; agent: AgentSummary; busy: boolean }) {
+	const [draft, setDraft] = useState("");
+	const [pick, setPick] = useState(0);
+	const [cwd, setCwd] = useState<string | undefined>();
+	const box = useRef<HTMLTextAreaElement>(null);
+	const menu: readonly Command[] = completions(draft);
+	const shell = isShell(draft);
+
+	// Grows with what is in it, up to the ceiling the stylesheet sets. A box that scrolls at three
+	// lines hides the paragraph somebody is still writing.
+	useEffect(() => {
+		const field = box.current;
+		if (field === null) return;
+		field.style.height = "auto";
+		field.style.height = `${field.scrollHeight}px`;
+	}, []);
+
+	const send = async (): Promise<void> => {
+		const line = draft.trim();
+		if (line.length === 0) return;
+		setDraft("");
+		setPick(0);
+		try {
+			if (isShell(line)) {
+				const answered = await plane.shell(agent.id, line.slice(1));
+				setCwd(answered.cwd);
+			} else if (isCommand(line)) {
+				await plane.command(agent.id, line);
+			} else {
+				// Not awaited for its text: the answer arrives as events, and the turn is longer than
+				// anybody wants a prompt to be locked for.
+				void plane.wake(agent.id, line);
+			}
+		} catch {
+			// The plane says what went wrong down the feed, in the pane this was typed into. Saying it
+			// twice, once here and once there, would be two failures for one.
+		}
+	};
+
+	return (
+		<div className="composer">
+			{menu.length > 0 && (
+				<div className="menu">
+					{menu.map((command, index) => (
+						<button
+							type="button"
+							key={command.name}
+							className="menu-row"
+							data-here={index === pick}
+							onMouseEnter={() => setPick(index)}
+							onClick={() => {
+								setDraft(command.takes.length > 0 ? `${command.name} ` : command.name);
+								box.current?.focus();
+							}}
+						>
+							<span className="menu-name">
+								{command.name} {command.takes}
+							</span>
+							<span className="menu-does">{command.does}</span>
+						</button>
+					))}
+				</div>
+			)}
+			<div className="box" data-mode={shell ? "shell" : "say"}>
+				<span className="box-mark">{shell ? (cwd ?? "!") : ">"}</span>
+				<textarea
+					ref={box}
+					rows={1}
+					value={draft}
+					placeholder={busy ? `${nameOf(agent.id)} is working — this will queue` : "Say something"}
+					onChange={(event) => {
+						setDraft(event.target.value);
+						setPick(0);
+						const field = event.target;
+						field.style.height = "auto";
+						field.style.height = `${field.scrollHeight}px`;
+					}}
+					onKeyDown={(event) => {
+						if (menu.length > 0 && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+							event.preventDefault();
+							setPick(
+								(was) => (was + (event.key === "ArrowDown" ? 1 : menu.length - 1)) % menu.length,
+							);
+							return;
+						}
+						if (event.key === "Enter" && !event.shiftKey) {
+							event.preventDefault();
+							const chosen = menu[pick];
+							// Enter on an open menu chooses the row rather than sending. What is in the box is
+							// half a command, and sending half a command is an error message for a keystroke.
+							if (chosen !== undefined) {
+								setDraft(chosen.takes.length > 0 ? `${chosen.name} ` : chosen.name);
+								return;
+							}
+							void send();
+						}
+					}}
+				/>
+			</div>
+		</div>
+	);
+}
+
+function clock(at: string): string {
+	const when = new Date(at);
+	return Number.isNaN(when.getTime())
+		? ""
+		: when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
