@@ -88,9 +88,11 @@ export class Plane {
 		}
 		const handler = this.#handlers.get(answer.id);
 		if (handler === undefined) return;
-		// A chunk is one of many on the same id, so the handler stays. Anything else is the last thing
-		// that id will ever say.
-		if (!("chunk" in answer)) this.#handlers.delete(answer.id);
+		// Only an `ok` ends an id. A chunk is the answer still being written, and an event is one of
+		// however many the subscription will carry for the life of the connection — spending the
+		// handler on either drops everything that comes after the first one, which for `logs` is every
+		// event the plane will ever send.
+		if ("ok" in answer) this.#handlers.delete(answer.id);
 		handler(answer);
 	}
 
