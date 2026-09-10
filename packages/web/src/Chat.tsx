@@ -21,14 +21,18 @@ export function Chat({
 }) {
 	const face = faceOf(agent.id);
 	const floor = useRef<HTMLDivElement>(null);
+	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
+	const [following, setFollowing] = useState(true);
 
 	// Before paint rather than after, so a turn arriving never shows the previous bottom of the
-	// conversation for a frame on its way past. The two named here are triggers rather than inputs:
-	// the effect reads the DOM and nothing else, and a change in them is the reason to run it.
+	// conversation for a frame on its way past. And only while the bottom is where the reader is:
+	// an agent that wakes itself every minute posts while somebody is reading upward, and a pane
+	// that jumps on every event is one that cannot be read at all.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: what changed is why it must scroll
 	useLayoutEffect(() => {
+		if (!following) return;
 		floor.current?.scrollTo({ top: floor.current.scrollHeight });
-	}, [said, live]);
+	}, [said, live, following]);
 
 	return (
 		<>
@@ -63,42 +67,60 @@ export function Chat({
 				</div>
 			</header>
 
-			<div className="scroll" ref={floor}>
-				{said.map((one, index) => (
-					// Nothing in an utterance is unique — the same agent can say the same word twice in a
-					// row — and the list only ever grows at the end, so the position is the identity.
-					// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
-					<Said key={index} said={one} agentId={agent.id} />
-				))}
+			<div className="floor">
+				<div
+					className="scroll"
+					ref={floor}
+					onScroll={(event) => setFollowing(atFloor(event.currentTarget))}
+				>
+					{said.map((one, index) => (
+						// Nothing in an utterance is unique — the same agent can say the same word twice in a
+						// row — and the list only ever grows at the end, so the position is the identity.
+						// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
+						<Said key={index} said={one} agentId={agent.id} />
+					))}
 
-				{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
-					<Turn agentId={agent.id} live={live} />
+					{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
+						<Turn agentId={agent.id} live={live} />
+					)}
+
+					{agent.asking.map((host) => (
+						<Ask
+							key={`reach:${host}`}
+							what={
+								<>
+									<strong>{nameOf(agent.id)}</strong> wants to reach <code>{host}</code> on its way
+									out.
+								</>
+							}
+							onAnswer={(open) => void plane.answerReach(agent.id, host, open)}
+						/>
+					))}
+					{agent.wants.map((to) => (
+						<Ask
+							key={`talk:${to}`}
+							what={
+								<>
+									<strong>{nameOf(agent.id)}</strong> wants to write to <code>{to}</code>. A message
+									wakes that agent and spends its ceiling.
+								</>
+							}
+							onAnswer={(open) => void plane.answerTalk(agent.id, to, open)}
+						/>
+					))}
+				</div>
+				{!following && (
+					<button
+						type="button"
+						className="latest"
+						onClick={() => {
+							setFollowing(true);
+							floor.current?.scrollTo({ top: floor.current.scrollHeight, behavior: "smooth" });
+						}}
+					>
+						↓ jump to latest
+					</button>
 				)}
-
-				{agent.asking.map((host) => (
-					<Ask
-						key={`reach:${host}`}
-						what={
-							<>
-								<strong>{nameOf(agent.id)}</strong> wants to reach <code>{host}</code> on its way
-								out.
-							</>
-						}
-						onAnswer={(open) => void plane.answerReach(agent.id, host, open)}
-					/>
-				))}
-				{agent.wants.map((to) => (
-					<Ask
-						key={`talk:${to}`}
-						what={
-							<>
-								<strong>{nameOf(agent.id)}</strong> wants to write to <code>{to}</code>. A message
-								wakes that agent and spends its ceiling.
-							</>
-						}
-						onAnswer={(open) => void plane.answerTalk(agent.id, to, open)}
-					/>
-				))}
 			</div>
 
 			<Composer plane={plane} agent={agent} busy={live.thinking} onLocal={onLocal} />
@@ -335,6 +357,17 @@ function Composer({
 			</div>
 		</div>
 	);
+}
+
+/**
+ * Whether the bottom is close enough to count as being there.
+ *
+ * A few pixels of slack rather than an exact match, because a fractional scroll height — which is
+ * what any zoom that is not 100% produces — never equals the number it is compared against, and
+ * following would switch itself off the first time anything arrived.
+ */
+function atFloor(box: HTMLElement): boolean {
+	return box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 }
 
 function clock(at: string): string {

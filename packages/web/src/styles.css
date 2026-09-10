@@ -233,14 +233,58 @@ button {
 .scroll {
 	flex: 1;
 	overflow-y: auto;
+	overscroll-behavior: contain;
 	min-height: 0;
 	padding: 1.2rem 1.2rem 0.5rem;
 	display: flex;
 	flex-direction: column;
 	gap: 0.9rem;
-	/* New turns arrive at the bottom, so a short conversation rests on the prompt rather than
-	   hanging from the top of a mostly empty pane. */
-	justify-content: flex-end;
+}
+
+/*
+ * A short conversation rests on the prompt rather than hanging from the top of an empty pane.
+ *
+ * An auto margin on the first thing rather than `justify-content: flex-end` on the box, which does
+ * the same to a short conversation and makes a long one unreadable: what overflows a flex container
+ * justified to its end goes off the top and cannot be scrolled back to. The margin collapses to
+ * nothing the moment the content is taller than the pane, which is exactly when it should.
+ */
+.scroll > :first-child {
+	margin-top: auto;
+}
+
+/*
+ * The way back down, and the admission that you are not there.
+ *
+ * An agent that wakes itself every minute will post while somebody is reading upward, and a pane
+ * that jumps to the bottom on every event is one that cannot be read at all.
+ */
+.latest {
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 0.4rem;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: var(--bg-raised);
+	color: var(--muted);
+	font: 0.76rem var(--mono);
+	padding: 0.3rem 0.9rem;
+	box-shadow: 0 2px 12px #0008;
+}
+
+.latest:hover {
+	color: var(--text-strong);
+	border-color: var(--muted);
+}
+
+/* So the pill above is placed against the conversation rather than against the window. */
+.floor {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 }
 
 .said {
