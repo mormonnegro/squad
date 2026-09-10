@@ -6,6 +6,7 @@ import {
 	buildNetworkConfig,
 	buildVolumeConfig,
 	containerName,
+	DEFAULT_DEPLOYMENT,
 	type SandboxSpec,
 } from "./spec.ts";
 
@@ -59,8 +60,8 @@ interface ContainerInspect {
 	Config?: { Env?: readonly string[] };
 }
 
-export function volumeName(agentId: string): string {
-	return `squad-${agentId}-self`;
+export function volumeName(agentId: string, deployment = DEFAULT_DEPLOYMENT): string {
+	return `${deployment}-${agentId}-self`;
 }
 
 /**
@@ -70,8 +71,8 @@ export function volumeName(agentId: string): string {
  * at what an agent made should not have to walk past its memory to find it, and a project checked
  * into the repository would arrive in the diff of who the agent is.
  */
-export function workspaceVolumeName(agentId: string): string {
-	return `squad-${agentId}-work`;
+export function workspaceVolumeName(agentId: string, deployment = DEFAULT_DEPLOYMENT): string {
+	return `${deployment}-${agentId}-work`;
 }
 
 /** Docker reports the environment as `NAME=value` strings, where the value may itself hold `=`. */
@@ -96,10 +97,24 @@ function parseEnv(env: readonly string[] | undefined): Record<string, string> {
 export class DockerSandboxManager {
 	private readonly engine: DockerEngine;
 	private readonly networkName: string;
+	private readonly deployment: string;
 
-	constructor(engine: DockerEngine = new DockerEngine(), networkName = "squad-egress") {
+	constructor(
+		engine: DockerEngine = new DockerEngine(),
+		networkName = `${DEFAULT_DEPLOYMENT}-egress`,
+		/**
+		 * What this deployment is called, and the first word of everything it creates.
+		 *
+		 * Two planes on one machine used to fight over `squad-scout` and the volume behind it, which
+		 * is not a port conflict to be worked around — it is one agent's soul on top of another's. So
+		 * a deployment has a name and puts it on its own things. Left out it is `squad`, which is what
+		 * every existing install already called them: this renames nothing that already exists.
+		 */
+		deployment = DEFAULT_DEPLOYMENT,
+	) {
 		this.engine = engine;
 		this.networkName = networkName;
+		this.deployment = deployment;
 	}
 
 	async isAvailable(): Promise<boolean> {
@@ -118,13 +133,13 @@ export class DockerSandboxManager {
 	}
 
 	async ensureVolume(agentId: string): Promise<string> {
-		const name = volumeName(agentId);
+		const name = volumeName(agentId, this.deployment);
 		await this.engine.request("POST", "/volumes/create", buildVolumeConfig(name, agentId));
 		return name;
 	}
 
 	async ensureWorkspaceVolume(agentId: string): Promise<string> {
-		const name = workspaceVolumeName(agentId);
+		const name = workspaceVolumeName(agentId, this.deployment);
 		await this.engine.request("POST", "/volumes/create", buildVolumeConfig(name, agentId));
 		return name;
 	}
@@ -144,7 +159,7 @@ export class DockerSandboxManager {
 
 		const response = await this.engine.request<{ Id: string }>(
 			"POST",
-			`/containers/create?name=${encodeURIComponent(containerName(spec.agentId))}`,
+			`/containers/create?name=${encodeURIComponent(containerName(spec.agentId, this.deployment))}`,
 			config,
 		);
 		return response.body.Id;
@@ -165,14 +180,17 @@ export class DockerSandboxManager {
 	}
 
 	async start(agentId: string): Promise<void> {
-		await this.engine.request("POST", `/containers/${containerName(agentId)}/start`);
+		await this.engine.request(
+			"POST",
+			`/containers/${containerName(agentId, this.deployment)}/start`,
+		);
 	}
 
 	async stop(agentId: string, timeoutSeconds = 10): Promise<void> {
 		try {
 			await this.engine.request(
 				"POST",
-				`/containers/${containerName(agentId)}/stop?t=${timeoutSeconds}`,
+				`/containers/${containerName(agentId, this.deployment)}/stop?t=${timeoutSeconds}`,
 			);
 		} catch (error) {
 			// 304 is "already stopped", 404 is "already gone".
@@ -185,7 +203,7 @@ export class DockerSandboxManager {
 		try {
 			const response = await this.engine.request<ContainerInspect>(
 				"GET",
-				`/containers/${containerName(agentId)}/json`,
+				`/containers/${containerName(agentId, this.deployment)}/json`,
 			);
 			return {
 				agentId,
@@ -205,7 +223,7 @@ export class DockerSandboxManager {
 	async exec(agentId: string, cmd: readonly string[]): Promise<ExecResult> {
 		const created = await this.engine.request<{ Id: string }>(
 			"POST",
-			`/containers/${containerName(agentId)}/exec`,
+			`/containers/${containerName(agentId, this.deployment)}/exec`,
 			{ AttachStdout: true, AttachStderr: true, Cmd: cmd },
 		);
 
@@ -255,7 +273,7 @@ export class DockerSandboxManager {
 	): Promise<ExecResult> {
 		const created = await this.engine.request<{ Id: string }>(
 			"POST",
-			`/containers/${containerName(agentId)}/exec`,
+			`/containers/${containerName(agentId, this.deployment)}/exec`,
 			{
 				AttachStdin: true,
 				AttachStdout: true,
@@ -375,7 +393,7 @@ export class DockerSandboxManager {
 	async attach(agentId: string, cmd: readonly string[]): Promise<HijackedStream> {
 		const created = await this.engine.request<{ Id: string }>(
 			"POST",
-			`/containers/${containerName(agentId)}/exec`,
+			`/containers/${containerName(agentId, this.deployment)}/exec`,
 			{
 				AttachStdin: true,
 				AttachStdout: true,
@@ -394,7 +412,10 @@ export class DockerSandboxManager {
 	/** Removes the container. The volumes are kept unless explicitly discarded, since they are the agent. */
 	async destroy(agentId: string, options: { discardState?: boolean } = {}): Promise<void> {
 		try {
-			await this.engine.request("DELETE", `/containers/${containerName(agentId)}?force=true`);
+			await this.engine.request(
+				"DELETE",
+				`/containers/${containerName(agentId, this.deployment)}?force=true`,
+			);
 		} catch (error) {
 			if (!(error instanceof DockerError && error.status === 404)) throw error;
 		}
@@ -402,7 +423,10 @@ export class DockerSandboxManager {
 		if (options.discardState === true) {
 			// Both, because discarding the agent and leaving its work behind would leave a volume nothing
 			// names: the next agent of that name adopts it and inherits a workspace it never built.
-			for (const volume of [volumeName(agentId), workspaceVolumeName(agentId)]) {
+			for (const volume of [
+				volumeName(agentId, this.deployment),
+				workspaceVolumeName(agentId, this.deployment),
+			]) {
 				try {
 					await this.engine.request("DELETE", `/volumes/${volume}`);
 				} catch (error) {

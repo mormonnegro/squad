@@ -24,7 +24,31 @@
 #
 set -eu
 
-DIR=${SQUAD_DIR:-/opt/squad}
+# What this deployment is called, and the first word of everything it makes: the compose project, the
+# two networks, and every container and volume an agent gets. Two on one machine share nothing but
+# the Docker daemon.
+#
+# `squad` unless somebody says otherwise, which is what every install before this called them — so
+# running this again over an existing one renames nothing and takes nothing away.
+NAME=${SQUAD_NAME:-squad}
+
+# Everything a second one has to move off, derived from the name rather than asked for separately: a
+# person naming their second environment should not also have to pick three port numbers. The first
+# one keeps the numbers it always had.
+if [ "$NAME" = "squad" ]; then
+	HOOK_PORT=${SQUAD_HOOK_PORT:-8787}
+	OAUTH_PORT=${SQUAD_OAUTH_PORT:-8788}
+	WEB_PORT=${SQUAD_WEB_PORT:-8789}
+else
+	# A stable number per name rather than the next free one, so a deployment answers where it
+	# answered yesterday. Collisions between two names are possible and are said out loud below.
+	OFFSET=$(printf '%s' "$NAME" | cksum | awk '{print ($1 % 60) * 10 + 100}')
+	HOOK_PORT=${SQUAD_HOOK_PORT:-$((8787 + OFFSET))}
+	OAUTH_PORT=${SQUAD_OAUTH_PORT:-$((8788 + OFFSET))}
+	WEB_PORT=${SQUAD_WEB_PORT:-$((8789 + OFFSET))}
+fi
+
+DIR=${SQUAD_DIR:-/opt/$NAME}
 REPO=${SQUAD_REPO:-https://github.com/mormonnegro/squad.git}
 # Where the console this project publishes lives. A plane trusts it out of the box so that a fresh
 # install can be driven from a browser without editing anything; SQUAD_WEB_ORIGINS overrides it.
@@ -33,7 +57,7 @@ BRANCH=${SQUAD_BRANCH:-main}
 # Mounted into the plane at its own name, so this path means the same thing on both sides of the
 # daemon. /var/lib is right for a server and wrong for a laptop: Docker Desktop shares /Users and
 # not that, so a state directory there is a bind mount the daemon resolves inside its own VM.
-STATE=${SQUAD_STATE:-/var/lib/squad}
+STATE=${SQUAD_STATE:-/var/lib/$NAME}
 # Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
 # already the client that ran this, and a shim written over it would take the console away from the
@@ -204,6 +228,14 @@ HOOK_SECRET=$HOOK_SECRET
 # plane with. It is also handed to the plane, so \`agent\` inside the container looks where the
 # socket actually is rather than where a server would have put it.
 SQUAD_STATE=$STATE
+# The name, read by compose to name the project and the networks and by the plane to name every
+# container and volume. One value, two readers, so they cannot disagree.
+SQUAD_NAME=$NAME
+# Published on the same number inside the container and out, because these are written into things
+# the plane hands out: a redirect URI, and the address it prints for its own console.
+SQUAD_HOOK_PORT=$HOOK_PORT
+SQUAD_OAUTH_PORT=$OAUTH_PORT
+SQUAD_WEB_PORT=$WEB_PORT
 # Which consoles hosted somewhere else may drive this plane from a browser. The one this project
 # publishes is here by default so a fresh install is reachable from it; anything else is the
 # operator's to add, and an empty value means only the console this plane serves itself.
@@ -363,14 +395,14 @@ if [ -f "$STATE/web.token" ]; then
 		note "This console answers on the loopback of this machine and on nothing else — nothing is"
 		note "published here. From your own computer, bring it within reach:"
 		note ""
-		note "  ssh -N -L 8789:127.0.0.1:8789 $(id -un)@$ADDR"
+		note "  ssh -N -L $WEB_PORT:127.0.0.1:$WEB_PORT $(id -un)@$ADDR"
 		note ""
 		note "and then open, or paste into $CONSOLE:"
 	else
 		note "Open this, or paste it into a console you host yourself:"
 	fi
 	note ""
-	note "  http://127.0.0.1:8789/?t=$TOKEN"
+	note "  http://127.0.0.1:$WEB_PORT/?t=$TOKEN"
 	note ""
 	note "That address is the key. Whoever holds it drives these agents, so it is pasted and not"
 	note "posted. It does not change when the plane restarts, and \`squad web\` prints it again."

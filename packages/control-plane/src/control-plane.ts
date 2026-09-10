@@ -42,7 +42,7 @@ import {
 	type SecretStore,
 	StaticAgentDirectory,
 } from "@squad/proxy";
-import { DockerEngine, DockerSandboxManager } from "@squad/sandbox";
+import { DEFAULT_DEPLOYMENT, DockerEngine, DockerSandboxManager } from "@squad/sandbox";
 import { FileScheduleStore, type NewSchedule, Scheduler } from "@squad/scheduler";
 import { AgentNameStore } from "./agent-names.ts";
 import {
@@ -224,6 +224,14 @@ export interface ControlPlaneOptions {
 	readonly hooks?: readonly Hook[];
 	readonly secrets?: SecretStore;
 	readonly networkName?: string;
+	/**
+	 * What this deployment is called, and the first word of every container and volume it makes.
+	 *
+	 * Two on one machine is the whole reason it exists: without it they share `squad-scout` and the
+	 * volume behind it, and one agent's soul lands on top of another's. Left out it is `squad`, so
+	 * a plane that never heard of this keeps the names it already gave things.
+	 */
+	readonly deployment?: string;
 	readonly proxyPort?: number;
 	/**
 	 * How a sandbox addresses the proxy, as host:port.
@@ -617,6 +625,7 @@ export class ControlPlane {
 		this.sandboxes = new DockerSandboxManager(
 			new DockerEngine(),
 			options.networkName ?? DEFAULT_NETWORK,
+			options.deployment ?? DEFAULT_DEPLOYMENT,
 		);
 		this.bus = new EventBus({
 			store: new FileEventStore(join(this.#stateDir, "events")),

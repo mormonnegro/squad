@@ -34,7 +34,14 @@ const ABANDONED_MS = 10 * 60 * 1000;
  * typed in before any of this runs. The cost is that logins are one at a time — a second collides
  * on the port and is told so — which is what a person doing this does anyway.
  */
-const CALLBACK_PORT = 8788;
+/**
+ * Where the browser comes back, and the number written into the address the provider redirects to.
+ *
+ * From the environment because a second deployment on one machine cannot publish this one twice, and
+ * the number here is not only what is listened on — it is half of the redirect URI, so a plane
+ * listening on one port and telling the provider another is a login that never returns.
+ */
+const CALLBACK_PORT = Number(process.env.SQUAD_OAUTH_PORT ?? "") || 8788;
 
 const CALLBACK_PATH = "/callback";
 

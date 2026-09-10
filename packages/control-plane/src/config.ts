@@ -356,6 +356,8 @@ function parseDefaults(
 export interface LoadedConfig extends ControlPlaneOptions {
 	readonly agents: readonly AgentConfig[];
 	readonly stateDir: string;
+	/** What this deployment is called. Absent, `squad`, which is what it was called before. */
+	readonly deployment?: string;
 	/** Empty when the file declares none, which is a plane whose agents think with what pi is set up for. */
 	readonly models: readonly Model[];
 }
@@ -386,7 +388,7 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 	}
 	if (!isRecord(raw)) throw new ConfigError(["configuration must be a YAML mapping"]);
 
-	const { stateDir, agents, hooks } = raw;
+	const { stateDir, agents, hooks, deployment } = raw;
 	if (typeof stateDir !== "string" || stateDir.length === 0) issues.push("stateDir is required");
 	if (!Array.isArray(agents) || agents.length === 0) issues.push("agents must be a non-empty list");
 
@@ -453,6 +455,9 @@ export function parseConfig(source: string, env: NodeJS.ProcessEnv = process.env
 	return {
 		...(raw as Record<string, unknown>),
 		stateDir: stateDir as string,
+		...(typeof deployment === "string" && deployment.length > 0
+			? { deployment: deployment as string }
+			: {}),
 		agents: parsedAgents,
 		hooks: parsedHooks,
 		models,

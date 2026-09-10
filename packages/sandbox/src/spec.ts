@@ -166,8 +166,16 @@ export interface SandboxSpec {
 	readonly cmd?: readonly string[];
 }
 
-export function containerName(agentId: string): string {
-	return `squad-${agentId}`;
+/**
+ * What a deployment is called when nobody says otherwise.
+ *
+ * Every name Docker sees starts with this, and it is what every install before deployments had, so
+ * leaving it alone leaves those installs alone.
+ */
+export const DEFAULT_DEPLOYMENT = "squad";
+
+export function containerName(agentId: string, deployment = DEFAULT_DEPLOYMENT): string {
+	return `${deployment}-${agentId}`;
 }
 
 /**

@@ -1,4 +1,8 @@
-name: squad
+# The deployment's name, and the first word of everything it makes: this project, its two networks,
+# and — through SQUAD_NAME reaching the plane — every container and volume an agent gets. Two of
+# these on one machine share nothing but the Docker daemon. Left alone it is `squad`, which is what
+# every install before this called them.
+name: ${SQUAD_NAME:-squad}
 
 services:
   control-plane:
@@ -26,19 +30,23 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config.yaml:/etc/squad/config.yaml:ro
     ports:
+      # Published on the same number on both sides on purpose. These ports are written into things
+      # the plane hands out — a redirect URI, the address `squad web` prints — so a container port
+      # that differed from the host's would make the plane name an address nobody can open.
+      #
       # Webhooks, and the door a browser comes back through after an MCP login. The proxy stays on
       # the container networks, where the agents are, because publishing it would put a
       # credential-injecting forwarder on the internet.
-      - "8787:8787"
+      - "${SQUAD_HOOK_PORT:-8787}:${SQUAD_HOOK_PORT:-8787}"
       # Bound to loopback, because the only thing that should ever reach it is a browser on this
       # machine. `/mcp login` sends the operator to a consent screen that redirects to
       # localhost:8788, and without this the plane would be listening where nobody can knock.
-      - "127.0.0.1:8788:8788"
+      - "127.0.0.1:${SQUAD_OAUTH_PORT:-8788}:${SQUAD_OAUTH_PORT:-8788}"
       # The web console, on loopback for the same reason and a stronger one: this is the whole
       # control surface, and the plane holds the Docker socket. Reached from another machine by
       # forwarding it down the SSH connection the operator already has — `squad web` does that —
       # so that a console on a laptop still opens nothing on the server.
-      - "127.0.0.1:8789:8789"
+      - "127.0.0.1:${SQUAD_WEB_PORT:-8789}:${SQUAD_WEB_PORT:-8789}"
     networks:
       egress:
         aliases:
@@ -54,8 +62,8 @@ networks:
   # Where the agents live. Internal really is unrouted: a container here cannot reach the host or
   # the internet by any address, so the only way out is the proxy, which is on this network too.
   egress:
-    name: squad-egress
+    name: ${SQUAD_NAME:-squad}-egress
     internal: true
   # How the control plane reaches the internet on the agents' behalf.
   uplink:
-    name: squad-uplink
+    name: ${SQUAD_NAME:-squad}-uplink

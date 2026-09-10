@@ -12,7 +12,7 @@ import type { Dial } from "./control-client.ts";
  * The port is fixed rather than chosen so that a link can be typed from memory and a tab left open
  * across a restart still lands somewhere.
  */
-export const WEB_PORT = 8789;
+export const WEB_PORT = Number(process.env.SQUAD_WEB_PORT ?? "") || 8789;
 
 export const WEB_TOKEN_FILE = "web.token";
 

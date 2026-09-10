@@ -113,7 +113,22 @@ function feed(): (event: PlaneEvent) => void {
 
 async function run(path: string): Promise<number> {
 	const config = await loadConfig(path);
-	const plane = new ControlPlane(config);
+	// From the environment first, because compose is already reading it from there to name the
+	// project and the networks — and a name the plane read from somewhere else could disagree with
+	// the one its own networks were created under, which fails as a container that cannot be placed.
+	const deployment = process.env.SQUAD_NAME || config.deployment;
+	// The one port published to the network rather than to loopback, so the first thing a second
+	// deployment on this machine collides on.
+	const webhookPort = Number(process.env.SQUAD_HOOK_PORT ?? "") || undefined;
+	const plane = new ControlPlane({
+		...config,
+		...(deployment === undefined ? {} : { deployment }),
+		// The network compose made for this deployment, unless the file names one outright.
+		...(config.networkName === undefined && deployment !== undefined
+			? { networkName: `${deployment}-egress` }
+			: {}),
+		...(webhookPort === undefined ? {} : { webhookPort }),
+	});
 	const server = new ControlServer({ plane });
 
 	plane.observe(feed());
