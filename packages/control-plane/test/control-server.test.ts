@@ -46,6 +46,51 @@ describe("the control socket", () => {
 		await client.connect();
 	});
 
+	describe("calling off a wakeup", () => {
+		const book = async (createdBy: "agent" | "operator") => {
+			await plane.scheduler.add({
+				agentId: "scout",
+				kind: "once",
+				runAt: new Date(Date.now() + 60_000).toISOString(),
+				channel: "wake",
+				body: "one more joke",
+				// An agent cannot book itself operator trust, and the scheduler refuses the pair. What
+				// it wakes up holding is what it held when it asked.
+				trust: createdBy === "agent" ? "participant" : "operator",
+				createdBy,
+			});
+			const [only] = await plane.scheduler.list("scout");
+			return only;
+		};
+
+		it("takes away one the agent booked for itself", async () => {
+			const wake = await book("agent");
+			expect(wake).toBeDefined();
+			await client.unschedule("scout", wake?.id ?? "");
+			expect(await plane.scheduler.list("scout")).toHaveLength(0);
+		});
+
+		// The configuration is the operator's and no plane may write it, so a schedule taken away here
+		// would come back on the next start — and the console would have said a thing that was true
+		// for an afternoon.
+		it("refuses one the configuration declares, and says where it lives", async () => {
+			const wake = await book("operator");
+			await expect(client.unschedule("scout", wake?.id ?? "")).rejects.toThrow(/configuration/);
+			expect(await plane.scheduler.list("scout")).toHaveLength(1);
+		});
+
+		it("says so when there is nothing left to call off", async () => {
+			await expect(client.unschedule("scout", "nothing")).rejects.toThrow(/already gone/);
+		});
+
+		it("answers with what each wakeup will say when it fires", async () => {
+			await book("agent");
+			const [only] = await client.schedules("scout");
+			expect(only?.body).toBe("one more joke");
+			expect(only?.createdBy).toBe("agent");
+		});
+	});
+
 	afterEach(async () => {
 		vi.unstubAllGlobals();
 		client.close();

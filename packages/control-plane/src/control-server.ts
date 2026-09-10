@@ -57,6 +57,19 @@ export type ControlRequest =
 	 * sent for every agent every two seconds to be looked at once.
 	 */
 	| { readonly id: string; readonly op: "schedules"; readonly agentId: string }
+	/**
+	 * Cancels one of an agent's own wakeups.
+	 *
+	 * Its own, and not one the operator's file declares: that file is the operator's and no plane may
+	 * write it, so a schedule taken away here would come back on the next start and the console would
+	 * have said a thing that was true for an afternoon. Refused with where to go instead.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "unschedule";
+			readonly agentId: string;
+			readonly scheduleId: string;
+	  }
 	| { readonly id: string; readonly op: "logs" }
 	| { readonly id: string; readonly op: "transcripts" }
 	/** Which providers this plane could pay for, and which of them it currently can. */
@@ -412,6 +425,23 @@ export class ControlServer {
 					ok: true,
 					schedules: await this.#plane.scheduler.list(request.agentId),
 				});
+			} else if (request.op === "unschedule") {
+				const schedules = await this.#plane.scheduler.list(request.agentId);
+				const wake = schedules.find((one) => one.id === request.scheduleId);
+				if (wake === undefined) {
+					this.#write(socket, { id: request.id, ok: false, error: "That wakeup is already gone." });
+				} else if (wake.createdBy !== "agent") {
+					this.#write(socket, {
+						id: request.id,
+						ok: false,
+						error:
+							"That one is declared in this plane's configuration, which is yours and not the " +
+							"plane's to write. Take it out of the file and restart, or it comes back.",
+					});
+				} else {
+					await this.#plane.scheduler.remove(wake.id);
+					this.#write(socket, { id: request.id, ok: true, text: "Cancelled." });
+				}
 			} else if (request.op === "logs") {
 				// Everything, including the answer as it is being written. A subscriber reading a log
 				// wants the finished turn and drops the rest; a subscriber showing a conversation cannot

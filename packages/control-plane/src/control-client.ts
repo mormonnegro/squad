@@ -410,6 +410,11 @@ export class ControlClient {
 	}
 
 	/** Streams until the connection is closed. */
+	/** Cancels one of an agent's own wakeups. Refuses the ones the operator's file declares. */
+	async unschedule(agentId: string, scheduleId: string): Promise<void> {
+		await this.#once({ op: "unschedule", agentId, scheduleId });
+	}
+
 	/** The schedules an agent is waiting on, and what each will say to it when it fires. */
 	async schedules(agentId: string): Promise<readonly Schedule[]> {
 		const answer = await this.#once({ op: "schedules", agentId });

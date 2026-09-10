@@ -239,6 +239,62 @@ button {
 	color: var(--muted);
 }
 
+/* Calling it off. Red, because among the things on this panel it is the only one that takes
+   something away — and it is the agent's own plan, which is why it is not offered for yours. */
+.key.stop {
+	align-self: flex-start;
+	margin-top: 0.15rem;
+	color: var(--red);
+	border-color: #4a2a28;
+}
+
+.key.stop:hover {
+	border-color: var(--red);
+	background: #2a1a18;
+}
+
+/* ── held open ───────────────────────────────────────────────────────── */
+
+.scrim {
+	position: fixed;
+	inset: 0;
+	z-index: 40;
+	background: #000000a8;
+	display: grid;
+	place-items: center;
+	padding: 1.5rem;
+}
+
+.modal {
+	width: min(34rem, 100%);
+	max-height: min(30rem, 80vh);
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.8rem;
+	background: var(--bg-raised);
+	border: 1px solid var(--line);
+	border-radius: 9px;
+	padding: 1rem 1.1rem 1.1rem;
+	box-shadow: 0 12px 40px #000c;
+	font: 0.85rem / 1.6 var(--sans);
+	text-align: left;
+}
+
+.modal:focus {
+	outline: none;
+}
+
+.modal-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 0.7rem;
+	border-bottom: 1px solid var(--line);
+	color: var(--text-strong);
+}
+
 /* The one glyph that says whether an agent is up, mid-turn, or stopped. */
 .mark {
 	width: 0.85rem;

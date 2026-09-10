@@ -175,6 +175,11 @@ export class Plane {
 		return (answer.schedules as Wake[] | undefined) ?? [];
 	}
 
+	/** Stops one of an agent's own wakeups. The plane refuses the ones its configuration declares. */
+	async unschedule(agentId: string, scheduleId: string): Promise<void> {
+		await this.#ask({ op: "unschedule", agentId, scheduleId });
+	}
+
 	async transcripts(): Promise<Record<string, readonly Utterance[]>> {
 		const answer = await this.#ask({ op: "transcripts" });
 		return answer.transcripts as Record<string, readonly Utterance[]>;
