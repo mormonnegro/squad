@@ -26,6 +26,9 @@ set -eu
 
 DIR=${SQUAD_DIR:-/opt/squad}
 REPO=${SQUAD_REPO:-https://github.com/mormonnegro/squad.git}
+# Where the console this project publishes lives. A plane trusts it out of the box so that a fresh
+# install can be driven from a browser without editing anything; SQUAD_WEB_ORIGINS overrides it.
+CONSOLE=${SQUAD_CONSOLE:-https://squad.mormon.garden}
 BRANCH=${SQUAD_BRANCH:-main}
 # Mounted into the plane at its own name, so this path means the same thing on both sides of the
 # daemon. /var/lib is right for a server and wrong for a laptop: Docker Desktop shares /Users and
@@ -201,6 +204,10 @@ HOOK_SECRET=$HOOK_SECRET
 # plane with. It is also handed to the plane, so \`agent\` inside the container looks where the
 # socket actually is rather than where a server would have put it.
 SQUAD_STATE=$STATE
+# Which consoles hosted somewhere else may drive this plane from a browser. The one this project
+# publishes is here by default so a fresh install is reachable from it; anything else is the
+# operator's to add, and an empty value means only the console this plane serves itself.
+SQUAD_WEB_ORIGINS=${SQUAD_WEB_ORIGINS:-$CONSOLE}
 ENV
 	$SUDO chmod 600 "$DIR/deploy/.env"
 	umask 022
@@ -335,6 +342,41 @@ fi
 step "Up"
 $SUDO docker ps --filter label=com.docker.compose.project=squad \
 	--format '  {{.Names}}  {{.Status}}'
+
+# The line that connects this machine to a console, printed here because here is where somebody
+# already is. A second command to fetch it would be a second thing to know about, and the whole of
+# what it would print is two facts this script is holding right now.
+#
+# The token is written by the plane on the way up, and the way up is a container starting, so it is
+# waited for rather than assumed. A plane that never writes one is a plane that did not start, which
+# the lines above have already said.
+step "The console in a browser"
+WAITED=0
+while [ ! -f "$STATE/web.token" ] && [ "$WAITED" -lt 30 ]; do
+	sleep 1
+	WAITED=$((WAITED + 1))
+done
+
+if [ -f "$STATE/web.token" ]; then
+	TOKEN=$($SUDO cat "$STATE/web.token" | tr -d ' \n\r')
+	if [ "$SHIM" = "yes" ]; then
+		note "This console answers on the loopback of this machine and on nothing else — nothing is"
+		note "published here. From your own computer, bring it within reach:"
+		note ""
+		note "  ssh -N -L 8789:127.0.0.1:8789 $(id -un)@$ADDR"
+		note ""
+		note "and then open, or paste into $CONSOLE:"
+	else
+		note "Open this, or paste it into a console you host yourself:"
+	fi
+	note ""
+	note "  http://127.0.0.1:8789/?t=$TOKEN"
+	note ""
+	note "That address is the key. Whoever holds it drives these agents, so it is pasted and not"
+	note "posted. It does not change when the plane restarts, and \`squad web\` prints it again."
+else
+	note "The plane has not written its web token yet. \`squad web\` prints it once it has."
+fi
 
 ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
 [ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')

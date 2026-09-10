@@ -129,27 +129,24 @@ function Door2({
 	return (
 		<div className="steps-two">
 			<ol className="how">
-				{door === "here" ? (
+				<li>
+					{door === "here" ? "On this computer, once:" : "On the server, once:"}
+					<code className="how-line">curl -fsSL https://squad.mormon.garden/install.sh | sh</code>
+					<span className="how-note">
+						It ends by printing one address. That address is the key — paste it below.
+					</span>
+				</li>
+				{door === "server" && (
 					<li>
-						If there is no plane here yet, put one on:
-						<code className="how-line">curl -fsSL https://squad.mormon.garden/install.sh | sh</code>
-					</li>
-				) : (
-					<li>
-						On the server, once:
-						<code className="how-line">curl -fsSL https://squad.mormon.garden/install.sh | sh</code>
-						then bring its console within reach of this browser:
+						Bring it within reach of this browser:
 						<code className="how-line">ssh -N -L 8789:127.0.0.1:8789 you@your-server</code>
 						<span className="how-note">
-							Nothing is opened on the server. The bytes cross the SSH connection you already have.
+							Nothing is opened on the server. The bytes cross the SSH connection you already have,
+							which is why the address says 127.0.0.1 from here too.
 						</span>
 					</li>
 				)}
-				<li>
-					Ask it for the address, on the machine it runs on:
-					<code className="how-line">squad web</code>
-				</li>
-				<li>Paste what it printed:</li>
+				<li>Paste it:</li>
 			</ol>
 
 			<form
@@ -172,6 +169,9 @@ function Door2({
 				</button>
 			</form>
 			{why !== undefined && <span className="why">{why}</span>}
+			<span className="how-note">
+				Lost it? <code>squad web</code>, on the machine the plane runs on, prints it again.
+			</span>
 		</div>
 	);
 }
