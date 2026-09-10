@@ -58,17 +58,31 @@ export function DialogContent({
 	);
 }
 
-/** The head stays where the way out is, and the body scrolls under it. */
-export function DialogHeader({ children }: { children: React.ReactNode }) {
+/**
+ * The head stays where the way out is, and the body scrolls under it.
+ *
+ * The way out is drawn only when there is one. A dialog that cannot be dismissed — the first
+ * question of all, where the agents live — showing a cross that does nothing is worse than showing
+ * none: it says there is a way past this, and there is not.
+ */
+export function DialogHeader({
+	children,
+	closable = true,
+}: {
+	children: React.ReactNode;
+	closable?: boolean;
+}) {
 	return (
 		<header className="flex flex-none items-center justify-between gap-4 border-b border-line px-6 py-[1.1rem] text-[1.05rem] text-said">
 			{children}
-			<Primitive.Close
-				className="rounded border border-line bg-sunk px-2 py-1 font-mono text-[0.8rem] text-muted hover:border-muted hover:text-said"
-				aria-label="Close"
-			>
-				<X className="size-3.5" />
-			</Primitive.Close>
+			{closable && (
+				<Primitive.Close
+					className="rounded border border-line bg-sunk px-2 py-1 font-mono text-[0.8rem] text-muted hover:border-muted hover:text-said"
+					aria-label="Close"
+				>
+					<X className="size-3.5" />
+				</Primitive.Close>
+			)}
 		</header>
 	);
 }

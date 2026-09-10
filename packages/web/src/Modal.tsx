@@ -40,7 +40,7 @@ export function Modal({
 					if (onClose === undefined) event.preventDefault();
 				}}
 			>
-				<DialogHeader>
+				<DialogHeader closable={onClose !== undefined}>
 					<DialogTitle>{title}</DialogTitle>
 				</DialogHeader>
 				<DialogBody>{children}</DialogBody>
