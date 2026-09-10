@@ -286,3 +286,29 @@ describe("a console on another domain", () => {
 		expect(response.status).toBe(401);
 	});
 });
+
+describe("the three ways in", () => {
+	// An EventSource has no header API and carries no cookie of ours, so a console on another origin
+	// can only put the token in the address of the stream. It is not a page and has nowhere to be
+	// redirected to, so it is answered rather than sent away.
+	it("opens the stream for a token in the address, without redirecting it", async () => {
+		const response = await fetch(at(`/events?t=${web.token}`));
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("text/event-stream");
+		await response.body?.cancel();
+	});
+
+	// An address is copied, pasted and left in a history; a cookie is not. So a page opened with the
+	// token in it is sent back to the same page holding one instead.
+	it("sends a page back to itself holding a cookie", async () => {
+		const response = await fetch(at(`/agents/scout?t=${web.token}`), { redirect: "manual" });
+		expect(response.status).toBe(302);
+		expect(response.headers.get("location")).toBe("/agents/scout");
+		expect(response.headers.get("set-cookie")).toContain(web.token);
+	});
+
+	it("refuses a wrong token in the address before anything else", async () => {
+		const response = await fetch(at("/events?t=nope"));
+		expect(response.status).toBe(403);
+	});
+});

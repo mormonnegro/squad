@@ -1,9 +1,10 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./Chat.tsx";
+import { Connect, Connections } from "./Connect.tsx";
+import { type Connection, HERE, keyOf, readConnections } from "./connections.ts";
 import { faceOf, nameOf } from "./face.ts";
 import { browserWire, Plane } from "./plane.ts";
-import { HERE, type KnownPlane, planeKey, readPlanes } from "./planes.ts";
 import { When } from "./When.tsx";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
@@ -19,8 +20,10 @@ export interface Live {
 const QUIET: Live = { thinking: false, text: "", steps: [] };
 
 export function App() {
-	const [planes] = useState<readonly KnownPlane[]>(() => readPlanes());
-	const [at, setAt] = useState<KnownPlane>(() => readPlanes()[0] ?? HERE);
+	const [planes, setPlanes] = useState<readonly Connection[]>(() => readConnections());
+	const [at, setAt] = useState<Connection>(() => readConnections()[0] ?? HERE);
+	// The connection screens: where a first one is made, and where the rest are managed.
+	const [showing, setShowing] = useState<"none" | "connect" | "planes">("none");
 	const [plane, setPlane] = useState<Plane | undefined>();
 	const [down, setDown] = useState<string | undefined>();
 	const [agents, setAgents] = useState<readonly AgentSummary[]>([]);
@@ -35,7 +38,7 @@ export function App() {
 
 	useEffect(() => {
 		let alive = true;
-		const client = new Plane(browserWire(at.reach.kind === "here" ? at.reach.origin : ""));
+		const client = new Plane(browserWire(at.origin, at.token));
 		client.onDown((why) => alive && setDown(why.message));
 
 		void (async () => {
@@ -147,6 +150,17 @@ export function App() {
 		setTalk((was) => ({ ...was, [agentId]: [...(was[agentId] ?? []), one] }));
 	}, []);
 
+	const goTo = useCallback((one: Connection) => {
+		// Nothing survives the move. Two planes have two sets of agents with two sets of names, and a
+		// transcript left on screen from the last one would be a conversation attributed to a stranger.
+		setAt(one);
+		setChosen(undefined);
+		setAgents([]);
+		setTalk({});
+		setLive({});
+		setShowing("none");
+	}, []);
+
 	const create = useCallback(async (name: string) => {
 		const client = held.current;
 		if (client === undefined) return;
@@ -195,47 +209,61 @@ export function App() {
 					</button>
 				</div>
 
-				<div className="rail-foot">
+				<button
+					type="button"
+					className="rail-foot"
+					onClick={() => setShowing(planes.length > 1 ? "planes" : "connect")}
+					title="the machine these agents live on"
+				>
 					<span className="mark" data-state={plane === undefined ? "stopped" : "running"}>
 						●
 					</span>
 					{/* Which machine this is looking at. One application against several planes has to
 					    say which one, every time, or every screen on it means something unknown. */}
-					<span className="row-name" title={planeKey(at.reach)}>
-						{at.name}
+					<span className="row-name">{at.name}</span>
+					<span className="row-note">
+						{planes.length > 1 ? `${planes.length} planes` : "connect"}
 					</span>
-					{planes.length > 1 && (
-						<select
-							aria-label="Plane"
-							className="row-note"
-							value={planeKey(at.reach)}
-							onChange={(event) => {
-								const next = planes.find((one) => planeKey(one.reach) === event.target.value);
-								if (next !== undefined) {
-									setAt(next);
-									setChosen(undefined);
-									setAgents([]);
-									setTalk({});
-								}
-							}}
-						>
-							{planes.map((one) => (
-								<option key={planeKey(one.reach)} value={planeKey(one.reach)}>
-									{one.name}
-								</option>
-							))}
-						</select>
-					)}
-				</div>
+				</button>
 			</nav>
 
 			<main className="pane">
-				{down !== undefined && (
+				{down !== undefined && planes.length > 1 && (
 					<div className="down" role="status">
 						{down} — it will come back on its own.
 					</div>
 				)}
-				{making ? (
+				{showing === "connect" ? (
+					<Connect
+						first={planes.length <= 1}
+						onAdded={(made, all) => {
+							setPlanes(all);
+							goTo(made);
+						}}
+						onClose={planes.length > 1 ? () => setShowing("none") : undefined}
+					/>
+				) : showing === "planes" ? (
+					<Connections
+						all={planes}
+						at={at}
+						onPick={goTo}
+						onForget={(all) => {
+							setPlanes(all);
+							if (!all.some((one) => keyOf(one) === keyOf(at))) goTo(all[0] ?? HERE);
+						}}
+						onAdd={() => setShowing("connect")}
+					/>
+				) : down !== undefined && planes.length <= 1 ? (
+					// Nothing connected and nothing to fall back to: this is not an error screen, it is
+					// the first question, and it is the whole of what this page can usefully show.
+					<Connect
+						first
+						onAdded={(made, all) => {
+							setPlanes(all);
+							goTo(made);
+						}}
+					/>
+				) : making ? (
 					<NewAgent onMake={create} />
 				) : agent !== undefined && plane !== undefined ? (
 					<Chat

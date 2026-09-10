@@ -200,33 +200,36 @@ export class WebServer {
 			return;
 		}
 
-		// The token is spent here and nowhere else: it arrives in a query string, which is the one
-		// place a person can paste it, and leaves as a cookie, which is the one place a query string
-		// cannot be read back out of by whatever the page later links to.
-		const offered = asked.searchParams.get("t");
-		if (offered !== null) {
-			if (!this.#isToken(offered)) {
-				this.#fail(response, 403, "That token is not this plane's.");
-				return;
-			}
-			response
-				.writeHead(302, {
-					location: "/",
-					"set-cookie": `${SESSION_COOKIE}=${this.#token}; HttpOnly; SameSite=Strict; Path=/`,
-				})
-				.end();
+		// Three ways to carry the same secret, because three kinds of caller can carry it. A page this
+		// plane serves gets a cookie; a page on another origin sends a header; and an `EventSource`
+		// can send neither — it has no header API and no cookie of ours — so the stream takes it in
+		// the query string, which is also the one place a person can paste it to begin with.
+		const inUrl = asked.searchParams.get("t");
+		const inHeader = request.headers[TOKEN_HEADER];
+		const carried =
+			inUrl ?? (typeof inHeader === "string" ? inHeader : cookie(request, SESSION_COOKIE));
+
+		if (inUrl !== null && !this.#isToken(inUrl)) {
+			this.#fail(response, 403, "That token is not this plane's.");
 			return;
 		}
-
-		// A cookie for the page this plane serves, a header for one it does not. Cross-origin cookies
-		// need SameSite=None and a secure origin and are fragile on both counts; a header the caller
-		// sets is the same secret carried the one way that works from anywhere.
-		const carried = request.headers[TOKEN_HEADER];
-		const offering = typeof carried === "string" ? carried : cookie(request, SESSION_COOKIE);
-		if (!this.#isToken(offering)) {
+		if (!this.#isToken(carried)) {
 			// Said plainly rather than with a login form, because there is no password to type: whoever
 			// should be here has a file on this machine, and `squad web` is what reads it.
 			this.#fail(response, 401, "Run `squad web` on the machine this plane runs on to get in.");
+			return;
+		}
+
+		// A page opened with the token in its address is sent back to the same page without it, holding
+		// a cookie instead: an address is copied, pasted and left in a history, and a cookie is not.
+		// The stream and the wire are not pages and have nowhere to be redirected to.
+		if (inUrl !== null && asked.pathname !== "/events" && asked.pathname !== "/rpc") {
+			response
+				.writeHead(302, {
+					location: asked.pathname,
+					"set-cookie": `${SESSION_COOKIE}=${this.#token}; HttpOnly; SameSite=Strict; Path=/`,
+				})
+				.end();
 			return;
 		}
 

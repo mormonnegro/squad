@@ -234,11 +234,15 @@ export class Plane {
  * this is the one transport where the browser has already written it. What it cannot do is carry the
  * session id, which is why that arrives as the stream's first event rather than in a header.
  */
-export function browserWire(origin = ""): Wire {
+export function browserWire(origin = "", token?: string): Wire {
+	// In the address of the stream because an `EventSource` can carry it nowhere else — it has no
+	// header API, and a cookie set by another origin is not ours to have. The wire is a `fetch` and
+	// takes it in a header, where an address cannot be copied out of a history.
+	const carried = token === undefined ? "" : `?t=${encodeURIComponent(token)}`;
 	return {
 		open(onLine, onDown) {
 			return new Promise<Session>((settle, fail) => {
-				const source = new EventSource(`${origin}/events`);
+				const source = new EventSource(`${origin}/events${carried}`);
 				let session: string | undefined;
 
 				source.addEventListener("session", (event) => {
@@ -247,7 +251,10 @@ export function browserWire(origin = ""): Wire {
 						async post(line) {
 							const response = await fetch(`${origin}/rpc`, {
 								method: "POST",
-								headers: { "x-squad-session": session ?? "" },
+								headers: {
+									"x-squad-session": session ?? "",
+									...(token === undefined ? {} : { "x-squad-token": token }),
+								},
 								body: line,
 							});
 							if (!response.ok) throw new Error(await response.text());

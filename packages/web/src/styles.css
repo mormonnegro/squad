@@ -95,8 +95,143 @@ button {
 	display: flex;
 	align-items: center;
 	gap: 0.55rem;
+	width: 100%;
 	font-size: 0.8rem;
 	color: var(--muted);
+	text-align: left;
+}
+
+.rail-foot:hover {
+	background: #ffffff08;
+	color: var(--text);
+}
+
+.field {
+	width: 100%;
+	background: var(--bg-code);
+	border: 1px solid var(--line);
+	border-radius: 5px;
+	color: var(--text);
+	font: 0.9rem var(--mono);
+	padding: 0.5rem 0.7rem;
+}
+
+.field:focus {
+	outline: none;
+	border-color: var(--cyan);
+}
+
+/* ── where the agents live ───────────────────────────────────────────── */
+
+.connect {
+	max-width: 40rem;
+}
+
+.doors {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem;
+	margin: 0.4rem 0 0.2rem;
+}
+
+.door {
+	flex: 1 1 11rem;
+	gap: 0.3rem;
+}
+
+.door[data-here="true"] {
+	border-color: var(--cyan);
+}
+
+.door:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.door-says {
+	color: var(--muted);
+	font-size: 0.8rem;
+	line-height: 1.45;
+}
+
+.steps-two {
+	display: flex;
+	flex-direction: column;
+	gap: 0.9rem;
+	border-top: 1px solid var(--line);
+	padding-top: 1rem;
+}
+
+.how {
+	margin: 0;
+	padding-left: 1.2rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.7rem;
+	color: var(--muted);
+	font-size: 0.88rem;
+}
+
+/* One line to run, and nothing else on its line: it is meant to be selected whole. */
+.how-line {
+	display: block;
+	margin: 0.35rem 0;
+	background: var(--bg-code);
+	border: 1px solid var(--line);
+	border-radius: 5px;
+	padding: 0.45rem 0.6rem;
+	font: 0.78rem var(--mono);
+	color: var(--text);
+	overflow-x: auto;
+	white-space: pre;
+}
+
+.how-note {
+	display: block;
+	margin-top: 0.3rem;
+	font-size: 0.8rem;
+}
+
+.paste {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.paste .field {
+	flex: 1;
+}
+
+.planes {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	background: var(--line);
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	overflow: hidden;
+	margin-top: 0.3rem;
+}
+
+.plane-row {
+	display: flex;
+	align-items: center;
+	gap: 0.7rem;
+	background: var(--bg-raised);
+	padding: 0.6rem 0.8rem;
+}
+
+.plane-row[data-here="true"] {
+	border-left: 2px solid var(--cyan);
+	padding-left: calc(0.8rem - 2px);
+}
+
+.plane-open {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	text-align: left;
+	padding: 0;
 }
 
 .group {
@@ -790,21 +925,6 @@ button {
 	color: var(--red);
 	font: 0.82rem var(--mono);
 	padding: 0.45rem 1.2rem;
-}
-
-.field {
-	width: 100%;
-	background: var(--bg-code);
-	border: 1px solid var(--line);
-	border-radius: 5px;
-	color: var(--text);
-	font: 0.9rem var(--mono);
-	padding: 0.5rem 0.7rem;
-}
-
-.field:focus {
-	outline: none;
-	border-color: var(--cyan);
 }
 
 .why {
