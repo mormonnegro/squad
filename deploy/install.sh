@@ -48,16 +48,28 @@ else
 	WEB_PORT=${SQUAD_WEB_PORT:-$((8789 + OFFSET))}
 fi
 
-DIR=${SQUAD_DIR:-/opt/$NAME}
+# Where this lands, which is a different answer on a laptop than on a server.
+#
+# A Mac is not a smaller server. /opt and /var/lib both want root, so the install asks for a password
+# it does not need — and worse, Docker Desktop shares /Users and a short list of others with the VM
+# and does not share /var/lib at all, so a state directory there is a bind mount the daemon cannot
+# resolve and a plane that starts and finds nothing. Under $HOME both problems are the same problem
+# and neither exists.
+case "$(uname -s)" in
+Darwin)
+	DIR=${SQUAD_DIR:-$HOME/.squad/$NAME/app}
+	STATE=${SQUAD_STATE:-$HOME/.squad/$NAME/state}
+	;;
+*)
+	DIR=${SQUAD_DIR:-/opt/$NAME}
+	STATE=${SQUAD_STATE:-/var/lib/$NAME}
+	;;
+esac
 REPO=${SQUAD_REPO:-https://github.com/mormonnegro/squad.git}
 # Where the console this project publishes lives. A plane trusts it out of the box so that a fresh
 # install can be driven from a browser without editing anything; SQUAD_WEB_ORIGINS overrides it.
 CONSOLE=${SQUAD_CONSOLE:-https://squad.mormon.garden}
 BRANCH=${SQUAD_BRANCH:-main}
-# Mounted into the plane at its own name, so this path means the same thing on both sides of the
-# daemon. /var/lib is right for a server and wrong for a laptop: Docker Desktop shares /Users and
-# not that, so a state directory there is a bind mount the daemon resolves inside its own VM.
-STATE=${SQUAD_STATE:-/var/lib/$NAME}
 # Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
 # already the client that ran this, and a shim written over it would take the console away from the
@@ -131,6 +143,15 @@ if [ "$(id -u)" -ne 0 ] &&
 	sudo -v || die "Run this as root, or as a user sudo will let through."
 fi
 
+# Docker is asked as whoever it already answers, which on a laptop is not root.
+#
+# Two questions, and this script used to ask them as one: /opt needs root, and Docker Desktop's
+# socket does not. Handing Docker to root anyway breaks the build on a Mac — the credential helper
+# is the login keychain, root has no key to it, and what comes back is `error getting credentials`
+# against an image that needed no credentials at all.
+DOCKER=$SUDO
+if docker info >/dev/null 2>&1; then DOCKER=; fi
+
 install_pkg() {
 	if command -v apt-get >/dev/null 2>&1; then
 		# Through `env`, because with $SUDO empty the assignment arrives as the result of an
@@ -155,7 +176,7 @@ for tool in curl git; do
 done
 note "curl, git"
 
-if ! $SUDO docker info >/dev/null 2>&1; then
+if ! $DOCKER docker info >/dev/null 2>&1; then
 	if command -v docker >/dev/null 2>&1; then
 		die "Docker is installed but not running. Start it and run this again."
 	fi
@@ -163,9 +184,9 @@ if ! $SUDO docker info >/dev/null 2>&1; then
 		die "Nothing to run the agents in. Install Docker and run this again."
 	note "installing Docker"
 	curl -fsSL https://get.docker.com | $SUDO sh >/dev/null
-	$SUDO docker info >/dev/null 2>&1 || die "Docker installed but will not start."
+	$DOCKER docker info >/dev/null 2>&1 || die "Docker installed but will not start."
 fi
-$SUDO docker compose version >/dev/null 2>&1 ||
+$DOCKER docker compose version >/dev/null 2>&1 ||
 	die "Docker has no compose plugin. Install docker-compose-plugin and run this again."
 note "Docker, Compose"
 
@@ -333,14 +354,14 @@ fi
 # minute. The layer cache makes it nearly free when nothing has changed.
 step "Building"
 note "the sandbox image, which is what an agent runs inside"
-quietly $SUDO docker build -t squad/sandbox:dev "$DIR/packages/sandbox/image" ||
+quietly $DOCKER docker build -t squad/sandbox:dev "$DIR/packages/sandbox/image" ||
 	die "The sandbox image would not build."
 note "the control plane"
 $SUDO mkdir -p "$STATE"
 cd "$DIR/deploy"
 # Exported as well as written into .env, because an .env from an older install has no line for it
 # and the mount it would fall back to is not the one this run just made.
-quietly $SUDO env SQUAD_STATE="$STATE" docker compose up -d --build ||
+quietly $DOCKER env SQUAD_STATE="$STATE" docker compose up -d --build ||
 	die "The control plane would not start."
 
 # The reason the machine is driven by typing `squad`, and the door a console on another computer
@@ -372,7 +393,7 @@ SQUAD
 fi
 
 step "Up"
-$SUDO docker ps --filter label=com.docker.compose.project=squad \
+$DOCKER docker ps --filter "label=com.docker.compose.project=$NAME" \
 	--format '  {{.Names}}  {{.Status}}'
 
 # The line that connects this machine to a console, printed here because here is where somebody
