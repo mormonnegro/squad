@@ -4,7 +4,7 @@ import type { Live } from "./App.tsx";
 import { type Command, completions, isCommand, isShell } from "./commands.ts";
 import { faceOf, nameOf } from "./face.ts";
 import type { Plane } from "./plane.ts";
-import { until } from "./until.ts";
+import { When } from "./When.tsx";
 
 export function Chat({
 	plane,
@@ -46,9 +46,7 @@ export function Chat({
 					{/* An agent that booked its own next turn is not idle, it is waiting, and those read
 					    identically on a screen that only says whether it is running. */}
 					{agent.wakeAt !== undefined && (
-						<span className="when" title="wakes itself">
-							↻ {until(agent.wakeAt)}
-						</span>
+						<When plane={plane} agentId={agent.id} wakeAt={agent.wakeAt} glyph="↻" />
 					)}
 					{agent.served.map((one) => (
 						<a

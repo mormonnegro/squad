@@ -1,6 +1,7 @@
 import net from "node:net";
 import type { Duplex } from "node:stream";
 import type { CarrierSpec } from "@squad/channels";
+import type { Schedule } from "@squad/scheduler";
 import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
@@ -409,6 +410,12 @@ export class ControlClient {
 	}
 
 	/** Streams until the connection is closed. */
+	/** The schedules an agent is waiting on, and what each will say to it when it fires. */
+	async schedules(agentId: string): Promise<readonly Schedule[]> {
+		const answer = await this.#once({ op: "schedules", agentId });
+		return "schedules" in answer ? answer.schedules : [];
+	}
+
 	logs(onEvent: (event: PlaneEvent) => void): void {
 		const id = String(this.#nextId++);
 		this.#handlers.set(id, (response) => {

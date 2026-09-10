@@ -118,6 +118,18 @@ button {
 	border-left: 2px solid transparent;
 }
 
+/* The name and its marks, which is what opens the conversation. The rest of the row is not that. */
+.row-pick {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex: 1;
+	min-width: 0;
+	text-align: left;
+	color: inherit;
+	padding: 0;
+}
+
 .row:hover {
 	background: #ffffff08;
 }
@@ -158,6 +170,73 @@ button {
  */
 .when {
 	color: var(--amber);
+	cursor: help;
+	padding: 0;
+	/* Somewhere for the panel to be measured against, and nothing else: the panel itself is fixed. */
+	position: relative;
+}
+
+/*
+ * What the countdown is counting to, and why.
+ *
+ * Fixed rather than placed inside the row, because the column the row lives in scrolls and clips —
+ * a panel positioned within it would be cut off by the list it belongs to.
+ */
+.wake-panel {
+	position: fixed;
+	z-index: 20;
+	display: flex;
+	flex-direction: column;
+	gap: 0.7rem;
+	width: 24rem;
+	max-height: 22rem;
+	overflow-y: auto;
+	padding: 0.8rem 0.9rem;
+	background: var(--bg-raised);
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	box-shadow: 0 6px 24px #000a;
+	color: var(--text);
+	font: 0.8rem / 1.55 var(--sans);
+	cursor: auto;
+	/* The panel hangs inside a button, and a button centres what is in it. This is prose. */
+	text-align: left;
+}
+
+.wake {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.wake + .wake {
+	border-top: 1px solid var(--line-soft);
+	padding-top: 0.7rem;
+}
+
+.wake-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.6rem;
+	font: 0.75rem var(--mono);
+	color: var(--amber);
+}
+
+.wake-kind {
+	color: var(--muted);
+	text-align: right;
+}
+
+/* The agent's own words, as words: what it will be told, wrapped the way it wrote it. */
+.wake-body {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text);
+}
+
+.wake-why {
+	color: var(--muted);
 }
 
 /* The one glyph that says whether an agent is up, mid-turn, or stopped. */

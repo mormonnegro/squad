@@ -4,6 +4,7 @@ import net from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import type { CarrierSpec, Channel, Reply } from "@squad/channels";
+import type { Schedule } from "@squad/scheduler";
 import type { EmailOffer } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
 import type { GrantStanding } from "./grants.ts";
@@ -48,6 +49,14 @@ export type ControlRequest =
 			readonly agentId: string;
 			readonly word: string;
 	  }
+	/**
+	 * The schedules an agent is waiting on, with what each of them will say to it.
+	 *
+	 * Asked for rather than carried on every summary: `wakeAt` answers when, which is what a row has
+	 * room for, and this answers why — which is a paragraph, is wanted rarely, and would otherwise be
+	 * sent for every agent every two seconds to be looked at once.
+	 */
+	| { readonly id: string; readonly op: "schedules"; readonly agentId: string }
 	| { readonly id: string; readonly op: "logs" }
 	| { readonly id: string; readonly op: "transcripts" }
 	/** Which providers this plane could pay for, and which of them it currently can. */
@@ -212,6 +221,7 @@ export type ControlResponse =
 	  }
 	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
 	| { readonly id: string; readonly ok: true; readonly grants: readonly GrantStanding[] }
+	| { readonly id: string; readonly ok: true; readonly schedules: readonly Schedule[] }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
@@ -395,6 +405,12 @@ export class ControlServer {
 					id: request.id,
 					ok: true,
 					transcripts: await this.#plane.transcripts(),
+				});
+			} else if (request.op === "schedules") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					schedules: await this.#plane.scheduler.list(request.agentId),
 				});
 			} else if (request.op === "logs") {
 				// Everything, including the answer as it is being written. A subscriber reading a log

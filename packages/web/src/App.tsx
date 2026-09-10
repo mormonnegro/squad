@@ -4,7 +4,7 @@ import { Chat } from "./Chat.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { browserWire, Plane } from "./plane.ts";
 import { HERE, type KnownPlane, planeKey, readPlanes } from "./planes.ts";
-import { until } from "./until.ts";
+import { When } from "./When.tsx";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
 const POLL_MS = 2000;
@@ -171,6 +171,7 @@ export function App() {
 					{agents.map((one) => (
 						<AgentRow
 							key={one.id}
+							plane={plane}
 							agent={one}
 							live={live[one.id] ?? QUIET}
 							here={one.id === chosen}
@@ -254,11 +255,13 @@ export function App() {
 }
 
 function AgentRow({
+	plane,
 	agent,
 	live,
 	here,
 	onPick,
 }: {
+	plane: Plane | undefined;
 	agent: AgentSummary;
 	live: Live;
 	here: boolean;
@@ -286,24 +289,31 @@ function AgentRow({
 					: undefined;
 
 	return (
-		<button type="button" className="row" data-here={here} onClick={onPick}>
-			<span className="mark" data-state={state}>
-				{glyph}
-			</span>
-			<span className="face" style={{ color: `var(--${face.accent})` }} aria-hidden="true">
-				{face.glyph}
-			</span>
-			<span className="row-name">{nameOf(agent.id)}</span>
+		// The row is the container and the name is the button, because the countdown beside it is a
+		// button too and one cannot be inside the other. They are two things anyway: one opens the
+		// conversation and the other says why the agent is coming back.
+		<div className="row" data-here={here}>
+			<button type="button" className="row-pick" onClick={onPick}>
+				<span className="mark" data-state={state}>
+					{glyph}
+				</span>
+				<span className="face" style={{ color: `var(--${face.accent})` }} aria-hidden="true">
+					{face.glyph}
+				</span>
+				<span className="row-name">{nameOf(agent.id)}</span>
+			</button>
 			{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the
 			    only thing nothing else on this screen says. Before the spend, because it is a fact
 			    about the future and the spend is one about the day. */}
-			{agent.wakeAt !== undefined && <span className="row-note when">{until(agent.wakeAt)}</span>}
+			{agent.wakeAt !== undefined && (
+				<When plane={plane} agentId={agent.id} wakeAt={agent.wakeAt} />
+			)}
 			{agent.spentUsd > 0 && (
 				<span className="row-note" data-heat={heat}>
 					${agent.spentUsd.toFixed(2)}
 				</span>
 			)}
-		</button>
+		</div>
 	);
 }
 

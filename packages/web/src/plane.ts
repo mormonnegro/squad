@@ -17,6 +17,26 @@ type Answer =
 /** What an `ok` carried, which differs per operation and is read by the method that asked. */
 type Payload = Readonly<Record<string, unknown>>;
 
+/**
+ * A wakeup an agent is waiting on: when it fires, and what it will be told when it does.
+ *
+ * Declared here rather than imported from the scheduler, like everything else on this wire. What
+ * matters is that the two ends agree on the fields that are read, and a browser that does not know
+ * about a field a newer plane sends ignores it.
+ */
+export interface Wake {
+	readonly id: string;
+	readonly kind: "cron" | "once";
+	/** Five fields, for kind "cron". */
+	readonly expression?: string;
+	readonly timeZone: string;
+	/** What the agent is told when this fires. Its own words, when it was the one who booked it. */
+	readonly body: string;
+	readonly createdBy: string;
+	readonly nextRunAt: string;
+	readonly lastRunAt?: string;
+}
+
 export class PlaneError extends Error {}
 
 /** The connection under the client: how a line goes out, and how the lines coming back arrive. */
@@ -148,6 +168,11 @@ export class Plane {
 			asking: agent.asking ?? [],
 			wants: agent.wants ?? [],
 		}));
+	}
+
+	async schedules(agentId: string): Promise<readonly Wake[]> {
+		const answer = await this.#ask({ op: "schedules", agentId });
+		return (answer.schedules as Wake[] | undefined) ?? [];
 	}
 
 	async transcripts(): Promise<Record<string, readonly Utterance[]>> {
