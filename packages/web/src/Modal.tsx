@@ -1,11 +1,15 @@
-import { useEffect, useRef } from "react";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog.tsx";
 
 /**
  * Something held open over everything else.
  *
- * One of these rather than one per screen, because a person learns how a modal behaves once: Escape
- * closes it, the dark behind it closes it, and what is inside scrolls without the page under it
- * moving. Three rules, in one place, and no screen gets to disagree with them.
+ * One of these rather than one per screen, because a person learns how a dialog behaves once. What
+ * it is now is Radix underneath: focus is trapped and handed back, the page stops scrolling, and the
+ * tree is portalled out of whatever column would have clipped it — four things the hand-written one
+ * did not do and would have been forty lines of getting nearly right.
+ *
+ * Kept as this wrapper rather than used directly at every call site so that what a dialog is stays
+ * one decision. The screens below it say what they hold; none of them says how a dialog works.
  */
 export function Modal({
 	title,
@@ -19,48 +23,27 @@ export function Modal({
 	children: React.ReactNode;
 	onClose?: (() => void) | undefined;
 }) {
-	const box = useRef<HTMLDivElement>(null);
-
-	useEffect(() => box.current?.focus(), []);
-
-	useEffect(() => {
-		if (onClose === undefined) return;
-		const key = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", key);
-		return () => window.removeEventListener("keydown", key);
-	}, [onClose]);
-
 	return (
-		<div className="scrim">
-			{/* The way out for a mouse, as a layer behind the dialog rather than around it: around it,
-			    every click inside would have to be stopped from reaching it, and stopping clicks is a
-			    thing that goes wrong quietly. The way out for a keyboard is Escape, above. */}
-			{onClose !== undefined && (
-				// biome-ignore lint/a11y/useKeyWithClickEvents: Escape is the keyboard's way out
-				// biome-ignore lint/a11y/noStaticElementInteractions: a backdrop is a way out, not a control
-				<div className="scrim-back" onClick={onClose} />
-			)}
-			<div
-				className="modal"
-				data-wide={wide}
-				role="dialog"
-				aria-modal="true"
-				aria-label={title}
-				ref={box}
-				tabIndex={-1}
+		<Dialog
+			open
+			onOpenChange={(open) => {
+				// Radix asks to close; whether it may is the caller's, and the first question of all —
+				// where the agents live — has no answer that is "never mind".
+				if (!open) onClose?.();
+			}}
+		>
+			<DialogContent
+				wide={wide}
+				// Escape is the way out, and only where there is one to take.
+				onEscapeKeyDown={(event) => {
+					if (onClose === undefined) event.preventDefault();
+				}}
 			>
-				<header className="modal-head">
-					<strong>{title}</strong>
-					{onClose !== undefined && (
-						<button type="button" className="key" onClick={onClose}>
-							esc
-						</button>
-					)}
-				</header>
-				<div className="modal-body">{children}</div>
-			</div>
-		</div>
+				<DialogHeader>
+					<DialogTitle>{title}</DialogTitle>
+				</DialogHeader>
+				<DialogBody>{children}</DialogBody>
+			</DialogContent>
+		</Dialog>
 	);
 }

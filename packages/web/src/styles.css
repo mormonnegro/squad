@@ -1,3 +1,32 @@
+@import "tailwindcss";
+
+/*
+ * The palette, once, for both ways of writing it.
+ *
+ * Tailwind's utilities are generated from these rather than from its own greys, so `bg-raised` and
+ * the `var(--bg-raised)` a hand-written rule reaches for are the same value — and that value is the
+ * one the terminal console and the site already use. Two syntaxes over one palette is a thing to
+ * live with; two palettes is the small lie that makes a person check twice.
+ */
+@theme {
+	--color-ground: #0b0c0e;
+	--color-raised: #111316;
+	--color-sunk: #0e1013;
+	--color-line: #22252a;
+	--color-line-soft: #191c20;
+	--color-say: #dedcd7;
+	--color-said: #f5f3ef;
+	--color-muted: #9ba1a9;
+	--color-up: #8fd9a8;
+	--color-working: #e3b466;
+	--color-bad: #e0796f;
+	--color-here: #79c6dd;
+	--color-tool: #93a9ea;
+
+	--font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+	--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+}
+
 /*
  * The site's palette, to the value.
  *
@@ -166,13 +195,13 @@ button {
 .plane-line {
 	display: flex;
 	align-items: center;
-	gap: var(--step);
+	gap: 0.5rem;
 }
 
 .share {
 	display: flex;
 	flex-direction: column;
-	gap: var(--step);
+	gap: 0.5rem;
 	padding-top: 0.75rem;
 	margin-top: 0.75rem;
 	border-top: 1px solid var(--line-soft);
@@ -242,9 +271,9 @@ button {
 .steps-two {
 	display: flex;
 	flex-direction: column;
-	gap: var(--gap);
+	gap: 1rem;
 	border-top: 1px solid var(--line);
-	padding-top: var(--seam);
+	padding-top: 1.5rem;
 }
 
 .how {
@@ -252,7 +281,7 @@ button {
 	padding-left: 1.35rem;
 	display: flex;
 	flex-direction: column;
-	gap: var(--gap);
+	gap: 1rem;
 	color: var(--text);
 	font-size: 0.88rem;
 }
@@ -264,7 +293,7 @@ button {
 /* One line to run, and nothing else on its line: it is meant to be selected whole. */
 .how-line {
 	display: block;
-	margin: var(--step) 0 0;
+	margin: 0.5rem 0 0;
 	background: var(--bg-code);
 	border: 1px solid var(--line);
 	border-radius: 6px;
@@ -277,7 +306,7 @@ button {
 
 .how-note {
 	display: block;
-	margin-top: var(--step);
+	margin-top: 0.5rem;
 	color: var(--muted);
 	font-size: 0.82rem;
 	line-height: 1.5;
@@ -285,7 +314,7 @@ button {
 
 .paste {
 	display: flex;
-	gap: var(--step);
+	gap: 0.5rem;
 }
 
 .paste .field {
@@ -502,79 +531,12 @@ button {
 
 /* ── held open ───────────────────────────────────────────────────────── */
 
-.scrim {
-	position: fixed;
-	inset: 0;
-	z-index: 40;
-	display: grid;
-	place-items: center;
-	padding: clamp(1rem, 5vh, 3rem) 1.5rem;
-}
 
-.scrim-back {
-	position: absolute;
-	inset: 0;
-	background: #000000a8;
-}
 
-/*
- * One rhythm for everything inside a dialog.
- *
- * Every gap in here is one of these three, so a paragraph followed by a choice and a choice followed
- * by a form are spaced by a rule rather than by whichever number was typed that afternoon. The head
- * and the body are separated by the largest, because that is the one seam a person reads as a change
- * of subject rather than a change of sentence.
- */
-.modal {
-	--step: 0.5rem;
-	--gap: 1rem;
-	--seam: 1.5rem;
 
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	width: min(34rem, 100%);
-	max-height: min(32rem, 82vh);
-	background: var(--bg-raised);
-	border: 1px solid var(--line);
-	border-radius: 10px;
-	box-shadow: 0 16px 50px #000d;
-	font: 0.88rem / 1.6 var(--sans);
-	text-align: left;
-	overflow: hidden;
-}
 
-/* The ones holding a decision rather than a paragraph. */
-.modal[data-wide="true"] {
-	width: min(42rem, 100%);
-	max-height: 86vh;
-}
 
-.modal:focus {
-	outline: none;
-}
 
-.modal-head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--gap);
-	padding: 1.1rem var(--seam);
-	border-bottom: 1px solid var(--line);
-	color: var(--text-strong);
-	font-size: 1.05rem;
-	flex: none;
-}
-
-/* The body scrolls and the head does not, so the way out never leaves the screen. */
-.modal-body {
-	display: flex;
-	flex-direction: column;
-	gap: var(--seam);
-	padding: var(--seam);
-	overflow-y: auto;
-	min-height: 0;
-}
 
 .lede {
 	margin: 0;

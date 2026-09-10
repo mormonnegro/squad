@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import tailwind from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -32,7 +33,7 @@ const held = token();
 const carried = held === undefined ? {} : { headers: { cookie: `squad_web=${held}` } };
 
 export default defineConfig({
-	plugins: [react()],
+	plugins: [react(), tailwind()],
 	build: {
 		// Served by the plane out of its own directory, so the addresses in the HTML are its own.
 		outDir: "dist",

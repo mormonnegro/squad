@@ -20,7 +20,8 @@
 			"!.claude",
 			"!site/.next",
 			"!site/out",
-			"!packages/web/dist"
+			"!packages/web/dist",
+			"!packages/web/src/styles.css"
 		]
 	}
 }
