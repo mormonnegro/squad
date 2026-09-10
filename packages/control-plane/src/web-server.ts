@@ -19,6 +19,12 @@ export const WEB_TOKEN_FILE = "web.token";
 /** The cookie the browser carries once it has spent its token. */
 const SESSION_COOKIE = "squad_web";
 
+/** The token, for a caller that cannot be sent a cookie. Lowercase: node lowercases what arrives. */
+const TOKEN_HEADER = "x-squad-token";
+
+/** Which of this browser's connections a request belongs to. */
+const SESSION_HEADER = "x-squad-session";
+
 /**
  * How often nothing is said down an idle event stream.
  *
@@ -53,6 +59,15 @@ export interface WebServerOptions {
 	readonly port?: number;
 	/** Left out, every interface. See `listen` for why that is the right default here. */
 	readonly host?: string;
+	/**
+	 * Origins other than this one that a browser may drive this plane from.
+	 *
+	 * Empty by default, which means the only page that can talk to this plane is the one it serves
+	 * itself. A hosted console is a page on somebody else's domain reaching a plane on yours, and
+	 * whether that is allowed is the operator's decision and nobody else's — so it is named here
+	 * rather than assumed, and a plane nobody configured stays a plane only its own page can drive.
+	 */
+	readonly origins?: readonly string[];
 }
 
 /**
@@ -145,8 +160,45 @@ export class WebServer {
 		return made;
 	}
 
+	/** The origin this answer may be read by, if the operator named it. */
+	#allowed(request: IncomingMessage): string | undefined {
+		const origin = request.headers.origin;
+		if (typeof origin !== "string") return undefined;
+		return (this.#options.origins ?? []).includes(origin) ? origin : undefined;
+	}
+
 	async #route(request: IncomingMessage, response: ServerResponse): Promise<void> {
 		const asked = new URL(request.url ?? "/", `http://127.0.0.1`);
+
+		// Set once and merged into whatever is written later, so no path can answer an allowed origin
+		// without it and none has to remember to.
+		const origin = this.#allowed(request);
+		if (origin !== undefined) {
+			response.setHeader("access-control-allow-origin", origin);
+			response.setHeader("vary", "origin");
+		}
+
+		// Answered before the token is looked for, because a preflight carries no credentials — it is
+		// the browser asking whether it may ask, and refusing it is refusing the question.
+		//
+		// The private-network header is what a page on the public internet needs to reach a plane on
+		// loopback at all: without it Chrome holds the request open and nothing ever comes back, which
+		// is the least debuggable failure this server could have.
+		if (request.method === "OPTIONS") {
+			if (origin === undefined) {
+				this.#fail(response, 403, "This plane does not answer to that origin.");
+				return;
+			}
+			response
+				.writeHead(204, {
+					"access-control-allow-methods": "GET, POST, OPTIONS",
+					"access-control-allow-headers": `content-type, ${SESSION_HEADER}, ${TOKEN_HEADER}`,
+					"access-control-allow-private-network": "true",
+					"access-control-max-age": "600",
+				})
+				.end();
+			return;
+		}
 
 		// The token is spent here and nowhere else: it arrives in a query string, which is the one
 		// place a person can paste it, and leaves as a cookie, which is the one place a query string
@@ -166,7 +218,12 @@ export class WebServer {
 			return;
 		}
 
-		if (!this.#isToken(cookie(request, SESSION_COOKIE))) {
+		// A cookie for the page this plane serves, a header for one it does not. Cross-origin cookies
+		// need SameSite=None and a secure origin and are fragile on both counts; a header the caller
+		// sets is the same secret carried the one way that works from anywhere.
+		const carried = request.headers[TOKEN_HEADER];
+		const offering = typeof carried === "string" ? carried : cookie(request, SESSION_COOKIE);
+		if (!this.#isToken(offering)) {
 			// Said plainly rather than with a login form, because there is no password to type: whoever
 			// should be here has a file on this machine, and `squad web` is what reads it.
 			this.#fail(response, 401, "Run `squad web` on the machine this plane runs on to get in.");
@@ -246,7 +303,7 @@ export class WebServer {
 
 	/** One request from the browser, written to that session's socket exactly as it arrived. */
 	async #relay(request: IncomingMessage, response: ServerResponse): Promise<void> {
-		const id = request.headers["x-squad-session"];
+		const id = request.headers[SESSION_HEADER];
 		const socket = typeof id === "string" ? this.#sessions.get(id) : undefined;
 		if (socket === undefined) {
 			// The stream is what holds the connection, so a POST without one is a client that has not

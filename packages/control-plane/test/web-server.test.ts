@@ -216,3 +216,73 @@ describe("the files", () => {
 		expect(await response.text()).not.toContain("root:");
 	});
 });
+
+describe("a console on another domain", () => {
+	const PAGE = "https://squad.example";
+
+	beforeEach(async () => {
+		await web.close();
+		web = new WebServer({
+			stateDir: dir,
+			root,
+			port: 0,
+			origins: [PAGE],
+			dial: async () => {
+				const socket = new FakeSocket();
+				sockets.push(socket);
+				return socket;
+			},
+		});
+		await web.listen();
+	});
+
+	// Without this header Chrome holds a request from a public page to a loopback plane open and
+	// nothing ever comes back — the least debuggable failure this server could have.
+	it("answers the preflight a private-network request needs", async () => {
+		const response = await fetch(at("/"), {
+			method: "OPTIONS",
+			headers: {
+				origin: PAGE,
+				"access-control-request-method": "GET",
+				"access-control-request-private-network": "true",
+			},
+		});
+		expect(response.status).toBe(204);
+		expect(response.headers.get("access-control-allow-private-network")).toBe("true");
+		expect(response.headers.get("access-control-allow-origin")).toBe(PAGE);
+	});
+
+	// A preflight carries no credentials. Asking it for a token would be refusing the question.
+	it("answers the preflight without a token", async () => {
+		const response = await fetch(at("/rpc"), {
+			method: "OPTIONS",
+			headers: { origin: PAGE, "access-control-request-method": "POST" },
+		});
+		expect(response.status).toBe(204);
+	});
+
+	it("refuses an origin the operator did not name", async () => {
+		const response = await fetch(at("/"), {
+			method: "OPTIONS",
+			headers: { origin: "https://somewhere.else", "access-control-request-method": "GET" },
+		});
+		expect(response.status).toBe(403);
+	});
+
+	// Cross-origin cookies need SameSite=None and a secure origin and are fragile on both counts.
+	it("takes the token in a header when there can be no cookie", async () => {
+		const response = await fetch(at("/events"), {
+			headers: { origin: PAGE, "x-squad-token": web.token },
+		});
+		expect(response.status).toBe(200);
+		expect(response.headers.get("access-control-allow-origin")).toBe(PAGE);
+		await response.body?.cancel();
+	});
+
+	it("refuses a token in that header that is not this plane's", async () => {
+		const response = await fetch(at("/"), {
+			headers: { origin: PAGE, "x-squad-token": "not-it" },
+		});
+		expect(response.status).toBe(401);
+	});
+});
