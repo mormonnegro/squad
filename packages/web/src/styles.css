@@ -55,36 +55,46 @@
 	color-scheme: dark;
 }
 
-* {
-	box-sizing: border-box;
-}
+/*
+ * The resets, in the base layer where a utility can still win.
+ *
+ * Unlayered CSS beats every layer, and Tailwind puts its utilities in one — so `button { border: 0 }`
+ * sitting out here quietly won against `border` and `bg-raised` on every element that happened to be
+ * a button, which is most of the things a person clicks. The rules did not change; where they sit
+ * did. This is the seam between the two ways of writing a style, and it is worth knowing it is here.
+ */
+@layer base {
+	* {
+		box-sizing: border-box;
+	}
 
-html,
-body,
-#squad {
-	height: 100%;
-	margin: 0;
-}
+	html,
+	body,
+	#squad {
+		height: 100%;
+		margin: 0;
+	}
 
-body {
-	background: var(--bg);
-	color: var(--text);
-	font: 15px / 1.6 var(--sans);
-	-webkit-font-smoothing: antialiased;
-}
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font: 15px / 1.6 var(--sans);
+		-webkit-font-smoothing: antialiased;
+	}
 
-button {
-	font: inherit;
-	color: inherit;
-	background: none;
-	border: 0;
-	cursor: pointer;
-}
+	button {
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: 0;
+		cursor: pointer;
+	}
 
-:focus-visible {
-	outline: 2px solid var(--cyan);
-	outline-offset: 2px;
-	border-radius: 3px;
+	:focus-visible {
+		outline: 2px solid var(--cyan);
+		outline-offset: 2px;
+		border-radius: 3px;
+	}
 }
 
 /* ── the frame ───────────────────────────────────────────────────────── */

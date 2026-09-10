@@ -1,4 +1,13 @@
-import { Check, ChevronsUpDown, Plus, Settings } from "lucide-react";
+import {
+	Check,
+	ChevronsUpDown,
+	Cloud,
+	KeyRound,
+	Laptop,
+	Plus,
+	Server,
+	Settings,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
 	type Connection,
@@ -113,15 +122,18 @@ function initials(name: string): string {
 	return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
 }
 
-type Door = "mine" | "theirs";
+/** Where an environment runs, which is the only question this screen is really asking. */
+type Where = "here" | "server" | "code";
 
 /**
- * Connecting an environment, over the whole screen.
+ * Connecting an environment.
  *
- * Over the whole screen because it is not a step inside anything: until it is answered there is no
- * agent to look at and nothing else on the page means anything. Two ways in, and they are genuinely
- * different questions — one is "put a plane somewhere and let me in", and the other is "somebody
- * already did, and gave me this".
+ * The question is where the agents will run, so the screen is three places and nothing else. Being
+ * handed somebody else's is a real way in and a different question — it is not a place — so it sits
+ * under them as one line rather than as a fourth card competing for the same glance.
+ *
+ * It says first, and it says there can be more. Somebody deciding where to put their agents on the
+ * way in should know the decision is not the last one they will get to make.
  */
 export function AddEnvironment({
 	first,
@@ -132,72 +144,116 @@ export function AddEnvironment({
 	onAdded: (made: Connection, all: readonly Connection[]) => void;
 	onClose?: (() => void) | undefined;
 }) {
-	const [door, setDoor] = useState<Door | undefined>();
+	const [where, setWhere] = useState<Where | undefined>();
 
 	return (
 		<Modal
 			wide
-			title={first ? "Where do your agents live?" : "Add an environment"}
+			title={first ? "Connect your first environment" : "Add an environment"}
 			onClose={onClose}
 		>
 			<p className="lede">
-				An environment is one machine running one plane: its own agents, its own keys, its own bill.
-				This page can hold several and they never mix.
+				An environment is one machine running your agents — its own containers, its own keys, its
+				own bill.{" "}
+				{first
+					? "This is your first. You can add more later and move between them from the top of the sidebar."
+					: "This page holds several, and they never mix."}
 			</p>
 
-			<div className="doors">
-				<Choice
-					name="Mine"
-					says="A machine I have — this computer, or a server I can SSH to."
-					here={door === "mine"}
-					onPick={() => setDoor("mine")}
+			<div className="grid gap-3 sm:grid-cols-3">
+				<Place
+					icon={<Laptop className="size-5" />}
+					name="This computer"
+					says="Docker runs it here. Good for trying it."
+					here={where === "here"}
+					onPick={() => setWhere("here")}
 				/>
-				<Choice
-					name="Somebody else's"
-					says="They set one up and sent me a code."
-					here={door === "theirs"}
-					onPick={() => setDoor("theirs")}
+				<Place
+					icon={<Server className="size-5" />}
+					name="A server"
+					says="Stays up when your laptop sleeps. A $5 VPS is enough."
+					here={where === "server"}
+					onPick={() => setWhere("server")}
+				/>
+				<Place
+					icon={<Cloud className="size-5" />}
+					name="In the cloud"
+					says="The one we run for you."
+					soon
+					here={false}
+					onPick={() => {}}
 				/>
 			</div>
-			{door !== undefined && <Rest door={door} onAdded={onAdded} />}
+
+			{where !== undefined && <Rest where={where} onAdded={onAdded} />}
+
+			{where !== "code" && (
+				<button
+					type="button"
+					onClick={() => setWhere("code")}
+					className="flex items-center gap-2 self-start text-[0.82rem] text-muted hover:text-say"
+				>
+					<KeyRound className="size-3.5" />
+					Somebody sent me a code for theirs
+				</button>
+			)}
 		</Modal>
 	);
 }
 
-function Choice({
+function Place({
+	icon,
 	name,
 	says,
 	here,
+	soon,
 	onPick,
 }: {
+	icon: React.ReactNode;
 	name: string;
 	says: string;
 	here: boolean;
+	soon?: boolean;
 	onPick: () => void;
 }) {
 	return (
-		<button type="button" className="card door" data-here={here} onClick={onPick}>
-			<span className="card-name">{name}</span>
-			<span className="door-says">{says}</span>
+		<button
+			type="button"
+			disabled={soon}
+			onClick={onPick}
+			className={cn(
+				"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors",
+				"border-line bg-raised hover:border-[#39414a]",
+				here && "border-here bg-white/5",
+				soon && "cursor-default opacity-45 hover:border-line",
+			)}
+		>
+			<span className={cn("text-muted", here && "text-here")}>{icon}</span>
+			<span className="font-medium text-said">{name}</span>
+			<span className="text-[0.8rem]/[1.45] text-muted">{says}</span>
+			{soon === true && (
+				<span className="rounded border border-line px-1.5 py-0.5 font-mono text-[0.65rem] text-muted">
+					soon
+				</span>
+			)}
 		</button>
 	);
 }
 
 function Rest({
-	door,
+	where,
 	onAdded,
 }: {
-	door: Door;
+	where: Where;
 	onAdded: (made: Connection, all: readonly Connection[]) => void;
 }) {
-	const [where, setWhere] = useState<"here" | "server">("here");
 	const [typed, setTyped] = useState("");
 	const [why, setWhy] = useState<string | undefined>();
 	const [trying, setTrying] = useState(false);
 	const field = useRef<HTMLInputElement>(null);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the step changing is why it must focus
-	useEffect(() => field.current?.focus(), [door, where]);
+	useEffect(() => field.current?.focus(), [where]);
 
 	const add = async (): Promise<void> => {
 		const read = readAddress(typed);
@@ -215,9 +271,7 @@ function Rest({
 			client.close();
 		} catch (error) {
 			setTrying(false);
-			setWhy(
-				`${(error as Error).message} — is the plane running, and does it answer at ${read.origin}?`,
-			);
+			setWhy(`${(error as Error).message} — is it running, and does it answer at ${read.origin}?`);
 			return;
 		}
 		const made: Connection = { name: nameFor(read.origin), origin: read.origin, token: read.token };
@@ -225,83 +279,85 @@ function Rest({
 	};
 
 	return (
-		<div className="steps-two">
-			{door === "mine" ? (
-				<>
-					<div className="doors">
-						<Choice
-							name="On this computer"
-							says="A container here, and Docker is what runs it."
-							here={where === "here"}
-							onPick={() => setWhere("here")}
-						/>
-						<Choice
-							name="On a server"
-							says="A machine you have SSH to. A $5 VPS is enough."
-							here={where === "server"}
-							onPick={() => setWhere("server")}
-						/>
-					</div>
-					<ol className="how">
-						<li>
-							{where === "here" ? "On this computer, once:" : "On the server, once:"}
-							<code className="how-line">
-								curl -fsSL https://squad.mormon.garden/install.sh | sh
-							</code>
-							<span className="how-note">
-								It ends by printing one address. That address is the key — paste it below.
-							</span>
-						</li>
-						{where === "server" && (
-							<li>
-								Bring it within reach of this browser:
-								<code className="how-line">ssh -N -L 8789:127.0.0.1:8789 you@your-server</code>
-								<span className="how-note">
-									Nothing is opened on the server. The bytes cross the SSH connection you already
-									have, which is why the address still says 127.0.0.1 from here.
-								</span>
-							</li>
-						)}
-						<li>Paste it:</li>
-					</ol>
-				</>
+		<div className="flex flex-col gap-4 border-t border-line pt-6">
+			{where === "code" ? (
+				<Step n={1}>
+					Ask them for the code. One line starting with <code className="md-code">squad_</code>,
+					from <em>Manage and share</em> in their own picker.
+					<Note>
+						A code is that machine's key, not a guest pass: it makes you an operator of those
+						agents, with a shell inside their sandboxes.
+					</Note>
+				</Step>
 			) : (
-				<ol className="how">
-					<li>
-						Ask them for the code. It is one line starting with <code>squad_</code>, and they get it
-						from <em>Manage and share</em> in their own environment picker.
-						<span className="how-note">
-							A code is that plane's key, not a guest pass: it makes you an operator of those
-							agents, with a shell inside their sandboxes. Take one only from somebody who meant to
-							make you one.
-						</span>
-					</li>
-					<li>Paste it:</li>
-				</ol>
+				<>
+					<Step n={1}>
+						{where === "here" ? "Run this here:" : "Run this on the server:"}
+						<Line>curl -fsSL https://squad.mormon.garden/install.sh | sh</Line>
+						<Note>It ends by printing one address. That address is the key.</Note>
+					</Step>
+					{where === "server" && (
+						<Step n={2}>
+							Bring it within reach of this browser:
+							<Line>ssh -N -L 8789:127.0.0.1:8789 you@your-server</Line>
+							<Note>
+								Nothing is opened on the server — the bytes cross the SSH connection you already
+								have, which is why the address still says 127.0.0.1 from here.
+							</Note>
+						</Step>
+					)}
+				</>
 			)}
 
-			<form
-				className="paste"
-				onSubmit={(event) => {
-					event.preventDefault();
-					if (!trying) void add();
-				}}
-			>
-				<input
-					ref={field}
-					className="field"
-					value={typed}
-					disabled={trying}
-					placeholder={door === "mine" ? "http://127.0.0.1:8789/?t=…" : "squad_…"}
-					onChange={(event) => setTyped(event.target.value)}
-				/>
-				<button type="submit" className="key" data-yes="true" disabled={trying}>
-					{trying ? "knocking…" : "connect"}
-				</button>
-			</form>
-			{why !== undefined && <span className="why">{why}</span>}
+			<Step n={where === "server" ? 3 : 2}>
+				Paste it:
+				<form
+					className="mt-2 flex gap-2"
+					onSubmit={(event) => {
+						event.preventDefault();
+						if (!trying) void add();
+					}}
+				>
+					<input
+						ref={field}
+						className="field min-w-0 flex-1"
+						value={typed}
+						disabled={trying}
+						placeholder={where === "code" ? "squad_…" : "http://127.0.0.1:8789/?t=…"}
+						onChange={(event) => setTyped(event.target.value)}
+					/>
+					<button type="submit" className="key" data-yes="true" disabled={trying}>
+						{trying ? "knocking…" : "connect"}
+					</button>
+				</form>
+				{why !== undefined && <span className="why mt-2 block">{why}</span>}
+			</Step>
 		</div>
 	);
+}
+
+/** A numbered step, because these are done in order and the order is the instruction. */
+function Step({ n, children }: { n: number; children: React.ReactNode }) {
+	return (
+		<div className="flex gap-3">
+			<span className="mt-0.5 grid size-5 flex-none place-items-center rounded-full border border-line font-mono text-[0.68rem] text-muted">
+				{n}
+			</span>
+			<div className="min-w-0 flex-1 text-[0.88rem]">{children}</div>
+		</div>
+	);
+}
+
+function Line({ children }: { children: React.ReactNode }) {
+	return (
+		<code className="mt-2 block overflow-x-auto whitespace-pre rounded-md border border-line bg-sunk px-3 py-2 font-mono text-[0.78rem] text-say">
+			{children}
+		</code>
+	);
+}
+
+function Note({ children }: { children: React.ReactNode }) {
+	return <span className="mt-2 block text-[0.8rem]/[1.5] text-muted">{children}</span>;
 }
 
 /** The environments this browser holds: what each is, how to hand one over, how to be rid of one. */
