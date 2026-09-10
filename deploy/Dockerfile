@@ -7,7 +7,9 @@ FROM node:24-bookworm-slim AS web
 
 RUN corepack enable
 WORKDIR /srv/squad
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# The base tsconfig comes too: the web package extends it, and esbuild resolves that `extends` while
+# it transforms — so without it the build fails inside vite rather than at a missing file.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @squad/web... \
 	&& pnpm --filter @squad/web build

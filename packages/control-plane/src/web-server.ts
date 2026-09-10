@@ -51,6 +51,7 @@ export interface WebServerOptions {
 	/** The built web bundle. Absent or unbuilt, the server says so rather than serving nothing. */
 	readonly root: string;
 	readonly port?: number;
+	/** Left out, every interface. See `listen` for why that is the right default here. */
 	readonly host?: string;
 }
 
@@ -104,10 +105,14 @@ export class WebServer {
 		this.#token = await this.#keepToken();
 		await new Promise<void>((settle, fail) => {
 			this.#server.once("error", fail);
-			// Loopback and nothing else. Not a default to be overridden by a flag: the plane runs as
-			// root over a Docker socket, and the difference between this being reachable from the
-			// network and not is the difference between a token and a machine.
-			this.#server.listen(this.#options.port ?? WEB_PORT, this.#options.host ?? "127.0.0.1", () => {
+			// Every interface, and the published port is what makes it loopback — the same shape the
+			// webhook server and the OAuth callback already have. Binding 127.0.0.1 here would be
+			// tighter on a host and unreachable in a container, which is where the plane actually
+			// runs: a published port forwards to the container's address, never to its loopback.
+			//
+			// What protects this is the token, not the address. `deploy/compose.yaml` publishes it as
+			// `127.0.0.1:8789:8789`, which is where the reasoning about who may knock belongs.
+			this.#server.listen(this.#options.port ?? WEB_PORT, this.#options.host, () => {
 				this.#server.removeListener("error", fail);
 				settle();
 			});
