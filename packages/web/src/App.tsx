@@ -297,7 +297,7 @@ function AgentRow({
 			{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the
 			    only thing nothing else on this screen says. Before the spend, because it is a fact
 			    about the future and the spend is one about the day. */}
-			{agent.wakeAt !== undefined && <span className="row-note">{until(agent.wakeAt)}</span>}
+			{agent.wakeAt !== undefined && <span className="row-note when">{until(agent.wakeAt)}</span>}
 			{agent.spentUsd > 0 && (
 				<span className="row-note" data-heat={heat}>
 					${agent.spentUsd.toFixed(2)}

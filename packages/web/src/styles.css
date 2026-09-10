@@ -148,6 +148,18 @@ button {
 	color: var(--red);
 }
 
+/*
+ * When it comes back.
+ *
+ * Amber, which already means working and nearing a ceiling — and that is the family this belongs to:
+ * an agent counting down to its own next turn has something coming, and grey is what the rest of the
+ * row uses to say nothing is. It shares the colour with a spend in its warning band, which is a real
+ * cost and a small one: the two are a `$` apart and only one of them is ever a warning.
+ */
+.when {
+	color: var(--amber);
+}
+
 /* The one glyph that says whether an agent is up, mid-turn, or stopped. */
 .mark {
 	width: 0.85rem;

@@ -41,7 +41,11 @@ export function Chat({
 					{agent.model !== undefined && <span>{agent.model}</span>}
 					{/* An agent that booked its own next turn is not idle, it is waiting, and those read
 					    identically on a screen that only says whether it is running. */}
-					{agent.wakeAt !== undefined && <span title="wakes itself">↻ {until(agent.wakeAt)}</span>}
+					{agent.wakeAt !== undefined && (
+						<span className="when" title="wakes itself">
+							↻ {until(agent.wakeAt)}
+						</span>
+					)}
 					{agent.served.map((one) => (
 						<a
 							key={one.port}
