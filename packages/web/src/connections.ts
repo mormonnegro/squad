@@ -68,25 +68,59 @@ export function forget(gone: Connection): readonly Connection[] {
 	return all;
 }
 
+/** What a code starts with, so a person can tell one from a password at a glance. */
+const MARK = "squad_";
+
 /**
- * The address `squad web` prints, read back apart.
+ * One environment, as a single thing to hand somebody.
  *
- * One paste rather than two fields, because that line already carries both halves and asking for
- * them separately is asking somebody to take it apart by hand and get it wrong.
+ * The address and the key in one string rather than two fields, because they are useless apart and
+ * a person copying two things copies one of them. It is not encryption and does not pretend to be —
+ * it is the same two facts, in a shape that survives a chat window without being turned into a link.
+ */
+export function makeCode(one: Connection): string {
+	const body = btoa(JSON.stringify({ o: one.origin, t: one.token ?? "" }))
+		.replaceAll("+", "-")
+		.replaceAll("/", "_")
+		.replaceAll("=", "");
+	return MARK + body;
+}
+
+/**
+ * A code or an address, read back apart.
+ *
+ * Both, because both exist in the world: the installer prints an address and a person hands over a
+ * code, and refusing whichever one somebody has in their clipboard is refusing them for being
+ * right in the other way.
  */
 export function readAddress(typed: string): { origin: string; token: string } | string {
 	const text = typed.trim();
-	if (text.length === 0) return "Paste the address that `squad web` printed.";
+	if (text.length === 0) return "Paste the code, or the address the installer printed.";
+
+	if (text.startsWith(MARK)) {
+		try {
+			const body = text.slice(MARK.length).replaceAll("-", "+").replaceAll("_", "/");
+			const read: unknown = JSON.parse(atob(body));
+			const { o, t } = read as Record<string, unknown>;
+			if (typeof o !== "string" || typeof t !== "string" || o.length === 0 || t.length === 0) {
+				return "That code is missing something. Ask for it again.";
+			}
+			return { origin: new URL(o).origin, token: t };
+		} catch {
+			return "That code did not read. It may have been cut short on the way here.";
+		}
+	}
+
 	let url: URL;
 	try {
 		url = new URL(text);
 	} catch {
-		return "That is not an address. It looks like http://127.0.0.1:8789/?t=…";
+		return "That is neither a code nor an address. A code starts with `squad_`.";
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") return "It has to be http or https.";
 	const token = url.searchParams.get("t");
 	if (token === null || token.length === 0) {
-		return "That address carries no token. `squad web` prints one with `?t=` on the end.";
+		return "That address carries no key. The installer prints one with `?t=` on the end.";
 	}
 	return { origin: url.origin, token };
 }

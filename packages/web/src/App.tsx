@@ -1,8 +1,8 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./Chat.tsx";
-import { Connect, Connections } from "./Connect.tsx";
 import { type Connection, HERE, keyOf, readConnections } from "./connections.ts";
+import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { browserWire, Plane } from "./plane.ts";
 import { When } from "./When.tsx";
@@ -174,10 +174,14 @@ export function App() {
 		<div className="app">
 			<nav className="rail">
 				<div className="rail-head">
-					<span className="face" aria-hidden="true">
-						◇
-					</span>
-					<strong style={{ fontSize: "0.92rem" }}>squad</strong>
+					<Picker
+						all={planes}
+						at={at}
+						connected={plane !== undefined}
+						onPick={goTo}
+						onAdd={() => setShowing("connect")}
+						onManage={() => setShowing("planes")}
+					/>
 				</div>
 
 				<div className="rail-scroll">
@@ -209,22 +213,11 @@ export function App() {
 					</button>
 				</div>
 
-				<button
-					type="button"
-					className="rail-foot"
-					onClick={() => setShowing(planes.length > 1 ? "planes" : "connect")}
-					title="the machine these agents live on"
-				>
-					<span className="mark" data-state={plane === undefined ? "stopped" : "running"}>
-						●
-					</span>
-					{/* Which machine this is looking at. One application against several planes has to
-					    say which one, every time, or every screen on it means something unknown. */}
-					<span className="row-name">{at.name}</span>
-					<span className="row-note">
-						{planes.length > 1 ? `${planes.length} planes` : "connect"}
-					</span>
-				</button>
+				<div className="rail-foot">
+					{/* What this whole column is about, said where a column ends. The picker at the top is
+					    where it is changed; this is where it is confirmed without looking up. */}
+					<span className="row-name">{at.origin === "" ? "on this computer" : at.origin}</span>
+				</div>
 			</nav>
 
 			<main className="pane">
@@ -233,37 +226,7 @@ export function App() {
 						{down} — it will come back on its own.
 					</div>
 				)}
-				{showing === "connect" ? (
-					<Connect
-						first={planes.length <= 1}
-						onAdded={(made, all) => {
-							setPlanes(all);
-							goTo(made);
-						}}
-						onClose={planes.length > 1 ? () => setShowing("none") : undefined}
-					/>
-				) : showing === "planes" ? (
-					<Connections
-						all={planes}
-						at={at}
-						onPick={goTo}
-						onForget={(all) => {
-							setPlanes(all);
-							if (!all.some((one) => keyOf(one) === keyOf(at))) goTo(all[0] ?? HERE);
-						}}
-						onAdd={() => setShowing("connect")}
-					/>
-				) : down !== undefined && planes.length <= 1 ? (
-					// Nothing connected and nothing to fall back to: this is not an error screen, it is
-					// the first question, and it is the whole of what this page can usefully show.
-					<Connect
-						first
-						onAdded={(made, all) => {
-							setPlanes(all);
-							goTo(made);
-						}}
-					/>
-				) : making ? (
+				{making ? (
 					<NewAgent onMake={create} />
 				) : agent !== undefined && plane !== undefined ? (
 					<Chat
@@ -278,6 +241,41 @@ export function App() {
 					<Nothing onMake={() => setMaking(true)} />
 				)}
 			</main>
+
+			{showing === "connect" && (
+				<AddEnvironment
+					first={planes.length <= 1}
+					onAdded={(made, all) => {
+						setPlanes(all);
+						goTo(made);
+					}}
+					onClose={planes.length > 1 ? () => setShowing("none") : undefined}
+				/>
+			)}
+			{showing === "planes" && (
+				<Environments
+					all={planes}
+					at={at}
+					onPick={goTo}
+					onForget={(all) => {
+						setPlanes(all);
+						if (!all.some((one) => keyOf(one) === keyOf(at))) goTo(all[0] ?? HERE);
+					}}
+					onAdd={() => setShowing("connect")}
+					onClose={() => setShowing("none")}
+				/>
+			)}
+			{/* Nothing connected and nothing to fall back to: this is not an error, it is the first
+			    question, and it is the whole of what this page can usefully show. */}
+			{showing === "none" && down !== undefined && planes.length <= 1 && (
+				<AddEnvironment
+					first
+					onAdded={(made, all) => {
+						setPlanes(all);
+						goTo(made);
+					}}
+				/>
+			)}
 		</div>
 	);
 }
