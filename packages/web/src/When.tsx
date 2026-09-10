@@ -83,7 +83,14 @@ export function When({
 		}
 	};
 
-	const body =
+	/**
+	 * The same list, read two ways.
+	 *
+	 * A peek is a few lines and nothing to press: reaching a button in it means leaving the mark it
+	 * hangs off, and leaving the mark is what takes it away. So the peek says what it can and the
+	 * whole thing is one click behind it.
+	 */
+	const list = (peek: boolean): React.ReactNode =>
 		why !== undefined ? (
 			<span className="wake-why">{why}</span>
 		) : wakes === undefined ? (
@@ -91,7 +98,9 @@ export function When({
 		) : wakes.length === 0 ? (
 			<span className="wake-why">Nothing is booked. It waits to be spoken to.</span>
 		) : (
-			wakes.map((wake) => <Booked key={wake.id} wake={wake} onStop={() => void stop(wake)} />)
+			wakes.map((wake) => (
+				<Booked key={wake.id} wake={wake} peek={peek} onStop={() => void stop(wake)} />
+			))
 		);
 
 	return (
@@ -115,7 +124,6 @@ export function When({
 					setOpen(true);
 				}}
 				aria-expanded={showing}
-				title="what it will do when it wakes"
 			>
 				{until(wakeAt)}
 			</button>
@@ -126,13 +134,14 @@ export function When({
 					style={{ top: at.top, bottom: at.bottom, left: at.left }}
 					role="tooltip"
 				>
-					{body}
+					{list(true)}
+					<span className="wake-more">click to read it all, and to call it off</span>
 				</span>
 			)}
 
 			{open && plane !== undefined && (
 				<Modal onClose={() => setOpen(false)} title={`${agentId} comes back in ${until(wakeAt)}`}>
-					{body}
+					{list(false)}
 				</Modal>
 			)}
 		</>
@@ -159,8 +168,13 @@ function Modal({
 	useEffect(() => box.current?.focus(), []);
 
 	return (
-		// biome-ignore lint/a11y/noStaticElementInteractions: the backdrop is a way out, not a control
-		<div className="scrim" onClick={onClose}>
+		<div className="scrim">
+			{/* The way out for a mouse, as a layer behind the dialog rather than around it: around it,
+			    every click inside would have to be stopped from reaching it, and stopping clicks is a
+			    thing that goes wrong quietly. The way out for a keyboard is Escape, above. */}
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: Escape is the keyboard's way out */}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: a backdrop is a way out, not a control */}
+			<div className="scrim-back" onClick={onClose} />
 			<div
 				className="modal"
 				role="dialog"
@@ -168,8 +182,6 @@ function Modal({
 				aria-label={title}
 				ref={box}
 				tabIndex={-1}
-				// Clicks inside are not clicks on the way out.
-				onClick={(event) => event.stopPropagation()}
 			>
 				<div className="modal-head">
 					<strong>{title}</strong>
@@ -183,7 +195,16 @@ function Modal({
 	);
 }
 
-function Booked({ wake, onStop }: { wake: Wake; onStop: () => void }) {
+function Booked({
+	wake,
+	peek,
+	onStop,
+}: {
+	wake: Wake;
+	/** A few lines of it, with nothing to press. */
+	peek: boolean;
+	onStop: () => void;
+}) {
 	const own = wake.createdBy === "agent";
 	return (
 		<span className="wake">
@@ -196,8 +217,10 @@ function Booked({ wake, onStop }: { wake: Wake; onStop: () => void }) {
 					{own ? " · its own" : " · yours"}
 				</span>
 			</span>
-			<span className="wake-body">{wake.body}</span>
-			{own ? (
+			<span className="wake-body" data-peek={peek}>
+				{wake.body}
+			</span>
+			{peek ? null : own ? (
 				<button type="button" className="key stop" onClick={onStop}>
 					stop this
 				</button>

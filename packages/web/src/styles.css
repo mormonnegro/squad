@@ -188,9 +188,11 @@ button {
 	display: flex;
 	flex-direction: column;
 	gap: 0.7rem;
-	width: 24rem;
-	max-height: 22rem;
-	overflow-y: auto;
+	width: 22rem;
+	/* A peek, not the thing. What does not fit here is one click away, and a panel that has to be
+	   scrolled while a mouse is held still is one nobody reads to the end of anyway. */
+	max-height: 18rem;
+	overflow: hidden;
 	padding: 0.8rem 0.9rem;
 	background: var(--bg-raised);
 	border: 1px solid var(--line);
@@ -235,6 +237,22 @@ button {
 	color: var(--text);
 }
 
+/* Cut to a paragraph or two on the way past. The whole of it is in the modal. */
+.wake-body[data-peek="true"] {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 7;
+	line-clamp: 7;
+	overflow: hidden;
+}
+
+.wake-more {
+	color: var(--muted);
+	font: 0.72rem var(--mono);
+	border-top: 1px solid var(--line-soft);
+	padding-top: 0.55rem;
+}
+
 .wake-why {
 	color: var(--muted);
 }
@@ -259,13 +277,19 @@ button {
 	position: fixed;
 	inset: 0;
 	z-index: 40;
-	background: #000000a8;
 	display: grid;
 	place-items: center;
 	padding: 1.5rem;
 }
 
+.scrim-back {
+	position: absolute;
+	inset: 0;
+	background: #000000a8;
+}
+
 .modal {
+	position: relative;
 	width: min(34rem, 100%);
 	max-height: min(30rem, 80vh);
 	overflow-y: auto;
