@@ -79,6 +79,18 @@ export function App() {
 						// beside them would be the same paragraph twice.
 						if (event.said.from === "agent") setLive((was) => ({ ...was, [event.agentId]: QUIET }));
 						break;
+					// The three ways a turn ends, and it has to be all three: a turn that answered, a
+					// turn that threw, and the answer landing in the transcript. Clearing on only the
+					// last one leaves "working…" under an agent that stopped working minutes ago —
+					// which is the one thing a live indicator must never say.
+					case "turn":
+						setLive((was) => ({ ...was, [event.agentId]: QUIET }));
+						break;
+					case "error":
+						setLive((was) =>
+							was[event.context] === undefined ? was : { ...was, [event.context]: QUIET },
+						);
+						break;
 					case "cleared":
 						setTalk((was) => ({ ...was, [event.agentId]: [] }));
 						setLive((was) => ({ ...was, [event.agentId]: QUIET }));

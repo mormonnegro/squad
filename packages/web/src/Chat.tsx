@@ -248,8 +248,10 @@ function Composer({
 				}
 			} else {
 				// Not awaited for its text: the answer arrives as events, and the turn is longer than
-				// anybody wants a prompt to be locked for.
-				void plane.wake(agent.id, line);
+				// anybody wants a prompt to be locked for. A turn that fails fails this too, and it is
+				// caught rather than said — the plane records the failure against the agent, so it is
+				// already on its way to the conversation and saying it twice is two failures for one.
+				plane.wake(agent.id, line).catch(() => {});
 			}
 		} catch (error) {
 			// Refusals come back as the failed answer to the request rather than down the feed, so this
