@@ -27,8 +27,9 @@ export function Modal({
 		<Dialog
 			open
 			onOpenChange={(open) => {
-				// Radix asks to close; whether it may is the caller's, and the first question of all —
-				// where the agents live — has no answer that is "never mind".
+				// Every way out arrives here — Escape, the corner, a click on the dark behind it — and
+				// whether there is one is the caller's to say. The first question of all, where the
+				// agents live, passes no `onClose`, because it has no answer that is "never mind".
 				if (!open) onClose?.();
 			}}
 		>

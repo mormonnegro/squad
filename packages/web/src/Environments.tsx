@@ -1,3 +1,4 @@
+import { Check, ChevronsUpDown, Plus, Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
 	type Connection,
@@ -8,8 +9,19 @@ import {
 	readAddress,
 	remember,
 } from "./connections.ts";
+import { cn } from "./lib/utils.ts";
 import { Modal } from "./Modal.tsx";
 import { browserWire, Plane } from "./plane.ts";
+import {
+	Menu,
+	MenuContent,
+	MenuGroup,
+	MenuHeader,
+	MenuItem,
+	MenuSeparator,
+	MenuTile,
+	MenuTrigger,
+} from "./ui/menu.tsx";
 
 /**
  * The environment this page is looking at, and the way to another.
@@ -33,86 +45,72 @@ export function Picker({
 	onAdd: () => void;
 	onManage: () => void;
 }) {
-	const [open, setOpen] = useState(false);
-	const box = useRef<HTMLDivElement>(null);
-
-	// Anywhere else closes it, which is what every menu in every application already does.
-	useEffect(() => {
-		if (!open) return;
-		const away = (event: MouseEvent): void => {
-			if (!box.current?.contains(event.target as Node)) setOpen(false);
-		};
-		const key = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") setOpen(false);
-		};
-		window.addEventListener("mousedown", away);
-		window.addEventListener("keydown", key);
-		return () => {
-			window.removeEventListener("mousedown", away);
-			window.removeEventListener("keydown", key);
-		};
-	}, [open]);
-
 	return (
-		<div className="picker" ref={box}>
-			<button
-				type="button"
-				className="picker-at"
-				onClick={() => setOpen((was) => !was)}
-				aria-expanded={open}
-			>
-				<span className="mark" data-state={connected ? "running" : "stopped"}>
-					●
+		<Menu>
+			<MenuTrigger className="flex w-full items-center gap-2.5 px-3 py-3 text-left outline-none hover:bg-white/5 data-[state=open]:bg-white/5">
+				<MenuTile>{initials(at.name)}</MenuTile>
+				<span className="min-w-0 flex-1">
+					<span className="block truncate font-semibold text-[0.92rem] text-said">{at.name}</span>
+					<span className="block truncate font-mono text-[0.72rem] text-muted">
+						{at.origin === "" ? "serving this page" : at.origin}
+					</span>
 				</span>
-				<span className="picker-name">{at.name}</span>
-				<span className="picker-arrow">▾</span>
-			</button>
+				<ChevronsUpDown className="size-3.5 flex-none text-muted" />
+			</MenuTrigger>
 
-			{open && (
-				<div className="picker-menu">
-					{all.map((one) => (
-						<button
-							type="button"
-							key={keyOf(one)}
-							className="picker-row"
-							data-here={keyOf(one) === keyOf(at)}
-							onClick={() => {
-								setOpen(false);
-								onPick(one);
-							}}
-						>
-							<span className="picker-row-name">{one.name}</span>
-							<span className="row-note">
-								{one.origin === "" ? "serving this page" : one.origin}
-							</span>
-						</button>
-					))}
-					<div className="picker-feet">
-						<button
-							type="button"
-							className="picker-row"
-							onClick={() => {
-								setOpen(false);
-								onAdd();
-							}}
-						>
-							<span className="picker-row-name">+ Add an environment</span>
-						</button>
-						<button
-							type="button"
-							className="picker-row"
-							onClick={() => {
-								setOpen(false);
-								onManage();
-							}}
-						>
-							<span className="picker-row-name">Manage and share…</span>
-						</button>
+			<MenuContent className="w-[15.5rem]">
+				{/* What you are on, said again at the top: a menu that only lists alternatives makes a
+				    person count rows to work out which one they are already looking at. */}
+				<MenuHeader>
+					<div className="flex items-center gap-2.5">
+						<MenuTile>{initials(at.name)}</MenuTile>
+						<div className="min-w-0">
+							<div className="truncate font-semibold text-said">{at.name}</div>
+							<div className="flex items-center gap-1.5 font-mono text-[0.72rem] text-muted">
+								<span className={cn("size-1.5 rounded-full", connected ? "bg-up" : "bg-bad")} />
+								{connected ? "connected" : "not answering"}
+							</div>
+						</div>
 					</div>
-				</div>
-			)}
-		</div>
+				</MenuHeader>
+
+				<MenuGroup>
+					{all.map((one) => (
+						<MenuItem key={keyOf(one)} onSelect={() => onPick(one)}>
+							<MenuTile>{initials(one.name)}</MenuTile>
+							<span className="min-w-0 flex-1">
+								<span className="block truncate">{one.name}</span>
+								<span className="block truncate font-mono text-[0.7rem] text-muted">
+									{one.origin === "" ? "serving this page" : one.origin}
+								</span>
+							</span>
+							{keyOf(one) === keyOf(at) && <Check className="size-4 flex-none text-here" />}
+						</MenuItem>
+					))}
+				</MenuGroup>
+
+				<MenuSeparator />
+				<MenuGroup>
+					<MenuItem onSelect={onAdd}>
+						<Plus className="size-4 flex-none text-muted" />
+						Add an environment
+					</MenuItem>
+					<MenuItem onSelect={onManage}>
+						<Settings className="size-4 flex-none text-muted" />
+						Manage and share
+					</MenuItem>
+				</MenuGroup>
+			</MenuContent>
+		</Menu>
 	);
+}
+
+/** Two letters, so a row with no picture still has something to be recognised by. */
+function initials(name: string): string {
+	const words = name.trim().split(/\s+/).filter(Boolean);
+	if (words.length === 0) return "?";
+	if (words.length === 1) return (words[0] ?? "").slice(0, 2).toUpperCase();
+	return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
 }
 
 type Door = "mine" | "theirs";

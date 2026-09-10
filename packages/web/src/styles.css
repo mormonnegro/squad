@@ -114,83 +114,16 @@ button {
 	border-bottom: 1px solid var(--line);
 }
 
-/* ── which machine all of this is ────────────────────────────────────── */
 
-.picker {
-	position: relative;
-}
 
-.picker-at {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	width: 100%;
-	padding: 0.85rem 0.9rem;
-	text-align: left;
-	color: var(--text-strong);
-}
 
-.picker-at:hover {
-	background: #ffffff08;
-}
 
-.picker-name {
-	flex: 1;
-	font-weight: 600;
-	font-size: 0.92rem;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
 
-.picker-arrow {
-	color: var(--muted);
-	font-size: 0.7rem;
-}
 
-.picker-menu {
-	position: absolute;
-	z-index: 30;
-	top: calc(100% - 1px);
-	left: 0.4rem;
-	right: 0.4rem;
-	background: var(--bg-raised);
-	border: 1px solid var(--line);
-	border-radius: 7px;
-	box-shadow: 0 10px 30px #000a;
-	padding: 0.25rem 0;
-	max-height: 70vh;
-	overflow-y: auto;
-}
 
-.picker-row {
-	display: flex;
-	flex-direction: column;
-	gap: 0.1rem;
-	width: 100%;
-	padding: 0.42rem 0.75rem;
-	text-align: left;
-	color: var(--text);
-}
 
-.picker-row:hover {
-	background: #ffffff0f;
-}
 
-.picker-row[data-here="true"] {
-	color: var(--text-strong);
-	box-shadow: inset 2px 0 0 var(--cyan);
-}
 
-.picker-row-name {
-	font-size: 0.88rem;
-}
-
-.picker-feet {
-	border-top: 1px solid var(--line-soft);
-	margin-top: 0.25rem;
-	padding-top: 0.25rem;
-}
 
 .plane-line {
 	display: flex;

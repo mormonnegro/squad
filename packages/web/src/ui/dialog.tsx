@@ -50,11 +50,6 @@ export function DialogContent({
 					wide ? "max-h-[86vh]" : "max-h-[min(32rem,82vh)]",
 					className,
 				)}
-				// A click an inch wide of a dialog is a click that missed, not an answer: these hold a
-				// form half typed and a button that stops something. Escape and the corner are the ways
-				// out, and both are things a person did on purpose.
-				onPointerDownOutside={(event) => event.preventDefault()}
-				onInteractOutside={(event) => event.preventDefault()}
 				{...rest}
 			>
 				{children}

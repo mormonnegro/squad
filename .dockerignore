@@ -1,0 +1,23 @@
+# What the host has and the image must not inherit.
+#
+# `COPY packages ./packages` takes the working tree as it is, and the working tree has build output
+# in it: a `dist/` from a `pnpm build` run here lands in the image beside the one the web stage
+# builds, and the two have different names because they are different builds. The stale index.html
+# wins, and what runs in the browser is whatever was last built on somebody's laptop.
+**/node_modules
+**/dist
+**/.next
+**/out
+
+# State, keys and the local plane's own directory. None of it is the image's business.
+.demo
+.deploy-itest
+.pki
+**/.env
+**/.env.*
+!**/.env.example
+
+.git
+.github
+.claude
+site
