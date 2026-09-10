@@ -8,6 +8,7 @@ import {
 	readAddress,
 	remember,
 } from "./connections.ts";
+import { Modal } from "./Modal.tsx";
 import { browserWire, Plane } from "./plane.ts";
 
 /**
@@ -136,40 +137,32 @@ export function AddEnvironment({
 	const [door, setDoor] = useState<Door | undefined>();
 
 	return (
-		<div className="sheet">
-			<div className="sheet-in">
-				<header className="sheet-head">
-					<h1>{first ? "Where do your agents live?" : "Add an environment"}</h1>
-					{onClose !== undefined && (
-						<button type="button" className="key" onClick={onClose}>
-							esc
-						</button>
-					)}
-				</header>
+		<Modal
+			wide
+			title={first ? "Where do your agents live?" : "Add an environment"}
+			onClose={onClose}
+		>
+			<p className="lede">
+				An environment is one machine running one plane: its own agents, its own keys, its own bill.
+				This page can hold several and they never mix.
+			</p>
 
-				<p className="sheet-lede">
-					An environment is one machine running one plane: its own agents, its own keys, its own
-					bill. This page can hold several and they never mix.
-				</p>
-
-				<div className="doors">
-					<Choice
-						name="Mine"
-						says="A machine I have — this computer, or a server I can SSH to."
-						here={door === "mine"}
-						onPick={() => setDoor("mine")}
-					/>
-					<Choice
-						name="Somebody else's"
-						says="They set one up and sent me a code."
-						here={door === "theirs"}
-						onPick={() => setDoor("theirs")}
-					/>
-				</div>
-
-				{door !== undefined && <Rest door={door} onAdded={onAdded} />}
+			<div className="doors">
+				<Choice
+					name="Mine"
+					says="A machine I have — this computer, or a server I can SSH to."
+					here={door === "mine"}
+					onPick={() => setDoor("mine")}
+				/>
+				<Choice
+					name="Somebody else's"
+					says="They set one up and sent me a code."
+					here={door === "theirs"}
+					onPick={() => setDoor("theirs")}
+				/>
 			</div>
-		</div>
+			{door !== undefined && <Rest door={door} onAdded={onAdded} />}
+		</Modal>
 	);
 }
 
@@ -330,36 +323,28 @@ export function Environments({
 	onClose: () => void;
 }) {
 	return (
-		<div className="sheet">
-			<div className="sheet-in">
-				<header className="sheet-head">
-					<h1>Environments</h1>
-					<button type="button" className="key" onClick={onClose}>
-						esc
-					</button>
-				</header>
-				<p className="sheet-lede">
-					Each one is a machine of its own. This browser holds them and nothing else does — not this
-					page, and not whoever serves it.
-				</p>
-				<div className="planes">
-					{all.map((one) => (
-						<Row
-							key={keyOf(one)}
-							one={one}
-							here={keyOf(one) === keyOf(at)}
-							onPick={() => onPick(one)}
-							onForget={() => onForget(forget(one))}
-						/>
-					))}
-				</div>
-				<div className="ask-keys">
-					<button type="button" className="key" data-yes="true" onClick={onAdd}>
-						+ add an environment
-					</button>
-				</div>
+		<Modal wide title="Environments" onClose={onClose}>
+			<p className="lede">
+				Each one is a machine of its own. This browser holds them and nothing else does — not this
+				page, and not whoever serves it.
+			</p>
+			<div className="planes">
+				{all.map((one) => (
+					<Row
+						key={keyOf(one)}
+						one={one}
+						here={keyOf(one) === keyOf(at)}
+						onPick={() => onPick(one)}
+						onForget={() => onForget(forget(one))}
+					/>
+				))}
 			</div>
-		</div>
+			<div className="ask-keys">
+				<button type="button" className="key" data-yes="true" onClick={onAdd}>
+					+ add an environment
+				</button>
+			</div>
+		</Modal>
 	);
 }
 

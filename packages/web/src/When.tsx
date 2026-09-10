@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Modal } from "./Modal.tsx";
 import type { Plane, Wake } from "./plane.ts";
 import { until } from "./until.ts";
 
@@ -145,53 +146,6 @@ export function When({
 				</Modal>
 			)}
 		</>
-	);
-}
-
-/**
- * The same thing, held open.
- *
- * A hover is the wrong shape for a paragraph and the wrong shape for a button that stops something:
- * one of them needs to be read without holding a mouse still, and the other needs the mouse to get
- * to it without passing over anything that would take the panel away.
- */
-function Modal({
-	title,
-	children,
-	onClose,
-}: {
-	title: string;
-	children: React.ReactNode;
-	onClose: () => void;
-}) {
-	const box = useRef<HTMLDivElement>(null);
-	useEffect(() => box.current?.focus(), []);
-
-	return (
-		<div className="scrim">
-			{/* The way out for a mouse, as a layer behind the dialog rather than around it: around it,
-			    every click inside would have to be stopped from reaching it, and stopping clicks is a
-			    thing that goes wrong quietly. The way out for a keyboard is Escape, above. */}
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: Escape is the keyboard's way out */}
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: a backdrop is a way out, not a control */}
-			<div className="scrim-back" onClick={onClose} />
-			<div
-				className="modal"
-				role="dialog"
-				aria-modal="true"
-				aria-label={title}
-				ref={box}
-				tabIndex={-1}
-			>
-				<div className="modal-head">
-					<strong>{title}</strong>
-					<button type="button" className="key" onClick={onClose}>
-						esc
-					</button>
-				</div>
-				{children}
-			</div>
-		</div>
 	);
 }
 
