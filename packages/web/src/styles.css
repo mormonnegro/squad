@@ -168,11 +168,6 @@ button {
  * row uses to say nothing is. It shares the colour with a spend in its warning band, which is a real
  * cost and a small one: the two are a `$` apart and only one of them is ever a warning.
  */
-/* The countdown where nothing hangs off it: the title row, which has no room for a panel. */
-.when-flat {
-	color: var(--amber);
-}
-
 .when {
 	color: var(--amber);
 	cursor: help;

@@ -4,7 +4,6 @@ import type { Live } from "./App.tsx";
 import { type Command, completions, isCommand, isShell } from "./commands.ts";
 import { faceOf, nameOf } from "./face.ts";
 import type { Plane } from "./plane.ts";
-import { until } from "./until.ts";
 
 export function Chat({
 	plane,
@@ -45,15 +44,6 @@ export function Chat({
 					{agent.model !== undefined && <span>{agent.model}</span>}
 					{/* An agent that booked its own next turn is not idle, it is waiting, and those read
 					    identically on a screen that only says whether it is running. */}
-					{/* The countdown and not the panel behind it. Up here the panel opens against the right
-					    edge of the window and is cut off by it, and the agent list is a better home for
-					    the same thing: there is room beside it, and it is where the eye goes to compare
-					    one agent against another anyway. */}
-					{agent.wakeAt !== undefined && (
-						<span className="when-flat" title="wakes itself">
-							↻ {until(agent.wakeAt)}
-						</span>
-					)}
 					{agent.served.map((one) => (
 						<a
 							key={one.port}
