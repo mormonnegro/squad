@@ -4,6 +4,7 @@ import { Chat } from "./Chat.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { browserWire, Plane } from "./plane.ts";
 import { HERE, type KnownPlane, planeKey, readPlanes } from "./planes.ts";
+import { until } from "./until.ts";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
 const POLL_MS = 2000;
@@ -293,6 +294,10 @@ function AgentRow({
 				{face.glyph}
 			</span>
 			<span className="row-name">{nameOf(agent.id)}</span>
+			{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the
+			    only thing nothing else on this screen says. Before the spend, because it is a fact
+			    about the future and the spend is one about the day. */}
+			{agent.wakeAt !== undefined && <span className="row-note">{until(agent.wakeAt)}</span>}
 			{agent.spentUsd > 0 && (
 				<span className="row-note" data-heat={heat}>
 					${agent.spentUsd.toFixed(2)}
