@@ -49,6 +49,10 @@ export {
 	readHost,
 } from "./grants.ts";
 export { ProviderKeys } from "./keys.ts";
+// A pure reading of how much of a half-written markdown line is settled. Exported because a second
+// console — one that draws to a browser rather than a terminal — has to stop in the same place, and
+// a copy of it there can only be held honest by a test that can hold both.
+export { safeEnd } from "./markdown.ts";
 export {
 	hostOf,
 	type McpServer,

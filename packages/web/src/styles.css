@@ -482,10 +482,80 @@ button {
 	overflow-wrap: anywhere;
 }
 
-.said[data-from="plane"] .said-body {
+/* ── what the model wrote, as what it meant ──────────────────────────── */
+
+.md {
+	display: flex;
+	flex-direction: column;
+	gap: 0.7rem;
+	overflow-wrap: anywhere;
+}
+
+.md-para {
+	margin: 0;
+	white-space: pre-wrap;
+}
+
+/* Every heading the same small bold line: a message is not a page, and a `#` in one is a label. */
+.md-heading {
+	font-weight: 600;
+	color: var(--text-strong);
+}
+
+.md-list {
+	margin: 0;
+	padding-left: 1.3rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.md-quote {
+	margin: 0;
+	padding-left: 0.8rem;
+	border-left: 2px solid var(--line);
+	color: var(--muted);
+	white-space: pre-wrap;
+}
+
+.md-code {
+	font: 0.86em var(--mono);
+	background: var(--bg-code);
+	border: 1px solid var(--line-soft);
+	border-radius: 3px;
+	padding: 0.05em 0.32em;
+	color: var(--cyan);
+}
+
+.md-fence {
+	margin: 0;
+	background: var(--bg-code);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 0.7rem 0.8rem;
+	/* Wide code scrolls in its own box. The conversation never scrolls sideways. */
+	overflow-x: auto;
+	font: 0.82rem / 1.55 var(--mono);
+	color: var(--text);
+}
+
+.md a {
+	color: var(--cyan);
+	text-underline-offset: 2px;
+}
+
+/* The plane speaking, and bad news, keep their colour through whatever they wrote it in. */
+.said[data-from="plane"] .md,
+.said[data-tone="bad"] .md {
+	color: inherit;
+}
+
+.said[data-from="plane"] .said-body,
+.said[data-from="plane"] .md {
 	color: var(--muted);
 }
-.said[data-tone="bad"] .said-body {
+.said[data-tone="bad"] .said-body,
+.said[data-tone="bad"] .md {
 	color: var(--red);
 }
 .said[data-from="shell"] .said-body {

@@ -3,7 +3,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { type Command, completions, isCommand, isShell } from "./commands.ts";
 import { faceOf, nameOf } from "./face.ts";
+import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
+import { safeEnd } from "./safe-end.ts";
 
 export function Chat({
 	plane,
@@ -157,7 +159,13 @@ function Said({ said, agentId }: { said: Utterance; agentId: string }) {
 					{said.to !== undefined && <span className="said-via">→ {said.to}</span>}
 					{said.at !== undefined && <span className="said-when">{clock(said.at)}</span>}
 				</div>
-				<div className="said-body">{said.text}</div>
+				{/* The sandbox's own output is not prose: it is whatever the command printed, and a `*`
+				    in it is a glob. Everything else is written by something that writes markdown. */}
+				{said.from === "shell" ? (
+					<div className="said-body">{said.text}</div>
+				) : (
+					<Markdown text={said.text} />
+				)}
 			</div>
 		</article>
 	);
@@ -181,7 +189,10 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 					<span className="said-name">{nameOf(agentId)}</span>
 					{live.thinking && live.text.length === 0 && <span className="said-when">working…</span>}
 				</div>
-				{live.text.length > 0 && <div className="said-body">{live.text}</div>}
+				{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two
+				    asterisks on screen that no later delta can take away, so the answer arrives a
+				    settled piece at a time rather than a character at a time. */}
+				{live.text.length > 0 && <Markdown text={live.text.slice(0, safeEnd(live.text))} />}
 				{live.steps.length > 0 && (
 					<div className="steps">
 						{live.steps.slice(-8).map((step, index) => (
