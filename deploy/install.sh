@@ -397,6 +397,14 @@ $DOCKER docker ps --filter "label=com.docker.compose.project=$NAME" \
 # what it would print is two facts this script is holding right now.
 #
 # The token is written by the plane on the way up, and the way up is a container starting, so it is
+# Which machine this is, from the connection that carried the install where there is one and from the
+# machine's own idea of itself where there is not. Worked out here because the first line that needs
+# it is the ssh below: it used to be derived further down, after that line had already been printed
+# with an empty host, which is the one line on a server nobody can supply for themselves.
+ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
+[ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+[ -n "$ADDR" ] || ADDR=$(hostname 2>/dev/null || echo your-vps)
+
 # waited for rather than assumed. A plane that never writes one is a plane that did not start, which
 # the lines above have already said.
 step "The console in a browser"
@@ -426,10 +434,6 @@ if [ -f "$STATE/web.token" ]; then
 else
 	note "The plane has not written its web token yet. \`squad web\` prints it once it has."
 fi
-
-ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
-[ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
-[ -n "$ADDR" ] || ADDR=$(hostname 2>/dev/null || echo your-vps)
 
 if [ "$SHIM" = "yes" ]; then
 	step "Driving it"
