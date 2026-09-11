@@ -79,6 +79,25 @@ CONSOLE=${SQUAD_CONSOLE:-https://squad.mormon.garden}
 # person opens. A console hosted somewhere that serves it at the root overrides it.
 CONSOLE_AT=${SQUAD_CONSOLE_AT:-$CONSOLE/app/}
 BRANCH=${SQUAD_BRANCH:-main}
+# Which published build to run, and where the published builds are.
+#
+# Pulling rather than building is the difference between an install that takes half a minute and one
+# that takes several. Building here means a dependency tree and a bundler running on the target, and
+# the target is often a $5 VPS with a gigabyte of memory — where it is not slow, it is killed, and
+# it is killed in the middle of a build, which is the worst place for this to stop.
+VERSION=${SQUAD_VERSION:-latest}
+REGISTRY=${SQUAD_REGISTRY:-ghcr.io/mormonnegro}
+IMAGE=${SQUAD_IMAGE:-$REGISTRY/squad:$VERSION}
+SANDBOX_IMAGE=${SQUAD_SANDBOX_IMAGE:-$REGISTRY/squad-sandbox:$VERSION}
+# Build anyway. For anyone working on the sources, and the automatic answer when no published image
+# can be had — a registry that is down or a tag that does not exist yet is a reason to fall back, not
+# a reason to stop.
+BUILD=${SQUAD_BUILD:-}
+# The name this plane answers to on the internet, if it has one. With it, the console is reached at
+# https://that/ and nothing has to be forwarded; without it, the web port stays on this machine's
+# loopback and the way in is an SSH forward. It is the whole difference between the two, and it is
+# one flag.
+DOMAIN=${SQUAD_DOMAIN:-}
 # Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
 # already the client that ran this, and a shim written over it would take the console away from the
@@ -103,9 +122,15 @@ VERBOSE=${SQUAD_VERBOSE:-}
 for arg in "$@"; do
 	case "$arg" in
 	-v | --verbose) VERBOSE=1 ;;
+	--domain=*) DOMAIN=${arg#--domain=} ;;
+	--build) BUILD=yes ;;
 	*) ;;
 	esac
 done
+# Written after the loop rather than inside it, because a domain is the only thing here that changes
+# what another variable means: a plane with a name of its own is reached at that name, so that name
+# is a console allowed to drive it.
+if [ -n "$DOMAIN" ]; then CONSOLE_AT="https://$DOMAIN/"; fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() {
@@ -131,6 +156,11 @@ quietly() {
 	cat "$LOG" >&2
 	return 1
 }
+
+# Tried, rather than required. `quietly` prints what went wrong, which is right when nothing else
+# can be done about it — and wrong when the caller already has an answer for failing. A registry with
+# nothing published yet is not an error anybody needs to read.
+silently() { "$@" >/dev/null 2>&1; }
 
 # Opened rather than tested for. A container has a /dev/tty that stats like any other device and
 # fails at open with ENXIO, so the readable ones and the usable ones are not the same set.
@@ -247,6 +277,13 @@ if [ ! -f "$DIR/deploy/.env" ]; then
 	# prompted for: layered underneath whatever the console is later given, which wins because it is
 	# the more recent answer to the same question.
 
+	# The consoles allowed in: the one this project publishes, and this plane's own name where it
+	# has one. Its own name matters because with a domain the page and the plane are one origin and
+	# the check never comes up — until somebody opens the hosted console instead, which is exactly
+	# the case having both is for.
+	ORIGINS=$CONSOLE
+	[ -z "$DOMAIN" ] || ORIGINS="$CONSOLE,https://$DOMAIN"
+
 	# Generated rather than asked. It is not an account anywhere — it is the shared secret a sender
 	# signs webhooks with, and one nobody chose is one nobody reused.
 	HOOK_SECRET=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
@@ -275,7 +312,7 @@ SQUAD_WEB_PORT=$WEB_PORT
 # Which consoles hosted somewhere else may drive this plane from a browser. The one this project
 # publishes is here by default so a fresh install is reachable from it; anything else is the
 # operator's to add, and an empty value means only the console this plane serves itself.
-SQUAD_WEB_ORIGINS=${SQUAD_WEB_ORIGINS:-$CONSOLE}
+SQUAD_WEB_ORIGINS=${SQUAD_WEB_ORIGINS:-$ORIGINS}
 ENV
 	$SUDO chmod 600 "$DIR/deploy/.env"
 	umask 022
@@ -367,20 +404,64 @@ YAML
 	aside "Never rewritten by a re-run, so a grant added later is never quietly taken away."
 fi
 
-# Always, not "if the tag is missing". Both images copy the sources in, so an existing tag is not a
-# current one, and an update that silently kept last month's code is worse than one that takes a
-# minute. The layer cache makes it nearly free when nothing has changed.
-step "Building"
-note "the sandbox image, then the control plane"
-aside "Always, rather than only when a tag is missing: both images copy the sources in, so an"
-aside "existing tag is not a current one. The layer cache makes it nearly free when nothing moved."
-quietly $DOCKER docker build -t squad/sandbox:dev "$DIR/packages/sandbox/image" ||
-	die "The sandbox image would not build."
+# Pulled if there is something to pull, and built if there is not.
+#
+# Both images copy the sources in, so a tag that exists is not a tag that is current — which is why
+# the build path rebuilds every time rather than checking. Pulling has the same property for free:
+# the registry's `latest` moves, and `docker pull` is how this machine finds out.
+if [ -z "$BUILD" ]; then
+	step "Fetching the images"
+	aside "$IMAGE"
+	aside "$SANDBOX_IMAGE"
+	if silently $DOCKER docker pull -q "$SANDBOX_IMAGE" && silently $DOCKER docker pull -q "$IMAGE"; then
+		note "pulled, nothing to build"
+	else
+		# Not a failure. A registry that is unreachable, a tag that does not exist yet, a fork that
+		# publishes nothing — all of them mean the same thing here, which is that the sources are
+		# right there and this machine can make them itself.
+		note "nothing published to pull — building from the sources instead"
+		BUILD=yes
+	fi
+fi
+
+if [ -n "$BUILD" ]; then
+	step "Building"
+	note "the sandbox image, then the control plane"
+	aside "Always, rather than only when a tag is missing: both images copy the sources in, so an"
+	aside "existing tag is not a current one. The layer cache makes it nearly free when nothing moved."
+	# Under the names compose is about to look for, so that what was built is what comes up.
+	IMAGE=${SQUAD_IMAGE:-squad/control-plane:dev}
+	SANDBOX_IMAGE=${SQUAD_SANDBOX_IMAGE:-squad/sandbox:dev}
+	quietly $DOCKER docker build -t "$SANDBOX_IMAGE" "$DIR/packages/sandbox/image" ||
+		die "The sandbox image would not build."
+fi
+
 $SUDO mkdir -p "$STATE"
 cd "$DIR/deploy"
+
+# Added to a file that is otherwise never rewritten. Nothing already in it is touched — an operator's
+# edits, and the keys an older install was given, survive exactly as they are. What this covers is
+# the case an install from before a setting existed: without it, a plane updated today would read a
+# .env written last month and fall back to a default that is no longer what this run just set up.
+ensure_env() {
+	grep -q "^$1=" .env 2>/dev/null && return 0
+	printf '%s=%s\n' "$1" "$2" | $SUDO tee -a .env >/dev/null
+}
+ensure_env SQUAD_IMAGE "$IMAGE"
+ensure_env SQUAD_SANDBOX_IMAGE "$SANDBOX_IMAGE"
+ensure_env SQUAD_DOMAIN "$DOMAIN"
+
+# The proxy is a service under a profile, so a machine with no domain never starts it and never
+# takes port 80 waiting for a certificate that is not coming.
+PROFILE=
+[ -z "$DOMAIN" ] || PROFILE="--profile tls"
 # Exported as well as written into .env, because an .env from an older install has no line for it
 # and the mount it would fall back to is not the one this run just made.
-quietly $DOCKER env SQUAD_STATE="$STATE" docker compose up -d --build ||
+BUILD_TOO=
+[ -z "$BUILD" ] || BUILD_TOO=--build
+quietly $DOCKER env SQUAD_STATE="$STATE" SQUAD_IMAGE="$IMAGE" \
+	SQUAD_SANDBOX_IMAGE="$SANDBOX_IMAGE" SQUAD_DOMAIN="$DOMAIN" \
+	docker compose $PROFILE up -d $BUILD_TOO ||
 	die "The control plane would not start."
 
 # The reason the machine is driven by typing `squad`, and the door a console on another computer
@@ -461,7 +542,20 @@ done
 
 if [ -f "$STATE/web.token" ]; then
 	TOKEN=$($SUDO cat "$STATE/web.token" | tr -d ' \n\r')
-	if [ "$SHIM" = "yes" ]; then
+	if [ -n "$DOMAIN" ]; then
+		# Nothing to forward and nothing to paste anywhere else: the plane is at a name, the name has
+		# a certificate, and the address below is the whole of it. This is what a domain buys.
+		note "Open this:"
+		note ""
+		note "     https://$DOMAIN/?t=$TOKEN"
+		note ""
+		note "The certificate is obtained on the first request, so give it a few seconds. Point"
+		note "$DOMAIN at this machine first if you have not — without that there is nothing for"
+		note "Let's Encrypt to check."
+		note ""
+		note "That address is the key. Whoever holds it drives these agents, so it is pasted and"
+		note "not posted."
+	elif [ "$SHIM" = "yes" ]; then
 		# Numbered, because they are done in order and the order is the whole instruction. What sent
 		# somebody looking for a missing piece was a paragraph holding two commands and an address
 		# that is only true after one of them has been run.

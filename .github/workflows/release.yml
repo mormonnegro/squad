@@ -1,0 +1,68 @@
+# What a tag means: two images, built once here and pulled everywhere else.
+#
+# Before this, every install ran a dependency install and a bundler on the machine it was landing on
+# — several minutes on a laptop and, on a small VPS, a build killed for memory somewhere in the
+# middle. The sources are still the fallback and still work; this is so that almost nobody needs it.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # So the images can be refreshed between tags without inventing a version for it.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both are published or neither is useful: a plane that pulled cleanly and then cannot find a
+      # sandbox image is a plane that starts and can run no agent.
+      fail-fast: true
+      matrix:
+        include:
+          - name: squad
+            context: .
+            dockerfile: deploy/Dockerfile
+          - name: squad-sandbox
+            context: packages/sandbox/image
+            dockerfile: packages/sandbox/image/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 as well as amd64, because the two machines this lands on most are an Apple laptop and
+      # the cheap end of every VPS, and those are not the same architecture.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          # `latest` is what an install with no SQUAD_VERSION asks for, so it follows the newest tag
+          # rather than whatever ran last: a re-run of an old release must not move it backwards.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=sha,enable=${{ github.ref_type != 'tag' }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

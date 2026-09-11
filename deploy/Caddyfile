@@ -1,0 +1,29 @@
+# The plane behind a name, with a certificate it obtains and renews on its own.
+#
+# Only reached when the installer was given a domain: without SQUAD_DOMAIN this service is not in
+# the compose profile at all, so nothing here runs and port 80 stays free.
+#
+# What it is doing is narrow on purpose — terminating TLS and passing bytes to the plane. It is not
+# an authenticating layer and must never become one: the token is what decides who may drive this
+# plane, checked by the plane, and a second opinion in front of it would be a second place for that
+# decision to be wrong.
+{$SQUAD_DOMAIN} {
+	# Server-Sent Events, which is half of this protocol. A proxy that buffers is a console where
+	# nothing an agent says arrives until it has finished saying it.
+	reverse_proxy control-plane:{$SQUAD_WEB_PORT} {
+		flush_interval -1
+	}
+
+	encode zstd gzip
+
+	header {
+		# The console is the whole control surface and holds tokens for other planes in this
+		# browser's storage. Nothing should be framing it.
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		# A year, and only once this is actually answering on https: a machine that sets this and
+		# then loses its certificate is a machine no browser will talk to over http either.
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

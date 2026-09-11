@@ -120,6 +120,12 @@ async function run(path: string): Promise<number> {
 	// The one port published to the network rather than to loopback, so the first thing a second
 	// deployment on this machine collides on.
 	const webhookPort = Number(process.env.SQUAD_HOOK_PORT ?? "") || undefined;
+	// Which image an agent runs inside, when it is not the one built on this machine.
+	//
+	// From the environment rather than the operator's file, because it is a fact about how this plane
+	// was installed and not a decision about any agent: an install that pulled a published image and
+	// one that built the sources name different things, and the file should be the same either way.
+	const sandboxImage = process.env.SQUAD_SANDBOX_IMAGE || undefined;
 	const plane = new ControlPlane({
 		...config,
 		...(deployment === undefined ? {} : { deployment }),
@@ -128,6 +134,7 @@ async function run(path: string): Promise<number> {
 			? { networkName: `${deployment}-egress` }
 			: {}),
 		...(webhookPort === undefined ? {} : { webhookPort }),
+		...(sandboxImage === undefined ? {} : { image: sandboxImage }),
 	});
 	const server = new ControlServer({ plane });
 

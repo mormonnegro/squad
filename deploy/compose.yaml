@@ -6,6 +6,11 @@ name: ${SQUAD_NAME:-squad}
 
 services:
   control-plane:
+    # Named so that the same file can run a published image or one built here, and so that a build
+    # lands on the name the next `up` will look for. The default is the local name on purpose: an
+    # install that was building from source before this existed keeps working untouched, and only an
+    # installer that pulled writes a registry reference into .env.
+    image: ${SQUAD_IMAGE:-squad/control-plane:dev}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -29,6 +34,10 @@ services:
       # of the whole system: the sandbox contains the agent, not this process.
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config.yaml:/etc/squad/config.yaml:ro
+    environment:
+      # Which image an agent runs inside. Here rather than in .env alone so that a plane started by
+      # hand, with no installer in the room, still agrees with the one the installer started.
+      SQUAD_SANDBOX_IMAGE: ${SQUAD_SANDBOX_IMAGE:-squad/sandbox:dev}
     ports:
       # Published on the same number on both sides on purpose. These ports are written into things
       # the plane hands out — a redirect URI, the address `squad web` prints — so a container port
@@ -57,6 +66,41 @@ services:
       # come from inside it, so joining egress first makes 8787 unreachable from the host.
       uplink:
         priority: 100
+
+  # The plane on a name of its own, with a certificate it gets and renews by itself.
+  #
+  # Under a profile because it is the answer to one question — does this machine have a domain —
+  # and a machine without one must not have port 80 taken by something waiting for a certificate
+  # that will never come. `--profile tls` is what the installer adds when SQUAD_DOMAIN is set.
+  #
+  # It reaches the plane over the uplink network rather than through a published port, so the web
+  # port stays bound to this host's loopback exactly as it was. Nothing about the plane's own
+  # exposure changes by putting this in front of it: what is published here is the proxy.
+  caddy:
+    profiles: [tls]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the account key. A named volume because losing them means asking Let's
+      # Encrypt for new ones on every restart, which is how a deployment meets a rate limit.
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      SQUAD_DOMAIN: ${SQUAD_DOMAIN:-}
+      SQUAD_WEB_PORT: ${SQUAD_WEB_PORT:-8789}
+    depends_on:
+      - control-plane
+    networks:
+      - uplink
+
+volumes:
+  caddy-data:
+  caddy-config:
 
 networks:
   # Where the agents live. Internal really is unrouted: a container here cannot reach the host or
