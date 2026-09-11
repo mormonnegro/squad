@@ -4,6 +4,7 @@ import { Chat } from "./Chat.tsx";
 import { type Connection, HERE, keyOf, readConnections } from "./connections.ts";
 import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { faceOf, nameOf } from "./face.ts";
+import { Keys } from "./Keys.tsx";
 import { browserWire, Plane } from "./plane.ts";
 import { When } from "./When.tsx";
 
@@ -23,7 +24,7 @@ export function App() {
 	const [planes, setPlanes] = useState<readonly Connection[]>(() => readConnections());
 	const [at, setAt] = useState<Connection>(() => readConnections()[0] ?? HERE);
 	// The connection screens: where a first one is made, and where the rest are managed.
-	const [showing, setShowing] = useState<"none" | "connect" | "planes">("none");
+	const [showing, setShowing] = useState<"none" | "connect" | "planes" | "keys">("none");
 	const [plane, setPlane] = useState<Plane | undefined>();
 	const [down, setDown] = useState<string | undefined>();
 	const [agents, setAgents] = useState<readonly AgentSummary[]>([]);
@@ -31,6 +32,15 @@ export function App() {
 	const [live, setLive] = useState<Record<string, Live>>({});
 	const [chosen, setChosen] = useState<string | undefined>();
 	const [making, setMaking] = useState(false);
+	/**
+	 * Whether this plane can pay for any of the models it is configured with.
+	 *
+	 * Asked because the install no longer does: a fresh environment comes up holding nothing, and
+	 * the way that failure arrives without this is a turn that dies at the proxy with a message
+	 * about a connection. The one screen that can fix it is two clicks away and unfindable if you
+	 * do not already know it is there.
+	 */
+	const [keyless, setKeyless] = useState(false);
 
 	// Held in a ref as well so the event handler, which is registered once, never closes over a stale
 	// one. The state copy is what the screen reads; this is what the handler writes through.
@@ -170,6 +180,25 @@ export function App() {
 		setMaking(false);
 	}, []);
 
+	const look = useCallback(async (): Promise<void> => {
+		if (plane === undefined) return;
+		try {
+			const providers = await plane.providers();
+			// Only the ones a configured model names. A plane holding no key for a provider nothing
+			// here spends is a plane with nothing wrong with it.
+			const spent = providers.filter((one) => one.models.length > 0);
+			setKeyless(spent.length > 0 && !spent.some((one) => one.held));
+		} catch {
+			// An older plane does not answer this, and a plane that cannot be asked is one whose
+			// other problems are already on the screen.
+			setKeyless(false);
+		}
+	}, [plane]);
+
+	useEffect(() => {
+		void look();
+	}, [look]);
+
 	return (
 		<div className="app">
 			<nav className="rail">
@@ -180,6 +209,7 @@ export function App() {
 						connected={plane !== undefined}
 						onPick={goTo}
 						onAdd={() => setShowing("connect")}
+						onKeys={() => setShowing("keys")}
 						onManage={() => setShowing("planes")}
 					/>
 				</div>
@@ -226,6 +256,23 @@ export function App() {
 						{down} — it will come back on its own.
 					</div>
 				)}
+				{keyless && down === undefined && (
+					<div
+						role="status"
+						className="flex items-center gap-2 border-working/40 border-b bg-working/10 px-5 py-2 text-[0.82rem] text-working"
+					>
+						<span className="flex-1">
+							This environment holds no key yet, so a turn stops at the model.
+						</span>
+						<button
+							type="button"
+							className="font-medium underline underline-offset-2"
+							onClick={() => setShowing("keys")}
+						>
+							Add one
+						</button>
+					</div>
+				)}
 				{making ? (
 					<NewAgent onMake={create} />
 				) : agent !== undefined && plane !== undefined ? (
@@ -250,6 +297,15 @@ export function App() {
 						goTo(made);
 					}}
 					onClose={planes.length > 1 ? () => setShowing("none") : undefined}
+				/>
+			)}
+			{showing === "keys" && plane !== undefined && (
+				<Keys
+					plane={plane}
+					onClose={() => {
+						setShowing("none");
+						void look();
+					}}
 				/>
 			)}
 			{showing === "planes" && (

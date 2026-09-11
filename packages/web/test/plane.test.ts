@@ -125,3 +125,49 @@ describe("asking", () => {
 		expect(plane.connected).toBe(false);
 	});
 });
+
+describe("keys", () => {
+	it("reads the providers a plane could be given one for", async () => {
+		const asking = plane.providers();
+		const id = wire.idOf(0);
+		wire.answer({
+			id,
+			ok: true,
+			providers: [
+				{ id: "deepseek", keyEnv: "DEEPSEEK_API_KEY", models: ["pi"], held: true, here: true },
+				{ id: "groq", keyEnv: "GROQ_API_KEY", models: [], held: false, here: false },
+			],
+		});
+		const rows = await asking;
+		expect(rows.map((row) => row.keyEnv)).toEqual(["DEEPSEEK_API_KEY", "GROQ_API_KEY"]);
+		expect(rows[0]?.held).toBe(true);
+	});
+
+	// A plane too old to know the operation answers without the field rather than with an error, and
+	// a screen that read `.length` off that crashed where it should have shown an empty list.
+	it("reads an answer that carries no providers as none", async () => {
+		const asking = plane.providers();
+		wire.answer({ id: wire.idOf(0), ok: true });
+		expect(await asking).toEqual([]);
+	});
+
+	it("sends the key and nothing comes back but the name", async () => {
+		const setting = plane.setKey("OPENAI_API_KEY", "sk-secret");
+		const sent = JSON.parse(wire.sent[0] ?? "{}") as Record<string, unknown>;
+		expect(sent.op).toBe("key");
+		expect(sent.keyEnv).toBe("OPENAI_API_KEY");
+		expect(sent.value).toBe("sk-secret");
+		// The plane answers with which key it set, never with what it set, and this resolves on that.
+		wire.answer({ id: wire.idOf(0), ok: true, text: "OPENAI_API_KEY" });
+		await expect(setting).resolves.toBeUndefined();
+	});
+
+	// Emptying the box is how a key is taken back, so an empty string has to reach the plane rather
+	// than be read here as nothing to do.
+	it("carries an empty value, which is the way a key is removed", async () => {
+		const setting = plane.setKey("OPENAI_API_KEY", "");
+		expect((JSON.parse(wire.sent[0] ?? "{}") as { value?: string }).value).toBe("");
+		wire.answer({ id: wire.idOf(0), ok: true, text: "OPENAI_API_KEY" });
+		await setting;
+	});
+});

@@ -1,4 +1,4 @@
-import type { AgentSummary, PlaneEvent, Utterance } from "@squad/control-plane";
+import type { AgentSummary, PlaneEvent, ProviderStanding, Utterance } from "@squad/control-plane";
 
 /**
  * A response to something asked, or an event nobody asked for.
@@ -224,6 +224,23 @@ export class Plane {
 
 	async answerTalk(agentId: string, to: string, open: boolean): Promise<void> {
 		await this.#ask({ op: "talk", agentId, to, open });
+	}
+
+	/** Every key this plane could be given, and whether it is holding one. Never the values. */
+	async providers(): Promise<readonly ProviderStanding[]> {
+		const answer = await this.#ask({ op: "providers" });
+		return (answer.providers as ProviderStanding[] | undefined) ?? [];
+	}
+
+	/**
+	 * Hands this plane a provider key, or takes one back when the value is empty.
+	 *
+	 * Nothing comes back but the name: the plane answers with which key it set and never with what
+	 * was set, so a screen cannot show a secret it was never told. Reading one back is not a feature
+	 * that is missing, it is a door this wire does not have.
+	 */
+	async setKey(keyEnv: string, value: string): Promise<void> {
+		await this.#ask({ op: "key", keyEnv, value });
 	}
 }
 

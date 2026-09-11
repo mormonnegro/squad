@@ -45,6 +45,7 @@ export function Picker({
 	connected,
 	onPick,
 	onAdd,
+	onKeys,
 	onManage,
 }: {
 	all: readonly Connection[];
@@ -52,6 +53,7 @@ export function Picker({
 	connected: boolean;
 	onPick: (one: Connection) => void;
 	onAdd: () => void;
+	onKeys: () => void;
 	onManage: () => void;
 }) {
 	return (
@@ -103,6 +105,12 @@ export function Picker({
 					<MenuItem onSelect={onAdd}>
 						<Plus className="size-4 flex-none text-muted" />
 						Add an environment
+					</MenuItem>
+					{/* Here rather than under the agents, because a key is the environment's and every
+					    agent in it spends the same one. */}
+					<MenuItem onSelect={onKeys} disabled={!connected}>
+						<KeyRound className="size-4 flex-none text-muted" />
+						Keys
 					</MenuItem>
 					<MenuItem onSelect={onManage}>
 						<Settings className="size-4 flex-none text-muted" />
