@@ -41,6 +41,7 @@ ARG_DOMAIN=
 ARG_DOMAIN_GIVEN=
 ARG_RELAY=
 ARG_RELAY_GIVEN=
+ARG_OPEN=
 ARG_VERBOSE=
 ARG_BUILD=
 for arg in "$@"; do
@@ -55,6 +56,8 @@ for arg in "$@"; do
 		ARG_RELAY=${arg#--relay=}
 		ARG_RELAY_GIVEN=1
 		;;
+	--open) ARG_OPEN=yes ;;
+	--open=*) ARG_OPEN=${arg#--open=} ;;
 	--build) ARG_BUILD=yes ;;
 	*) ;;
 	esac
@@ -124,6 +127,24 @@ SANDBOX_IMAGE=${SQUAD_SANDBOX_IMAGE:-$REGISTRY/squad-sandbox:$VERSION}
 # can be had — a registry that is down or a tag that does not exist yet is a reason to fall back, not
 # a reason to stop.
 BUILD=${ARG_BUILD:-${SQUAD_BUILD:-}}
+# Whether the console answers on this machine's own address as well as on its loopback.
+#
+# A server with no name of its own has nothing to forward a port from, so loopback there means the
+# console is reachable only by somebody already holding an SSH session — which is a real way in and
+# a poor default, because it is the one that ends with a terminal left open forever. So on a server
+# it answers on the address the machine has, and the install says plainly what that means: the token
+# becomes the only thing between a stranger and these agents, and on http it crosses the internet
+# where it can be read. The line that fixes that is printed directly underneath, and needs no domain.
+#
+# Not on a laptop. There the console is already here, the address is already reachable, and opening
+# it would put the whole control surface on whatever wifi the machine is on — a change nobody asked
+# for to solve a problem nobody has.
+case "$(uname -s)" in
+Darwin) OPEN_DEFAULT=no ;;
+*) OPEN_DEFAULT=yes ;;
+esac
+OPEN=${ARG_OPEN:-${SQUAD_OPEN:-$OPEN_DEFAULT}}
+
 # A rendezvous this plane meets a console at, if the operator wants one.
 #
 # The third way in, for a machine with neither a forwarded port nor a domain: the plane dials out and
@@ -511,6 +532,13 @@ set_env() {
 	rm -f "$scratch"
 }
 
+# A plane behind its own name is reached through the proxy, so opening the port as well would be
+# publishing the thing the proxy exists to stand in front of.
+[ -z "$DOMAIN" ] || OPEN=no
+BIND=127.0.0.1
+[ "$OPEN" != yes ] || BIND=0.0.0.0
+set_env SQUAD_WEB_BIND "$BIND"
+
 if [ -n "$RELAY_GIVEN" ]; then
 	set_env SQUAD_RELAY "$RELAY"
 else
@@ -552,6 +580,7 @@ BUILD_TOO=
 [ -z "$BUILD" ] || BUILD_TOO=--build
 quietly $DOCKER env SQUAD_STATE="$STATE" SQUAD_IMAGE="$IMAGE" \
 	SQUAD_SANDBOX_IMAGE="$SANDBOX_IMAGE" SQUAD_DOMAIN="$DOMAIN" SQUAD_RELAY="$RELAY" \
+	SQUAD_WEB_BIND="$BIND" \
 	docker compose $PROFILE up -d $BUILD_TOO ||
 	die "The control plane would not start."
 
@@ -663,6 +692,34 @@ if [ -f "$STATE/web.token" ]; then
 		note ""
 		note "That address is the key. Whoever holds it drives these agents, so it is pasted and"
 		note "not posted."
+	elif [ "$OPEN" = yes ]; then
+		# The machine's own address, because that is what it is answering on. Dashes rather than dots
+		# in the sslip.io name below: both forms resolve, and the dashed one is the one that works as
+		# a single label under a wildcard certificate.
+		note "Open this:"
+		note ""
+		note "     http://$ADDR:$WEB_PORT/?t=$TOKEN"
+		note ""
+		note "This machine is answering on its own address, so anyone who can reach it can knock."
+		note "The token is what turns them away, and over http it crosses the internet in the clear."
+		# Only where there is an address to build a name out of. Offered against a hostname it would
+		# be a command that resolves to nothing, printed with the confidence of one that works.
+		case "$ADDR" in
+		[0-9]*.[0-9]*.[0-9]*.[0-9]*)
+			note "One line puts a real certificate in front of it, with no domain to buy:"
+			note ""
+			note "     curl -fsSL $CONSOLE/install.sh | sh -s -- --domain=$(printf '%s' "$ADDR" | tr '.' '-').sslip.io"
+			note ""
+			note "sslip.io resolves any address-shaped name to that address, so Let's Encrypt issues"
+			note "for it and nothing has to be registered. Its rate limit is shared with everyone"
+			note "using it, so it can refuse — a name of your own never does."
+			;;
+		*)
+			note "A domain in front of it is what fixes that: --domain=agents.example.com."
+			;;
+		esac
+		note ""
+		note "--open=no puts this back on loopback, reached by forwarding a port over SSH."
 	elif [ "$SHIM" = "yes" ]; then
 		# Numbered, because they are done in order and the order is the whole instruction. What sent
 		# somebody looking for a missing piece was a paragraph holding two commands and an address

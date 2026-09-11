@@ -55,11 +55,16 @@ services:
       # machine. `/mcp login` sends the operator to a consent screen that redirects to
       # localhost:8788, and without this the plane would be listening where nobody can knock.
       - "127.0.0.1:${SQUAD_OAUTH_PORT:-8788}:${SQUAD_OAUTH_PORT:-8788}"
-      # The web console, on loopback for the same reason and a stronger one: this is the whole
-      # control surface, and the plane holds the Docker socket. Reached from another machine by
-      # forwarding it down the SSH connection the operator already has — `squad web` does that —
-      # so that a console on a laptop still opens nothing on the server.
-      - "127.0.0.1:${SQUAD_WEB_PORT:-8789}:${SQUAD_WEB_PORT:-8789}"
+      # The web console. Loopback by default and for a strong reason: this is the whole control
+      # surface, and the plane holds the Docker socket.
+      #
+      # Which address it is published on is the installer's to decide, because the honest answer
+      # differs by machine. On a laptop it is loopback and the way in from elsewhere is a forwarded
+      # port. On a server with no name of its own there is nothing to forward from, so it is the
+      # machine's own address — and then the token is the only thing between a stranger and these
+      # agents, which is why the install says so out loud and prints the one line that puts a
+      # certificate in front of it.
+      - "${SQUAD_WEB_BIND:-127.0.0.1}:${SQUAD_WEB_PORT:-8789}:${SQUAD_WEB_PORT:-8789}"
     networks:
       egress:
         aliases:
