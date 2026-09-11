@@ -75,6 +75,9 @@ BRANCH=${SQUAD_BRANCH:-main}
 # already the client that ran this, and a shim written over it would take the console away from the
 # thing that opened it.
 SHIM=${SQUAD_SHIM:-yes}
+# Named rather than written out twice: whether this can be installed and where it goes are the same
+# fact, and two literals that have to agree are two literals that eventually do not.
+SHIM_AT=${SQUAD_SHIM_AT:-/usr/local/bin/squad}
 # Whether there is anyone to ask. Piped into a VPS there is no terminal and this is already no. What
 # is left behind it is one question — whether to install what is missing — because a machine with no
 # Docker cannot be told about it later, while everything else this needs can.
@@ -347,8 +350,26 @@ quietly $DOCKER env SQUAD_STATE="$STATE" docker compose up -d --build ||
 # Skipped where the client that ran this is already the local `squad`. Writing over it there would
 # leave a shim that reaches this plane by name in place of the command that knows about every plane
 # the operator has.
+# Written where it can be, and skipped out loud where it cannot.
+#
+# This is the console, and the console is no longer the way in — the address printed below is. So a
+# directory this user cannot write is not a reason to stop, and it is certainly not a reason to put
+# a password prompt in front of an install that had needed none: it is one line of output saying
+# what was not done and how to do it. What would be wrong is failing here quietly, which is what
+# `tee: Permission denied` in the middle of a build amounts to.
+if [ "$SHIM" = "yes" ] && [ -z "$SUDO" ] && [ ! -w "$(nearest "$SHIM_AT")" ]; then
+	step "Leaving \`squad\` off this machine's PATH"
+	note "$(dirname "$SHIM_AT") is not yours to write, and nothing here needs it: the plane is up"
+	note "and the address below drives it from a browser. To have the command as well:"
+	note ""
+	note "  sudo env SQUAD_NAME=$NAME sh $DIR/deploy/install.sh"
+	# Said now so that everything printed after it is true. The closing sections describe a machine
+	# driven by typing `squad`, and this is not one.
+	SHIM=no
+fi
+
 if [ "$SHIM" = "yes" ]; then
-	$SUDO tee /usr/local/bin/squad >/dev/null <<SQUAD
+	$SUDO tee "$SHIM_AT" >/dev/null <<SQUAD
 #!/bin/sh
 # Written by squad's installer. The console, the log feed and every subcommand come through
 # here; it is the same line you would otherwise type by hand.
@@ -364,7 +385,7 @@ cd "$DIR/deploy" || exit 1
 [ -t 0 ] || NO_TTY=-T
 exec \${AS_ROOT:-} docker compose exec \${NO_TTY:-} control-plane squad "\$@"
 SQUAD
-	$SUDO chmod 755 /usr/local/bin/squad
+	$SUDO chmod 755 "$SHIM_AT"
 fi
 
 step "Up"
