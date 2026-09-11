@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { Code } from "../components/Code";
 import { Layout } from "../components/Layout";
-import { CLIENT, INSTALL, REPO } from "../lib/site";
+import { CLIENT, CONSOLE, IMAGES, INSTALL, REPO } from "../lib/site";
 
-const ASKS: [string, string][] = [
-	["Docker", "installed from get.docker.com if the machine has none"],
-	["a DeepSeek key", "what the agents think with — skippable, and turns fail until you add one"],
-	["an OpenAI key", "how an agent searches the web — optional, the tool says so without it"],
-	["an Anthropic key", "the other model the config starts with — optional in the same way"],
+const FLAGS: [string, string][] = [
+	[
+		"--name=casa",
+		"a second deployment on one machine — its own containers, volumes, networks, ports and agents",
+	],
+	["--domain=agents.example.com", "put it behind that name, with a certificate it renews itself"],
+	["--domain=", "give the name back: the proxy is removed and the plane is on loopback again"],
+	["--verbose", "every path, every file it wrote, and the build streamed rather than buffered"],
+	["--build", "build the images here instead of pulling them, which is what working on it needs"],
 ];
 
 const MACHINES: [string, string, string][] = [
@@ -32,65 +36,173 @@ export default function Install() {
 	return (
 		<Layout
 			title="install"
-			description="Install the console on the computer you are sitting at. It asks where the agents should live — here, or on a server you have SSH to — and puts a plane there."
+			description="One command on the machine the agents will live on. It asks nothing, pulls two images, and ends by printing the address of a console."
 		>
 			<section className="hero">
 				<div className="wrap">
 					<h1>Install</h1>
 					<p className="lede">
-						Two halves: the console you type at, and the plane the agents live in. You install the
-						console, and it asks the one question the halves differ on.
+						One command, on the machine the agents will live on. It asks nothing and ends by
+						printing one address — which is the console, and the key to it.
 					</p>
 					<div className="hero-meta">
-						<span>One question</span>
+						<span>No questions</span>
 						<span>~1 GB of RAM</span>
-						<span>No database, no account</span>
+						<span>No account, no keys to have ready</span>
 					</div>
 				</div>
 			</section>
 
 			<section>
 				<div className="wrap">
-					<span className="eyebrow">From your computer</span>
-					<h2>One command, and it asks one thing</h2>
-					<Code label="on your laptop" wrap>{`
-$ curl -fsSL ${CLIENT} | sh
-$ squad
+					<span className="eyebrow">On the machine that will run them</span>
+					<h2>One command, and it asks nothing</h2>
+					<Code label="on your laptop, or on your server" wrap>{`
+$ curl -fsSL ${INSTALL} | sh
 `}</Code>
-					<p className="small muted">
-						It needs Node 22.18 or newer and nothing else — no Docker here, whichever answer you
-						give. <a href={`${REPO}/blob/main/deploy/client.sh`}>deploy/client.sh</a> fetches the
-						tree, installs what the console imports, and leaves <code>squad</code> on your PATH.
-						There is no build step, so what lands is what runs.
+					<p>
+						Docker if the machine has none, two images <a href={IMAGES}>pulled rather than built</a>
+						, a config with one agent and a ceiling of five dollars a day, and a plane running. Half
+						a minute on a machine that already has Docker.
 					</p>
 					<p>
-						The thing it asks is where your agents should live: <strong>on this computer</strong>,
-						which means Docker and a state directory under <code>~/.squad</code>, or{" "}
-						<strong>on a server</strong> you have SSH to, which means the install running down the
-						connection you already have. Either way the same thing lands there — Docker if there is
-						none, the repository, a config with one agent and a ceiling of five dollars a day — and
-						either way it ends on the console. <code>squad connect</code> moves the answer.
-					</p>
-					<p>
-						Everything after that question is the same program. A plane answers the same protocol
-						whether its socket is in a directory here or at the far end of{" "}
-						<code>ssh vps squad relay</code>, which is why a port you expose from an agent opens on
-						the machine your browser is on.
+						<strong>It asks for no keys.</strong> A key is not something you need before the thing
+						runs — it is what this plane can pay for, it changes, and a plane takes one while it is
+						running. Three secrets in the first minute made them look like prerequisites, which is
+						the one thing they are not. They are given in the console, on the screen that exists for
+						it, and the plane is using the next one from the moment it is typed.
 					</p>
 					<p className="small muted">
-						It asks for no keys — every one of them is given later on the config screen in{" "}
-						<code>squad</code>. Running the install again is the update: it pulls, rebuilds, swaps
-						the plane in, and leaves <code>config.yaml</code> and <code>.env</code> alone.
+						Running it again is the update: it pulls, swaps the plane in, and leaves{" "}
+						<code>config.yaml</code> alone along with every key and edit in <code>.env</code>. Only
+						the lines that say what this install <em>is</em> — which images, which domain — are
+						brought up to date, because a file that disagrees with the plane that is running is a{" "}
+						<code>docker compose up</code> by hand that quietly starts last month's code.
 					</p>
 					<div className="note">
 						<p>
-							<strong>Nothing of the console stays on the server.</strong> It pipes one shell script
-							— <a href={`${REPO}/blob/main/deploy/install.sh`}>deploy/install.sh</a> — down the SSH
-							connection, and that script stands alone: it is the same one that runs when you pick
-							this computer. <a href="#by-hand">The same install by hand</a> is at the bottom of
-							this page.
+							<strong>Nothing published to pull is not an error.</strong> A registry that is
+							unreachable, a tag that does not exist yet, a fork that publishes nothing — the
+							installer says so and builds from the sources instead, which are right there. That
+							path is slower and it still works, which is the point of keeping it.
 						</p>
 					</div>
+				</div>
+			</section>
+
+			<section id="console">
+				<div className="wrap">
+					<span className="eyebrow">What it prints</span>
+					<h2>The plane serves its own console</h2>
+					<Code wrap>{`
+Getting in
+  Open this, or paste it into a console you host yourself:
+
+    http://127.0.0.1:8789/?t=MekEy-WJ4RPyWP3PjCEntVGhlJN56bE0uNffl2Obhls
+`}</Code>
+					<p>
+						Open it and the console is there — agents, conversations, what each one is doing and
+						what it has spent. It is served by the plane itself, out of its own container, so there
+						is nothing else to install and nothing of ours between you and it.
+					</p>
+					<p>
+						<strong>That address is the key.</strong> The plane writes a token on the way up, in a{" "}
+						<code>0600</code> file only root can read, and holding it is being the operator — the
+						protocol has no login of its own and does not want one. So it is pasted, not posted. The
+						page trades it for a cookie and cleans the URL, because an address is copied and left in
+						a history and a cookie is not.
+					</p>
+					<p>
+						Keys go in from there: the environment picker, then <strong>Keys</strong>. Each provider
+						says whether this plane holds one and whether it was typed here or exported by the
+						machine, and none of them ever shows a value — the plane answers with the name of the
+						key it set and never with the key. A plane holding none says so above the conversation,
+						since the alternative is a turn that dies at the model for a reason the screen already
+						knew.
+					</p>
+					<p className="small muted">
+						There is a copy of the same console at <a href={CONSOLE}>{CONSOLE}</a>. It holds several
+						environments at once and moves between them, which is the only thing it does that the
+						one your plane serves does not. It is a convenience, not the way in: what it knows lives
+						in your browser and nowhere else, including not here.
+					</p>
+				</div>
+			</section>
+
+			<section id="server">
+				<div className="wrap">
+					<span className="eyebrow">If it is on a server</span>
+					<h2>Give it a name, or forward the port</h2>
+					<p>
+						The console's port is published on the server's loopback and nowhere else. That is
+						deliberate: the plane holds the Docker socket, so it is root-equivalent on that machine,
+						and publishing it would be root on the internet behind a token travelling in the clear.
+						There are two ways to reach it, and the first one is better.
+					</p>
+					<Code label="with a name of its own" wrap>{`
+$ curl -fsSL ${INSTALL} | sh -s -- --domain=agents.example.com
+`}</Code>
+					<p>
+						Point the DNS at the machine first, then run that. A proxy in front of the plane obtains
+						a certificate and renews it, and the install ends with a single{" "}
+						<code>https://agents.example.com/?t=…</code>. Nothing to forward, nothing to keep open,
+						and it works from any browser.
+					</p>
+					<p className="small muted">
+						The proxy is a compose profile, so a machine that was never given a domain does not run
+						it and never takes port 80 waiting for a certificate that is not coming. The plane's own
+						exposure does not change: what is published is the proxy.
+					</p>
+					<Code label="or forward it over the SSH you already have" wrap>{`
+$ ssh -N -L 18789:127.0.0.1:8789 you@your-server
+`}</Code>
+					<p>
+						Run that on your own computer — not on the server, where that port is already the
+						plane's. Then open <code>http://127.0.0.1:18789/?t=…</code> with the token the server
+						printed: your port, its key. Any free local port does.
+					</p>
+					<p className="small muted">
+						The address says <code>127.0.0.1</code> because after the forward that is what the
+						server is. Nothing is opened on the server — check it with <code>ss -ltn</code> there —
+						and there is nothing new to log into, because the bytes cross the connection you already
+						had.
+					</p>
+				</div>
+			</section>
+
+			<section>
+				<div className="wrap">
+					<span className="eyebrow">The rest of the command</span>
+					<h2>Five flags, and no configuration file to write first</h2>
+					<table className="table">
+						<tbody>
+							{FLAGS.map(([flag, what]) => (
+								<tr key={flag}>
+									<td>
+										<code>{flag}</code>
+									</td>
+									<td>{what}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+					<Code wrap>{`
+$ curl -fsSL ${INSTALL} | sh -s -- --name=casa
+`}</Code>
+					<p className="small muted">
+						Flags rather than only environment variables, because of the shape this is run in:{" "}
+						<code>SQUAD_NAME=casa curl … | sh</code> puts the variable on <code>curl</code>, and the
+						shell that reads the script never sees it. The install goes to the default name and says
+						nothing about it, which looks exactly like success until there are two deployments and
+						the second one wrote over the first. A flag crosses the pipe. The variables still work
+						when there is no pipe.
+					</p>
+					<p className="small muted">
+						A second deployment shares nothing with the first but the Docker daemon — its own
+						containers, volumes, networks, state and agents, on ports derived from its name.{" "}
+						<code>SQUAD_VERSION</code> pins which published build to run; left alone it is the
+						newest release.
+					</p>
 				</div>
 			</section>
 
@@ -121,78 +233,12 @@ $ squad
 						you give a key to, and capped by <code>limitUsd</code> at five dollars a day per agent.
 						There is nothing to pay for squad itself.
 					</p>
-				</div>
-			</section>
-
-			<section>
-				<div className="wrap">
-					<span className="eyebrow">Or the far half, yourself</span>
-					<h2>What it runs on the machine the agents get</h2>
-					<p>
-						Run at a terminal instead of down a pipe, the installer asks for the keys as it goes.
-						That is the whole difference — same script, with somebody there to answer.
-					</p>
-					<Code label="on your VPS" wrap>{`
-$ curl -fsSL ${INSTALL} | sh
-`}</Code>
-					<table className="table">
-						<tbody>
-							{ASKS.map(([what, why]) => (
-								<tr key={what}>
-									<td>{what}</td>
-									<td>{why}</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
 					<p className="small muted">
-						They are read from the terminal, not from the pipe, and land in a <code>0600</code> file
-						the agents cannot reach. Every one can be skipped and given later on the setup screen.
-						Nothing else is asked.
+						A gigabyte is enough because the install pulls rather than builds. Building on that
+						machine means a dependency tree and a bundler running on it, which at the bottom of the
+						list is a build killed for memory — and killed in the middle, which is the worst place
+						for an install to stop.
 					</p>
-					<p className="small muted">
-						It leaves <code>squad</code> on that machine's PATH too, and prints your own address
-						when it finishes. Whichever end you ran it at, this machine is an answer the console
-						keeps in <code>~/.squad/plane.json</code>, and <code>squad connect</code> asks again.
-					</p>
-					<p className="small muted">
-						<code>squad update</code> runs that installer again on whichever machine the plane is
-						on: it pulls the latest, rebuilds both images and swaps the plane in, leaving{" "}
-						<code>config.yaml</code> and <code>.env</code> exactly as they are.
-					</p>
-				</div>
-			</section>
-
-			<section>
-				<div className="wrap">
-					<span className="eyebrow">Once you are on it</span>
-					<h2>Then you type its name</h2>
-					<p>
-						The control surface is a unix socket inside the state directory and it never leaves the
-						machine. There is no port to open, no token to issue and nothing to log into: SSH
-						already decides who may touch that host, and touching that host is what holding the
-						socket means. <code>squad relay</code> is the console's way in.
-					</p>
-					<p>
-						Everything the console does travels that one connection: the agent list, the log feed,
-						the conversation, <code>/limit</code>, <code>/model</code>, <code>/mcp</code>,{" "}
-						<code>/serve</code>, and <code>!</code> into the sandbox itself.
-					</p>
-					<p className="small muted">
-						<code>/serve 3000</code> is that connection read backwards. The sandbox network is
-						unrouted, so the console opens the port on <em>your</em> loopback instead and prints{" "}
-						<code>http://scout.localhost:3000</code> — a link that works on the laptop it was
-						printed on and nowhere else, and closes when you close the console.
-					</p>
-					<div className="note">
-						<p>
-							<strong>Why there is no web UI to log into.</strong> The control plane holds the
-							Docker socket, so it is root-equivalent on the machine — the trust boundary is the
-							sandbox around the agent, not the process managing it. Publishing that control surface
-							would put root on the internet behind a password somebody chose. SSH is the same
-							authentication that already guards the machine, and it is stronger.
-						</p>
-					</div>
 				</div>
 			</section>
 
@@ -244,16 +290,10 @@ defaults:
 						noticed being added is the failure mode.
 					</p>
 					<p className="small">
-						All three are listed whether or not this plane holds their keys, because listing one is
-						the approval and the key is only what makes it answer. The setup screen in{" "}
-						<code>squad</code> — <code>tab</code> past logs — is where a key is pasted in, and it
-						holds from the next turn with nothing restarted and this file untouched.
-					</p>
-					<p className="small">
-						That screen adds models too, and it asks the providers rather than asking you: every
-						provider it holds a key for is asked what it answers to, and what comes back is a list
-						to arrow through. So this file is where a model goes to survive a redeploy, and the
-						console is where one goes when you want it on the next turn.
+						All three models are listed whether or not this plane holds their keys, because listing
+						one is the approval and the key is only what makes it answer.{" "}
+						<a href="#console">Keys</a> in the console is where one is pasted in, and it holds from
+						the next turn with nothing restarted and this file untouched.
 					</p>
 					<p className="small muted">
 						It is read when the plane starts, so an edit takes hold on{" "}
@@ -275,8 +315,8 @@ defaults:
 					<span className="eyebrow">From anywhere else</span>
 					<h2>Waking an agent with a webhook</h2>
 					<p>
-						Port <code>8787</code> is the one thing published, and it takes signed requests only.
-						The installer generates the secret and puts it in <code>.env</code> as{" "}
+						Port <code>8787</code> is the one thing published to the network, and it takes signed
+						requests only. The installer generates the secret and puts it in <code>.env</code> as{" "}
 						<code>HOOK_SECRET</code>. The signature covers{" "}
 						{/* biome-ignore lint/suspicious/noTemplateCurlyInString: the shape of the signed string */}
 						<code>{"${timestamp}.${body}"}</code> and is compared in constant time within a
@@ -312,6 +352,34 @@ curl -X POST https://your-vps:8787/hooks/ping \\
 
 			<section>
 				<div className="wrap">
+					<span className="eyebrow">If you would rather stay in the terminal</span>
+					<h2>The console has always been a command too</h2>
+					<p>
+						Same plane, same protocol, different screen. The installer leaves <code>squad</code> on
+						the PATH of the machine it ran on, and this puts the same console on the computer you
+						sit at — where it asks which plane to drive and keeps the answer.
+					</p>
+					<Code label="on your laptop" wrap>{`
+$ curl -fsSL ${CLIENT} | sh
+$ squad
+`}</Code>
+					<p className="small muted">
+						It needs Node 22.18 or newer and nothing else — no Docker, wherever the plane is. A
+						plane on a server is reached down <code>ssh vps squad relay</code>, which is the same
+						protocol over the connection you already have, so nothing is opened there for this
+						either.
+					</p>
+					<p className="small muted">
+						<code>/serve 3000</code> is that connection read backwards: the sandbox network is
+						unrouted, so the console opens the port on <em>your</em> loopback instead and prints{" "}
+						<code>http://scout.localhost:3000</code> — a link that works on the machine it was
+						printed on and nowhere else, and closes when the console does.
+					</p>
+				</div>
+			</section>
+
+			<section>
+				<div className="wrap">
 					<span className="eyebrow">Before the VPS</span>
 					<h2>Or try the whole thing on your laptop</h2>
 					<p>
@@ -338,17 +406,21 @@ $ ./deploy/demo.sh up
 					<span className="eyebrow">If you would rather not pipe a script into a shell</span>
 					<h2>The same install, by hand</h2>
 					<p>
-						Four commands and the two files the installer would have written for you. Everything
-						above still applies — this is only the part that fetches and starts.
+						The repository, the two files the installer would have written, and one <code>up</code>.
+						Everything above still applies — this is only the part that fetches and starts.
 					</p>
 					<Code>{`
-$ git clone ${REPO} /opt/squad && cd /opt/squad
-$ docker build -t squad/sandbox:dev packages/sandbox/image
-$ cd deploy
-$ cp .env.example .env                # the keys the proxy injects
+$ git clone ${REPO} /opt/squad && cd /opt/squad/deploy
+$ cp .env.example .env                # ports, the webhook secret, the origins
 $ cp config.example.yaml config.yaml  # what each agent may reach
-$ docker compose up -d --build
+$ docker compose up -d
 `}</Code>
+					<p className="small muted">
+						<code>SQUAD_IMAGE</code> and <code>SQUAD_SANDBOX_IMAGE</code> in <code>.env</code> name
+						which images to run; left alone they are the locally built ones, and{" "}
+						<code>docker compose build</code> makes those. Point them at{" "}
+						<a href={IMAGES}>the published ones</a> to skip the build.
+					</p>
 					<p className="small muted">
 						<code>config.example.yaml</code> is the reference, with every option commented, and its
 						example agent reaches hosts that are not yours — read it through before starting rather

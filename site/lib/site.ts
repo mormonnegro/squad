@@ -15,6 +15,15 @@ export const INSTALL = `${SITE}/install.sh`;
 // release process standing in for a download.
 export const CLIENT = `${SITE}/client.sh`;
 
+// The console, hosted here. The same bundle a plane serves itself, built once knowing it is not
+// being served by one — so it offers no plane at its own address and holds several instead. It is a
+// convenience and not the door: a plane serves this page itself, and that copy needs nothing here.
+export const CONSOLE = `${SITE}/app/`;
+
+// Where the images are published. A tag builds both for two architectures and an install pulls them,
+// which is the difference between half a minute and a build on the machine it is landing on.
+export const IMAGES = "https://github.com/mormonnegro/squad/pkgs/container/squad";
+
 export const PI = "https://github.com/earendil-works/pi";
 
 export const TITLE = "squad";
