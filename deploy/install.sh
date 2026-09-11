@@ -444,9 +444,35 @@ cd "$DIR/deploy"
 # the case an install from before a setting existed: without it, a plane updated today would read a
 # .env written last month and fall back to a default that is no longer what this run just set up.
 ensure_env() {
-	grep -q "^$1=" .env 2>/dev/null && return 0
+	$SUDO grep -q "^$1=" .env 2>/dev/null && return 0
 	printf '%s=%s\n' "$1" "$2" | $SUDO tee -a .env >/dev/null
 }
+
+# The one line here that is changed rather than only added, and only when this run was told to.
+#
+# A domain is not an operator's edit to be protected, it is what this install is: the difference
+# between a plane behind a certificate and a plane behind a forwarded port. Leaving a stale value
+# would mean a `docker compose up` by hand later disagreeing with the install that just ran, which
+# is a proxy that stops coming up for no reason anybody can see.
+set_env() {
+	scratch=$(mktemp)
+	$SUDO grep -v "^$1=" .env >"$scratch" 2>/dev/null || true
+	printf '%s=%s\n' "$1" "$2" >>"$scratch"
+	# `cp` over the file rather than `mv` onto it, so the mode it already has — 600, root's — is the
+	# mode it keeps.
+	$SUDO cp "$scratch" .env
+	rm -f "$scratch"
+}
+
+if [ -n "$DOMAIN" ]; then
+	set_env SQUAD_DOMAIN "$DOMAIN"
+else
+	# Not told one, so the answer is whatever this install already had. A re-run that forgot the flag
+	# must not quietly take the certificate away and start printing an SSH forward instead.
+	DOMAIN=$($SUDO sed -n 's/^SQUAD_DOMAIN=//p' .env 2>/dev/null | head -1)
+	[ -z "$DOMAIN" ] || CONSOLE_AT="https://$DOMAIN/"
+fi
+
 ensure_env SQUAD_IMAGE "$IMAGE"
 ensure_env SQUAD_SANDBOX_IMAGE "$SANDBOX_IMAGE"
 ensure_env SQUAD_DOMAIN "$DOMAIN"
