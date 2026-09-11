@@ -4,9 +4,14 @@
 #
 #   curl -fsSL https://squad.mormon.garden/install.sh | sh
 #
-# Installs Docker if there is none, puts the repository in /opt/squad, asks for the keys the
-# proxy will hold, writes a config that already works, starts the plane, and leaves `squad` on the
-# PATH so the machine is driven by typing its name.
+# Installs Docker if there is none, puts the repository in /opt/squad, writes a config that already
+# works, starts the plane, and leaves `squad` on the PATH so the machine is driven by typing its
+# name. It asks nothing: the keys a plane spends are given to it at a console while it runs.
+#
+# What it prints is what happened and the two moves that get somebody in. The rest — every path,
+# every file it wrote, and what the build was doing for those minutes — is behind --verbose:
+#
+#   curl -fsSL https://squad.mormon.garden/install.sh | sh -s -- --verbose
 #
 # This is the server half, and it does not know which machine it landed on: a VPS reached over SSH
 # and the laptop the operator is sitting at run the same script. What differs is where things go,
@@ -14,9 +19,9 @@
 # to take the name `squad` on this PATH. The client passes them when the plane is going to live
 # alongside it; a server takes the defaults.
 #
-# Everything it asks is read from /dev/tty, not stdin: arriving down a pipe, stdin is this script.
-# With no terminal at all it takes the keys from the environment and goes on without the ones that
-# are not there, because an unattended install that blocks on a question is an install that hangs.
+# The one thing it can ask — whether to install what is missing — is read from /dev/tty, not stdin:
+# arriving down a pipe, stdin is this script. With no terminal it answers itself yes, because an
+# unattended install that blocks on a question is an install that hangs.
 #
 # Run it again to update. The repository is pulled, the images rebuilt and the plane swapped in,
 # and .env and config.yaml are left exactly as they are — the second run is the one that would
@@ -69,6 +74,10 @@ REPO=${SQUAD_REPO:-https://github.com/mormonnegro/squad.git}
 # Where the console this project publishes lives. A plane trusts it out of the box so that a fresh
 # install can be driven from a browser without editing anything; SQUAD_WEB_ORIGINS overrides it.
 CONSOLE=${SQUAD_CONSOLE:-https://squad.mormon.garden}
+# The page itself, which the origin above is only the first half of. Separate because the origin is
+# what the plane checks a request against and a check never sees a path, while this is a thing a
+# person opens. A console hosted somewhere that serves it at the root overrides it.
+CONSOLE_AT=${SQUAD_CONSOLE_AT:-$CONSOLE/app/}
 BRANCH=${SQUAD_BRANCH:-main}
 # Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
@@ -83,8 +92,31 @@ SHIM_AT=${SQUAD_SHIM_AT:-/usr/local/bin/squad}
 # Docker cannot be told about it later, while everything else this needs can.
 ASK=${SQUAD_ASK:-yes}
 
+# Whether to print the half of this that is explanation rather than news.
+#
+# An install is read once, in the thirty seconds after it finishes, by somebody who wants to know
+# whether it worked and what to do next. Every other true thing it could say — which file holds
+# what, why a path is that path, what the build did — competes with those two, and the result was
+# forty-five lines where the address you actually need sits somewhere in the middle. So it is one
+# flag away instead, and the flag is printed at the end where somebody who wants it will look.
+VERBOSE=${SQUAD_VERBOSE:-}
+for arg in "$@"; do
+	case "$arg" in
+	-v | --verbose) VERBOSE=1 ;;
+	*) ;;
+	esac
+done
+
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
-note() { printf '  %s\n' "$*"; }
+note() {
+	if [ -z "$*" ]; then printf '\n'; else printf '  %s\n' "$*"; fi
+}
+# Dimmed as well as optional: where it does print, it is the background to the line above it and not
+# a thing to be read in its own right.
+aside() {
+	[ -n "$VERBOSE" ] && printf '  \033[2m%s\033[0m\n' "$*"
+	return 0
+}
 die() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 
 # A build that worked is a progress bar nobody reads, and one that failed is the only thing on the
@@ -92,6 +124,9 @@ die() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 LOG=$(mktemp)
 trap 'rm -f "$LOG"' EXIT
 quietly() {
+	# Unless it was asked for, in which case the reason to hold it back is gone: somebody watching a
+	# build wants it while it happens, not collected and handed over once it is too late to read.
+	if [ -n "$VERBOSE" ]; then "$@"; return $?; fi
 	"$@" >"$LOG" 2>&1 && return 0
 	cat "$LOG" >&2
 	return 1
@@ -158,12 +193,11 @@ install_pkg() {
 	fi || die "Could not install $*."
 }
 
-step "Checking what this machine already has"
+step "Checking this machine"
 
 for tool in curl git; do
 	command -v "$tool" >/dev/null 2>&1 || { note "installing $tool"; install_pkg "$tool"; }
 done
-note "curl, git"
 
 if ! $DOCKER docker info >/dev/null 2>&1; then
 	if command -v docker >/dev/null 2>&1; then
@@ -177,7 +211,10 @@ if ! $DOCKER docker info >/dev/null 2>&1; then
 fi
 $DOCKER docker compose version >/dev/null 2>&1 ||
 	die "Docker has no compose plugin. Install docker-compose-plugin and run this again."
-note "Docker, Compose"
+note "curl, git, Docker, Compose"
+aside "$DIR — the code"
+aside "$STATE — the state"
+aside "ports $HOOK_PORT webhooks, $OAUTH_PORT logins coming back, $WEB_PORT the console"
 
 if [ -d "$DIR/.git" ]; then
 	step "Updating $DIR"
@@ -202,8 +239,8 @@ note "$($SUDO git -C "$DIR" log -1 --format='%h  %s')"
 # An empty key here is not a missing key, it is a key that has not been typed yet, and the screen
 # that takes it is the first one the operator sees.
 if [ ! -f "$DIR/deploy/.env" ]; then
-	step "What the plane starts with"
-	note "It goes in $DIR/deploy/.env, which only root can read."
+	aside "wrote $DIR/deploy/.env — the ports, the name, the webhook secret and which"
+	aside "consoles may drive this plane. Root-readable only. Never rewritten by a re-run."
 
 	# Read from the environment when the environment has them, so `DEEPSEEK_API_KEY=… sh install.sh`
 	# still works and a machine that exports its keys installs with them already in place. Never
@@ -247,7 +284,7 @@ fi
 # Never rewritten. Everything an agent is allowed to do is in here, so a re-run that regenerated it
 # would be an update quietly taking capabilities away.
 if [ ! -f "$DIR/deploy/config.yaml" ]; then
-	step "What the agents may reach"
+
 	# Two writes because only the first line of this file depends on the machine, and the rest is
 	# full of backticks and dollars that an expanding heredoc would eat.
 	$SUDO tee "$DIR/deploy/config.yaml" >/dev/null <<CONFIG
@@ -324,17 +361,21 @@ hooks:
     # it, so operator trust is refused here.
     trust: participant
 YAML
-	note "wrote $DIR/deploy/config.yaml — one agent, a ceiling of \$5 a day"
+	step "Writing a config that already works"
+	note "one agent, a ceiling of \$5 a day"
+	aside "$DIR/deploy/config.yaml — what each agent may reach, and the only place that says so."
+	aside "Never rewritten by a re-run, so a grant added later is never quietly taken away."
 fi
 
 # Always, not "if the tag is missing". Both images copy the sources in, so an existing tag is not a
 # current one, and an update that silently kept last month's code is worse than one that takes a
 # minute. The layer cache makes it nearly free when nothing has changed.
 step "Building"
-note "the sandbox image, which is what an agent runs inside"
+note "the sandbox image, then the control plane"
+aside "Always, rather than only when a tag is missing: both images copy the sources in, so an"
+aside "existing tag is not a current one. The layer cache makes it nearly free when nothing moved."
 quietly $DOCKER docker build -t squad/sandbox:dev "$DIR/packages/sandbox/image" ||
 	die "The sandbox image would not build."
-note "the control plane"
 $SUDO mkdir -p "$STATE"
 cd "$DIR/deploy"
 # Exported as well as written into .env, because an .env from an older install has no line for it
@@ -390,7 +431,7 @@ fi
 
 step "Up"
 $DOCKER docker ps --filter "label=com.docker.compose.project=$NAME" \
-	--format '  {{.Names}}  {{.Status}}'
+	--format '{{.Names}}  {{.Status}}' | while IFS= read -r line; do note "$line"; done
 
 # The line that connects this machine to a console, printed here because here is where somebody
 # already is. A second command to fetch it would be a second thing to know about, and the whole of
@@ -407,7 +448,7 @@ ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
 
 # waited for rather than assumed. A plane that never writes one is a plane that did not start, which
 # the lines above have already said.
-step "The console in a browser"
+step "Getting in"
 WAITED=0
 while [ ! -f "$STATE/web.token" ] && [ "$WAITED" -lt 30 ]; do
 	sleep 1
@@ -417,48 +458,66 @@ done
 if [ -f "$STATE/web.token" ]; then
 	TOKEN=$($SUDO cat "$STATE/web.token" | tr -d ' \n\r')
 	if [ "$SHIM" = "yes" ]; then
-		note "This console answers on the loopback of this machine and on nothing else — nothing is"
-		note "published here. From your own computer, bring it within reach:"
+		# Numbered, because they are done in order and the order is the whole instruction. What sent
+		# somebody looking for a missing piece was a paragraph holding two commands and an address
+		# that is only true after one of them has been run.
+		note "1  from your own computer, forward the port:"
 		note ""
-		note "  ssh -N -L $WEB_PORT:127.0.0.1:$WEB_PORT $(id -un)@$ADDR"
+		note "     ssh -N -L $WEB_PORT:127.0.0.1:$WEB_PORT $(id -un)@$ADDR"
 		note ""
-		note "and then open, or paste into $CONSOLE:"
+		note "2  open $CONSOLE_AT and paste this:"
+		note ""
+		note "     http://127.0.0.1:$WEB_PORT/?t=$TOKEN"
+		note ""
+		# The question this output kept being asked, answered where it is asked: the address names a
+		# loopback and the machine is at an address, and both of those are right.
+		note "Nothing is published on this machine, which is why that address says 127.0.0.1"
+		note "rather than $ADDR — after step 1, this machine is what answers there."
+		note "It is the key as well, so paste it and do not post it."
 	else
 		note "Open this, or paste it into a console you host yourself:"
+		note ""
+		note "  http://127.0.0.1:$WEB_PORT/?t=$TOKEN"
+		note ""
+		note "That address is the key. Whoever holds it drives these agents, so it is pasted and"
+		note "not posted."
 	fi
-	note ""
-	note "  http://127.0.0.1:$WEB_PORT/?t=$TOKEN"
-	note ""
-	note "That address is the key. Whoever holds it drives these agents, so it is pasted and not"
-	note "posted. It does not change when the plane restarts, and \`squad web\` prints it again."
+	aside "It does not change when the plane restarts, and \`squad web\` prints it again."
 else
 	note "The plane has not written its web token yet. \`squad web\` prints it once it has."
 fi
 
 if [ "$SHIM" = "yes" ]; then
-	step "Driving it"
-	note "squad                    on this machine, the console"
-	note "squad ls                 what each agent is and whether it is up"
-	note "squad logs               what every agent runs, answers and spends"
 	printf '\n'
-	note "From your own computer, the console is one line and this machine is an answer it keeps:"
-	note "  curl -fsSL https://squad.mormon.garden/client.sh | sh"
-	note "  squad"
-	printf '\n'
-	note "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
-	note "that travels the SSH connection you already have here, so there is nothing to open on"
-	note "this machine and nothing new to log into."
+	note "squad     drives the same plane from this machine"
+	aside "squad ls    what each agent is and whether it is up"
+	aside "squad logs  what every agent runs, answers and spends"
+	aside ""
+	aside "From your own computer the console is one line, and this machine is an answer it keeps:"
+	aside "  curl -fsSL https://squad.mormon.garden/client.sh | sh"
+	aside "  squad"
+	aside "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
+	aside "that travels the SSH connection you already have, so there is nothing to open here and"
+	aside "nothing new to log into."
 fi
 
-step "Where things are"
-note "$DIR/deploy/config.yaml   what each agent may reach"
-note "$DIR/deploy/.env          what the plane starts with, root-readable only"
-note "$STATE   the state, and the socket the console speaks over"
-printf '\n'
-note "The config is read when the plane starts, so an edit takes hold on:"
-note "  cd $DIR/deploy && docker compose restart control-plane"
-printf '\n'
-note "And this same command again, any time, is the update: it pulls, rebuilds and swaps the"
-note "plane in, and never touches config.yaml or .env. \`squad update\`, from the console on"
-note "your own computer, runs it here for you."
+if [ -n "$VERBOSE" ]; then
+	step "Where things are"
+	note "$DIR/deploy/config.yaml   what each agent may reach"
+	note "$DIR/deploy/.env          what the plane starts with, root-readable only"
+	note "$STATE   the state, and the socket the console speaks over"
+	printf '\n'
+	note "The config is read when the plane starts, so an edit takes hold on:"
+	note "  cd $DIR/deploy && docker compose restart control-plane"
+	printf '\n'
+	note "And this same command again, any time, is the update: it pulls, rebuilds and swaps the"
+	note "plane in, and never touches config.yaml or .env. \`squad update\`, from the console on"
+	note "your own computer, runs it here for you."
+else
+	# The last line, because somebody who wants more looks at the bottom. Written out whole rather
+	# than as "pass --verbose", since the form it has to take through a pipe is not the obvious one.
+	printf '\n'
+	note "Everything this did, every path and the build itself:"
+	note "  curl -fsSL $CONSOLE/install.sh | sh -s -- --verbose"
+fi
 printf '\n'
