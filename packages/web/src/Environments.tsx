@@ -20,7 +20,7 @@ import {
 } from "./connections.ts";
 import { cn } from "./lib/utils.ts";
 import { Modal } from "./Modal.tsx";
-import { browserWire, Plane } from "./plane.ts";
+import { Plane, wireTo } from "./plane.ts";
 import {
 	Menu,
 	MenuContent,
@@ -273,7 +273,7 @@ function Rest({
 		setWhy(undefined);
 		// Knocked on before it is kept. A saved environment that answers nothing is a row that fails
 		// every time it is opened, and by then whoever added it has walked away.
-		const client = new Plane(browserWire(read.origin, read.token));
+		const client = new Plane(wireTo(read));
 		try {
 			await client.connect();
 			client.close();
@@ -282,7 +282,12 @@ function Rest({
 			setWhy(`${(error as Error).message} — is it running, and does it answer at ${read.origin}?`);
 			return;
 		}
-		const made: Connection = { name: nameFor(read.origin), origin: read.origin, token: read.token };
+		const made: Connection = {
+			name: nameFor(read.origin),
+			origin: read.origin,
+			token: read.token,
+			...(read.relay === undefined ? {} : { relay: read.relay }),
+		};
 		onAdded(made, remember(made));
 	};
 

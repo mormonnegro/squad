@@ -20,6 +20,14 @@ export interface Connection {
 	readonly origin: string;
 	/** What opens it, when it is not the plane that served this page. */
 	readonly token?: string;
+	/**
+	 * The rendezvous to reach it through, for a plane that is not reachable directly.
+	 *
+	 * Set, and `origin` is not an address anybody dials — the plane is behind a NAT or a loopback and
+	 * both ends meet at this instead. Unset, and this is a plane the browser can open a connection to,
+	 * which is the case for everything on this machine and everything behind a forwarded port.
+	 */
+	readonly relay?: string;
 }
 
 const KEY = "squad.planes";
@@ -97,7 +105,13 @@ const MARK = "squad_";
  * it is the same two facts, in a shape that survives a chat window without being turned into a link.
  */
 export function makeCode(one: Connection): string {
-	const body = btoa(JSON.stringify({ o: one.origin, t: one.token ?? "" }))
+	const body = btoa(
+		JSON.stringify({
+			o: one.origin,
+			t: one.token ?? "",
+			...(one.relay === undefined ? {} : { r: one.relay }),
+		}),
+	)
 		.replaceAll("+", "-")
 		.replaceAll("/", "_")
 		.replaceAll("=", "");
@@ -111,7 +125,9 @@ export function makeCode(one: Connection): string {
  * code, and refusing whichever one somebody has in their clipboard is refusing them for being
  * right in the other way.
  */
-export function readAddress(typed: string): { origin: string; token: string } | string {
+export function readAddress(
+	typed: string,
+): { origin: string; token: string; relay?: string } | string {
 	const text = typed.trim();
 	if (text.length === 0) return "Paste the code, or the address the installer printed.";
 
@@ -119,11 +135,15 @@ export function readAddress(typed: string): { origin: string; token: string } | 
 		try {
 			const body = text.slice(MARK.length).replaceAll("-", "+").replaceAll("_", "/");
 			const read: unknown = JSON.parse(atob(body));
-			const { o, t } = read as Record<string, unknown>;
+			const { o, t, r } = read as Record<string, unknown>;
 			if (typeof o !== "string" || typeof t !== "string" || o.length === 0 || t.length === 0) {
 				return "That code is missing something. Ask for it again.";
 			}
-			return { origin: new URL(o).origin, token: t };
+			// A relayed code names the rendezvous, and its origin is what the plane calls itself rather
+			// than somewhere to dial. Kept apart for that reason: one of them is an address and the
+			// other is a name, and treating the name as an address is a connection to nowhere.
+			const relay = typeof r === "string" && r.length > 0 ? { relay: new URL(r).origin } : {};
+			return { origin: new URL(o).origin, token: t, ...relay };
 		} catch {
 			return "That code did not read. It may have been cut short on the way here.";
 		}

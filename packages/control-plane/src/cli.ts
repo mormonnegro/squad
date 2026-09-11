@@ -15,6 +15,7 @@ import { runningPlanes } from "./control-relay.ts";
 import { ControlServer, controlSocketPath } from "./control-server.ts";
 import { LogFeed } from "./feed.ts";
 import { MarkdownStream } from "./markdown.ts";
+import { relayOut } from "./relay-out.ts";
 import { WEB_PORT, WebServer, webTokenPath } from "./web-server.ts";
 
 const DEFAULT_STATE_DIR = "/var/lib/squad";
@@ -167,6 +168,16 @@ async function run(path: string): Promise<number> {
 		(error: Error) => process.stdout.write(`no web console: ${error.message}\n`),
 	);
 
+	// Opened after the console's own door and for the same surface: a console reached through a relay
+	// is a console, and nothing it may do differs from one on this machine. Off unless the operator
+	// turned it on, because a plane that phoned somewhere by default would be a plane whose operator
+	// did not choose the one thing this design is about.
+	const relayAt = process.env.SQUAD_RELAY ?? "";
+	const stopRelay =
+		relayAt.length === 0
+			? undefined
+			: relayOut(plane.stateDir, relayAt, (line) => process.stdout.write(`${line}\n`));
+
 	await plane.start();
 	// Counted after starting, not from the config: the agents made from the CLI in an earlier life
 	// are not in that file, and a plane that reports fewer agents than it runs is worse than silence.
@@ -181,6 +192,7 @@ async function run(path: string): Promise<number> {
 		process.once("SIGTERM", shutdown);
 	});
 
+	stopRelay?.();
 	await web.close();
 	await server.close();
 	await plane.stop();

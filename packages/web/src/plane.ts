@@ -1,4 +1,5 @@
 import type { AgentSummary, PlaneEvent, ProviderStanding, Utterance } from "@squad/control-plane";
+import { link } from "@squad/relay";
 
 /**
  * A response to something asked, or an event nobody asked for.
@@ -251,6 +252,48 @@ export class Plane {
  * this is the one transport where the browser has already written it. What it cannot do is carry the
  * session id, which is why that arrives as the stream's first event rather than in a header.
  */
+/**
+ * The wire for a plane that cannot be dialled, which meets this page at a rendezvous instead.
+ *
+ * The same shape as the one above and, from the `Plane` upwards, indistinguishable from it: lines
+ * go down and come back, and nothing that reads them knows which road they took. That is the whole
+ * design — `squad relay` has always been a pipe with the protocol in it, and this is that pipe with
+ * both ends dialling outwards so that neither has to be reachable.
+ *
+ * What crosses the relay is sealed with a key derived from the token, which the relay is never
+ * given. It is handed a room number instead, derived from the same token one way, so pairing two
+ * sockets is all it can do with it.
+ */
+export function wireTo(one: {
+	origin: string;
+	token?: string | undefined;
+	relay?: string | undefined;
+}): Wire {
+	// Decided once, here, because everything above a `Wire` is written not to care: a connection is
+	// lines out and lines back, and a screen that asked which road they took would be a screen with
+	// two of everything on it.
+	return one.relay === undefined || one.token === undefined
+		? browserWire(one.origin, one.token)
+		: relayWire(one.relay, one.token);
+}
+
+export function relayWire(relayOrigin: string, token: string): Wire {
+	return {
+		open(onLine, onDown) {
+			return link({
+				origin: relayOrigin,
+				secret: token,
+				side: "console",
+				onLine,
+				onDown,
+			}).then((opened) => ({
+				post: (line: string) => opened.send(line),
+				close: () => opened.close(),
+			}));
+		},
+	};
+}
+
 export function browserWire(origin = "", token?: string): Wire {
 	// In the address of the stream because an `EventSource` can carry it nowhere else — it has no
 	// header API, and a cookie set by another origin is not ours to have. The wire is a `fetch` and

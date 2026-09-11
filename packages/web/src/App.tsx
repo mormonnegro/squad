@@ -5,7 +5,7 @@ import { type Connection, HERE, keyOf, readConnections, SERVED_BY_A_PLANE } from
 import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
-import { browserWire, Plane } from "./plane.ts";
+import { Plane, wireTo } from "./plane.ts";
 import { When } from "./When.tsx";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
@@ -54,7 +54,7 @@ export function App() {
 		if (!SERVED_BY_A_PLANE && at.origin === "") return;
 
 		let alive = true;
-		const client = new Plane(browserWire(at.origin, at.token));
+		const client = new Plane(wireTo(at));
 		client.onDown((why) => alive && setDown(why.message));
 
 		void (async () => {

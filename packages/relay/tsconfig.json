@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		// WebCrypto's own types, which live in the DOM lib and are the same shapes Node exposes
+		// globally. The seal is written against that one interface on purpose — it is what a browser
+		// tab and a Node process both already have — so the types have to come from where it is
+		// described rather than from a second declaration of the same thing.
+		"lib": ["ES2023", "DOM"]
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}

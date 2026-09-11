@@ -31,6 +31,7 @@
 		"@squad/channels": "workspace:*",
 		"@squad/events": "workspace:*",
 		"@squad/proxy": "workspace:*",
+		"@squad/relay": "workspace:*",
 		"@squad/sandbox": "workspace:*",
 		"@squad/scheduler": "workspace:*",
 		"ink": "^7.1.1",

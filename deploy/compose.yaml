@@ -38,6 +38,10 @@ services:
       # Which image an agent runs inside. Here rather than in .env alone so that a plane started by
       # hand, with no installer in the room, still agrees with the one the installer started.
       SQUAD_SANDBOX_IMAGE: ${SQUAD_SANDBOX_IMAGE:-squad/sandbox:dev}
+      # A rendezvous to dial out to, when the operator asked for one. Empty is the answer for every
+      # plane that has not: nothing is opened either way, but a connection nobody asked for is one
+      # nobody chose.
+      SQUAD_RELAY: ${SQUAD_RELAY:-}
     ports:
       # Published on the same number on both sides on purpose. These ports are written into things
       # the plane hands out — a redirect URI, the address `squad web` prints — so a container port

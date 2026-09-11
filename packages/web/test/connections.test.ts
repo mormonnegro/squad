@@ -64,3 +64,29 @@ describe("what to call it before anybody names it", () => {
 		expect(nameFor("https://plane.example.com")).toBe("plane.example.com");
 	});
 });
+
+describe("a relayed environment", () => {
+	it("round-trips through a code, keeping the rendezvous apart from the name", () => {
+		const one = {
+			name: "vps",
+			origin: "http://127.0.0.1:8789",
+			token: "abc",
+			relay: "https://relay.example.com",
+		};
+		const read = readAddress(makeCode(one));
+		expect(read).toEqual({
+			origin: "http://127.0.0.1:8789",
+			token: "abc",
+			relay: "https://relay.example.com",
+		});
+	});
+
+	// The two kinds have to stay distinguishable, because one of them is an address to dial and the
+	// other is only what a plane calls itself.
+	it("is not what a plain code reads as", () => {
+		const read = readAddress(
+			makeCode({ name: "here", origin: "http://127.0.0.1:8789", token: "x" }),
+		);
+		expect(read).not.toHaveProperty("relay");
+	});
+});

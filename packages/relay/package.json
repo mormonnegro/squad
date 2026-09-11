@@ -1,0 +1,24 @@
+{
+	"name": "@squad/relay",
+	"version": "0.0.0",
+	"type": "module",
+	"license": "MIT",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./seal": "./src/seal.ts"
+	},
+	"engines": {
+		"node": ">=22.18"
+	},
+	"files": [
+		"src"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json"
+	}
+}

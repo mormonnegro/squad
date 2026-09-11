@@ -39,6 +39,8 @@ set -eu
 ARG_NAME=
 ARG_DOMAIN=
 ARG_DOMAIN_GIVEN=
+ARG_RELAY=
+ARG_RELAY_GIVEN=
 ARG_VERBOSE=
 ARG_BUILD=
 for arg in "$@"; do
@@ -48,6 +50,10 @@ for arg in "$@"; do
 	--domain=*)
 		ARG_DOMAIN=${arg#--domain=}
 		ARG_DOMAIN_GIVEN=1
+		;;
+	--relay=*)
+		ARG_RELAY=${arg#--relay=}
+		ARG_RELAY_GIVEN=1
 		;;
 	--build) ARG_BUILD=yes ;;
 	*) ;;
@@ -118,6 +124,21 @@ SANDBOX_IMAGE=${SQUAD_SANDBOX_IMAGE:-$REGISTRY/squad-sandbox:$VERSION}
 # can be had — a registry that is down or a tag that does not exist yet is a reason to fall back, not
 # a reason to stop.
 BUILD=${ARG_BUILD:-${SQUAD_BUILD:-}}
+# A rendezvous this plane meets a console at, if the operator wants one.
+#
+# The third way in, for a machine with neither a forwarded port nor a domain: the plane dials out and
+# stays there, so nothing is published and a NAT is not in the way. What crosses it is sealed with a
+# key derived from this plane's token, and the relay is handed only a room number derived one way
+# from the same token — so it pairs two sockets and can read neither. Off unless asked for, because
+# a plane that phoned somewhere by default would be one whose operator did not choose it.
+if [ -n "$ARG_RELAY_GIVEN" ]; then
+	RELAY=$ARG_RELAY
+	RELAY_GIVEN=1
+else
+	RELAY=${SQUAD_RELAY:-}
+	RELAY_GIVEN=${SQUAD_RELAY+1}
+fi
+
 # The name this plane answers to on the internet, if it has one. With it, the console is reached at
 # https://that/ and nothing has to be forwarded; without it, the web port stays on this machine's
 # loopback and the way in is an SSH forward. It is the whole difference between the two, and it is
@@ -490,6 +511,12 @@ set_env() {
 	rm -f "$scratch"
 }
 
+if [ -n "$RELAY_GIVEN" ]; then
+	set_env SQUAD_RELAY "$RELAY"
+else
+	RELAY=$($SUDO sed -n 's/^SQUAD_RELAY=//p' .env 2>/dev/null | head -1)
+fi
+
 if [ -n "$DOMAIN_GIVEN" ]; then
 	set_env SQUAD_DOMAIN "$DOMAIN"
 	[ -n "$DOMAIN" ] || note "the domain is given back — this plane goes back to loopback only"
@@ -506,6 +533,7 @@ fi
 set_env SQUAD_IMAGE "$IMAGE"
 set_env SQUAD_SANDBOX_IMAGE "$SANDBOX_IMAGE"
 ensure_env SQUAD_DOMAIN "$DOMAIN"
+ensure_env SQUAD_RELAY "$RELAY"
 
 # The proxy is a service under a profile, so a machine with no domain never starts it and never
 # takes port 80 waiting for a certificate that is not coming.
@@ -523,7 +551,7 @@ fi
 BUILD_TOO=
 [ -z "$BUILD" ] || BUILD_TOO=--build
 quietly $DOCKER env SQUAD_STATE="$STATE" SQUAD_IMAGE="$IMAGE" \
-	SQUAD_SANDBOX_IMAGE="$SANDBOX_IMAGE" SQUAD_DOMAIN="$DOMAIN" \
+	SQUAD_SANDBOX_IMAGE="$SANDBOX_IMAGE" SQUAD_DOMAIN="$DOMAIN" SQUAD_RELAY="$RELAY" \
 	docker compose $PROFILE up -d $BUILD_TOO ||
 	die "The control plane would not start."
 
@@ -605,7 +633,24 @@ done
 
 if [ -f "$STATE/web.token" ]; then
 	TOKEN=$($SUDO cat "$STATE/web.token" | tr -d ' \n\r')
-	if [ -n "$DOMAIN" ]; then
+	if [ -n "$RELAY" ]; then
+		# The same code the console's own picker hands out, built here because here is where both
+		# halves of it are: the rendezvous this plane dials, and the token that opens it. The relay is
+		# never given the token, and this string never goes near the relay.
+		CODE="squad_$(printf '{"o":"http://127.0.0.1:%s","t":"%s","r":"%s"}' "$WEB_PORT" "$TOKEN" "$RELAY" |
+			base64 | tr -d '\n' | tr '+/' '-_' | tr -d '=')"
+		note "Paste this into $CONSOLE_AT:"
+		note ""
+		note "     $CODE"
+		note ""
+		note "Nothing is published here and nothing has to be forwarded: this plane dials out to"
+		note "$RELAY and meets a console there. What crosses it is sealed with a key"
+		note "derived from the token above, which the relay is never given — it is handed a room"
+		note "number instead, and pairing two sockets is all it can do with one."
+		note ""
+		note "That code is the key. Whoever holds it drives these agents, so it is pasted and not"
+		note "posted."
+	elif [ -n "$DOMAIN" ]; then
 		# Nothing to forward and nothing to paste anywhere else: the plane is at a name, the name has
 		# a certificate, and the address below is the whole of it. This is what a domain buys.
 		note "Open this:"
