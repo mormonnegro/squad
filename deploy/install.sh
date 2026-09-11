@@ -204,6 +204,9 @@ step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() {
 	if [ -z "$*" ]; then printf '\n'; else printf '  %s\n' "$*"; fi
 }
+# For the one thing an install can find that is wrong and still finish. Red, because everything
+# above it said something worked and this says the next thing will not.
+warn() { printf '  \033[31m%s\033[0m\n' "$*"; }
 # Dimmed as well as optional: where it does print, it is the background to the line above it and not
 # a thing to be read in its own right.
 aside() {
@@ -233,6 +236,21 @@ ask_line() {
 	have_tty || return 0
 	printf '  %s' "$1" >/dev/tty
 	read -r TYPED </dev/tty || TYPED=
+}
+
+# Where a name actually points, asked of whatever this machine has to ask with.
+#
+# Three tools because there is not one a server is guaranteed to have: getent comes with glibc, dig
+# and host come with packages somebody chose to install, and a machine with none of them gets no
+# answer rather than a wrong one.
+resolves_to() {
+	if command -v getent >/dev/null 2>&1; then
+		getent ahostsv4 "$1" 2>/dev/null | awk '{print $1}' | sort -u
+	elif command -v dig >/dev/null 2>&1; then
+		dig +short A "$1" 2>/dev/null | grep -E '^[0-9]+\.'
+	elif command -v host >/dev/null 2>&1; then
+		host -t A "$1" 2>/dev/null | awk '/has address/ {print $NF}'
+	fi
 }
 
 # Tried, rather than required. `quietly` prints what went wrong, which is right when nothing else
@@ -743,9 +761,29 @@ if [ -f "$STATE/web.token" ]; then
 		note ""
 		note "     https://$DOMAIN/?t=$TOKEN"
 		note ""
-		note "The certificate is obtained on the first request, so give it a few seconds. Point"
-		note "$DOMAIN at this machine first if you have not — without that there is nothing for"
-		note "Let's Encrypt to check."
+		# Checked rather than hoped for, because the way this fails is a page that blames the wrong
+		# machine. A name behind a proxy answers on somebody else's address, so the challenge for the
+		# certificate is sent there and never arrives here — and what the operator is shown is an
+		# error naming this host, which is the one part that is working.
+		POINTS=$(resolves_to "$DOMAIN" | tr '\n' ' ' | sed 's/ *$//')
+		if [ -z "$POINTS" ]; then
+			note "Nothing here could look $DOMAIN up, so this is unchecked. If it does not open, make"
+			note "sure that name resolves to $ADDR."
+		elif printf '%s' " $POINTS " | grep -q " $ADDR "; then
+			note "$DOMAIN points here, so the certificate is obtained on the first request — give it"
+			note "a few seconds."
+		else
+			warn "But $DOMAIN does not point at this machine. It resolves to:"
+			note ""
+			note "  $POINTS"
+			note ""
+			note "and this machine is $ADDR. Let's Encrypt sends its challenge to that address, so it"
+			note "never arrives here and no certificate is issued. A browser then shows an error"
+			note "naming this host, which is the one part that is working."
+			note ""
+			note "On Cloudflare that is the orange cloud: set the record to DNS only and it works"
+			note "within the minute. Anywhere else it is a record pointing somewhere else."
+		fi
 		note ""
 		note "That address is the key. Whoever holds it drives these agents, so it is pasted and"
 		note "not posted."
