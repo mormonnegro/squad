@@ -56,6 +56,10 @@ export function App() {
 		let alive = true;
 		const client = new Plane(wireTo(at));
 		client.onDown((why) => alive && setDown(why.message));
+		// The transport repairs itself, so a gap has two ends and the screen has to hear both. Without
+		// this the banner said the plane was gone for as long as the page stayed open, over a console
+		// that had been answering again since a second after it appeared.
+		client.onUp(() => alive && setDown(undefined));
 
 		void (async () => {
 			try {
@@ -302,7 +306,11 @@ export function App() {
 						setPlanes(all);
 						goTo(made);
 					}}
-					onClose={planes.length > 1 ? () => setShowing("none") : undefined}
+					// Always, because this one was opened on purpose from the picker. A screen somebody
+					// asked for is a screen they can change their mind about, however many environments
+					// they have — the only dialog here with no way out is the first question, and only
+					// while there is genuinely nothing behind it.
+					onClose={() => setShowing("none")}
 				/>
 			)}
 			{showing === "keys" && plane !== undefined && (
@@ -331,8 +339,14 @@ export function App() {
 			    question, and it is the whole of what this page can usefully show. Two ways to be in
 			    that state — a plane that served this page and has stopped answering, and a hosted copy
 			    that has never been given an environment, which is not a failure and has no error to
-			    wait for. */}
+			    wait for.
+
+			    `plane === undefined` is load-bearing and was missing. A connection that dropped once
+			    sets `down` and leaves the client in place, so this was raising a modal with no way out
+			    over a working console, with the agents visible behind it. A screen that has a plane has
+			    nothing to ask. */}
 			{showing === "none" &&
+				plane === undefined &&
 				(planes.length === 0 || (down !== undefined && planes.length <= 1)) && (
 					<AddEnvironment
 						first
@@ -340,6 +354,11 @@ export function App() {
 							setPlanes(all);
 							goTo(made);
 						}}
+						// A way out as soon as there is anywhere to go. With an environment in the list
+						// there is a picker behind this and another machine to try; with none there is
+						// nothing this page can do but ask, and a dismissable dialog over an empty screen
+						// is a dead end with a close button on it.
+						onClose={planes.length > 0 ? () => setShowing("none") : undefined}
 					/>
 				)}
 		</div>

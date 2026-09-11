@@ -42,7 +42,19 @@ export class PlaneError extends Error {}
 
 /** The connection under the client: how a line goes out, and how the lines coming back arrive. */
 export interface Wire {
-	open(onLine: (line: string) => void, onDown: (why: Error) => void): Promise<Session>;
+	open(
+		onLine: (line: string) => void,
+		onDown: (why: Error) => void,
+		/**
+		 * The connection is carrying again, after having stopped.
+		 *
+		 * Needed because the transport underneath repairs itself and nothing above it could tell. An
+		 * `EventSource` reconnects on its own, so what a dropped connection actually is here is a gap
+		 * — and a screen told only about the start of a gap says the plane is down for as long as it
+		 * is left open, over a console that has been working again for an hour.
+		 */
+		onUp?: () => void,
+	): Promise<Session>;
 }
 
 export interface Session {
@@ -65,9 +77,15 @@ export class Plane {
 	#session: Session | undefined;
 	#next = 1;
 	#down: ((why: Error) => void) | undefined;
+	#up: (() => void) | undefined;
 
 	constructor(wire: Wire) {
 		this.#wire = wire;
+	}
+
+	/** Told when the connection comes back, so a screen that said it was gone can stop saying it. */
+	onUp(handler: () => void): void {
+		this.#up = handler;
 	}
 
 	/** Told when the connection goes, so the screen can say so rather than quietly stop moving. */
@@ -88,6 +106,7 @@ export class Plane {
 				this.#session = undefined;
 				this.#down?.(why);
 			},
+			() => this.#up?.(),
 		);
 	}
 
@@ -300,13 +319,22 @@ export function browserWire(origin = "", token?: string): Wire {
 	// takes it in a header, where an address cannot be copied out of a history.
 	const carried = token === undefined ? "" : `?t=${encodeURIComponent(token)}`;
 	return {
-		open(onLine, onDown) {
+		open(onLine, onDown, onUp) {
 			return new Promise<Session>((settle, fail) => {
 				const source = new EventSource(`${origin}/events${carried}`);
 				let session: string | undefined;
 
 				source.addEventListener("session", (event) => {
+					// A session arriving when one is already held is the browser having reconnected the
+					// stream by itself. The plane is a fresh connection at the far end, so the id has to
+					// be taken — and the screen has to be told, because the only thing it heard about
+					// this was that it had gone.
+					const again = session !== undefined;
 					session = (event as MessageEvent<string>).data;
+					if (again) {
+						onUp?.();
+						return;
+					}
 					settle({
 						async post(line) {
 							const response = await fetch(`${origin}/rpc`, {

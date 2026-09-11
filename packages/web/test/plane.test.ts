@@ -7,10 +7,16 @@ class FakeWire implements Wire {
 	sent: string[] = [];
 	#say: ((line: string) => void) | undefined;
 	#down: ((why: Error) => void) | undefined;
+	#up: (() => void) | undefined;
 
-	async open(onLine: (line: string) => void, onDown: (why: Error) => void): Promise<Session> {
+	async open(
+		onLine: (line: string) => void,
+		onDown: (why: Error) => void,
+		onUp?: () => void,
+	): Promise<Session> {
 		this.#say = onLine;
 		this.#down = onDown;
+		this.#up = onUp;
 		return {
 			post: async (line) => {
 				this.sent.push(line);
@@ -26,6 +32,11 @@ class FakeWire implements Wire {
 
 	drop(why = "gone"): void {
 		this.#down?.(new Error(why));
+	}
+
+	/** What an EventSource does on its own a moment after it dropped. */
+	back(): void {
+		this.#up?.();
 	}
 
 	/** The id the client put on the nth thing it asked. */
@@ -169,5 +180,25 @@ describe("keys", () => {
 		expect((JSON.parse(wire.sent[0] ?? "{}") as { value?: string }).value).toBe("");
 		wire.answer({ id: wire.idOf(0), ok: true, text: "OPENAI_API_KEY" });
 		await setting;
+	});
+});
+
+describe("a gap in the connection", () => {
+	// The bug: the transport reconnects by itself and nothing above it could tell, so a screen told
+	// only about the start of a gap said the plane was gone for as long as the page stayed open —
+	// over a console that had been answering again since a second later.
+	it("says when it comes back, not only when it goes", async () => {
+		const wire = new FakeWire();
+		const client = new Plane(wire);
+		const heard: string[] = [];
+		client.onDown((why) => heard.push(`down: ${why.message}`));
+		client.onUp(() => heard.push("up"));
+		await client.connect();
+
+		wire.drop("the plane went");
+		expect(heard).toEqual(["down: the plane went"]);
+
+		wire.back();
+		expect(heard).toEqual(["down: the plane went", "up"]);
 	});
 });
