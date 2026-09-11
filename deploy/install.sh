@@ -442,6 +442,10 @@ $DOCKER docker ps --filter "label=com.docker.compose.project=$NAME" \
 # machine's own idea of itself where there is not. Worked out here because the first line that needs
 # it is the ssh below: it used to be derived further down, after that line had already been printed
 # with an empty host, which is the one line on a server nobody can supply for themselves.
+# A port to suggest when theirs is taken, which is the common case for anyone running a second
+# plane: the first one already holds this number on their side of the tunnel. Ten thousand up rather
+# than one digit prepended, which would go past 65535 and be no port at all.
+ALT_PORT=$((WEB_PORT + 10000))
 ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
 [ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
 [ -n "$ADDR" ] || ADDR=$(hostname 2>/dev/null || echo your-vps)
@@ -461,9 +465,16 @@ if [ -f "$STATE/web.token" ]; then
 		# Numbered, because they are done in order and the order is the whole instruction. What sent
 		# somebody looking for a missing piece was a paragraph holding two commands and an address
 		# that is only true after one of them has been run.
-		note "1  from your own computer, forward the port:"
+		# "Not on this one" out loud, because this is printed in a terminal on the server and the
+		# thing in front of somebody reading it is a prompt on the server. The first person to meet
+		# this pasted it where they were standing and got `Address already in use`, which is exactly
+		# right — that port is taken here by the plane — and reads as the install being broken.
+		note "1  on your own computer — not on this one — forward the port:"
 		note ""
 		note "     ssh -N -L $WEB_PORT:127.0.0.1:$WEB_PORT $(id -un)@$ADDR"
+		note ""
+		note "   Any free port on your side does: -L $ALT_PORT:127.0.0.1:$WEB_PORT if $WEB_PORT is"
+		note "   taken there, and then say $ALT_PORT in the address below instead."
 		note ""
 		note "2  open $CONSOLE_AT and paste this:"
 		note ""
