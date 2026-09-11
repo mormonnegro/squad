@@ -75,10 +75,9 @@ BRANCH=${SQUAD_BRANCH:-main}
 # already the client that ran this, and a shim written over it would take the console away from the
 # thing that opened it.
 SHIM=${SQUAD_SHIM:-yes}
-# Whether there is anyone to ask. Piped into a VPS there is no terminal and this is already no; on
-# the laptop the terminal is right there, and it belongs to the client that started this. That
-# client has a setup screen for the keys, so it says no here — three secrets in the first minute is
-# a worse first minute than an empty setup screen in the second one.
+# Whether there is anyone to ask. Piped into a VPS there is no terminal and this is already no. What
+# is left behind it is one question — whether to install what is missing — because a machine with no
+# Docker cannot be told about it later, while everything else this needs can.
 ASK=${SQUAD_ASK:-yes}
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -98,19 +97,6 @@ quietly() {
 # Opened rather than tested for. A container has a /dev/tty that stats like any other device and
 # fails at open with ENXIO, so the readable ones and the usable ones are not the same set.
 have_tty() { [ "$ASK" = yes ] && (true >/dev/tty) 2>/dev/null; }
-
-# Asked on the terminal even when stdin is the script. Nothing is echoed back, because the two
-# things this ever asks for are API keys and a VPS scrolls its terminal into a log somewhere.
-ANSWER=
-ask_secret() {
-	ANSWER=
-	have_tty || return 0
-	printf '  %s' "$1" >/dev/tty
-	stty -echo </dev/tty 2>/dev/null || true
-	read -r ANSWER </dev/tty || ANSWER=
-	stty echo </dev/tty 2>/dev/null || true
-	printf '\n' >/dev/tty
-}
 
 # Default yes, and yes when there is no terminal to ask: the questions guarded by this one are
 # about installing what the thing needs to run at all.
@@ -201,36 +187,19 @@ else
 fi
 note "$($SUDO git -C "$DIR" log -1 --format='%h  %s')"
 
-# Asked before anything is built, because the build takes minutes and coming back to a question is
-# how an install ends up half-done overnight.
+# Written without asking anything, because nothing in it is this install's question. The ports come
+# from the name, the secret is generated, and the keys belong to the console: a plane can be handed
+# one while it runs, so stopping the install for three secrets buys nothing and costs the install.
+# An empty key here is not a missing key, it is a key that has not been typed yet, and the screen
+# that takes it is the first one the operator sees.
 if [ ! -f "$DIR/deploy/.env" ]; then
-	step "The keys the proxy will hold"
-	note "They go in $DIR/deploy/.env, which only root can read, and the agents never see them:"
-	note "a request leaves a sandbox with no credential and is given one on its way out."
-	note "Every one of these can be skipped and given later on the setup screen in \`agent\`."
-	printf '\n'
+	step "What the plane starts with"
+	note "It goes in $DIR/deploy/.env, which only root can read."
 
-	if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
-		note "A DeepSeek key is what the agents think with. Without one everything still runs,"
-		note "and turns fail at the model until a key is given."
-		ask_secret "DeepSeek API key (enter to skip): "
-		DEEPSEEK_API_KEY=$ANSWER
-	fi
-	if [ -z "${OPENAI_API_KEY:-}" ]; then
-		printf '\n'
-		note "An OpenAI key is how an agent searches the web, and what the gpt-5 model costs against."
-		note "Optional: without it the search tool says so when it is used, which beats an agent"
-		note "inventing the answer."
-		ask_secret "OpenAI API key (enter to skip): "
-		OPENAI_API_KEY=$ANSWER
-	fi
-	if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-		printf '\n'
-		note "An Anthropic key is the other model the config starts with. Optional in the same way:"
-		note "\`/model sonnet\` is refused at the proxy until this plane holds one."
-		ask_secret "Anthropic API key (enter to skip): "
-		ANTHROPIC_API_KEY=$ANSWER
-	fi
+	# Read from the environment when the environment has them, so `DEEPSEEK_API_KEY=… sh install.sh`
+	# still works and a machine that exports its keys installs with them already in place. Never
+	# prompted for: layered underneath whatever the console is later given, which wins because it is
+	# the more recent answer to the same question.
 
 	# Generated rather than asked. It is not an account anywhere — it is the shared secret a sender
 	# signs webhooks with, and one nobody chose is one nobody reused.
@@ -452,7 +421,7 @@ fi
 
 step "Where things are"
 note "$DIR/deploy/config.yaml   what each agent may reach"
-note "$DIR/deploy/.env          the keys, root-readable only"
+note "$DIR/deploy/.env          what the plane starts with, root-readable only"
 note "$STATE   the state, and the socket the console speaks over"
 printf '\n'
 note "The config is read when the plane starts, so an edit takes hold on:"
