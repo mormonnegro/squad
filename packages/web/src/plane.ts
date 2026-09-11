@@ -1,5 +1,5 @@
 import type { AgentSummary, PlaneEvent, ProviderStanding, Utterance } from "@squad/control-plane";
-import { link } from "@squad/relay";
+import { link } from "@squad/relay/link";
 
 /**
  * A response to something asked, or an event nobody asked for.

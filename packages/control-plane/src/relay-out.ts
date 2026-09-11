@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import { link } from "@squad/relay";
+import { link } from "@squad/relay/link";
 import { dialLocal } from "./control-client.ts";
 
 /**
