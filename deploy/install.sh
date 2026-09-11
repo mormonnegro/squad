@@ -98,6 +98,10 @@ BUILD=${SQUAD_BUILD:-}
 # loopback and the way in is an SSH forward. It is the whole difference between the two, and it is
 # one flag.
 DOMAIN=${SQUAD_DOMAIN:-}
+# Whether this run was told, as opposed to what it was told. The two differ in exactly the case that
+# matters: `--domain=` with nothing after it is how a plane gives its name back and goes to being
+# reached over a forwarded port, and an empty value that means "not mentioned" cannot express that.
+DOMAIN_GIVEN=${SQUAD_DOMAIN+1}
 # Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
 # already the client that ran this, and a shim written over it would take the console away from the
@@ -122,7 +126,10 @@ VERBOSE=${SQUAD_VERBOSE:-}
 for arg in "$@"; do
 	case "$arg" in
 	-v | --verbose) VERBOSE=1 ;;
-	--domain=*) DOMAIN=${arg#--domain=} ;;
+	--domain=*)
+		DOMAIN=${arg#--domain=}
+		DOMAIN_GIVEN=1
+		;;
 	--build) BUILD=yes ;;
 	*) ;;
 	esac
@@ -464,8 +471,9 @@ set_env() {
 	rm -f "$scratch"
 }
 
-if [ -n "$DOMAIN" ]; then
+if [ -n "$DOMAIN_GIVEN" ]; then
 	set_env SQUAD_DOMAIN "$DOMAIN"
+	[ -n "$DOMAIN" ] || note "the domain is given back — this plane goes back to loopback only"
 else
 	# Not told one, so the answer is whatever this install already had. A re-run that forgot the flag
 	# must not quietly take the certificate away and start printing an SSH forward instead.
@@ -480,7 +488,14 @@ ensure_env SQUAD_DOMAIN "$DOMAIN"
 # The proxy is a service under a profile, so a machine with no domain never starts it and never
 # takes port 80 waiting for a certificate that is not coming.
 PROFILE=
-[ -z "$DOMAIN" ] || PROFILE="--profile tls"
+if [ -n "$DOMAIN" ]; then
+	PROFILE="--profile tls"
+else
+	# `up` only starts what its profiles name, and leaves everything else exactly as it found it — so
+	# without this a proxy started last week keeps holding 80 and 443 forever, on a plane whose
+	# certificate is gone.
+	silently $DOCKER docker compose --profile tls rm -sf caddy
+fi
 # Exported as well as written into .env, because an .env from an older install has no line for it
 # and the mount it would fall back to is not the one this run just made.
 BUILD_TOO=
