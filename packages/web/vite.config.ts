@@ -34,6 +34,11 @@ const carried = held === undefined ? {} : { headers: { cookie: `squad_web=${held
 
 export default defineConfig({
 	plugins: [react(), tailwind()],
+	// Relative, because this bundle is served from two places that disagree about where the root is:
+	// the plane serves it at /, and a website serves it under a path. Absolute asset addresses work
+	// in the first and 404 in the second, and they fail as a blank page with a clean console, which
+	// is the worst way for a deploy to be wrong.
+	base: "./",
 	build: {
 		// Served by the plane out of its own directory, so the addresses in the HTML are its own.
 		outDir: "dist",

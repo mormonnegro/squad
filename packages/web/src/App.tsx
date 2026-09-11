@@ -1,7 +1,7 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./Chat.tsx";
-import { type Connection, HERE, keyOf, readConnections } from "./connections.ts";
+import { type Connection, HERE, keyOf, readConnections, SERVED_BY_A_PLANE } from "./connections.ts";
 import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
@@ -47,6 +47,12 @@ export function App() {
 	const held = useRef<Plane | undefined>(undefined);
 
 	useEffect(() => {
+		// A hosted copy has no plane at its own address, so before the first environment is added
+		// there is nothing here to knock on. Knocking anyway spends a request to be told something
+		// this build already knows, and answers the first screen somebody sees with an error about a
+		// connection they never asked for.
+		if (!SERVED_BY_A_PLANE && at.origin === "") return;
+
 		let alive = true;
 		const client = new Plane(browserWire(at.origin, at.token));
 		client.onDown((why) => alive && setDown(why.message));
@@ -322,16 +328,20 @@ export function App() {
 				/>
 			)}
 			{/* Nothing connected and nothing to fall back to: this is not an error, it is the first
-			    question, and it is the whole of what this page can usefully show. */}
-			{showing === "none" && down !== undefined && planes.length <= 1 && (
-				<AddEnvironment
-					first
-					onAdded={(made, all) => {
-						setPlanes(all);
-						goTo(made);
-					}}
-				/>
-			)}
+			    question, and it is the whole of what this page can usefully show. Two ways to be in
+			    that state — a plane that served this page and has stopped answering, and a hosted copy
+			    that has never been given an environment, which is not a failure and has no error to
+			    wait for. */}
+			{showing === "none" &&
+				(planes.length === 0 || (down !== undefined && planes.length <= 1)) && (
+					<AddEnvironment
+						first
+						onAdded={(made, all) => {
+							setPlanes(all);
+							goTo(made);
+						}}
+					/>
+				)}
 		</div>
 	);
 }

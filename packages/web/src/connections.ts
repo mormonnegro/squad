@@ -25,6 +25,19 @@ export interface Connection {
 const KEY = "squad.planes";
 
 /**
+ * Whether a plane is what is serving this page.
+ *
+ * The bundle is built twice and this is the whole of the difference. The copy inside the container
+ * is served by the thing it drives, so its own address is a plane and the first row of the picker.
+ * The copy on a website is served by a website: the same row there is a row that can never answer,
+ * offered on every open, named after a computer that has nothing to do with it.
+ *
+ * Decided when it is built rather than discovered when it opens, because this is the first row drawn
+ * and a row that has to be knocked on first is a picker that flickers every time it is opened.
+ */
+export const SERVED_BY_A_PLANE = import.meta.env.VITE_SQUAD_HOSTED !== "1";
+
+/**
  * The plane serving this page, if one is.
  *
  * Always offered and never stored: a browser whose storage was cleared should still find the plane
@@ -40,10 +53,15 @@ export function readConnections(): readonly Connection[] {
 	try {
 		const held: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
 		const kept = Array.isArray(held) ? held.filter(isConnection) : [];
-		return [HERE, ...kept.filter((one) => one.origin !== "")];
+		return [...own(), ...kept.filter((one) => one.origin !== "")];
 	} catch {
-		return [HERE];
+		return own();
 	}
+}
+
+/** The plane serving this page, as a list, because on a hosted copy there is not one. */
+function own(): readonly Connection[] {
+	return SERVED_BY_A_PLANE ? [HERE] : [];
 }
 
 function write(all: readonly Connection[]): void {
