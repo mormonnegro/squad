@@ -20,6 +20,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"typecheck": "tsc -p tsconfig.json"
+		"typecheck": "tsc -p tsconfig.json",
+		"start": "node --experimental-strip-types src/main.ts"
+	},
+	"bin": {
+		"squad-relay": "./src/main.ts"
 	}
 }

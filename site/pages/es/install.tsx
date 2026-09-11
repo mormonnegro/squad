@@ -13,6 +13,10 @@ const FLAGS: [string, string][] = [
 		"ponelo detrás de ese nombre, con un certificado que renueva solo",
 	],
 	["--domain=", "devolvé el nombre: se quita el proxy y el plano vuelve a estar en loopback"],
+	[
+		"--relay=https://relay.example.com",
+		"alcanzalo por un punto de encuentro: nada publicado, nada reenviado, sin dominio",
+	],
 	["--verbose", "cada ruta, cada archivo que escribió, y el build en vivo en lugar de guardado"],
 	[
 		"--build",
@@ -160,6 +164,23 @@ $ curl -fsSL ${INSTALL} | sh -s -- --domain=agents.example.com
 						El proxy es un profile de compose, así que una máquina a la que nunca le dieron un
 						dominio no lo arranca y nunca toma el puerto 80 esperando un certificado que no va a
 						llegar. La exposición del plano no cambia: lo que se publica es el proxy.
+					</p>
+					<p>
+						<strong>Y si no tiene ni dominio ni una terminal que quieras dejar abierta</strong>, el
+						plano puede discar para afuera: <code>--relay=https://relay.example.com</code> hace que
+						se encuentre con una consola en un punto de encuentro, que funciona detrás de un NAT
+						porque no se publica nada en ninguna de las dos puntas. Termina imprimiendo un código en
+						vez de una dirección, porque no hay dirección que dar.
+					</p>
+					<p className="small muted">
+						Lo que cruza un relay va sellado con una clave que las dos puntas derivan del token de
+						este plano. Al relay se le da un número de sala derivado en un solo sentido de ese mismo
+						token — suficiente para unir dos sockets y no para recuperar nada — así que lleva el
+						tráfico y no puede leerlo. Está apagado salvo que lo pidas, y{" "}
+						<a href={`${REPO}/tree/main/packages/relay`}>
+							el que corremos nosotros es el que está en el repositorio
+						</a>
+						, que es la única razón para creer algo de esto.
 					</p>
 					<Code label="o reenvialo por el SSH que ya tenés" wrap>{`
 $ ssh -N -L 18789:127.0.0.1:8789 vos@tu-servidor

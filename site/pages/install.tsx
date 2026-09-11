@@ -10,6 +10,10 @@ const FLAGS: [string, string][] = [
 	],
 	["--domain=agents.example.com", "put it behind that name, with a certificate it renews itself"],
 	["--domain=", "give the name back: the proxy is removed and the plane is on loopback again"],
+	[
+		"--relay=https://relay.example.com",
+		"reach it through a rendezvous instead: nothing published, nothing forwarded, no domain",
+	],
 	["--verbose", "every path, every file it wrote, and the build streamed rather than buffered"],
 	["--build", "build the images here instead of pulling them, which is what working on it needs"],
 ];
@@ -152,6 +156,23 @@ $ curl -fsSL ${INSTALL} | sh -s -- --domain=agents.example.com
 						The proxy is a compose profile, so a machine that was never given a domain does not run
 						it and never takes port 80 waiting for a certificate that is not coming. The plane's own
 						exposure does not change: what is published is the proxy.
+					</p>
+					<p>
+						<strong>And if it has neither a domain nor a terminal you want to keep open</strong>, a
+						plane can dial out instead: <code>--relay=https://relay.example.com</code> has it meet a
+						console at a rendezvous, which works from behind a NAT because nothing is published at
+						either end. It ends by printing a code rather than an address, since there is no address
+						to give.
+					</p>
+					<p className="small muted">
+						What crosses a relay is sealed with a key both ends derive from this plane's token. The
+						relay is handed a room number derived one way from that same token — enough to put two
+						sockets together and not enough to recover anything — so it carries the traffic and
+						cannot read it. It is off unless asked for, and{" "}
+						<a href={`${REPO}/tree/main/packages/relay`}>
+							the one we run is the one in the repository
+						</a>
+						, which is the only reason to believe any of that.
 					</p>
 					<Code label="or forward it over the SSH you already have" wrap>{`
 $ ssh -N -L 18789:127.0.0.1:8789 you@your-server
