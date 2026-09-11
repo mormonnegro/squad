@@ -178,6 +178,12 @@ note "Docker, Compose"
 
 if [ -d "$DIR/.git" ]; then
 	step "Updating $DIR"
+	# Pointed at $REPO first, because otherwise the two halves of this disagree: a fresh install
+	# comes from wherever SQUAD_REPO says, and an existing one came from wherever it was cloned from
+	# months ago. What that looked like was a re-run with SQUAD_REPO set that fetched the old place,
+	# reported the old commit, and left somebody reading the same output wondering what they had
+	# missed. Same value, both paths, so "where this comes from" is one answer.
+	$SUDO git -C "$DIR" remote set-url origin "$REPO"
 	$SUDO git -C "$DIR" fetch --quiet --depth 1 origin "$BRANCH"
 	$SUDO git -C "$DIR" reset --quiet --hard "origin/$BRANCH"
 else
