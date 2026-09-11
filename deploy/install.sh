@@ -29,13 +29,38 @@
 #
 set -eu
 
+# Read before anything else, because everything below is derived from these and a flag that arrives
+# after the ports have been worked out from the name is a flag that does nothing.
+#
+# Flags and not only variables because of how this is run. `SQUAD_NAME=casa curl … | sh` puts the
+# variable on curl and not on the shell that reads this, so the install quietly goes somewhere other
+# than where it was told — which is the kind of mistake that is invisible until there are two
+# deployments and one of them is the wrong one. A flag survives the pipe.
+ARG_NAME=
+ARG_DOMAIN=
+ARG_DOMAIN_GIVEN=
+ARG_VERBOSE=
+ARG_BUILD=
+for arg in "$@"; do
+	case "$arg" in
+	-v | --verbose) ARG_VERBOSE=1 ;;
+	--name=*) ARG_NAME=${arg#--name=} ;;
+	--domain=*)
+		ARG_DOMAIN=${arg#--domain=}
+		ARG_DOMAIN_GIVEN=1
+		;;
+	--build) ARG_BUILD=yes ;;
+	*) ;;
+	esac
+done
+
 # What this deployment is called, and the first word of everything it makes: the compose project, the
 # two networks, and every container and volume an agent gets. Two on one machine share nothing but
 # the Docker daemon.
 #
 # `squad` unless somebody says otherwise, which is what every install before this called them — so
 # running this again over an existing one renames nothing and takes nothing away.
-NAME=${SQUAD_NAME:-squad}
+NAME=${ARG_NAME:-${SQUAD_NAME:-squad}}
 
 # Everything a second one has to move off, derived from the name rather than asked for separately: a
 # person naming their second environment should not also have to pick three port numbers. The first
@@ -92,16 +117,21 @@ SANDBOX_IMAGE=${SQUAD_SANDBOX_IMAGE:-$REGISTRY/squad-sandbox:$VERSION}
 # Build anyway. For anyone working on the sources, and the automatic answer when no published image
 # can be had — a registry that is down or a tag that does not exist yet is a reason to fall back, not
 # a reason to stop.
-BUILD=${SQUAD_BUILD:-}
+BUILD=${ARG_BUILD:-${SQUAD_BUILD:-}}
 # The name this plane answers to on the internet, if it has one. With it, the console is reached at
 # https://that/ and nothing has to be forwarded; without it, the web port stays on this machine's
 # loopback and the way in is an SSH forward. It is the whole difference between the two, and it is
 # one flag.
-DOMAIN=${SQUAD_DOMAIN:-}
 # Whether this run was told, as opposed to what it was told. The two differ in exactly the case that
 # matters: `--domain=` with nothing after it is how a plane gives its name back and goes to being
 # reached over a forwarded port, and an empty value that means "not mentioned" cannot express that.
-DOMAIN_GIVEN=${SQUAD_DOMAIN+1}
+if [ -n "$ARG_DOMAIN_GIVEN" ]; then
+	DOMAIN=$ARG_DOMAIN
+	DOMAIN_GIVEN=1
+else
+	DOMAIN=${SQUAD_DOMAIN:-}
+	DOMAIN_GIVEN=${SQUAD_DOMAIN+1}
+fi
 # Whether to leave `squad` on this machine's PATH. On a server it is how the machine is driven, and
 # it is the door a console elsewhere comes through. On the computer the operator sits at, `squad` is
 # already the client that ran this, and a shim written over it would take the console away from the
@@ -122,18 +152,7 @@ ASK=${SQUAD_ASK:-yes}
 # what, why a path is that path, what the build did — competes with those two, and the result was
 # forty-five lines where the address you actually need sits somewhere in the middle. So it is one
 # flag away instead, and the flag is printed at the end where somebody who wants it will look.
-VERBOSE=${SQUAD_VERBOSE:-}
-for arg in "$@"; do
-	case "$arg" in
-	-v | --verbose) VERBOSE=1 ;;
-	--domain=*)
-		DOMAIN=${arg#--domain=}
-		DOMAIN_GIVEN=1
-		;;
-	--build) BUILD=yes ;;
-	*) ;;
-	esac
-done
+VERBOSE=${ARG_VERBOSE:-${SQUAD_VERBOSE:-}}
 # Written after the loop rather than inside it, because a domain is the only thing here that changes
 # what another variable means: a plane with a name of its own is reached at that name, so that name
 # is a console allowed to drive it.
@@ -481,8 +500,11 @@ else
 	[ -z "$DOMAIN" ] || CONSOLE_AT="https://$DOMAIN/"
 fi
 
-ensure_env SQUAD_IMAGE "$IMAGE"
-ensure_env SQUAD_SANDBOX_IMAGE "$SANDBOX_IMAGE"
+# Set rather than added, for the same reason the domain is: which image this plane runs is what this
+# install did, not an operator's edit to be preserved. A run that pulled and a file that still names
+# a locally built tag is a `docker compose up` by hand that quietly starts last month's code.
+set_env SQUAD_IMAGE "$IMAGE"
+set_env SQUAD_SANDBOX_IMAGE "$SANDBOX_IMAGE"
 ensure_env SQUAD_DOMAIN "$DOMAIN"
 
 # The proxy is a service under a profile, so a machine with no domain never starts it and never
