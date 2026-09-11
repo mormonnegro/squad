@@ -17,6 +17,7 @@ const FLAGS: [string, string][] = [
 		"--relay=https://relay.example.com",
 		"alcanzalo por un punto de encuentro: nada publicado, nada reenviado, sin dominio",
 	],
+	["--open=no", "dejá la consola en loopback, que es lo que un servidor sin dominio deshace"],
 	["--verbose", "cada ruta, cada archivo que escribió, y el build en vivo en lugar de guardado"],
 	[
 		"--build",
@@ -181,6 +182,22 @@ $ curl -fsSL ${INSTALL} | sh -s -- --domain=agents.example.com
 							el que corremos nosotros es el que está en el repositorio
 						</a>
 						, que es la única razón para creer algo de esto.
+					</p>
+					<p>
+						<strong>Sin dominio, un servidor contesta en la dirección que tiene.</strong> Ese es el
+						default ahí, porque la alternativa es un puerto reenviado que alguien tiene que
+						sostener. Significa que el token es lo único entre un desconocido y estos agentes, y
+						sobre http cruza internet donde se puede leer — así que la instalación imprime, justo
+						abajo, la línea que lo arregla sin comprar nada:
+					</p>
+					<Code label="un certificado sin dominio que registrar" wrap>{`
+$ curl -fsSL ${INSTALL} | sh -s -- --domain=74-207-235-42.sslip.io
+`}</Code>
+					<p className="small muted">
+						sslip.io resuelve cualquier nombre con forma de dirección a esa dirección, así que Let's
+						Encrypt le emite y no hay nada que registrar. Su límite lo comparte con todos los que lo
+						usan, así que puede negarse donde un nombre propio nunca lo hace — que es toda la
+						diferencia. <code>--open=no</code> devuelve la consola al loopback.
 					</p>
 					<Code label="o reenvialo por el SSH que ya tenés" wrap>{`
 $ ssh -N -L 18789:127.0.0.1:8789 vos@tu-servidor

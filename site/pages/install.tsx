@@ -14,6 +14,7 @@ const FLAGS: [string, string][] = [
 		"--relay=https://relay.example.com",
 		"reach it through a rendezvous instead: nothing published, nothing forwarded, no domain",
 	],
+	["--open=no", "keep the console on loopback, which is what a server without a domain undoes"],
 	["--verbose", "every path, every file it wrote, and the build streamed rather than buffered"],
 	["--build", "build the images here instead of pulling them, which is what working on it needs"],
 ];
@@ -173,6 +174,22 @@ $ curl -fsSL ${INSTALL} | sh -s -- --domain=agents.example.com
 							the one we run is the one in the repository
 						</a>
 						, which is the only reason to believe any of that.
+					</p>
+					<p>
+						<strong>With no domain, a server answers on the address it has.</strong> That is the
+						default there, because the alternative is a forwarded port somebody has to keep holding.
+						It means the token is the only thing between a stranger and these agents, and over http
+						it crosses the internet where it can be read — so the install prints, directly
+						underneath, the line that fixes it without buying anything:
+					</p>
+					<Code label="a certificate with no domain to register" wrap>{`
+$ curl -fsSL ${INSTALL} | sh -s -- --domain=74-207-235-42.sslip.io
+`}</Code>
+					<p className="small muted">
+						sslip.io resolves any address-shaped name to that address, so Let's Encrypt will issue
+						for it and there is nothing to register. Its rate limit is shared with everyone using
+						it, so it can refuse where a name of your own never does — which is the whole of the
+						difference. <code>--open=no</code> puts the console back on loopback.
 					</p>
 					<Code label="or forward it over the SSH you already have" wrap>{`
 $ ssh -N -L 18789:127.0.0.1:8789 you@your-server
