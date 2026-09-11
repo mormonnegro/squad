@@ -225,6 +225,16 @@ quietly() {
 	return 1
 }
 
+# Echoed, unlike the one this used to have. What it takes is a hostname, and a hostname typed blind
+# is a hostname typed wrong.
+TYPED=
+ask_line() {
+	TYPED=
+	have_tty || return 0
+	printf '  %s' "$1" >/dev/tty
+	read -r TYPED </dev/tty || TYPED=
+}
+
 # Tried, rather than required. `quietly` prints what went wrong, which is right when nothing else
 # can be done about it — and wrong when the caller already has an answer for failing. A registry with
 # nothing published yet is not an error anybody needs to read.
@@ -291,6 +301,14 @@ install_pkg() {
 	fi || die "Could not install $*."
 }
 
+# Which machine this is, from the connection that carried the install where there is one and from the
+# machine's own idea of itself where there is not. Worked out before anything else, because the
+# question below is about this address, and a question that cannot name what it is asking about is
+# one nobody can answer.
+ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
+[ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+[ -n "$ADDR" ] || ADDR=$(hostname 2>/dev/null || echo your-vps)
+
 step "Checking this machine"
 
 for tool in curl git; do
@@ -330,6 +348,48 @@ else
 	$SUDO git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$DIR"
 fi
 note "$($SUDO git -C "$DIR" log -1 --format='%h  %s')"
+
+# Asked, and asked before anything is built.
+#
+# The keys were taken out of this install because a key is not a prerequisite: the plane accepts one
+# while it runs, and the console has a screen for it. A name is the opposite kind of thing. It is not
+# a secret, it decides what this machine is reachable at, and it cannot be handed over later from
+# inside — the flag exists, but a flag nobody knows about is a default nobody chose. Left unasked,
+# every server installed this way ends up serving its own control surface over http with the token
+# in the clear, which is a decision made by silence.
+#
+# Only where there is somebody to ask. Piped into a machine with no terminal, or told not to, it
+# keeps the behaviour it had, because an unattended install that blocks on a question is one that
+# hangs.
+if [ -z "$DOMAIN" ] && [ -z "$RELAY" ] && [ "$OPEN" = yes ] && have_tty; then
+	step "Where this will be reached"
+	note "Without a name it answers at http://$ADDR:$WEB_PORT, and the token that opens it"
+	note "crosses the internet in the clear."
+	note ""
+	note "With one, a certificate is obtained and renewed here and nothing is in the clear."
+	case "$ADDR" in
+	[0-9]*.[0-9]*.[0-9]*.[0-9]*)
+		note "Point a name you own at $ADDR, or use this one, which needs nothing registered:"
+		note ""
+		note "  $(printf '%s' "$ADDR" | tr '.' '-').sslip.io"
+		;;
+	*)
+		note "Point a name you own at this machine and type it here."
+		;;
+	esac
+	note ""
+	ask_line "Domain (enter for none): "
+	# Trimmed of what a paste brings with it: a scheme, a trailing slash, a path. All three are
+	# things somebody hands over without thinking, and none of them is a hostname.
+	DOMAIN=$(printf '%s' "$TYPED" | tr -d ' \t' | sed -e 's#^https\{0,1\}://##' -e 's#/.*$##')
+	if [ -n "$DOMAIN" ]; then
+		DOMAIN_GIVEN=1
+		CONSOLE_AT="https://$DOMAIN/"
+		note ""
+		note "Make sure $DOMAIN resolves to $ADDR before this finishes, or the certificate"
+		note "cannot be issued. Ports 80 and 443 have to be free and reachable here as well."
+	fi
+fi
 
 # Written without asking anything, because nothing in it is this install's question. The ports come
 # from the name, the secret is generated, and the keys belong to the console: a plane can be handed
@@ -647,9 +707,6 @@ $DOCKER docker ps --filter "label=com.docker.compose.project=$NAME" \
 # plane: the first one already holds this number on their side of the tunnel. Ten thousand up rather
 # than one digit prepended, which would go past 65535 and be no port at all.
 ALT_PORT=$((WEB_PORT + 10000))
-ADDR=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
-[ -n "$ADDR" ] || ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
-[ -n "$ADDR" ] || ADDR=$(hostname 2>/dev/null || echo your-vps)
 
 # waited for rather than assumed. A plane that never writes one is a plane that did not start, which
 # the lines above have already said.
