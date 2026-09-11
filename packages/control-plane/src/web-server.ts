@@ -215,8 +215,21 @@ export class WebServer {
 		}
 		if (!this.#isToken(carried)) {
 			// Said plainly rather than with a login form, because there is no password to type: whoever
-			// should be here has a file on this machine, and `squad web` is what reads it.
-			this.#fail(response, 401, "Run `squad web` on the machine this plane runs on to get in.");
+			// should be here already holds a file on that machine.
+			//
+			// Naming the file rather than only the command, because the command is a thing this door is
+			// increasingly reached without — an operator who installed by pipe has the address in their
+			// scrollback and nothing on their PATH, and being told to run something they do not have is
+			// being told nothing. What this is, is said first: somebody arriving here by accident should
+			// learn what they found, and somebody who belongs here should not have to guess which half
+			// of their address went missing.
+			this.#fail(
+				response,
+				401,
+				"This is a squad control plane. The address that opens it ends in `?t=` and a key — " +
+					"the installer printed the whole of it, `squad web` prints it again on that machine, " +
+					"and it is the file web.token in the state directory.",
+			);
 			return;
 		}
 
