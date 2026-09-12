@@ -376,3 +376,38 @@ describe("the three ways in", () => {
 		expect(response.status).toBe(403);
 	});
 });
+
+describe("letting the same browser in twice", () => {
+	// Opening the address again is the ordinary thing — a reload, `squad open` a second time, a link
+	// still in the bar. It was minting a device every time, so one laptop became a column of
+	// identical rows and the list stopped being a list of who.
+	it("keeps the device it already gave that browser", async () => {
+		const first = await fetch(at(`/?t=${web.token}`), { redirect: "manual" });
+		const carried = /squad_web=([^;]+)/.exec(first.headers.get("set-cookie") ?? "")?.[1] as string;
+
+		const again = await fetch(at(`/?t=${web.token}`), {
+			redirect: "manual",
+			headers: { cookie: `squad_web=${carried}` },
+		});
+		expect(again.status).toBe(302);
+		// Nothing new handed over, because it already holds one.
+		expect(again.headers.get("set-cookie")).toBeNull();
+
+		const listed = (await (
+			await fetch(at("/devices"), { headers: { cookie: `squad_web=${carried}` } })
+		).json()) as { devices: unknown[] };
+		expect(listed.devices).toHaveLength(1);
+	});
+
+	// And a browser that has none still gets one, which is the whole point of the address.
+	it("still lets a browser in that has never been here", async () => {
+		await fetch(at(`/?t=${web.token}`), { redirect: "manual" });
+		const other = await fetch(at(`/?t=${web.token}`), { redirect: "manual" });
+		expect(other.headers.get("set-cookie")).toContain("squad_web=");
+		const carried = /squad_web=([^;]+)/.exec(other.headers.get("set-cookie") ?? "")?.[1] as string;
+		const listed = (await (
+			await fetch(at("/devices"), { headers: { cookie: `squad_web=${carried}` } })
+		).json()) as { devices: unknown[] };
+		expect(listed.devices).toHaveLength(2);
+	});
+});

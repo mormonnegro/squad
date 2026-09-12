@@ -253,15 +253,26 @@ export class WebServer {
 		// date, and a way to be taken out that takes nobody else out with it. The token stays what it
 		// was on the machine that holds it: the thing that admits browsers, not the thing they carry.
 		if (inUrl !== null && asked.pathname !== "/events" && asked.pathname !== "/rpc") {
-			const admitted = this.#isToken(carried)
-				? await this.#devices.issue(nameFromAgent(request.headers["user-agent"]))
-				: undefined;
-			response
-				.writeHead(302, {
-					location: asked.pathname,
-					"set-cookie": `${SESSION_COOKIE}=${admitted?.secret ?? carried}; HttpOnly; SameSite=Strict; Path=/`,
-				})
-				.end();
+			// Asked of the cookie and not of the address, because those are different questions and only
+			// one of them is "has this browser been let in already". Opening the address a second time
+			// is the ordinary thing — a reload, `squad open` again, a link still in the bar — and it was
+			// minting a device every time, so one laptop became a column of identical rows and the list
+			// stopped being a list of who.
+			const already = await this.#devices.whose(cookie(request, SESSION_COOKIE));
+			const admitted =
+				already === undefined && this.#isToken(carried)
+					? await this.#devices.issue(nameFromAgent(request.headers["user-agent"]))
+					: undefined;
+			const head: Record<string, string> = { location: asked.pathname };
+			// Only when there is a new one to hand over. A browser that already holds its key is sent
+			// back to the page with the key it has.
+			if (admitted !== undefined) {
+				head["set-cookie"] =
+					`${SESSION_COOKIE}=${admitted.secret}; HttpOnly; SameSite=Strict; Path=/`;
+			} else if (already === undefined) {
+				head["set-cookie"] = `${SESSION_COOKIE}=${carried}; HttpOnly; SameSite=Strict; Path=/`;
+			}
+			response.writeHead(302, head).end();
 			return;
 		}
 
