@@ -46,9 +46,8 @@ export function FirstKey({
 			{picked === undefined ? (
 				<>
 					<p className="lede">
-						An agent here runs in a container on your machine, and thinks through a model somewhere
-						else. Which one is yours to choose — the key goes to this plane, which spends it on the
-						agent's behalf and never hands it over.
+						An agent thinks through a model somewhere else. The key stays with this plane, which
+						spends it for the agent and never hands it over.
 					</p>
 					<div className="grid gap-3 sm:grid-cols-3">
 						{spent.map((one) => (
@@ -77,14 +76,15 @@ export function FirstKey({
 						</p>
 					)}
 					<p className="small muted">
-						One is enough to start. The rest, and every other provider this knows how to reach, are
-						under <strong>Keys</strong> in the environment menu.
+						One is enough to think with. Searching the web is a second key — OpenAI, or Perplexity
+						from the config screen — and the rest are under <strong>Keys</strong>.
 					</p>
 				</>
 			) : (
 				<Paste
 					provider={picked}
 					plane={plane}
+					searchIsSet={(rows ?? []).some((one) => one.id === "openai" && one.held)}
 					onBack={() => setPicked(undefined)}
 					onDone={onDone}
 				/>
@@ -96,11 +96,14 @@ export function FirstKey({
 function Paste({
 	provider,
 	plane,
+	searchIsSet,
 	onBack,
 	onDone,
 }: {
 	provider: ProviderStanding;
 	plane: Plane;
+	/** Whether the key web search runs on is already here, which is a different key from this one. */
+	searchIsSet: boolean;
 	onBack: () => void;
 	onDone: () => void;
 }) {
@@ -152,6 +155,15 @@ function Paste({
 						</div>
 					</div>
 				</div>
+				{/* Said here rather than on the first screen, because it is the next thing and not a
+				    second decision: somebody who has just given this plane a model does not need to hear
+				    about a different key until the one they came for is in. */}
+				{provider.id !== "openai" && !searchIsSet && (
+					<p className="small muted">
+						Searching the web is a separate key, and runs on OpenAI — add one under{" "}
+						<strong>Keys</strong> when an agent needs to look things up.
+					</p>
+				)}
 				<button type="button" className="key self-start" data-yes="true" onClick={onDone}>
 					done
 				</button>
@@ -223,8 +235,8 @@ function Paste({
 			{why !== undefined && <span className="why">{why}</span>}
 
 			<p className="small muted">
-				It is written where only this plane can read it, and the agents never see it: a request
-				leaves a sandbox with no credential and is given one on its way out.
+				Written where only this plane can read it. A request leaves the sandbox with no credential
+				and is given one on the way out.
 			</p>
 		</div>
 	);
