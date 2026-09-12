@@ -42,7 +42,7 @@ export function FirstKey({
 	const spent = (rows ?? []).filter((one) => one.models.length > 0);
 
 	return (
-		<Modal wide title="Give it something to think with" onClose={onClose}>
+		<Modal size="wider" title="Give it something to think with" onClose={onClose}>
 			{picked === undefined ? (
 				<>
 					<p className="lede">

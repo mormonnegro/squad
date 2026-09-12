@@ -32,12 +32,24 @@ export function DialogOverlay({ className, ...rest }: Primitive.DialogOverlayPro
 	);
 }
 
+const WIDTHS: Readonly<Record<"narrow" | "wide" | "wider", string>> = {
+	narrow: "w-[min(34rem,calc(100vw-3rem))]",
+	wide: "w-[min(42rem,calc(100vw-3rem))]",
+	wider: "w-[min(52rem,calc(100vw-3rem))]",
+};
+
 export function DialogContent({
 	className,
 	children,
 	wide,
+	size,
 	...rest
-}: Primitive.DialogContentProps & { wide?: boolean | undefined }) {
+}: Primitive.DialogContentProps & {
+	wide?: boolean | undefined;
+	/** Three, because a paragraph, a decision and a row of things to choose between are three
+	 * different amounts of screen and picking between two of them made one of the three cramped. */
+	size?: "narrow" | "wide" | "wider" | undefined;
+}) {
 	return (
 		<Primitive.Portal>
 			<DialogOverlay />
@@ -46,7 +58,7 @@ export function DialogContent({
 					"fixed top-1/2 left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col",
 					"overflow-hidden rounded-[10px] border border-line bg-raised text-say shadow-[0_16px_50px_#000d]",
 					"font-sans text-[0.88rem]/[1.6] outline-none",
-					wide ? "w-[min(42rem,calc(100vw-3rem))]" : "w-[min(34rem,calc(100vw-3rem))]",
+					WIDTHS[size ?? (wide === true ? "wide" : "narrow")],
 					wide ? "max-h-[86vh]" : "max-h-[min(32rem,82vh)]",
 					className,
 				)}

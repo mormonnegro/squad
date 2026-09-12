@@ -14,12 +14,15 @@ import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "./
 export function Modal({
 	title,
 	wide,
+	size,
 	children,
 	onClose,
 }: {
 	title: string;
 	/** For the ones that hold a decision rather than a paragraph. */
 	wide?: boolean;
+	/** Where `wide` is not enough: a row of things to choose between wants more than a decision. */
+	size?: "narrow" | "wide" | "wider";
 	children: React.ReactNode;
 	onClose?: (() => void) | undefined;
 }) {
@@ -35,6 +38,7 @@ export function Modal({
 		>
 			<DialogContent
 				wide={wide}
+				size={size}
 				// Escape is the way out, and only where there is one to take.
 				onEscapeKeyDown={(event) => {
 					if (onClose === undefined) event.preventDefault();
