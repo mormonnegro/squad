@@ -1,4 +1,10 @@
-import type { AgentSummary, PlaneEvent, ProviderStanding, Utterance } from "@squad/control-plane";
+import type {
+	AgentSummary,
+	ModelOffer,
+	PlaneEvent,
+	ProviderStanding,
+	Utterance,
+} from "@squad/control-plane";
 import { link } from "@squad/relay/link";
 
 /**
@@ -309,6 +315,19 @@ export class Plane {
 			method: "POST",
 			body: JSON.stringify({ name }),
 		});
+	}
+
+	/**
+	 * What this plane's keys actually buy, asked of the providers themselves.
+	 *
+	 * The only thing here that can tell a working key from a typo. Everything else knows whether a
+	 * key is present; this one calls the provider with it and reports what came back, which is why a
+	 * screen that has just been handed a key asks it before saying the key is fine.
+	 */
+	async offers(): Promise<{ offers: readonly ModelOffer[]; trouble: readonly string[] }> {
+		const answer = await this.#ask({ op: "offers" });
+		const catalog = answer.catalog as { offers?: ModelOffer[]; trouble?: string[] } | undefined;
+		return { offers: catalog?.offers ?? [], trouble: catalog?.trouble ?? [] };
 	}
 
 	/** Every key this plane could be given, and whether it is holding one. Never the values. */

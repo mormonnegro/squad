@@ -4,6 +4,7 @@ import { Chat } from "./Chat.tsx";
 import { type Connection, HERE, keyOf, readConnections, SERVED_BY_A_PLANE } from "./connections.ts";
 import { Devices } from "./Devices.tsx";
 import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
+import { FirstKey } from "./FirstKey.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
 import { Plane, wireTo } from "./plane.ts";
@@ -25,9 +26,17 @@ export function App() {
 	const [planes, setPlanes] = useState<readonly Connection[]>(() => readConnections());
 	const [at, setAt] = useState<Connection>(() => readConnections()[0] ?? HERE);
 	// The connection screens: where a first one is made, and where the rest are managed.
-	const [showing, setShowing] = useState<"none" | "connect" | "planes" | "keys" | "devices">(
-		"none",
-	);
+	const [showing, setShowing] = useState<
+		"none" | "connect" | "planes" | "keys" | "devices" | "first-key"
+	>("none");
+	/**
+	 * Whether the first-key screen has been put away.
+	 *
+	 * Kept so that closing it closes it. Raised on its own because a plane that cannot pay for a
+	 * model is not in a state anybody chose and the banner alone was a line of text competing with
+	 * an empty screen — but a screen that comes back every render is not a screen, it is a wall.
+	 */
+	const [askedForKey, setAskedForKey] = useState(false);
 	const [plane, setPlane] = useState<Plane | undefined>();
 	const [down, setDown] = useState<string | undefined>();
 	const [agents, setAgents] = useState<readonly AgentSummary[]>([]);
@@ -282,7 +291,7 @@ export function App() {
 						<button
 							type="button"
 							className="font-medium underline underline-offset-2"
-							onClick={() => setShowing("keys")}
+							onClick={() => setShowing("first-key")}
 						>
 							Add one
 						</button>
@@ -316,6 +325,28 @@ export function App() {
 					// they have — the only dialog here with no way out is the first question, and only
 					// while there is genuinely nothing behind it.
 					onClose={() => setShowing("none")}
+				/>
+			)}
+			{/* Raised by itself the first time, because this is the one thing missing between a plane
+			    that is running and an agent that can answer. */}
+			{plane !== undefined && keyless && !askedForKey && showing === "none" && (
+				<FirstKey
+					plane={plane}
+					onClose={() => setAskedForKey(true)}
+					onDone={() => {
+						setAskedForKey(true);
+						void look();
+					}}
+				/>
+			)}
+			{showing === "first-key" && plane !== undefined && (
+				<FirstKey
+					plane={plane}
+					onClose={() => setShowing("none")}
+					onDone={() => {
+						setShowing("none");
+						void look();
+					}}
 				/>
 			)}
 			{showing === "devices" && plane !== undefined && (
