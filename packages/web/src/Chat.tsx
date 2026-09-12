@@ -217,12 +217,18 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 					<span className="said-name">{nameOf(agentId)}</span>
 					{/* Turning, because a turn takes minutes and a still line through all of them reads
 					    like a line something left behind. It goes when the answer starts arriving: text
-					    appearing a piece at a time is the same fact, said better. */}
-					{live.thinking && live.text.length === 0 && (
+					    appearing a piece at a time is the same fact, said better.
+					    
+					    And it goes as soon as there is a step, because the step below is turning and one
+					    thing moving is a screen saying something. Two is a screen fidgeting. */}
+					{live.thinking && live.text.length === 0 && live.steps.length === 0 && (
 						<span className="said-when inline-flex items-center gap-1.5">
 							<Spin />
 							working…
 						</span>
+					)}
+					{live.thinking && live.text.length === 0 && live.steps.length > 0 && (
+						<span className="said-when">working…</span>
 					)}
 				</div>
 				{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two

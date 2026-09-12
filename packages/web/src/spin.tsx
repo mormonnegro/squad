@@ -11,7 +11,18 @@
  * Written as eight delays on one animation rather than as a motion library, because that is what it
  * is — the same keyframes, started a step apart.
  */
-export function Spin({ size = 14, className }: { size?: number; className?: string }) {
+export function Spin({
+	size = "0.95em",
+	className,
+}: {
+	/**
+	 * How big, and in `em` by default: it sits beside text, so what it should match is that text.
+	 * A number of pixels was a guess made at every call site, and the guesses disagreed — which is
+	 * what "not aligned" was: a fourteen-pixel square against an eleven-pixel line.
+	 */
+	size?: number | string;
+	className?: string;
+}) {
 	return (
 		<span
 			className={className === undefined ? "orbit" : `orbit ${className}`}

@@ -1450,8 +1450,15 @@ ol.md-list {
 .orbit {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
-	gap: 12%;
+	gap: 14%;
+	/* Its own size, so it is never a nine-cell grid with nothing to be nine cells of. The component
+	   sets one in `em` on top of this; without either, a grid of empty boxes is zero tall. */
+	width: 1em;
+	height: 1em;
 	flex: none;
+	/* Centred on the line rather than on the box: it sits beside words, and a square whose top and
+	   bottom overhang the letters either side of it is the thing that reads as crooked. */
+	align-self: center;
 	color: var(--amber);
 }
 
@@ -1465,7 +1472,9 @@ ol.md-list {
 .orbit i {
 	background: currentColor;
 	border-radius: 1px;
-	opacity: 0.15;
+	/* Higher than the original's, which was drawn for a pale page. On this ground a sixth of amber
+	   is not a dim square, it is nothing — and then the ring is not a ring, it is one dot moving. */
+	opacity: 0.22;
 	animation: orbit 1.2s linear infinite;
 }
 
@@ -1504,11 +1513,11 @@ ol.md-list {
 		opacity: 1;
 	}
 	12.5% {
-		opacity: 0.5;
+		opacity: 0.55;
 	}
 	25%,
 	87.5% {
-		opacity: 0.15;
+		opacity: 0.22;
 	}
 	100% {
 		opacity: 1;
