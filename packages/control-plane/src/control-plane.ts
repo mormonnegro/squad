@@ -1857,7 +1857,9 @@ export class ControlPlane {
 	 * green on the next poll.
 	 */
 	async loginPlugin(name: string, clientId?: string): Promise<LoginPage> {
-		const started = await this.#beginLogin(name, clientId);
+		// Opened by whoever asked, which for this method is always a browser: it is the screen the
+		// button is on, and it is holding this answer. Nothing else is told to open anything.
+		const started = await this.#beginLogin(name, clientId, true);
 		void started.done.then(
 			() => this.#reregisterAll(),
 			() => {},
@@ -1891,7 +1893,7 @@ export class ControlPlane {
 	 * list redraw. Everything before the landing — finding the server, refusing a process that has no
 	 * account, asking it where its metadata lives — is the same work and is done once, here.
 	 */
-	async #beginLogin(name: string, clientId?: string) {
+	async #beginLogin(name: string, clientId?: string, opened?: boolean) {
 		const found = (await this.#mcp.servers()).find((one) => one.name === name);
 		if (found === undefined) throw new Error(`There is no server called "${name}".`);
 		const host = hostOf(found.server);
@@ -1908,6 +1910,7 @@ export class ControlPlane {
 			host,
 			...(clientId !== undefined ? { clientId } : {}),
 			...(where !== undefined ? { resourceMetadataUrl: where } : {}),
+			...(opened === true ? { opened } : {}),
 		});
 		return { ...started, host };
 	}

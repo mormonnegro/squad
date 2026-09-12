@@ -118,6 +118,16 @@ export interface BeginLogin {
 	/** For a server that will not register a client, the id of one the operator made themselves. */
 	readonly clientId?: string;
 	readonly resourceMetadataUrl?: string;
+	/**
+	 * Whether the consent screen is somebody else's to open.
+	 *
+	 * A login started in a chat is announced to every console attached, and whichever of them is on
+	 * a machine with a browser puts the page on screen — the plane is a container and cannot. A login
+	 * started from a browser is different in exactly one way: the browser is already there, holding
+	 * the answer to this call, and it opens the page itself. Announcing that one as well is how one
+	 * press of one button became a tab here and a window somewhere else.
+	 */
+	readonly opened?: boolean;
 }
 
 /**
@@ -250,7 +260,7 @@ export class LoginDesk {
 			close,
 		});
 
-		this.#open(started.url);
+		if (options.opened !== true) this.#open(started.url);
 		return {
 			url: started.url,
 			redirectUri,

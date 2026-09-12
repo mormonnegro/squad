@@ -220,6 +220,33 @@ describe("logging in through a browser", () => {
 	});
 
 	/**
+	 * One press, one page.
+	 *
+	 * The plane is a container and cannot open a browser, so it tells the consoles attached and
+	 * whichever is on a machine with one puts the page up. A login started from a browser needs none
+	 * of that — that browser is already there and is holding the answer — and announcing it anyway
+	 * put a tab on the screen somebody was looking at and a window on some other machine at once.
+	 */
+	it("says nothing to anybody else about a page the caller is opening itself", async () => {
+		const server = await authorizationServer();
+		const { desk: door, opened } = await desk();
+
+		const quiet = await door.begin({
+			name: "notion",
+			url: `${server.url}/mcp`,
+			host: "127.0.0.1",
+			opened: true,
+		});
+
+		expect(opened).toEqual([]);
+		expect(quiet.url).toContain("/authorize");
+
+		// And the other way, which is every login typed at a console: somebody has to be told.
+		await door.begin({ name: "notion", url: `${server.url}/mcp`, host: "127.0.0.1" });
+		expect(opened).toHaveLength(1);
+	});
+
+	/**
 	 * The same door, wanted by a different name.
 	 *
 	 * One port, one path, one redirect registered against it, so two logins cannot wait at once — and
@@ -232,8 +259,16 @@ describe("logging in through a browser", () => {
 		const { desk: door } = await desk();
 		desks[desks.length - 1]?.names.push("stripe");
 
-		const notion = await door.begin({ name: "notion", url: `${server.url}/mcp`, host: "127.0.0.1" });
-		const stripe = await door.begin({ name: "stripe", url: `${server.url}/mcp`, host: "127.0.0.1" });
+		const notion = await door.begin({
+			name: "notion",
+			url: `${server.url}/mcp`,
+			host: "127.0.0.1",
+		});
+		const stripe = await door.begin({
+			name: "stripe",
+			url: `${server.url}/mcp`,
+			host: "127.0.0.1",
+		});
 
 		await expect(notion.done).rejects.toThrow(/called off/);
 		expect(stripe.redirectUri).toBe(notion.redirectUri);

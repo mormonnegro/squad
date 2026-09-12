@@ -28,6 +28,8 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 	/** Which row is mid-request, so its own button says so and nothing else on the screen moves. */
 	const [busy, setBusy] = useState<string | undefined>();
 	const [watching, setWatching] = useState(false);
+	/** The consent screen this browser was sent to, so the address is on screen if the tab was not. */
+	const [sent, setSent] = useState<{ name: string; url: string; blocked: boolean } | undefined>();
 
 	const load = useCallback(async (): Promise<void> => {
 		try {
@@ -62,6 +64,15 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 		};
 	}, [watching, load]);
 
+	// The line that says where the browser went stops saying it once the login has landed, which is
+	// the one thing it was waiting for.
+	useEffect(() => {
+		if (sent === undefined || made === undefined) return;
+		if (!made.some((one) => one.name === sent.name && one.loggedIn)) return;
+		setSent(undefined);
+		setWatching(false);
+	}, [made, sent]);
+
 	const run = async (what: string, act: () => Promise<void>): Promise<void> => {
 		setBusy(what);
 		setWhy(undefined);
@@ -89,11 +100,26 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 		});
 	};
 
+	/**
+	 * Sends whoever pressed the button to the consent screen.
+	 *
+	 * A tab, not a window: any feature string at all turns `window.open` into a popup, which is the
+	 * floating thing nobody asked for — and the opener is dropped afterwards so the page cannot reach
+	 * back into this one.
+	 *
+	 * Opened from here because this is the browser somebody is sitting at; the plane is a container
+	 * and cannot open anything. It is also told so, which stops a console attached somewhere else
+	 * from opening a second copy of the same consent screen on some other machine.
+	 *
+	 * The address is kept either way. A blocked popup is silent, and a screen that answered a press
+	 * with nothing at all would be indistinguishable from one that failed.
+	 */
 	const open = async (name: string): Promise<void> => {
 		const page = await plane.loginPlugin(name);
-		// Opened from here because this is the browser somebody is sitting at. The plane may be a
-		// container on a machine with no screen at all, and it is the one that knows the address.
-		if (page.url !== "") window.open(page.url, "_blank", "noreferrer");
+		if (page.url === "") return;
+		const tab = window.open(page.url, "_blank");
+		if (tab !== null) tab.opener = null;
+		setSent({ name, url: page.url, blocked: tab === null });
 		setWatching(true);
 	};
 
@@ -127,6 +153,17 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 					</div>
 
 					{why !== undefined && <span className="why block">{why}</span>}
+					{sent !== undefined && (
+						<p className="section-says">
+							{sent.blocked
+								? `This browser would not open the consent screen for "${sent.name}" by itself — `
+								: `Waiting for "${sent.name}" to come back from its consent screen. If the tab did not open: `}
+							<a href={sent.url} target="_blank" rel="noreferrer">
+								open it
+							</a>
+							.
+						</p>
+					)}
 					{made === undefined && why === undefined && (
 						<span className="text-[0.85rem] text-muted">asking the plane…</span>
 					)}
