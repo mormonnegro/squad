@@ -391,7 +391,11 @@ fi
 # Only where there is somebody to ask. Piped into a machine with no terminal, or told not to, it
 # keeps the behaviour it had, because an unattended install that blocks on a question is one that
 # hangs.
-if [ -z "$DOMAIN" ] && [ -z "$RELAY" ] && [ "$OPEN" = yes ] && have_tty; then
+# The last condition is what keeps this a question and not a nag. An install that already has an
+# .env has been asked, and answering "none" is an answer — a re-run that puts it again every time is
+# one that treats a settled decision as an oversight, from a prompt whose default is to change it.
+if [ -z "$DOMAIN" ] && [ -z "$RELAY" ] && [ "$OPEN" = yes ] && [ ! -f "$DIR/deploy/.env" ] &&
+	have_tty; then
 	step "Where this will be reached"
 	note "Without a name it answers at http://$ADDR:$WEB_PORT, and the token that opens it"
 	note "crosses the internet in the clear."
@@ -700,8 +704,16 @@ if [ "$SHIM" = "yes" ]; then
 	# it, which made `squad` mean whichever plane was installed last — and made a second install
 	# quietly take the command away from the first. What goes here now knows about every plane on the
 	# machine, because it asks Docker rather than having been told once.
-	$SUDO cp "$DIR/deploy/squad.sh" "$SHIM_AT"
-	$SUDO chmod 755 "$SHIM_AT"
+	# Written beside it and moved onto it, never written through it.
+	#
+	# `squad update` runs this, so the file being replaced is the one the shell running it is reading
+	# — and a shell reads a script in pieces, as it goes. Copying over it leaves that shell to take
+	# its next bytes from the middle of the new file, which ends the script wherever the offset
+	# happens to land: the first plane updated, the loop silently gone, and nothing that looked like
+	# an error. A rename swaps the directory entry and leaves the open file alone.
+	$SUDO cp "$DIR/deploy/squad.sh" "$SHIM_AT.new"
+	$SUDO chmod 755 "$SHIM_AT.new"
+	$SUDO mv "$SHIM_AT.new" "$SHIM_AT"
 fi
 
 step "Up"
