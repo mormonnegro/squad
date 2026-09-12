@@ -322,6 +322,19 @@ export function App() {
 				</div>
 
 				<div className="rail-scroll">
+					{/* Above the agents, because it is not one of them: the plugins are the plane's, and the
+					    list below has no end anybody scrolls to. */}
+					<button
+						type="button"
+						className="rail-screen"
+						data-here={showing === "plugins"}
+						disabled={plane === undefined}
+						onClick={() => show("plugins")}
+					>
+						<Blocks className="size-4 flex-none" />
+						<span className="row-name">Plugins</span>
+					</button>
+
 					<div className="rail-group">Agents</div>
 					{agents.map((one) => (
 						<AgentRow
@@ -329,7 +342,10 @@ export function App() {
 							plane={plane}
 							agent={one}
 							live={live[one.id] ?? QUIET}
-							here={one.id === chosen}
+							// Where you are, not what you last opened: the plugins take the pane, so while they
+							// are up nothing in this list is the thing on screen. A dialog is different — the
+							// conversation is still behind it, and that is still where you are.
+							here={one.id === chosen && showing !== "plugins" && !making}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
@@ -350,22 +366,6 @@ export function App() {
 					>
 						<span className="mark">+</span>
 						<span className="row-name">New agent</span>
-					</button>
-				</div>
-
-				<div className="rail-foot">
-					{/* At the foot of the plane's own column, because that is what plugins belong to: not to
-					    the agent that happens to be selected, and not inside a menu that has to be opened
-					    before it can be found. */}
-					<button
-						type="button"
-						className="foot-row"
-						data-here={showing === "plugins"}
-						disabled={plane === undefined}
-						onClick={() => show("plugins")}
-					>
-						<Blocks className="size-4 flex-none" />
-						<span className="row-name">Plugins</span>
 					</button>
 				</div>
 			</nav>

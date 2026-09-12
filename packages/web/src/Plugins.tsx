@@ -587,6 +587,13 @@ function Custom({
 	);
 }
 
+/**
+ * A company's mark, asked of the company, on the background it was drawn for.
+ *
+ * From the site itself rather than from a favicon service, which would be the shorter line and
+ * would tell a third party every plugin anybody here connects. A site that serves nothing gets an
+ * initial in the same space, so a row is the same height either way.
+ */
 export function Mark({
 	host,
 	letter,
@@ -601,7 +608,7 @@ export function Mark({
 		return (
 			<span
 				aria-hidden="true"
-				className="grid flex-none place-items-center rounded-lg border border-line bg-sunk font-semibold text-muted"
+				className="site-mark grid place-items-center font-semibold"
 				style={{ width: size, height: size, fontSize: size * 0.42 }}
 			>
 				{letter.slice(0, 1).toUpperCase()}
@@ -610,7 +617,7 @@ export function Mark({
 	}
 	return (
 		<img
-			className="flex-none rounded-lg border border-line bg-sunk object-contain p-1"
+			className="site-mark"
 			style={{ width: size, height: size }}
 			src={`https://${host}/favicon.ico`}
 			alt=""

@@ -149,50 +149,39 @@
 
 
 /*
- * The foot of the column: the way into what this plane can reach.
+ * The way into a screen that is the plane's, at the top of the plane's own column.
  *
- * At the bottom rather than in the menu at the top for the reason the agents are not in the menu
- * either — this column is the plane, and the plugins are the plane's. Where the plane is used to be
- * said here too and no longer is: the picker at the top of the same column already says it, and a
- * second copy of a fact is a row spent on nothing.
+ * Above the agents rather than under them, because it is not one of them and the list below has no
+ * end anybody scrolls to. On the same left edge as the marks in that list, so the column stays a
+ * column — an element in a gutter of its own is the thing this layout is most often wrong about.
  */
-.rail-foot {
-	border-top: 1px solid var(--line);
-	padding: 0.4rem 0.5rem 0.5rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.1rem;
-	width: 100%;
-	font-size: 0.8rem;
-	color: var(--muted);
-	text-align: left;
-}
-
-.foot-row {
+.rail-screen {
 	display: flex;
 	align-items: center;
 	gap: 0.55rem;
 	width: 100%;
-	padding: 0.45rem 0.4rem;
-	border-radius: 6px;
+	padding: 0.42rem 0.9rem;
+	border-left: 2px solid transparent;
 	color: var(--muted);
 	text-align: left;
 }
 
-.foot-row:hover {
+.rail-screen:hover {
 	background: #ffffff0a;
 	color: var(--text-strong);
 }
 
-.foot-row[data-here="true"] {
+.rail-screen[data-here="true"] {
 	background: #ffffff0d;
+	border-left-color: var(--cyan);
 	color: var(--text-strong);
 }
 
-.foot-row:disabled {
+.rail-screen:disabled {
 	opacity: 0.45;
 	cursor: default;
 }
+
 
 
 .field {
@@ -1479,4 +1468,23 @@ ol.md-list {
 /* On the row of a step that is the one still running, where the marks of what it read will go. */
 .step[data-now="true"] .step-say {
 	color: var(--text);
+}
+
+/*
+ * The plate a site's mark sits on.
+ *
+ * Light, because a favicon is drawn for the background its own site has and half of them are a
+ * black glyph on nothing — GitHub's, Square's, Vercel's. On this ground those are a hole where a
+ * logo should be, and there is no asking an image what colour it is: a cross-origin one cannot be
+ * read back a pixel at a time. Every mark gets the background they were all drawn against, and the
+ * ones with colour of their own lose nothing by it.
+ */
+.site-mark {
+	flex: none;
+	border-radius: 8px;
+	background: #eceef1;
+	box-shadow: inset 0 0 0 1px #00000014;
+	object-fit: contain;
+	padding: 3px;
+	color: #4a4f57;
 }
