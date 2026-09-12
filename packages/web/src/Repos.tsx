@@ -1,6 +1,7 @@
 import type { AgentSummary } from "@squad/control-plane";
 import { GitBranch, Lock, Plus, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar } from "./avatar.tsx";
 import { nameOf } from "./face.ts";
 import type { Plane, RepoOffer, RepoRow } from "./plane.ts";
 import { Spin } from "./spin.tsx";
@@ -344,9 +345,14 @@ function Token({
 
 /** The scopes an agent can be held to, in the order they widen. */
 const SCOPES = [
-	{ id: "read", said: "read only", push: [] as readonly string[] },
-	{ id: "lane", said: "its own branches", push: undefined },
-	{ id: "all", said: "any branch", push: ["*"] as readonly string[] },
+	{ id: "read", said: "read only", means: "clone and read", push: [] as readonly string[] },
+	{ id: "lane", said: "its own branches", means: "push to its own branches", push: undefined },
+	{
+		id: "all",
+		said: "any branch",
+		means: "push to any branch, main included",
+		push: ["*"] as readonly string[],
+	},
 ] as const;
 
 /** Which of them a held scope is, for a row that has to show what it already says. */
@@ -392,16 +398,32 @@ function Held({
 				</a>
 			</div>
 
-			<div className="conn-given flex-col items-stretch gap-2">
+			{/*
+			 * One line per agent: who, and how far.
+			 *
+			 * No chip for "no access", because the absence of a choice already is one — a filled green
+			 * chip saying access is off was the colour of "held" on the word for "not held", which is the
+			 * one thing on a screen about permissions that must not be ambiguous. Nothing lit means
+			 * nothing given; pressing any of the three gives it at that width.
+			 */}
+			<div className="conn-given flex-col items-stretch gap-2.5">
 				{agents.map((agent) => {
 					const has = one.by.find((by) => by.agentId === agent.id);
 					const mine = busy === `hold:${one.repo}:${agent.id}`;
 					const scope = has === undefined ? undefined : scopeOf(has.push, agent.id);
 					return (
-						<div key={agent.id} className="flex flex-wrap items-center gap-1.5">
-							<span className="mr-1 w-24 shrink-0 truncate text-[0.8rem] text-said">
-								{nameOf(agent.id)}
+						<div key={agent.id} className="flex flex-wrap items-center gap-2">
+							<span className="flex min-w-0 flex-none items-center gap-2">
+								<Avatar id={agent.id} size={18} />
+								<span className="w-24 truncate text-[0.85rem] text-said">{nameOf(agent.id)}</span>
+								{/* Beside the name rather than after the chips: it is what this agent has, and
+								    at the end of a row that wraps it ends up on a line of its own saying it
+								    about nothing. */}
+								{has === undefined && (
+									<span className="w-16 text-[0.76rem] text-muted">no access</span>
+								)}
 							</span>
+
 							{has !== undefined && has.origin === "file" ? (
 								// The operator's own file said this one, and a console that offered to change it
 								// would be offering to lose the change on the next deploy.
@@ -410,29 +432,34 @@ function Held({
 								</span>
 							) : (
 								<>
-									<button
-										type="button"
-										className="hold"
-										data-held={has === undefined}
-										disabled={mine}
-										onClick={() => (has === undefined ? undefined : onDrop(agent.id))}
-									>
-										{has === undefined ? "no access" : "take it back"}
-									</button>
-									{SCOPES.map((one) => (
+									{SCOPES.map((width) => (
 										<button
-											key={one.id}
+											key={width.id}
 											type="button"
 											className="hold"
-											data-held={scope === one.id}
+											data-held={scope === width.id}
 											disabled={mine}
-											onClick={() => onHold(agent.id, one.push)}
+											title={`${nameOf(agent.id)} may ${width.means} in ${one.repo}`}
+											onClick={() => onHold(agent.id, width.push)}
 										>
-											{mine && scope === one.id && <Spin size={9} />}
-											{one.said}
+											{mine && scope === width.id && <Spin size={9} />}
+											{width.said}
 										</button>
 									))}
+									{/* Branches somebody wrote by hand, which these three cannot say. */}
 									{scope === "named" && <span className="badge">{has?.push.join(", ")}</span>}
+									{has !== undefined && (
+										<button
+											type="button"
+											className="icon-key"
+											data-bad="true"
+											disabled={mine}
+											title={`take ${one.repo} back from ${nameOf(agent.id)}`}
+											onClick={() => onDrop(agent.id)}
+										>
+											<X className="size-3.5" />
+										</button>
+									)}
 								</>
 							)}
 						</div>
