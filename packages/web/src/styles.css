@@ -161,16 +161,55 @@
 	border-top: 1px solid var(--line-soft);
 }
 
+/*
+ * The foot of the column: what this plane can reach, and where this plane is.
+ *
+ * A row and then a line, in that order, because one is a door and the other is a fact. The door is
+ * at the bottom rather than in the menu at the top for the reason the agents are not in the menu
+ * either: this column is the plane, and the plugins are the plane's.
+ */
 .rail-foot {
 	border-top: 1px solid var(--line);
-	padding: 0.6rem 0.9rem;
+	padding: 0.4rem 0.5rem 0.5rem;
 	display: flex;
-	align-items: center;
-	gap: 0.55rem;
+	flex-direction: column;
+	gap: 0.1rem;
 	width: 100%;
 	font-size: 0.8rem;
 	color: var(--muted);
 	text-align: left;
+}
+
+.foot-row {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	width: 100%;
+	padding: 0.45rem 0.4rem;
+	border-radius: 6px;
+	color: var(--muted);
+	text-align: left;
+}
+
+.foot-row:hover {
+	background: #ffffff0a;
+	color: var(--text-strong);
+}
+
+.foot-row[data-here="true"] {
+	background: #ffffff0d;
+	color: var(--text-strong);
+}
+
+.foot-row:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.foot-where {
+	padding: 0 0.4rem 0.15rem;
+	color: color-mix(in srgb, var(--muted) 75%, transparent);
+	font-size: 0.76rem;
 }
 
 .field {

@@ -1,4 +1,5 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
+import { Blocks } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./Chat.tsx";
 import { type Connection, HERE, keyOf, readConnections, SERVED_BY_A_PLANE } from "./connections.ts";
@@ -15,6 +16,35 @@ import { When } from "./When.tsx";
 /** How often the agent list is asked for. What the console uses, for the same reason. */
 const POLL_MS = 2000;
 
+/**
+ * The screens that are places rather than dialogs, and the address each one is at.
+ *
+ * A screen you would send somebody to needs an address: "the plugins" is a thing to link to, to
+ * bookmark, to type. The rest — adding an environment, the first key — are questions raised over
+ * whatever you were doing, and a question has no address.
+ *
+ * Not `/devices`: the plane answers that one itself, with the door a browser is let in through, and
+ * a page that claimed the same path would be a page the plane never serves.
+ */
+const PLACES = {
+	"/plugins": "plugins",
+	"/keys": "keys",
+} as const;
+
+type Place = (typeof PLACES)[keyof typeof PLACES];
+
+/** Which screen an address names, or none for an address that names no screen. */
+function placeAt(pathname: string): Place | "none" {
+	return PLACES[pathname as keyof typeof PLACES] ?? "none";
+}
+
+/** Where a screen lives, or nothing for the ones that are questions rather than places. */
+function addressOf(showing: string): string | undefined {
+	if (showing === "none") return "/";
+	const found = Object.entries(PLACES).find(([, screen]) => screen === showing);
+	return found?.[0];
+}
+
 /** A turn in flight: what it has said so far and what it has done to say it. */
 export interface Live {
 	readonly thinking: boolean;
@@ -30,7 +60,7 @@ export function App() {
 	// The connection screens: where a first one is made, and where the rest are managed.
 	const [showing, setShowing] = useState<
 		"none" | "connect" | "planes" | "keys" | "plugins" | "devices" | "first-key"
-	>("none");
+	>(() => placeAt(window.location.pathname));
 	/**
 	 * Whether the selected agent's own settings are open.
 	 *
@@ -66,6 +96,31 @@ export function App() {
 	// Held in a ref as well so the event handler, which is registered once, never closes over a stale
 	// one. The state copy is what the screen reads; this is what the handler writes through.
 	const held = useRef<Plane | undefined>(undefined);
+
+	/**
+	 * Opens a screen, and moves the address with it where the screen has one.
+	 *
+	 * One function rather than two calls at every call site, because the two halves drifting apart is
+	 * the whole failure: a screen opened without the address is one nobody can link to, and an address
+	 * pushed without the screen is a back button that does nothing.
+	 *
+	 * The query is carried along. It is where the token arrives, and dropping it on the way to a
+	 * screen would be logging somebody out for opening one.
+	 */
+	const show = useCallback((next: typeof showing): void => {
+		setShowing(next);
+		const address = addressOf(next);
+		if (address === undefined || address === window.location.pathname) return;
+		window.history.pushState(null, "", `${address}${window.location.search}`);
+	}, []);
+
+	// The other direction: back and forward are the same two keys everywhere else on the web, and a
+	// page that answers to an address has to answer to them or the address is decoration.
+	useEffect(() => {
+		const walked = (): void => setShowing(placeAt(window.location.pathname));
+		window.addEventListener("popstate", walked);
+		return () => window.removeEventListener("popstate", walked);
+	}, []);
 
 	useEffect(() => {
 		// A hosted copy has no plane at its own address, so before the first environment is added
@@ -191,16 +246,19 @@ export function App() {
 		setTalk((was) => ({ ...was, [agentId]: [...(was[agentId] ?? []), one] }));
 	}, []);
 
-	const goTo = useCallback((one: Connection) => {
-		// Nothing survives the move. Two planes have two sets of agents with two sets of names, and a
-		// transcript left on screen from the last one would be a conversation attributed to a stranger.
-		setAt(one);
-		setChosen(undefined);
-		setAgents([]);
-		setTalk({});
-		setLive({});
-		setShowing("none");
-	}, []);
+	const goTo = useCallback(
+		(one: Connection) => {
+			// Nothing survives the move. Two planes have two sets of agents with two sets of names, and a
+			// transcript left on screen from the last one would be a conversation attributed to a stranger.
+			setAt(one);
+			setChosen(undefined);
+			setAgents([]);
+			setTalk({});
+			setLive({});
+			show("none");
+		},
+		[show],
+	);
 
 	const create = useCallback(async (name: string) => {
 		const client = held.current;
@@ -239,12 +297,12 @@ export function App() {
 						at={at}
 						connected={plane !== undefined}
 						onPick={goTo}
-						onAdd={() => setShowing("connect")}
-						onKeys={() => setShowing("keys")}
-						onPlugins={() => setShowing("plugins")}
-						onDevices={() => setShowing("devices")}
+						onAdd={() => show("connect")}
+						onKeys={() => show("keys")}
+						onPlugins={() => show("plugins")}
+						onDevices={() => show("devices")}
 						hasDoor={plane?.hasDoor ?? false}
-						onManage={() => setShowing("planes")}
+						onManage={() => show("planes")}
 					/>
 				</div>
 
@@ -279,9 +337,22 @@ export function App() {
 				</div>
 
 				<div className="rail-foot">
+					{/* At the foot of the plane's own column, because that is what plugins belong to: not to
+					    the agent that happens to be selected, and not inside a menu that has to be opened
+					    before it can be found. */}
+					<button
+						type="button"
+						className="foot-row"
+						data-here={showing === "plugins"}
+						disabled={plane === undefined}
+						onClick={() => show("plugins")}
+					>
+						<Blocks className="size-4 flex-none" />
+						<span className="row-name">Plugins</span>
+					</button>
 					{/* What this whole column is about, said where a column ends. The picker at the top is
 					    where it is changed; this is where it is confirmed without looking up. */}
-					<span className="row-name">{at.origin === "" ? "on this computer" : at.origin}</span>
+					<span className="foot-where">{at.origin === "" ? "on this computer" : at.origin}</span>
 				</div>
 			</nav>
 
@@ -302,7 +373,7 @@ export function App() {
 						<button
 							type="button"
 							className="font-medium underline underline-offset-2"
-							onClick={() => setShowing("first-key")}
+							onClick={() => show("first-key")}
 						>
 							Add one
 						</button>
@@ -336,7 +407,7 @@ export function App() {
 					// asked for is a screen they can change their mind about, however many environments
 					// they have — the only dialog here with no way out is the first question, and only
 					// while there is genuinely nothing behind it.
-					onClose={() => setShowing("none")}
+					onClose={() => show("none")}
 				/>
 			)}
 			{/* Raised by itself the first time, because this is the one thing missing between a plane
@@ -354,21 +425,21 @@ export function App() {
 			{showing === "first-key" && plane !== undefined && (
 				<FirstKey
 					plane={plane}
-					onClose={() => setShowing("none")}
+					onClose={() => show("none")}
 					onDone={() => {
-						setShowing("none");
+						show("none");
 						void look();
 					}}
 				/>
 			)}
 			{showing === "devices" && plane !== undefined && (
-				<Devices plane={plane} onClose={() => setShowing("none")} />
+				<Devices plane={plane} onClose={() => show("none")} />
 			)}
 			{showing === "keys" && plane !== undefined && (
 				<Keys
 					plane={plane}
 					onClose={() => {
-						setShowing("none");
+						show("none");
 						void look();
 					}}
 				/>
@@ -378,7 +449,7 @@ export function App() {
 					plane={plane}
 					agents={agents}
 					onClose={() => {
-						setShowing("none");
+						show("none");
 						void look();
 					}}
 				/>
@@ -402,8 +473,8 @@ export function App() {
 						setPlanes(all);
 						if (!all.some((one) => keyOf(one) === keyOf(at))) goTo(all[0] ?? HERE);
 					}}
-					onAdd={() => setShowing("connect")}
-					onClose={() => setShowing("none")}
+					onAdd={() => show("connect")}
+					onClose={() => show("none")}
 				/>
 			)}
 			{/* Nothing connected and nothing to fall back to: this is not an error, it is the first
@@ -429,7 +500,7 @@ export function App() {
 						// there is a picker behind this and another machine to try; with none there is
 						// nothing this page can do but ask, and a dismissable dialog over an empty screen
 						// is a dead end with a close button on it.
-						onClose={planes.length > 0 ? () => setShowing("none") : undefined}
+						onClose={planes.length > 0 ? () => show("none") : undefined}
 					/>
 				)}
 		</div>
