@@ -14,8 +14,7 @@
 		"typecheck": "pnpm -r typecheck",
 		"lint": "biome check .",
 		"format": "biome format --write .",
-		"console": "VITE_SQUAD_HOSTED=1 pnpm --filter @squad/web build",
-		"site": "pnpm run console && pnpm --filter @squad/site build && cp -R packages/web/dist site/out/app"
+		"site": "pnpm --filter @squad/site build"
 	},
 	"devDependencies": {
 		"@squad/control-plane": "workspace:*",

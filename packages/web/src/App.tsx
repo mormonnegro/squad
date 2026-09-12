@@ -2,14 +2,13 @@ import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
 import { Blocks } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./Chat.tsx";
-import { type Connection, HERE, keyOf, readConnections, SERVED_BY_A_PLANE } from "./connections.ts";
 import { Devices } from "./Devices.tsx";
-import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { FirstKey } from "./FirstKey.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
 import { Plugins } from "./Plugins.tsx";
-import { Plane, wireTo } from "./plane.ts";
+import { browserWire, Plane } from "./plane.ts";
+import { RailHead } from "./RailHead.tsx";
 import { Setup } from "./Setup.tsx";
 import { When } from "./When.tsx";
 
@@ -71,12 +70,17 @@ export interface Live {
 const QUIET: Live = { thinking: false, text: "", steps: [] };
 
 export function App() {
-	const [planes, setPlanes] = useState<readonly Connection[]>(() => readConnections());
-	const [at, setAt] = useState<Connection>(() => readConnections()[0] ?? HERE);
-	// The connection screens: where a first one is made, and where the rest are managed.
-	const [showing, setShowing] = useState<
-		"none" | "connect" | "planes" | "keys" | "plugins" | "devices" | "first-key"
-	>(() => placeAt(window.location.pathname));
+	/**
+	 * Which screen is up over the conversation, if any.
+	 *
+	 * There is one plane: the one that served this page. What used to be here as well was a list of
+	 * machines and the screens for keeping it — added, named, handed over as a pasted code, picked
+	 * between on every open — and it is gone until running one squad is simple enough to be worth
+	 * pointing at several.
+	 */
+	const [showing, setShowing] = useState<"none" | "keys" | "plugins" | "devices" | "first-key">(
+		() => placeAt(window.location.pathname),
+	);
 	/**
 	 * Whether the selected agent's own settings are open.
 	 *
@@ -156,14 +160,8 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
-		// A hosted copy has no plane at its own address, so before the first environment is added
-		// there is nothing here to knock on. Knocking anyway spends a request to be told something
-		// this build already knows, and answers the first screen somebody sees with an error about a
-		// connection they never asked for.
-		if (!SERVED_BY_A_PLANE && at.origin === "") return;
-
 		let alive = true;
-		const client = new Plane(wireTo(at));
+		const client = new Plane(browserWire());
 		client.onDown((why) => alive && setDown(why.message));
 		// The transport repairs itself, so a gap has two ends and the screen has to hear both. Without
 		// this the banner said the plane was gone for as long as the page stayed open, over a console
@@ -250,7 +248,7 @@ export function App() {
 			client.close();
 			setPlane(undefined);
 		};
-	}, [at]);
+	}, []);
 
 	// Polled rather than pushed, because spend, ports and the questions an agent is waiting on change
 	// for reasons that are not a turn — a schedule firing, a webhook, a grant answered elsewhere.
@@ -278,20 +276,6 @@ export function App() {
 	const local = useCallback((agentId: string, one: Utterance) => {
 		setTalk((was) => ({ ...was, [agentId]: [...(was[agentId] ?? []), one] }));
 	}, []);
-
-	const goTo = useCallback(
-		(one: Connection) => {
-			// Nothing survives the move. Two planes have two sets of agents with two sets of names, and a
-			// transcript left on screen from the last one would be a conversation attributed to a stranger.
-			setAt(one);
-			setChosen(undefined);
-			setAgents([]);
-			setTalk({});
-			setLive({});
-			show("none", null);
-		},
-		[show],
-	);
 
 	const create = useCallback(
 		async (name: string) => {
@@ -329,17 +313,11 @@ export function App() {
 		<div className="app">
 			<nav className="rail">
 				<div className="rail-head">
-					<Picker
-						all={planes}
-						at={at}
+					<RailHead
 						connected={plane !== undefined}
-						onPick={goTo}
-						onAdd={() => show("connect")}
 						onKeys={() => show("keys")}
 						onPlugins={() => show("plugins")}
-						onDevices={() => show("devices")}
-						hasDoor={plane?.hasDoor ?? false}
-						onManage={() => show("planes")}
+						onAccess={() => show("devices")}
 					/>
 				</div>
 
@@ -393,7 +371,7 @@ export function App() {
 			</nav>
 
 			<main className="pane">
-				{down !== undefined && planes.length > 1 && (
+				{down !== undefined && (
 					<div className="down" role="status">
 						{down} — it will come back on its own.
 					</div>
@@ -404,7 +382,7 @@ export function App() {
 						className="flex items-center gap-2 border-working/40 border-b bg-working/10 px-5 py-2 text-[0.82rem] text-working"
 					>
 						<span className="flex-1">
-							This environment holds no key yet, so a turn stops at the model.
+							This plane holds no key yet, so a turn stops at the model.
 						</span>
 						<button
 							type="button"
@@ -434,20 +412,6 @@ export function App() {
 				)}
 			</main>
 
-			{showing === "connect" && (
-				<AddEnvironment
-					first={planes.length <= 1}
-					onAdded={(made, all) => {
-						setPlanes(all);
-						goTo(made);
-					}}
-					// Always, because this one was opened on purpose from the picker. A screen somebody
-					// asked for is a screen they can change their mind about, however many environments
-					// they have — the only dialog here with no way out is the first question, and only
-					// while there is genuinely nothing behind it.
-					onClose={() => show("none")}
-				/>
-			)}
 			{/* Raised by itself the first time, because this is the one thing missing between a plane
 			    that is running and an agent that can answer. */}
 			{plane !== undefined && keyless && !askedForKey && showing === "none" && (
@@ -492,45 +456,6 @@ export function App() {
 					onClose={() => setSetting(false)}
 				/>
 			)}
-			{showing === "planes" && (
-				<Environments
-					all={planes}
-					at={at}
-					onPick={goTo}
-					onForget={(all) => {
-						setPlanes(all);
-						if (!all.some((one) => keyOf(one) === keyOf(at))) goTo(all[0] ?? HERE);
-					}}
-					onAdd={() => show("connect")}
-					onClose={() => show("none")}
-				/>
-			)}
-			{/* Nothing connected and nothing to fall back to: this is not an error, it is the first
-			    question, and it is the whole of what this page can usefully show. Two ways to be in
-			    that state — a plane that served this page and has stopped answering, and a hosted copy
-			    that has never been given an environment, which is not a failure and has no error to
-			    wait for.
-
-			    `plane === undefined` is load-bearing and was missing. A connection that dropped once
-			    sets `down` and leaves the client in place, so this was raising a modal with no way out
-			    over a working console, with the agents visible behind it. A screen that has a plane has
-			    nothing to ask. */}
-			{showing === "none" &&
-				plane === undefined &&
-				(planes.length === 0 || (down !== undefined && planes.length <= 1)) && (
-					<AddEnvironment
-						first
-						onAdded={(made, all) => {
-							setPlanes(all);
-							goTo(made);
-						}}
-						// A way out as soon as there is anywhere to go. With an environment in the list
-						// there is a picker behind this and another machine to try; with none there is
-						// nothing this page can do but ask, and a dismissable dialog over an empty screen
-						// is a dead end with a close button on it.
-						onClose={planes.length > 0 ? () => show("none") : undefined}
-					/>
-				)}
 		</div>
 	);
 }

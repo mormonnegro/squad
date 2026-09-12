@@ -8,7 +8,6 @@ import type {
 	ServerStanding,
 	Utterance,
 } from "@squad/control-plane";
-import { link } from "@squad/relay/link";
 
 /**
  * A response to something asked, or an event nobody asked for.
@@ -318,16 +317,9 @@ export class Plane {
 		};
 	}
 
-	/** Whether this connection can answer for the door at all. A relayed one cannot. */
-	get hasDoor(): boolean {
-		return this.#wire.door !== undefined;
-	}
-
 	async #door(path: string, init?: RequestInit): Promise<unknown> {
 		const knock = this.#wire.door;
-		if (knock === undefined) {
-			throw new PlaneError("This environment is reached through a relay, which has no door.");
-		}
+		if (knock === undefined) throw new PlaneError("This connection has no door.");
 		return knock.call(this.#wire, path, init);
 	}
 
@@ -497,67 +489,23 @@ export class Plane {
  * The wire a browser has: an event stream down, and a POST up.
  *
  * `EventSource` rather than a socket because reconnection is the hard half of a live connection and
- * this is the one transport where the browser has already written it. What it cannot do is carry the
- * session id, which is why that arrives as the stream's first event rather than in a header.
- */
-/**
- * The wire for a plane that cannot be dialled, which meets this page at a rendezvous instead.
+ * this is the one transport where the browser has already written it. What it cannot do is carry
+ * the session id, which is why that arrives as the stream's first event rather than in a header.
  *
- * The same shape as the one above and, from the `Plane` upwards, indistinguishable from it: lines
- * go down and come back, and nothing that reads them knows which road they took. That is the whole
- * design — `squad relay` has always been a pipe with the protocol in it, and this is that pipe with
- * both ends dialling outwards so that neither has to be reachable.
- *
- * What crosses the relay is sealed with a key derived from the token, which the relay is never
- * given. It is handed a room number instead, derived from the same token one way, so pairing two
- * sockets is all it can do with it.
+ * One wire, and it is same-origin: this page is served by the plane it drives, and what lets it in
+ * is the cookie that plane set when the token was spent on the way here. There used to be two more
+ * — an origin with a token on every request, and a rendezvous for a plane nobody can dial — and
+ * they existed for a console that could be pointed at several machines. That console is a thing to
+ * build once running one is simple, and the shape of the wire is the first place the difference
+ * between those two shows up.
  */
-export function wireTo(one: {
-	origin: string;
-	token?: string | undefined;
-	relay?: string | undefined;
-}): Wire {
-	// Decided once, here, because everything above a `Wire` is written not to care: a connection is
-	// lines out and lines back, and a screen that asked which road they took would be a screen with
-	// two of everything on it.
-	return one.relay === undefined || one.token === undefined
-		? browserWire(one.origin, one.token)
-		: relayWire(one.relay, one.token);
-}
-
-export function relayWire(relayOrigin: string, token: string): Wire {
-	return {
-		open(onLine, onDown) {
-			return link({
-				origin: relayOrigin,
-				secret: token,
-				side: "console",
-				onLine,
-				onDown,
-			}).then((opened) => ({
-				post: (line: string) => opened.send(line),
-				close: () => opened.close(),
-			}));
-		},
-	};
-}
-
-export function browserWire(origin = "", token?: string): Wire {
-	// In the address of the stream because an `EventSource` can carry it nowhere else — it has no
-	// header API, and a cookie set by another origin is not ours to have. The wire is a `fetch` and
-	// takes it in a header, where an address cannot be copied out of a history.
-	const carried = token === undefined ? "" : `?t=${encodeURIComponent(token)}`;
+export function browserWire(): Wire {
 	return {
 		async door(path, init) {
-			const response = await fetch(`${origin}${path}`, {
+			const response = await fetch(path, {
 				...init,
-				headers: {
-					"content-type": "application/json",
-					...(token === undefined ? {} : { "x-squad-token": token }),
-					...(init?.headers ?? {}),
-				},
-				// Same-origin and cross-origin both: the cookie is what a page this plane served has,
-				// and the header is what a page somewhere else has.
+				headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+				// The cookie this plane set when it let this browser in, which is the whole of the key.
 				credentials: "include",
 			});
 			if (!response.ok) throw new PlaneError((await response.text()).trim());
@@ -565,7 +513,7 @@ export function browserWire(origin = "", token?: string): Wire {
 		},
 		open(onLine, onDown, onUp) {
 			return new Promise<Session>((settle, fail) => {
-				const source = new EventSource(`${origin}/events${carried}`);
+				const source = new EventSource("/events");
 				let session: string | undefined;
 
 				source.addEventListener("session", (event) => {
@@ -581,12 +529,9 @@ export function browserWire(origin = "", token?: string): Wire {
 					}
 					settle({
 						async post(line) {
-							const response = await fetch(`${origin}/rpc`, {
+							const response = await fetch("/rpc", {
 								method: "POST",
-								headers: {
-									"x-squad-session": session ?? "",
-									...(token === undefined ? {} : { "x-squad-token": token }),
-								},
+								headers: { "x-squad-session": session ?? "" },
 								body: line,
 							});
 							if (!response.ok) throw new Error(await response.text());
