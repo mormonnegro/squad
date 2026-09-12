@@ -52,6 +52,142 @@ address_of() {
 	fi
 }
 
+# One keypress, as a number, so an arrow and a letter are the same kind of thing to compare against.
+# An escape sequence is read to its end here rather than left in the buffer to arrive later as two
+# stray letters.
+keypress() {
+	first=$(dd bs=1 count=1 2>/dev/null | od -An -tu1 | tr -d ' \n')
+	if [ "$first" = 27 ]; then
+		dd bs=1 count=1 >/dev/null 2>&1
+		printf 'arrow-%s' "$(dd bs=1 count=1 2>/dev/null | od -An -tu1 | tr -d ' \n')"
+		return 0
+	fi
+	printf '%s' "$first"
+}
+
+# The menu.
+#
+# `squad` used to be the terminal console of whichever plane was installed last, which is a strange
+# thing for the bare command to be once there is more than one plane and the way into each is a
+# browser. What somebody has when they type it is a question — which of these, and what do I want to
+# do with it — so what they get is the list, with the answer one key away.
+#
+# Drawn by rewriting the same block: the cursor goes back up as many lines as were printed, which is
+# why the count is kept rather than guessed at.
+DRAWN=0
+draw_menu() {
+	[ "$DRAWN" = 0 ] || printf '\033[%dA' "$DRAWN"
+	lines=0
+	printf '\033[2K\n'
+	printf '\033[2K\033[1m  Planes on this machine\033[0m\n'
+	printf '\033[2K\n'
+	lines=$((lines + 3))
+	i=0
+	printf '%s\n' "$MENU_ROWS" | while IFS='	' read -r name container state dir running; do
+		i=$((i + 1))
+		printf '\033[2K'
+		if [ "$i" = "$PICKED" ]; then printf '  \033[36m▸\033[0m '; else printf '    '; fi
+		if [ "$running" != "running" ]; then
+			printf '\033[1m%-14s\033[0m \033[2mstopped\033[0m\n' "$name"
+		else
+			printf '\033[1m%-14s\033[0m \033[2m%s\033[0m\n' "$name" "$(where_of "$container")"
+		fi
+	done
+	lines=$((lines + MENU_COUNT))
+	printf '\033[2K\n'
+	printf '\033[2K'
+	if [ "$PICKED" = "$((MENU_COUNT + 1))" ]; then printf '  \033[36m▸\033[0m '; else printf '    '; fi
+	printf '+ a new environment\n'
+	printf '\033[2K\n'
+	printf '\033[2K\033[2m  ↑↓ move   ⏎ open in a browser   c console   u update   q quit\033[0m\n'
+	DRAWN=$((lines + 4))
+}
+
+# Where a plane answers, without its key. The address with the key on it is a thing somebody asks
+# for; a list of them is a screenful of credentials nobody asked to have on their screen.
+where_of() {
+	port=$(env_of "$1" SQUAD_WEB_PORT)
+	[ -n "$port" ] || port=8789
+	domain=$(env_of "$1" SQUAD_DOMAIN)
+	if [ -n "$domain" ]; then printf 'https://%s' "$domain"; else printf '127.0.0.1:%s' "$port"; fi
+}
+
+menu() {
+	MENU_ROWS=$(planes)
+	if [ -z "$MENU_ROWS" ]; then
+		list
+		return 0
+	fi
+	# Without a terminal there is nothing to move a cursor around, and a menu drawn into a pipe is a
+	# screenful of escape codes. The list is what this is when nobody is watching.
+	if [ ! -t 0 ] || [ ! -t 1 ]; then
+		list
+		return 0
+	fi
+
+	MENU_COUNT=$(printf '%s\n' "$MENU_ROWS" | grep -c .)
+	PICKED=1
+	saved=$(stty -g 2>/dev/null || true)
+	# Restored however this ends, including the ways that are not this function returning. A terminal
+	# left in raw mode is a shell that no longer echoes what is typed into it.
+	trap 'stty "$saved" 2>/dev/null || true; printf "\033[?25h\n"' EXIT INT TERM
+	stty -echo -icanon min 1 time 0 2>/dev/null || true
+	printf '\033[?25l'
+
+	while :; do
+		draw_menu
+		key=$(keypress)
+		case "$key" in
+		arrow-65 | 107) PICKED=$((PICKED > 1 ? PICKED - 1 : MENU_COUNT + 1)) ;;
+		arrow-66 | 106) PICKED=$((PICKED < MENU_COUNT + 1 ? PICKED + 1 : 1)) ;;
+		113 | 3) chosen=quit; break ;;
+		13 | 10) chosen=open; break ;;
+		99) chosen=console; break ;;
+		117) chosen=update; break ;;
+		110) PICKED=$((MENU_COUNT + 1)); chosen=open; break ;;
+		[1-9]) PICKED=$((key - 48)); [ "$PICKED" -le "$MENU_COUNT" ] || PICKED=$MENU_COUNT ;;
+		*) ;;
+		esac
+	done
+
+	stty "$saved" 2>/dev/null || true
+	printf '\033[?25h'
+	trap - EXIT INT TERM
+	printf '\n'
+
+	[ "$chosen" != quit ] || return 0
+	if [ "$PICKED" = "$((MENU_COUNT + 1))" ]; then
+		make_one
+		return 0
+	fi
+	name=$(printf '%s\n' "$MENU_ROWS" | sed -n "${PICKED}p" | cut -f1)
+	case "$chosen" in
+	open) exec "$0" open "$name" ;;
+	console) exec "$0" console "$name" ;;
+	update) exec "$0" update "$name" ;;
+	esac
+}
+
+# A second plane, which shares nothing with the first but the Docker daemon.
+make_one() {
+	step "A new environment"
+	note "Its own containers, volumes, networks, state and agents, on ports derived from its name."
+	note ""
+	printf '  Name it: '
+	read -r fresh || fresh=
+	fresh=$(printf '%s' "$fresh" | tr -cd 'a-z0-9-')
+	[ -n "$fresh" ] || die "A name is lowercase letters, digits and dashes."
+	planes | cut -f1 | grep -qx "$fresh" && die "There is already a plane here called \"$fresh\"."
+	step "Installing $fresh"
+	# The installer this machine already has, which is the one that put every other plane here.
+	any=$(planes | head -1 | cut -f4)
+	if [ -n "$any" ] && [ -f "$any/install.sh" ]; then
+		sh "$any/install.sh" --name="$fresh" </dev/tty
+	else
+		curl -fsSL https://squad.mormon.garden/install.sh | sh -s -- --name="$fresh"
+	fi
+}
+
 list() {
 	rows=$(planes)
 	if [ -z "$rows" ]; then
@@ -102,7 +238,9 @@ pick() {
 }
 
 case "${1:-}" in
-"" | ls | list) list ;;
+"") menu ;;
+ls | list) list ;;
+new) make_one ;;
 url)
 	pick "${2:-}"
 	printf '%s\n' "$(address_of "$PLANE_CONTAINER" "$PLANE_STATE")"
