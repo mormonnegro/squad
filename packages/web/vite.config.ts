@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import tailwind from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 /**
  * Which plane on this machine `pnpm dev` develops against.
@@ -73,8 +73,54 @@ function stateDirs(): string[] {
 const held = token();
 const carried = held === undefined ? {} : { headers: { cookie: `squad_web=${held}` } };
 
+/**
+ * What a served page asks for at the root, sent back to the port it came from.
+ *
+ * The plane does this with the `Referer`, and it has to: a page served under `/at/dev/3101/` that
+ * asks for `/_next/static/…` is asking the door for a file that is none of its own, and a `<base>`
+ * cannot help — it moves what is relative and that is absolute. Which is most frameworks: Next,
+ * Vite, anything with a build.
+ *
+ * In front of the plane that is the whole of it. In front of this dev server it is not, because
+ * this one owns the root and answers `/_next/…` with its own index.html — a page of HTML where a
+ * stylesheet should be, which is a page with no styles and no error anywhere. So the same rule is
+ * written here, as a rewrite: the request goes back under the prefix and the proxy below carries it
+ * to the plane like any other.
+ *
+ * Before Vite's own middlewares, which is what `configureServer` without a returned function means.
+ */
+function servedAssets(): Plugin {
+	return {
+		name: "squad:served-assets",
+		configureServer(server) {
+			server.middlewares.use((request, _response, next) => {
+				const asked = request.url ?? "/";
+				const referer = request.headers.referer;
+				if (asked.startsWith("/at/") || referer === undefined) {
+					next();
+					return;
+				}
+				let from: URL;
+				try {
+					from = new URL(referer);
+				} catch {
+					next();
+					return;
+				}
+				const served = /^\/at\/([^/]+)\/(\d+)\//.exec(from.pathname);
+				if (served === null) {
+					next();
+					return;
+				}
+				request.url = `/at/${served[1]}/${served[2]}${asked}`;
+				next();
+			});
+		},
+	};
+}
+
 export default defineConfig({
-	plugins: [react(), tailwind()],
+	plugins: [react(), tailwind(), servedAssets()],
 	// Relative, because this bundle is served from two places that disagree about where the root is:
 	// the plane serves it at /, and a website serves it under a path. Absolute asset addresses work
 	// in the first and 404 in the second, and they fail as a blank page with a clean console, which
