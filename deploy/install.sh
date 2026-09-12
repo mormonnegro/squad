@@ -674,41 +674,33 @@ quietly $DOCKER env SQUAD_STATE="$STATE" SQUAD_IMAGE="$IMAGE" \
 # Skipped where the client that ran this is already the local `squad`. Writing over it there would
 # leave a shim that reaches this plane by name in place of the command that knows about every plane
 # the operator has.
-# Written where it can be, and skipped out loud where it cannot.
+# Somewhere this user can write, rather than one place and a shrug.
 #
-# This is the console, and the console is no longer the way in — the address printed below is. So a
-# directory this user cannot write is not a reason to stop, and it is certainly not a reason to put
-# a password prompt in front of an install that had needed none: it is one line of output saying
-# what was not done and how to do it. What would be wrong is failing here quietly, which is what
-# `tee: Permission denied` in the middle of a build amounts to.
+# /usr/local/bin is the right answer on a server and the wrong one on a Mac, where it belongs to
+# whoever installed Homebrew and this user is not root. Skipping it there was defensible while the
+# command was only the terminal console — the address in a browser is the way in — and stopped being
+# defensible the moment `squad` became how you find out what is running on this machine at all.
+# Without it, the answer to "what have I got" is a pipeline into a shell, per deployment, every time.
+#
+# So: the named place if it can be written, and otherwise ~/.local/bin, which is this decade's answer
+# to exactly this and is already on the PATH of most shells that ship with one.
 if [ "$SHIM" = "yes" ] && [ -z "$SUDO" ] && [ ! -w "$(nearest "$SHIM_AT")" ]; then
-	step "Leaving \`squad\` off this machine's PATH"
-	note "$(dirname "$SHIM_AT") is not yours to write, and nothing here needs it: the plane is up"
-	note "and the address below drives it from a browser. To have the command as well:"
-	note ""
-	note "  sudo env SQUAD_NAME=$NAME sh $DIR/deploy/install.sh"
-	# Said now so that everything printed after it is true. The closing sections describe a machine
-	# driven by typing `squad`, and this is not one.
-	SHIM=no
+	SHIM_AT=$HOME/.local/bin/squad
+	mkdir -p "$(dirname "$SHIM_AT")"
+	# Said where it is true, because a command installed somewhere the shell does not look is a
+	# command that does not exist — and what that reads as is "it did not install".
+	case ":$PATH:" in
+	*":$(dirname "$SHIM_AT"):"*) ;;
+	*) NOT_ON_PATH=$(dirname "$SHIM_AT") ;;
+	esac
 fi
 
 if [ "$SHIM" = "yes" ]; then
-	$SUDO tee "$SHIM_AT" >/dev/null <<SQUAD
-#!/bin/sh
-# Written by squad's installer. The console, the log feed and every subcommand come through
-# here; it is the same line you would otherwise type by hand.
-cd "$DIR/deploy" || exit 1
-# Decided here rather than baked in when this was written, because the operator who installed it
-# and the ones who use it are not the same people, and a \`sudo\` nobody needs is a password
-# prompt in front of a command typed twenty times a day. Asking the socket is asking the only
-# question that matters, and it costs nothing.
-[ -r /var/run/docker.sock ] || AS_ROOT=sudo
-# Without a terminal there is nothing to allocate one for, and asking for one anyway is what makes
-# \`ssh vps squad ls\` fail where \`ssh -t vps squad\` works. It is also what \`squad relay\` needs:
-# a pty would rewrite the bytes of the protocol on their way past.
-[ -t 0 ] || NO_TTY=-T
-exec \${AS_ROOT:-} docker compose exec \${NO_TTY:-} control-plane squad "\$@"
-SQUAD
+	# Copied, not generated. It used to be a here-document with one deployment's directory baked into
+	# it, which made `squad` mean whichever plane was installed last — and made a second install
+	# quietly take the command away from the first. What goes here now knows about every plane on the
+	# machine, because it asks Docker rather than having been told once.
+	$SUDO cp "$DIR/deploy/squad.sh" "$SHIM_AT"
 	$SUDO chmod 755 "$SHIM_AT"
 fi
 
@@ -858,9 +850,11 @@ fi
 
 if [ "$SHIM" = "yes" ]; then
 	printf '\n'
-	note "squad     drives the same plane from this machine"
-	aside "squad ls    what each agent is and whether it is up"
-	aside "squad logs  what every agent runs, answers and spends"
+	note "squad            every plane on this machine, and the address that opens each"
+	note "squad update     this again, later, without the pipeline"
+	aside "squad open       that address, in a browser"
+	aside "squad logs       what the plane itself is saying"
+	aside "squad console    the console in a terminal, inside the plane"
 	aside ""
 	aside "From your own computer the console is one line, and this machine is an answer it keeps:"
 	aside "  curl -fsSL https://squad.mormon.garden/client.sh | sh"
@@ -868,6 +862,13 @@ if [ "$SHIM" = "yes" ]; then
 	aside "It asks where the plane should be and $(id -un)@$ADDR is the answer. Everything after"
 	aside "that travels the SSH connection you already have, so there is nothing to open here and"
 	aside "nothing new to log into."
+	# Where the shell will not find it, which is the same as not having installed it.
+	if [ -n "${NOT_ON_PATH:-}" ]; then
+		note ""
+		note "$NOT_ON_PATH is not on your PATH, so add it and the command is there in every shell:"
+		note ""
+		note "  echo 'export PATH=\"$NOT_ON_PATH:\$PATH\"' >> ~/.zshrc && exec zsh"
+	fi
 fi
 
 if [ -n "$VERBOSE" ]; then
