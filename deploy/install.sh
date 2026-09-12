@@ -811,7 +811,15 @@ if [ -f "$STATE/web.token" ]; then
 		esac
 		note ""
 		note "--open=no puts this back on loopback, reached by forwarding a port over SSH."
-	elif [ "$SHIM" = "yes" ]; then
+	elif [ -n "${SSH_CONNECTION:-}" ]; then
+		# Whether the person reading this is at the machine, asked of the connection that carried them
+		# here rather than of whether a command got installed.
+		#
+		# It used to key off the shim, which meant "a server" only for as long as installing the shim
+		# was something that failed on a laptop. The moment the command started installing everywhere,
+		# a Mac began printing an SSH forward to itself — the one machine where nothing needs
+		# forwarding, since the address below is already on its loopback and the operator is sitting
+		# in front of it.
 		# Numbered, because they are done in order and the order is the whole instruction. What sent
 		# somebody looking for a missing piece was a paragraph holding two commands and an address
 		# that is only true after one of them has been run.
