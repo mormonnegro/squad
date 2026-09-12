@@ -218,4 +218,28 @@ describe("logging in through a browser", () => {
 		expect(await comeBack(second.redirectUri, { code: "the-code", state })).toBe(200);
 		await expect(second.done).resolves.toBeDefined();
 	});
+
+	/**
+	 * The same door, wanted by a different name.
+	 *
+	 * One port, one path, one redirect registered against it, so two logins cannot wait at once — and
+	 * the second one used to be answered with `EADDRINUSE` in red, to somebody who had pressed a
+	 * button and could see nothing on the screen that was waiting for anything. Whoever is pressing a
+	 * button now gets the door; the one they abandoned is a click away from starting again.
+	 */
+	it("takes the door from a login waiting under another name", async () => {
+		const server = await authorizationServer();
+		const { desk: door } = await desk();
+		desks[desks.length - 1]?.names.push("stripe");
+
+		const notion = await door.begin({ name: "notion", url: `${server.url}/mcp`, host: "127.0.0.1" });
+		const stripe = await door.begin({ name: "stripe", url: `${server.url}/mcp`, host: "127.0.0.1" });
+
+		await expect(notion.done).rejects.toThrow(/called off/);
+		expect(stripe.redirectUri).toBe(notion.redirectUri);
+
+		const state = new URL(stripe.url).searchParams.get("state") ?? "";
+		expect(await comeBack(stripe.redirectUri, { code: "the-code", state })).toBe(200);
+		await expect(stripe.done).resolves.toBeDefined();
+	});
 });

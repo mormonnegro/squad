@@ -142,6 +142,19 @@ export class LoginDesk {
 		return this.#pending.has(name);
 	}
 
+	/**
+	 * Calls off every login that is waiting, which is at most one and is somebody else's.
+	 *
+	 * There is one door: one port, one path, one redirect registered against it. Two logins cannot
+	 * wait at once, and the second one arriving used to be told so — `EADDRINUSE`, in a red line, to
+	 * somebody who had pressed a button and could see nothing on the screen that was waiting for
+	 * anything. Whoever is pressing a button now is the one to serve, and the abandoned login is a
+	 * click away from being started again.
+	 */
+	async abandonAll(): Promise<void> {
+		await Promise.all([...this.#pending.keys()].map((name) => this.cancel(name)));
+	}
+
 	/** Awaited, because there is one door and whoever cancelled is often about to want it back. */
 	async cancel(name: string): Promise<void> {
 		const pending = this.#pending.get(name);
@@ -152,7 +165,7 @@ export class LoginDesk {
 	}
 
 	async begin(options: BeginLogin): Promise<StartedLogin> {
-		await this.cancel(options.name);
+		await this.abandonAll();
 
 		let settle: (login: OAuthLogin) => void = () => {};
 		let fail: (error: Error) => void = () => {};

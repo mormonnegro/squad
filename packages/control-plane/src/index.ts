@@ -94,6 +94,7 @@ export {
 	nameFor,
 	PLUGINS,
 	type Plugin,
+	pluginAt,
 	pluginOf,
 	SHELVES,
 	type Shelf,

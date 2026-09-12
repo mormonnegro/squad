@@ -99,7 +99,7 @@ import {
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
-import { nameFor, PLUGINS, type Plugin, pluginOf, serverOf } from "./plugins.ts";
+import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./plugins.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import {
 	checkRepo,
@@ -1778,7 +1778,15 @@ export class ControlPlane {
 		readonly catalog: readonly Plugin[];
 		readonly instances: readonly ServerStanding[];
 	}> {
-		return { catalog: PLUGINS, instances: await this.servers() };
+		// A connection the shelf cannot name is named by its address, here rather than in whatever is
+		// drawing it: the catalogue is on this side, and every screen asking this question wants the
+		// same answer.
+		const instances = (await this.servers()).map((one) => {
+			if (one.from !== undefined) return one;
+			const from = pluginAt(one.server);
+			return from === undefined ? one : { ...one, from };
+		});
+		return { catalog: PLUGINS, instances };
 	}
 
 	/**

@@ -1,4 +1,4 @@
-import type { McpServer } from "./mcp.ts";
+import { hostOf, type McpServer } from "./mcp.ts";
 
 /**
  * A plugin as somebody looks for one, which is by the name of the company rather than by a URL.
@@ -298,6 +298,23 @@ export const PLUGINS: readonly Plugin[] = [
 
 export function pluginOf(id: string): Plugin | undefined {
 	return PLUGINS.find((one) => one.id === id);
+}
+
+/**
+ * Which plugin an address is, for a connection that never said.
+ *
+ * Everything connected from the catalogue knows what it is a copy of, and everything connected
+ * before there was a catalogue — or typed in by hand, which is the same thing — does not. The
+ * address is enough to say: a connection to `api.ahrefs.com` is an Ahrefs whoever typed it thought
+ * of it that way or not, and a row that draws its mark and its name is one that reads like the rest
+ * of the list instead of like the one thing on the screen that went wrong.
+ *
+ * By host rather than by the whole URL, because a trailing slash is not a different company.
+ */
+export function pluginAt(server: McpServer): string | undefined {
+	const host = hostOf(server);
+	if (host === undefined) return undefined;
+	return PLUGINS.find((one) => hostOf(serverOf(one)) === host)?.id;
 }
 
 /** The plugin as the shelf underneath stores one: an address and how to speak to it. */

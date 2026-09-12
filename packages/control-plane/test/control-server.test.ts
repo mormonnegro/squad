@@ -557,6 +557,27 @@ describe("the control socket", () => {
 			expect((await client.plugins()).instances[0]?.label).toBeUndefined();
 		});
 
+		/**
+		 * A connection made before there was a catalogue is still a copy of something.
+		 *
+		 * Typed in by hand, or shelved by a version of this that had no catalogue at all — either way
+		 * the address says which company it is, and a row that cannot say so is the one thing in a list
+		 * of them that looks like it went wrong.
+		 */
+		it("names a connection by its address when the shelf cannot", async () => {
+			await client.addPlugin("seo", "https://api.ahrefs.com/mcp/mcp");
+
+			const [only] = (await client.plugins()).instances;
+			expect(only?.name).toBe("seo");
+			expect(only?.from).toBe("ahrefs");
+		});
+
+		it("leaves one nobody has heard of unnamed rather than guessing", async () => {
+			await client.addPlugin("ours", "https://mcp.example.internal/mcp");
+
+			expect((await client.plugins()).instances[0]?.from).toBeUndefined();
+		});
+
 		it("takes anything else from the line it was typed on", async () => {
 			await client.addPlugin("files", "mcp-files /tmp");
 
