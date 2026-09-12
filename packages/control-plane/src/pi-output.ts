@@ -1,9 +1,20 @@
+import { named, plainly, sourcesIn } from "./plainly.ts";
+
 /** One thing an agent did while a turn ran, in the order it did it. */
 export interface AgentStep {
 	/** A tool name like "bash" or "read", or "model" when the provider refused to answer. */
 	readonly action: string;
 	/** The part worth reading: the command, the path, the reason it failed. */
 	readonly detail: string;
+	/**
+	 * The same thing, in the words of somebody watching rather than of the tool that did it.
+	 *
+	 * Carried beside the two technical fields rather than instead of them: the feed is a log and
+	 * keeps what was run, and a conversation is read by whoever asked the question and gets this.
+	 */
+	readonly say: string;
+	/** The pages a step read, as URLs, for the surfaces that can draw who was read. */
+	readonly sources?: readonly string[];
 	readonly failed?: boolean;
 	/** How long the tool ran. Present on the line that reports a failure, which is where it matters. */
 	readonly ms?: number;
@@ -59,6 +70,9 @@ const MAX_DETAIL = 300;
  */
 const SUBJECTS = ["command", "pattern", "path", "file_path", "query", "url"] as const;
 
+/** Which tool's answer is worth reading for where it has been. */
+const READS_THE_WEB = "web_search";
+
 /**
  * Reads pi's JSON event stream and keeps the two things it is worth having: the answer, and what the
  * agent did to arrive at it.
@@ -77,7 +91,10 @@ const SUBJECTS = ["command", "pattern", "path", "file_path", "query", "url"] as 
 export class PiOutput {
 	readonly #onText: (delta: string) => void;
 	readonly #onStep: (step: AgentStep) => void;
-	readonly #running = new Map<string, { readonly at: number; readonly action: string }>();
+	readonly #running = new Map<
+		string,
+		{ readonly at: number; readonly action: string; readonly say: string }
+	>();
 	#pending = "";
 	#text = "";
 	#block = "";
@@ -165,16 +182,24 @@ export class PiOutput {
 
 	#toolStart(event: PiEvent): void {
 		const action = event.toolName ?? "tool";
-		this.#running.set(event.toolCallId ?? "", { at: Date.now(), action });
-		this.#step({ action, detail: subjectOf(event.args) });
+		const words = plainly(action, event.args);
+		this.#running.set(event.toolCallId ?? "", { at: Date.now(), action, say: words.say });
+		this.#step({
+			action,
+			detail: subjectOf(event.args),
+			say: words.say,
+			...(words.sources.length > 0 ? { sources: words.sources } : {}),
+		});
 	}
 
 	/**
-	 * Only failures are reported at the end.
+	 * Only failures are reported at the end, and the one thing a start line could not have said.
 	 *
 	 * The start line already said what was going to happen, and repeating it on the way out doubles
 	 * the log to say "and it worked". A tool that failed is different: what it printed is usually the
-	 * whole reason the turn went the way it did.
+	 * whole reason the turn went the way it did. So is a search that worked — where it had been is
+	 * in the answer and nowhere else, and "searched the web" without a single page named is the
+	 * shape of an answer nobody can decide whether to believe.
 	 */
 	#toolEnd(event: PiEvent): void {
 		const id = event.toolCallId ?? "";
@@ -183,13 +208,31 @@ export class PiOutput {
 		// Before the early return, because a tool that spent money spent it whether or not it also
 		// worked, and this is the only place that spending is ever said.
 		this.#billed(event.result);
-		if (event.isError !== true) return;
+		if (event.isError !== true) {
+			if ((started?.action ?? event.toolName) === READS_THE_WEB) this.#read(event.result);
+			return;
+		}
 
 		this.#step({
 			action: started?.action ?? event.toolName ?? "tool",
 			detail: textOf(event.result),
+			// What it was doing, rather than a second phrase about it having stopped: the row already
+			// says it failed, in red, with the reason beside it.
+			say: started?.say ?? plainly(event.toolName ?? "tool", undefined).say,
 			failed: true,
 			...(started !== undefined ? { ms: Date.now() - started.at } : {}),
+		});
+	}
+
+	/** Where a search went, once it comes back saying. */
+	#read(result: unknown): void {
+		const sources = sourcesIn(textOf(result));
+		if (sources.length === 0) return;
+		this.#step({
+			action: "sources",
+			detail: sources.join(" "),
+			say: `read ${named(sources)}`,
+			sources,
 		});
 	}
 
@@ -217,7 +260,12 @@ export class PiOutput {
 		const stopReason = message.stopReason;
 		if (stopReason !== "error" && stopReason !== "aborted") return;
 		this.#failure = message.errorMessage ?? stopReason;
-		this.#step({ action: "model", detail: this.#failure, failed: true });
+		this.#step({
+			action: "model",
+			detail: this.#failure,
+			say: plainly("model", undefined).say,
+			failed: true,
+		});
 	}
 
 	#step(step: AgentStep): void {

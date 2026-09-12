@@ -52,6 +52,17 @@
 	--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
 
 	--rail: 15rem;
+
+	/*
+	 * How wide a line of the conversation is allowed to get.
+	 *
+	 * A pane is as wide as the window and prose is not: past ninety-odd characters the eye loses the
+	 * start of the next line on the way back from the end of this one, which is why a wide window
+	 * made this harder to read rather than easier. The messages, the questions and the box all take
+	 * this same width, so what is on screen is one column rather than three things that happen to be
+	 * near each other.
+	 */
+	--measure: 46rem;
 	color-scheme: dark;
 }
 
@@ -562,10 +573,13 @@
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	min-height: 0;
-	padding: 1.2rem 1.2rem 0.5rem;
+	padding: 1.6rem 1.2rem 0.8rem;
 	display: flex;
 	flex-direction: column;
-	gap: 0.9rem;
+	/* Air between turns rather than between lines: a turn is the thing being looked for on the way
+	   past, and what separates two of them has to be larger than what separates two paragraphs of
+	   the same one. */
+	gap: 1.7rem;
 }
 
 /*
@@ -617,15 +631,29 @@
 .said {
 	display: grid;
 	grid-template-columns: 2.1rem minmax(0, 1fr);
-	gap: 0.7rem;
+	gap: 0.8rem;
 	align-items: start;
+	width: 100%;
+	max-width: var(--measure);
+	margin-inline: auto;
+	/* A point over the rest of the app, because this is the one thing on the screen that is read
+	   rather than scanned, and it is read for minutes at a time. */
+	font-size: 1rem;
+	line-height: 1.7;
+}
+
+/* The glyph wears its own agent's colour rather than the same grey as every other tile: a turn is
+   found on the way past by its mark, and a tinted chip is found without being read. */
+.said .face {
+	background: color-mix(in srgb, currentColor 12%, var(--bg-code));
+	border-color: color-mix(in srgb, currentColor 26%, var(--line));
 }
 
 .said-who {
 	display: flex;
 	align-items: baseline;
 	gap: 0.5rem;
-	margin-bottom: 0.1rem;
+	margin-bottom: 0.3rem;
 }
 
 .said-name {
@@ -633,16 +661,18 @@
 	color: var(--text-strong);
 }
 
+/* Quiet enough to be looked up rather than read past. The name says who; these say when, and when
+   only matters when somebody goes looking for it. */
 .said-when,
 .said-via {
 	font: 0.72rem var(--mono);
-	color: var(--muted);
+	color: color-mix(in srgb, var(--muted) 78%, transparent);
 }
 
 .said-via {
-	border: 1px solid var(--line);
-	border-radius: 3px;
-	padding: 0 0.3rem;
+	border: 1px solid var(--line-soft);
+	border-radius: 999px;
+	padding: 0.05rem 0.45rem;
 }
 
 .said-body {
@@ -655,7 +685,7 @@
 .md {
 	display: flex;
 	flex-direction: column;
-	gap: 0.7rem;
+	gap: 0.9rem;
 	overflow-wrap: anywhere;
 }
 
@@ -670,17 +700,35 @@
 	color: var(--text-strong);
 }
 
+/*
+ * A list with its marks back.
+ *
+ * It was a flex column, which blockifies the items and takes their markers away with them, so three
+ * bullets arrived as three paragraphs that happened to be indented — the one shape a list has, spent
+ * on nothing. A block with `list-style` and the space put between the items instead.
+ */
 .md-list {
 	margin: 0;
-	padding-left: 1.3rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.2rem;
+	padding-left: 1.5rem;
+	list-style: disc outside;
+}
+
+ol.md-list {
+	list-style: decimal outside;
+}
+
+.md-list li + li {
+	margin-top: 0.35rem;
+}
+
+/* The mark is punctuation, not content: it says where an item starts and then gets out of the way. */
+.md-list li::marker {
+	color: color-mix(in srgb, var(--muted) 72%, transparent);
 }
 
 .md-quote {
 	margin: 0;
-	padding-left: 0.8rem;
+	padding: 0.15rem 0 0.15rem 1rem;
 	border-left: 2px solid var(--line);
 	color: var(--muted);
 	white-space: pre-wrap;
@@ -688,10 +736,10 @@
 
 .md-code {
 	font: 0.86em var(--mono);
-	background: var(--bg-code);
-	border: 1px solid var(--line-soft);
-	border-radius: 3px;
-	padding: 0.05em 0.32em;
+	background: color-mix(in srgb, var(--cyan) 9%, var(--bg-code));
+	border: 1px solid color-mix(in srgb, var(--cyan) 14%, var(--line-soft));
+	border-radius: 5px;
+	padding: 0.12em 0.38em;
 	color: var(--cyan);
 }
 
@@ -699,17 +747,87 @@
 	margin: 0;
 	background: var(--bg-code);
 	border: 1px solid var(--line);
-	border-radius: 6px;
-	padding: 0.7rem 0.8rem;
+	border-radius: 9px;
+	padding: 0.85rem 1rem;
 	/* Wide code scrolls in its own box. The conversation never scrolls sideways. */
 	overflow-x: auto;
-	font: 0.82rem / 1.55 var(--mono);
+	font: 0.84rem / 1.6 var(--mono);
 	color: var(--text);
 }
 
+/* A table is a shape before it is words: the eye reads down a column to compare, so the rules run
+   the way it is read and the figures sit against the edge they are compared on. Nothing is boxed in
+   on four sides — a grid drawn around every cell is a grid the eye has to get out of first. */
+.md-scroll {
+	width: fit-content;
+	max-width: 100%;
+	overflow-x: auto;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--bg-raised);
+}
+
+.md-table {
+	border-collapse: collapse;
+	font-size: 0.94em;
+}
+
+.md-table th,
+.md-table td {
+	padding: 0.55rem 0.9rem;
+	text-align: left;
+	vertical-align: top;
+}
+
+/* The head is a label for the column rather than a cell of its own: small and quiet, so the reading
+   starts at the first figure rather than at the word above it. */
+.md-table th {
+	border-bottom: 1px solid var(--line);
+	color: var(--muted);
+	font: 600 0.74em / 1.5 var(--sans);
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.md-table tbody td {
+	border-top: 1px solid var(--line-soft);
+}
+
+.md-table tbody tr:first-child td {
+	border-top: 0;
+}
+
+/* The row under the cursor, lit just enough to hold a wide one together across its own width. */
+.md-table tbody tr:hover td {
+	background: #ffffff06;
+}
+
+.md-table [data-lean="right"] {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.md-table [data-lean="center"] {
+	text-align: center;
+}
+
+/* Underlined, faintly, because in a conversation a link has to say it is one before it is hovered —
+   and faintly rather than fully, because a paragraph with three addresses in it should not read as
+   three strikethroughs. */
 .md a {
 	color: var(--cyan);
-	text-underline-offset: 2px;
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-decoration-color: color-mix(in srgb, var(--cyan) 32%, transparent);
+	text-underline-offset: 3px;
+	transition: color 0.12s ease, text-decoration-color 0.12s ease;
+}
+
+.md a:hover {
+	color: color-mix(in srgb, var(--cyan) 80%, white);
+	text-decoration-color: currentColor;
 }
 
 /* The plane speaking, and bad news, keep their colour through whatever they wrote it in. */
@@ -733,35 +851,73 @@
 
 /* ── what it is doing, inside the message rather than beside it ──────── */
 
+/* What the agent is doing, in the sentence font the rest of the conversation is read in: these
+   rows are prose now rather than a tool name and its argument, and set in mono they read as the
+   log they used to be. */
 .steps {
 	display: flex;
 	flex-direction: column;
-	gap: 0.15rem;
-	margin: 0.35rem 0 0;
-	font: 0.78rem / 1.5 var(--mono);
+	gap: 0.3rem;
+	margin: 0.8rem 0 0;
+	/* Held together by a rule of their own: what a turn did is a list under the answer, not more of
+	   the answer, and the line is what says so without spending a word on it. */
+	padding-left: 0.8rem;
+	border-left: 1px solid var(--line-soft);
+	font: 0.84rem / 1.55 var(--sans);
 }
 
 .step {
 	display: flex;
-	gap: 0.5rem;
+	align-items: center;
+	gap: 0.45rem;
+	min-width: 0;
 	color: var(--muted);
 }
 
-.step-action {
-	color: var(--blue);
-	min-width: 4.5rem;
-}
-
-.step-detail {
+.step-say {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-/* A failed step is the one line in a turn worth finding, so it takes the colour of both columns. */
-.step[data-failed="true"] .step-action,
-.step[data-failed="true"] .step-detail {
+/* The reason it failed, which is the one thing on these rows still worth having verbatim. */
+.step-why {
+	flex: 0 1 auto;
+	overflow: hidden;
+	font: 0.76rem var(--mono);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* A failed step is the one line in a turn worth finding. */
+.step[data-failed="true"] {
 	color: var(--red);
+}
+
+.sources {
+	display: inline-flex;
+	flex: none;
+	gap: 0.2rem;
+	align-items: center;
+}
+
+.source {
+	width: 0.95rem;
+	height: 0.95rem;
+	border-radius: 2px;
+	object-fit: contain;
+	flex: none;
+}
+
+/* The stand-in for a site that serves no icon: its initial, in the space the icon would have had,
+   so a row is the same height whether the image arrived or not. */
+.source[data-letter="true"] {
+	display: inline-grid;
+	place-items: center;
+	background: var(--bg-code);
+	border: 1px solid var(--line);
+	font: 600 0.6rem / 1 var(--sans);
+	color: var(--muted);
 }
 
 /* ── the question an agent raises, where it raised it ────────────────── */
@@ -770,11 +926,15 @@
 	border: 1px solid var(--line);
 	border-left: 2px solid var(--amber);
 	background: var(--bg-raised);
-	border-radius: 5px;
-	padding: 0.75rem 0.9rem;
+	border-radius: 9px;
+	padding: 0.9rem 1rem;
 	display: flex;
 	flex-direction: column;
-	gap: 0.6rem;
+	gap: 0.7rem;
+	/* The same column the conversation is read in: the question was raised in it. */
+	width: 100%;
+	max-width: var(--measure);
+	margin-inline: auto;
 }
 
 .ask-what {
@@ -812,21 +972,33 @@
 /* ── the box you type in ─────────────────────────────────────────────── */
 
 .composer {
-	padding: 0.5rem 1.2rem 1.1rem;
+	padding: 0.6rem 1.2rem 1.4rem;
+}
+
+/* On the column the conversation is read in, so the answer and the question sit on one left edge. */
+.box,
+.menu {
+	width: 100%;
+	max-width: var(--measure);
+	margin-inline: auto;
 }
 
 .box {
 	border: 1px solid var(--line);
-	border-radius: 7px;
+	border-radius: 11px;
 	background: var(--bg-raised);
 	display: flex;
 	align-items: flex-start;
-	gap: 0.55rem;
-	padding: 0.65rem 0.8rem;
+	gap: 0.6rem;
+	padding: 0.8rem 1rem;
+	transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
+/* A ring rather than a brighter border: the box has to say it has the keys from across the room,
+   and a single-pixel change of grey does not carry that far. */
 .box:focus-within {
-	border-color: #363c44;
+	border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 12%, transparent);
 }
 
 .box[data-mode="shell"] {
@@ -834,9 +1006,9 @@
 }
 
 .box-mark {
-	font: 0.9rem var(--mono);
-	color: var(--muted);
-	padding-top: 0.12rem;
+	font: 0.95rem var(--mono);
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+	padding-top: 0.16rem;
 	flex: none;
 }
 
@@ -846,8 +1018,12 @@
 	border: 0;
 	resize: none;
 	color: var(--text);
-	font: 15px / 1.55 var(--sans);
+	font: 1rem / 1.6 var(--sans);
 	max-height: 12rem;
+}
+
+.box textarea::placeholder {
+	color: color-mix(in srgb, var(--muted) 72%, transparent);
 }
 
 .box textarea:focus {
@@ -856,7 +1032,7 @@
 
 .menu {
 	border: 1px solid var(--line);
-	border-radius: 7px;
+	border-radius: 11px;
 	background: var(--bg-raised);
 	margin-bottom: 0.4rem;
 	overflow: hidden;

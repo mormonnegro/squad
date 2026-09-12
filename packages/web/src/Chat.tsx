@@ -7,6 +7,9 @@ import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
 
+/** Enough marks to say who was read, before the row turns into the list it is summarising. */
+const MOST_MARKS = 5;
+
 export function Chat({
 	plane,
 	agent,
@@ -196,13 +199,19 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 				{live.steps.length > 0 && (
 					<div className="steps">
 						{live.steps.slice(-8).map((step, index) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: append-only within one turn
-							<div className="step" key={index} data-failed={step.failed === true}>
-								<span className="step-action">{step.action}</span>
-								<span className="step-detail">
-									{step.failed === true && "✗ "}
-									{step.detail}
-								</span>
+							<div
+								className="step"
+								// biome-ignore lint/suspicious/noArrayIndexKey: append-only within one turn
+								key={index}
+								data-failed={step.failed === true}
+								// The tool and the argument it was called with, for whoever wants them. The row
+								// says what is happening; this is the same thing in the terms it happened in, and
+								// it belongs a hover away rather than in front of somebody waiting for an answer.
+								title={`${step.action} ${step.detail}`}
+							>
+								<Sources urls={step.sources ?? []} />
+								<span className="step-say">{step.say || step.detail}</span>
+								{step.failed === true && <span className="step-why">✗ {step.detail}</span>}
 							</div>
 						))}
 					</div>
@@ -210,6 +219,68 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 			</div>
 		</article>
 	);
+}
+
+/**
+ * Who a step read, drawn as the marks of the sites themselves.
+ *
+ * A row that says "reading infobae.com" is already true, and the icon beside it is what actually
+ * gets read: a person recognises a masthead before they have finished the first word of a sentence,
+ * and "which of these am I being told by" is the question behind watching an agent look things up.
+ */
+function Sources({ urls }: { urls: readonly string[] }) {
+	const hosts: string[] = [];
+	for (const url of urls) {
+		const host = hostOf(url);
+		// One mark per site. A loop over eight pages of one newspaper is one masthead, eight times,
+		// which says nothing the first one did not.
+		if (host.length > 0 && !hosts.includes(host)) hosts.push(host);
+	}
+	if (hosts.length === 0) return null;
+	return (
+		<span className="sources">
+			{hosts.slice(0, MOST_MARKS).map((host) => (
+				<Source key={host} host={host} />
+			))}
+		</span>
+	);
+}
+
+/**
+ * One site's mark, asked of the site.
+ *
+ * From the site itself rather than from a favicon service, which would be the shorter line and
+ * would hand a third party every page an agent read on somebody's behalf — the one thing this plane
+ * is careful about everywhere else. A site that serves no icon there gets its initial instead,
+ * because a row that reflows when an image fails is worse than a row that never had one.
+ */
+function Source({ host }: { host: string }) {
+	const [drawn, setDrawn] = useState(true);
+	if (!drawn) {
+		return (
+			<span className="source" data-letter="true" title={host}>
+				{host.slice(0, 1).toUpperCase()}
+			</span>
+		);
+	}
+	return (
+		<img
+			className="source"
+			src={`https://${host}/favicon.ico`}
+			alt={host}
+			title={host}
+			loading="lazy"
+			onError={() => setDrawn(false)}
+		/>
+	);
+}
+
+function hostOf(url: string): string {
+	try {
+		return new URL(url).hostname.replace(/^www\./, "");
+	} catch {
+		return "";
+	}
 }
 
 /**

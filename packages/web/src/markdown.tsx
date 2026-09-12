@@ -17,6 +17,21 @@ import type { ReactNode } from "react";
 /** Addresses a link may point at. Anything else is drawn as the text it was, and goes nowhere. */
 const SAFE = /^(https?:|mailto:)/i;
 
+/**
+ * An address written as itself, which is how an address actually arrives.
+ *
+ * `[text](url)` is what markdown is for and it is not what gets written when an agent hands over a
+ * login URL: it writes the address, on a line of its own, the way it would say it. Every terminal
+ * turns that into something clickable without being asked, so a console that leaves it as characters
+ * is the one surface the link cannot be followed from. The schemes are the ones `SAFE` admits, which
+ * is that rule written as a scanner rather than as a check.
+ */
+const BARE = /^(?:https?:\/\/|mailto:)[^\s<>"]+/i;
+/** What a sentence puts after an address rather than inside one. */
+const AFTER = /[.,;:!?"'\u2026]/;
+/** Brackets, which sit inside an address exactly as often as they sit around one. */
+const SHUT: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+
 interface Fence {
 	readonly kind: "fence";
 	readonly language: string;
@@ -40,8 +55,24 @@ interface Para {
 	readonly kind: "para";
 	readonly text: string;
 }
+interface Table {
+	readonly kind: "table";
+	readonly head: readonly string[];
+	readonly rows: readonly (readonly string[])[];
+	/** Which way each column is read, one per column of the squared table. */
+	readonly leans: readonly Lean[];
+}
 
-type Block = Fence | Heading | List | Quote | Para;
+type Lean = "left" | "right" | "center";
+
+type Block = Fence | Heading | List | Quote | Para | Table;
+
+/** A line that opens with a pipe opens a table, and nothing else opens with one. */
+const ROW = /^\s*\|/;
+/** `---`, `:--`, `--:` or `:-:`: the row that says a table is a table, and how it leans. */
+const LEAN = /^(:?)-+(:?)$/;
+/** A figure, which belongs against the column it is compared down. Currencies and percents included. */
+const FIGURE = /^[-+]?[$€£]?\d[\d.,\s]*%?$/;
 
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const BULLET = /^\s*[-*+]\s+(.*)$/;
@@ -104,6 +135,24 @@ export function blocks(text: string): readonly Block[] {
 			continue;
 		}
 
+		if (ROW.test(line)) {
+			const rows: string[] = [line];
+			while (i + 1 < lines.length && ROW.test(lines[i + 1] ?? "")) {
+				i++;
+				rows.push(lines[i] ?? "");
+			}
+			// Two rows make a table. One is a line of prose that happens to start with a pipe — which is
+			// how the terminal reads the same text, and the two surfaces disagreeing about what a
+			// message says would be worse than whichever rule is wrong.
+			if (rows.length > 1) {
+				flush();
+				out.push(tabled(rows));
+				continue;
+			}
+			para.push(line);
+			continue;
+		}
+
 		const bullet = BULLET.exec(line);
 		const number = NUMBER.exec(line);
 		if (bullet !== null || number !== null) {
@@ -126,6 +175,83 @@ export function blocks(text: string): readonly Block[] {
 
 	flush();
 	return out;
+}
+
+/**
+ * The rows of a table, squared off and told which way they lean.
+ *
+ * Written the way the terminal's renderer writes it, down to the leaning: the lean row is optional
+ * because plenty of agents skip it, and a column of figures then says which way it is read itself —
+ * a comparison is read down the last digit, and a column of numbers ragged on the right is a table
+ * whose one job has not been done.
+ */
+function tabled(lines: readonly string[]): Table {
+	const parsed = lines.map(cells);
+	// The lean row carries no data: it is spent on knowing how each column is read.
+	const leaning = parsed[1]?.every((cell) => LEAN.test(cell)) === true ? parsed[1] : undefined;
+	const head = parsed[0] ?? [];
+	const body = parsed.slice(leaning === undefined ? 1 : 2);
+	const count = Math.max(head.length, ...body.map((row) => row.length), 1);
+	const square = (row: readonly string[]): readonly string[] =>
+		Array.from({ length: count }, (_, index) => row[index] ?? "");
+
+	return {
+		kind: "table",
+		head: square(head),
+		rows: body.map(square),
+		leans: Array.from({ length: count }, (_, index) => leanOf(leaning?.[index], body, index)),
+	};
+}
+
+function leanOf(said: string | undefined, body: readonly (readonly string[])[], at: number): Lean {
+	const lean = LEAN.exec(said ?? "");
+	if (lean?.[2] === ":") return lean[1] === ":" ? "center" : "right";
+	if (lean !== null && lean[1] === ":") return "left";
+	// Nothing said, so the column says it. Anything that is not a figure, even one cell of it, is
+	// prose, and prose starts at the left.
+	const column = body.map((row) => row[at] ?? "").filter((cell) => cell !== "");
+	return column.length > 0 && column.every((cell) => FIGURE.test(cell)) ? "right" : "left";
+}
+
+/**
+ * One row's cells, with the pipes that bound them spent.
+ *
+ * The outer pipes are optional in the markdown and meaningless either way, so a row that has them
+ * and a row that does not have to come out with the same number of cells — otherwise the header
+ * sits one column off its own body.
+ */
+function cells(line: string): readonly string[] {
+	let inner = line.trim();
+	if (inner.startsWith("|")) inner = inner.slice(1);
+	if (inner.endsWith("|") && !inner.endsWith("\\|")) inner = inner.slice(0, -1);
+	return inner.split(/(?<!\\)\|/).map((cell) => cell.trim().replaceAll("\\|", "|"));
+}
+
+/**
+ * The address inside a run of characters that has no spaces in it.
+ *
+ * The run is where an address stops being obvious. One at the end of a sentence is followed by the
+ * full stop that ended the sentence, and one inside brackets by the bracket that shut them: neither
+ * is part of the address and both are inside the run, so they come off the end. Except a bracket the
+ * address opened itself, which is how a good deal of Wikipedia is addressed and which is a 404
+ * without it.
+ */
+function addressOf(run: string): string {
+	let url = run;
+	while (url.length > 0) {
+		const last = url.slice(-1);
+		const opener = SHUT[last];
+		const outside = opener === undefined ? AFTER.test(last) : !opened(url, opener, last);
+		if (!outside) break;
+		url = url.slice(0, -1);
+	}
+	return url;
+}
+
+/** Whether the address opened the bracket it ends with, or a sentence around it did. */
+function opened(url: string, open: string, shut: string): boolean {
+	const count = (mark: string): number => url.split(mark).length - 1;
+	return count(open) >= count(shut);
 }
 
 /**
@@ -177,6 +303,22 @@ export function inline(text: string): ReactNode[] {
 				),
 			);
 			i += link[0].length;
+			continue;
+		}
+
+		// Taken whole, and before the marks below: that ordering is also what keeps a query string
+		// intact, because the `_` in `client_id` is an underscore and not the opening of an emphasis
+		// that closes somewhere further down the address.
+		const loose = BARE.exec(rest);
+		const bare = loose === null ? "" : addressOf(loose[0]);
+		if (BARE.test(bare)) {
+			keep();
+			out.push(
+				<a href={bare} target="_blank" rel="noreferrer noopener" key={key++}>
+					{bare}
+				</a>,
+			);
+			i += bare.length;
 			continue;
 		}
 
@@ -253,6 +395,38 @@ function Drawn({ block }: { block: Block }) {
 						<li key={index}>{inline(item)}</li>
 					))}
 				</ul>
+			);
+		case "table":
+			// In a scroller of its own: a table with six columns of figures is wider than a pane and
+			// must not be what decides the width of the conversation around it.
+			return (
+				<div className="md-scroll">
+					<table className="md-table">
+						<thead>
+							<tr>
+								{block.head.map((cell, index) => (
+									// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
+									<th key={index} data-lean={block.leans[index]}>
+										{inline(cell)}
+									</th>
+								))}
+							</tr>
+						</thead>
+						<tbody>
+							{block.rows.map((row, line) => (
+								// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
+								<tr key={line}>
+									{row.map((cell, index) => (
+										// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
+										<td key={index} data-lean={block.leans[index]}>
+											{inline(cell)}
+										</td>
+									))}
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
 			);
 		case "para":
 			return <p className="md-para">{inline(block.text)}</p>;

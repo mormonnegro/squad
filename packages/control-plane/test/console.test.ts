@@ -2392,19 +2392,21 @@ describe("Config", () => {
 /** The prompt has one row and the line being typed needs most of it, so the directory gets little. */
 describe("doing", () => {
 	it("says the tool and what it is on", () => {
-		expect(doing({ action: "read", detail: "src/proxy.ts" })).toBe("read src/proxy.ts");
+		expect(doing({ action: "read", detail: "src/proxy.ts", say: "reading proxy.ts" })).toBe(
+			"read src/proxy.ts",
+		);
 	});
 
 	// A step's detail is a whole shell command or a diff, and this row is one row. The feed keeps
 	// the rest, which is where a thing is read once it has already happened.
 	it("takes the first line of a detail that runs to several", () => {
-		expect(doing({ action: "bash", detail: "  pnpm   test \n--watch\nmore" })).toBe(
-			"bash pnpm test",
-		);
+		expect(
+			doing({ action: "bash", detail: "  pnpm   test \n--watch\nmore", say: "running the tests" }),
+		).toBe("bash pnpm test");
 	});
 
 	it("is the tool alone when there is nothing to say about it", () => {
-		expect(doing({ action: "think", detail: "" })).toBe("think");
+		expect(doing({ action: "think", detail: "", say: "thinking" })).toBe("think");
 	});
 });
 

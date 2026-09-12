@@ -45,7 +45,11 @@ describe("LogFeed", () => {
 	it("shows the commands an agent runs inside its sandbox", () => {
 		const { lines, log } = feed();
 
-		log.push({ kind: "step", agentId: "maxi", step: { action: "bash", detail: "pnpm -r test" } });
+		log.push({
+			kind: "step",
+			agentId: "maxi",
+			step: { action: "bash", detail: "pnpm -r test", say: "running the tests" },
+		});
 
 		expect(lines[0]).toMatch(/^\d\d:\d\d:\d\d {2}maxi {6}bash {6} {2}pnpm -r test$/);
 	});
@@ -56,7 +60,13 @@ describe("LogFeed", () => {
 		log.push({
 			kind: "step",
 			agentId: "maxi",
-			step: { action: "bash", detail: "Command exited with code 3", failed: true, ms: 2100 },
+			step: {
+				action: "bash",
+				detail: "Command exited with code 3",
+				say: "running the tests",
+				failed: true,
+				ms: 2100,
+			},
 		});
 
 		expect(lines[0]).toContain("✗ after 2.1s: Command exited with code 3");
@@ -214,7 +224,7 @@ describe("LogFeed", () => {
 		const step = {
 			kind: "step",
 			agentId: "maxi",
-			step: { action: "bash", detail: "pnpm -r test" },
+			step: { action: "bash", detail: "pnpm -r test", say: "running the tests" },
 		} satisfies PlaneEvent;
 
 		painted.push(step);

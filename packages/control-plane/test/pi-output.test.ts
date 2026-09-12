@@ -116,8 +116,8 @@ describe("PiOutput", () => {
 		);
 
 		expect(steps).toEqual([
-			{ action: "bash", detail: "pnpm -r test" },
-			{ action: "read", detail: "notes.md" },
+			{ action: "bash", detail: "pnpm -r test", say: "running the tests" },
+			{ action: "read", detail: "notes.md", say: "reading notes.md" },
 		]);
 	});
 
@@ -187,6 +187,45 @@ describe("PiOutput", () => {
 		);
 
 		expect(steps).toHaveLength(1);
+	});
+
+	it("says where a search went, which is the one thing its start line could not", () => {
+		// The question was asked at the start and the pages are only in the answer. A search whose
+		// sources are never said is an answer nobody can decide whether to believe.
+		const { steps, out } = stepping();
+
+		out.push(
+			emitted({
+				type: "tool_execution_start",
+				toolCallId: "call_1",
+				toolName: "web_search",
+				args: { query: "what did the peso close at" },
+			}),
+		);
+		out.push(
+			emitted({
+				type: "tool_execution_end",
+				toolCallId: "call_1",
+				isError: false,
+				result: {
+					content: [
+						{
+							type: "text",
+							text: "It closed at 1,420.\n\nSources:\n[1] https://www.infobae.com/economia/cierre/",
+						},
+					],
+				},
+			}),
+		);
+
+		expect(steps).toHaveLength(2);
+		expect(steps[0]?.say).toBe("searching the web for “what did the peso close at”");
+		expect(steps[1]).toEqual({
+			action: "sources",
+			detail: "https://www.infobae.com/economia/cierre/",
+			say: "read infobae.com",
+			sources: ["https://www.infobae.com/economia/cierre/"],
+		});
 	});
 
 	it("cuts a detail down to a log line, not a build failure", () => {
@@ -308,7 +347,14 @@ describe("PiOutput", () => {
 		);
 
 		expect(out.failure).toBe('403 "egress_denied"');
-		expect(steps).toEqual([{ action: "model", detail: '403 "egress_denied"', failed: true }]);
+		expect(steps).toEqual([
+			{
+				action: "model",
+				detail: '403 "egress_denied"',
+				say: "the model would not answer",
+				failed: true,
+			},
+		]);
 	});
 
 	it("is not a failure just because a message ended", () => {
