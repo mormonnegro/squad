@@ -1,9 +1,8 @@
 import type { ProviderStanding } from "@squad/control-plane";
-import { KeyRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "./lib/utils.ts";
 import { Modal } from "./Modal.tsx";
 import type { Plane } from "./plane.ts";
+import { lookOf, Mark } from "./providers.tsx";
 
 /**
  * The keys this plane can be given.
@@ -143,10 +142,10 @@ function Row({
 	return (
 		<div className="rounded-lg border border-line bg-raised p-3">
 			<div className="flex items-center gap-3">
-				<KeyRound className={cn("size-4 flex-none", row.held ? "text-up" : "text-muted")} />
+				<Mark id={row.id} size={30} />
 				<div className="min-w-0 flex-1">
 					<div className="flex items-baseline gap-2">
-						<span className="font-medium text-said">{row.id}</span>
+						<span className="font-medium text-said">{lookOf(row.id).name}</span>
 						<span className="truncate font-mono text-[0.72rem] text-muted">{row.keyEnv}</span>
 					</div>
 					<div className="truncate text-[0.78rem] text-muted">

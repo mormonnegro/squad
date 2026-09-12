@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "./lib/utils.ts";
 import { Modal } from "./Modal.tsx";
 import type { Plane } from "./plane.ts";
+import { lookOf, Mark } from "./providers.tsx";
 
 /**
  * The first key, asked for once and confirmed rather than assumed.
@@ -56,15 +57,14 @@ export function FirstKey({
 								key={one.keyEnv}
 								onClick={() => setPicked(one)}
 								className={cn(
-									"flex flex-col items-start gap-1.5 rounded-lg border p-4 text-left transition-colors",
+									"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors",
 									"border-line bg-raised hover:border-[#39414a]",
 								)}
 							>
-								<span className="font-medium text-said">{LOOK[one.id]?.name ?? one.id}</span>
-								<span className="text-[0.8rem]/[1.45] text-muted">
-									{LOOK[one.id]?.says ?? "A provider this plane knows how to reach."}
-								</span>
-								<span className="mt-1 truncate font-mono text-[0.68rem] text-muted">
+								<Mark id={one.id} />
+								<span className="font-medium text-said">{lookOf(one.id).name}</span>
+								<span className="text-[0.8rem]/[1.45] text-muted">{lookOf(one.id).says}</span>
+								<span className="mt-auto w-full truncate pt-1 font-mono text-[0.68rem] text-muted">
 									{one.models.join(", ")}
 								</span>
 							</button>
@@ -112,7 +112,7 @@ function Paste({
 
 	useEffect(() => field.current?.focus(), []);
 
-	const look = LOOK[provider.id];
+	const look = lookOf(provider.id);
 
 	const save = useCallback(async (): Promise<void> => {
 		setBusy(true);
@@ -126,7 +126,7 @@ function Paste({
 				// Kept rather than left in place: a key that does not work is worse than none, because
 				// the screen stops saying anything is missing and the failure moves to the first turn.
 				await plane.setKey(provider.keyEnv, "");
-				setWhy(`${LOOK[provider.id]?.name ?? provider.id} refused it — ${mine[0]}`);
+				setWhy(`${lookOf(provider.id).name} refused it — ${mine[0]}`);
 				return;
 			}
 			setGood(catalog.offers.filter((offer) => offer.provider === provider.id).length);
@@ -144,7 +144,7 @@ function Paste({
 					<Check className="size-5 flex-none text-up" />
 					<div>
 						<div className="font-medium text-said">
-							{look?.name ?? provider.id} answered
+							{look.name} answered
 							{good > 0 ? ` with ${good} model${good === 1 ? "" : "s"}` : ""}
 						</div>
 						<div className="text-[0.82rem] text-muted">
@@ -170,22 +170,25 @@ function Paste({
 				another provider
 			</button>
 
-			<div>
-				<div className="flex items-baseline gap-2">
-					<span className="font-medium text-said">{look?.name ?? provider.id}</span>
-					<span className="font-mono text-[0.72rem] text-muted">{provider.keyEnv}</span>
+			<div className="flex items-start gap-3">
+				<Mark id={provider.id} />
+				<div>
+					<div className="flex items-baseline gap-2">
+						<span className="font-medium text-said">{look.name}</span>
+						<span className="font-mono text-[0.72rem] text-muted">{provider.keyEnv}</span>
+					</div>
+					{look.at !== undefined && (
+						<a
+							href={look.at}
+							target="_blank"
+							rel="noreferrer noopener"
+							className="mt-1 inline-flex items-center gap-1.5 text-[0.82rem] text-here hover:underline"
+						>
+							<ExternalLink className="size-3.5" />
+							where {look.name} gives you one
+						</a>
+					)}
 				</div>
-				{look?.at !== undefined && (
-					<a
-						href={look.at}
-						target="_blank"
-						rel="noreferrer noopener"
-						className="mt-1 inline-flex items-center gap-1.5 text-[0.82rem] text-here hover:underline"
-					>
-						<ExternalLink className="size-3.5" />
-						where {look.name} gives you one
-					</a>
-				)}
 			</div>
 
 			<form
@@ -226,36 +229,3 @@ function Paste({
 		</div>
 	);
 }
-
-/** What to call each one, and where it hands out keys. Presentation, and the operator's to ignore. */
-const LOOK: Readonly<Record<string, { name: string; says: string; at?: string }>> = {
-	deepseek: {
-		name: "DeepSeek",
-		says: "Cheap enough to leave an agent running. What the config starts on.",
-		at: "https://platform.deepseek.com/api_keys",
-	},
-	anthropic: {
-		name: "Anthropic",
-		says: "Claude. The strongest of these at long, careful work.",
-		at: "https://console.anthropic.com/settings/keys",
-	},
-	openai: {
-		name: "OpenAI",
-		says: "GPT, and the one endpoint an agent searches the web through.",
-		at: "https://platform.openai.com/api-keys",
-	},
-	google: { name: "Google", says: "Gemini.", at: "https://aistudio.google.com/apikey" },
-	groq: { name: "Groq", says: "Open models, answered fast.", at: "https://console.groq.com/keys" },
-	mistral: {
-		name: "Mistral",
-		says: "European, and open-weight.",
-		at: "https://console.mistral.ai/api-keys",
-	},
-	openrouter: {
-		name: "OpenRouter",
-		says: "One key, most of the others behind it.",
-		at: "https://openrouter.ai/keys",
-	},
-	xai: { name: "xAI", says: "Grok.", at: "https://console.x.ai" },
-	zai: { name: "Z.ai", says: "GLM." },
-};
