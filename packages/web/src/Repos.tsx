@@ -212,6 +212,25 @@ function Head({ title, count, says }: { title: string; count?: number | undefine
 }
 
 /**
+ * Where a token gets made, with as much of the form filled in as GitHub will accept.
+ *
+ * The classic page takes its scopes in the address, so that link arrives with `repo` ticked and the
+ * note written — one click from here to a token. The fine-grained page takes nothing: there is no
+ * documented way to pre-tick a permission, which is why the list below it is written out instead of
+ * linked around. The narrow one is still the one to want, because it is the only one where the
+ * repositories are chosen at the same time.
+ */
+const CLASSIC = `https://github.com/settings/tokens/new?scopes=repo&description=${encodeURIComponent("squad — this plane's repositories")}`;
+const FINE = "https://github.com/settings/personal-access-tokens/new";
+
+/** What the fine-grained page has to be told by hand, and what each one is actually for. */
+const NEEDS = [
+	["Contents", "Read and write", "clone, fetch, and push to the branches an agent is given"],
+	["Pull requests", "Read and write", "open and update a PR, which is the only way it may write"],
+	["Metadata", "Read-only", "GitHub ticks this one itself"],
+] as const;
+
+/**
  * The one credential the whole of this screen runs on.
  *
  * A token rather than an account, and deliberately: connecting an account would mean an OAuth app
@@ -247,16 +266,8 @@ function Token({
 						? "This plane holds a GitHub token. Every repository below is reached with it, and no agent ever sees it."
 						: "This plane holds no GitHub token, so it can see no repositories and hand over none."}
 				</span>
-				<a
-					className="pill"
-					href="https://github.com/settings/personal-access-tokens/new"
-					target="_blank"
-					rel="noreferrer"
-				>
-					make one on GitHub
-				</a>
 				<button type="button" className="pill" data-yes={!held} onClick={() => setOpen(true)}>
-					{held ? "replace it" : "paste a token"}
+					{held ? "replace it" : "make one"}
 				</button>
 			</div>
 		);
@@ -275,10 +286,39 @@ function Token({
 			}}
 		>
 			<p className="section-says">
-				A fine-grained token, given the repositories you want reachable and{" "}
-				<strong>Contents: read and write</strong> on the ones an agent should push to. It is kept
-				here as this plane's own, never written into a conversation, and never handed to an agent.
+				Kept here as this plane's own: never written into a conversation, never handed to an agent,
+				and spent by the proxy on the way out of a sandbox.
 			</p>
+
+			<div className="flex flex-col gap-2 rounded-[10px] border border-line-soft bg-sunk p-3">
+				<div className="flex flex-wrap items-center gap-2">
+					<a className="pill" data-yes="true" href={FINE} target="_blank" rel="noreferrer">
+						fine-grained token
+					</a>
+					<span className="text-[0.78rem] text-muted">
+						— you pick the repositories on that page, and tick these three:
+					</span>
+				</div>
+				<ul className="flex flex-col gap-1">
+					{NEEDS.map(([what, how, why]) => (
+						<li key={what} className="flex flex-wrap items-baseline gap-x-2 text-[0.78rem]">
+							<span className="font-medium text-said">{what}</span>
+							<code className="md-code">{how}</code>
+							<span className="text-muted">— {why}</span>
+						</li>
+					))}
+				</ul>
+				{/* The other page takes its scopes in the address, so this link is the whole of the form.
+				    Wider than the first: a classic token reaches every repository the account can. */}
+				<div className="flex flex-wrap items-center gap-2 border-line-soft border-t pt-2">
+					<a className="pill" href={CLASSIC} target="_blank" rel="noreferrer">
+						classic token, scopes filled in
+					</a>
+					<span className="text-[0.78rem] text-muted">
+						— one click, and it reaches every repository your account does.
+					</span>
+				</div>
+			</div>
 			<div className="flex gap-2">
 				<input
 					ref={field}
