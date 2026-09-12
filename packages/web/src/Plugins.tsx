@@ -1,7 +1,7 @@
 import type { AgentSummary, Plugin } from "@squad/control-plane";
+import { Blocks } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nameOf } from "./face.ts";
-import { Modal } from "./Modal.tsx";
 import type { Connected, Plane } from "./plane.ts";
 
 /** How long the screen keeps looking after a consent screen was opened in another tab. */
@@ -21,15 +21,7 @@ const BEAT_MS = 2000;
  * one and another agent the other. That is the whole reason connections are a list rather than a
  * column of ticks down the catalogue.
  */
-export function Plugins({
-	plane,
-	agents,
-	onClose,
-}: {
-	plane: Plane;
-	agents: readonly AgentSummary[];
-	onClose: () => void;
-}) {
+export function Plugins({ plane, agents }: { plane: Plane; agents: readonly AgentSummary[] }) {
 	const [catalog, setCatalog] = useState<readonly Plugin[]>([]);
 	const [made, setMade] = useState<readonly Connected[] | undefined>();
 	const [why, setWhy] = useState<string | undefined>();
@@ -109,93 +101,112 @@ export function Plugins({
 	const known = (id: string): Plugin | undefined => catalog.find((one) => one.id === id);
 
 	return (
-		<Modal size="wider" title="Plugins" onClose={onClose}>
-			<p className="lede">
-				A plugin gives an agent tools it did not have: a Stripe to read, a Linear to file into, a
-				Postgres to ask. Connecting one opens an account here and nothing else — no agent has it
-				until it is handed over below, and the agents never hold the token.
-			</p>
+		<>
+			{/* The same head the conversation has, because this is the same kind of thing: a screen the
+			    column on the left switches between, rather than a question raised over one. */}
+			<header className="pane-head">
+				<span className="face" style={{ color: "var(--cyan)" }} aria-hidden="true">
+					<Blocks className="size-3.5" />
+				</span>
+				<span className="pane-title">Plugins</span>
+				<div className="pane-facts">
+					{connected.length > 0 && <span>{connected.length} connected</span>}
+					<span>{catalog.length} on the shelf</span>
+				</div>
+			</header>
 
-			{why !== undefined && <span className="why block">{why}</span>}
-			{made === undefined && why === undefined && (
-				<span className="text-[0.85rem] text-muted">asking the plane…</span>
-			)}
+			<div className="pane-scroll">
+				<div className="pane-column">
+					<p className="lede">
+						A plugin gives an agent tools it did not have: a Stripe to read, a Linear to file into,
+						a Postgres to ask. Connecting one opens an account here and nothing else — no agent has
+						it until it is handed over below, and the agents never hold the token.
+					</p>
 
-			{connected.length > 0 && (
-				<section className="flex flex-col gap-2">
-					<Head
-						title={`Connected · ${connected.length}`}
-						says="Each row is one account. The same plugin can be here twice, with a different account behind each."
-					/>
-					{connected.map((one) => (
-						<Row
-							key={one.name}
-							one={one}
-							plugin={one.from === undefined ? undefined : known(one.from)}
-							agents={agents}
-							busy={busy}
-							onLogin={() => void run(`login:${one.name}`, () => open(one.name))}
-							onLogout={() => void run(`login:${one.name}`, () => plane.logoutPlugin(one.name))}
-							onHold={(agentId, held) =>
-								void run(`hold:${one.name}:${agentId}`, () =>
-									plane.holdPlugin(agentId, one.name, held),
-								)
-							}
-							onLabel={(label) =>
-								void run(`label:${one.name}`, () => plane.labelPlugin(one.name, label))
-							}
-							onForget={() => void run(`forget:${one.name}`, () => plane.forgetPlugin(one.name))}
+					{why !== undefined && <span className="why block">{why}</span>}
+					{made === undefined && why === undefined && (
+						<span className="text-[0.85rem] text-muted">asking the plane…</span>
+					)}
+
+					{connected.length > 0 && (
+						<section className="flex flex-col gap-2">
+							<Head
+								title={`Connected · ${connected.length}`}
+								says="Each row is one account. The same plugin can be here twice, with a different account behind each."
+							/>
+							{connected.map((one) => (
+								<Row
+									key={one.name}
+									one={one}
+									plugin={one.from === undefined ? undefined : known(one.from)}
+									agents={agents}
+									busy={busy}
+									onLogin={() => void run(`login:${one.name}`, () => open(one.name))}
+									onLogout={() => void run(`login:${one.name}`, () => plane.logoutPlugin(one.name))}
+									onHold={(agentId, held) =>
+										void run(`hold:${one.name}:${agentId}`, () =>
+											plane.holdPlugin(agentId, one.name, held),
+										)
+									}
+									onLabel={(label) =>
+										void run(`label:${one.name}`, () => plane.labelPlugin(one.name, label))
+									}
+									onForget={() =>
+										void run(`forget:${one.name}`, () => plane.forgetPlugin(one.name))
+									}
+								/>
+							))}
+						</section>
+					)}
+
+					<section className="flex flex-col gap-3">
+						<Head
+							title="Add a plugin"
+							says="Connecting one you already have connected makes a second, separate account — which is what two Stripe accounts are."
 						/>
-					))}
-				</section>
-			)}
-
-			<section className="flex flex-col gap-3">
-				<Head
-					title="Add a plugin"
-					says="Connecting one you already have connected makes a second, separate account — which is what two Stripe accounts are."
-				/>
-				{/* An empty shop is the one failure this screen can have that looks like nothing at all,
+						{/* An empty shop is the one failure this screen can have that looks like nothing at all,
 				    and it has one cause: the catalogue comes from the plane, and the plane is older than
 				    the page it is serving. Said here, with the two words that fix it, rather than left as
 				    a heading with nothing under it. */}
-				{made !== undefined && catalog.length === 0 && (
-					<p className="text-[0.8rem]/[1.5] text-muted">
-						This plane has no catalogue to offer: it is running a version older than this console.{" "}
-						<code className="md-code">squad dev</code> puts your checkout behind it, and{" "}
-						<code className="md-code">squad update</code> puts it on the published image. Anything
-						below still works — an address is an address.
-					</p>
-				)}
-				{SHELVES.map(([shelf, title]) => {
-					const here = catalog.filter((one) => one.shelf === shelf);
-					if (here.length === 0) return null;
-					return (
-						<div key={shelf} className="flex flex-col gap-1.5">
-							<div className="font-medium text-[0.72rem] text-muted uppercase tracking-[0.07em]">
-								{title}
-							</div>
-							<div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
-								{here.map((one) => (
-									<Card
-										key={one.id}
-										plugin={one}
-										held={connected.filter((made) => made.from === one.id).length}
-										busy={busy === `add:${one.id}`}
-										onConnect={() => void connect(one)}
-									/>
-								))}
-							</div>
-						</div>
-					);
-				})}
-			</section>
+						{made !== undefined && catalog.length === 0 && (
+							<p className="text-[0.8rem]/[1.5] text-muted">
+								This plane has no catalogue to offer: it is running a version older than this
+								console. <code className="md-code">squad dev</code> puts your checkout behind it,
+								and <code className="md-code">squad update</code> puts it on the published image.
+								Anything below still works — an address is an address.
+							</p>
+						)}
+						{SHELVES.map(([shelf, title]) => {
+							const here = catalog.filter((one) => one.shelf === shelf);
+							if (here.length === 0) return null;
+							return (
+								<div key={shelf} className="flex flex-col gap-1.5">
+									<div className="font-medium text-[0.72rem] text-muted uppercase tracking-[0.07em]">
+										{title}
+									</div>
+									<div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
+										{here.map((one) => (
+											<Card
+												key={one.id}
+												plugin={one}
+												held={connected.filter((made) => made.from === one.id).length}
+												busy={busy === `add:${one.id}`}
+												onConnect={() => void connect(one)}
+											/>
+										))}
+									</div>
+								</div>
+							);
+						})}
+					</section>
 
-			<Custom
-				busy={busy === "custom"}
-				onAdd={(name, line) => run("custom", () => plane.addPlugin(name, line))}
-			/>
-		</Modal>
+					<Custom
+						busy={busy === "custom"}
+						onAdd={(name, line) => run("custom", () => plane.addPlugin(name, line))}
+					/>
+				</div>
+			</div>
+		</>
 	);
 }
 

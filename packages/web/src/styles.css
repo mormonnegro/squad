@@ -162,11 +162,12 @@
 }
 
 /*
- * The foot of the column: what this plane can reach, and where this plane is.
+ * The foot of the column: the way into what this plane can reach.
  *
- * A row and then a line, in that order, because one is a door and the other is a fact. The door is
- * at the bottom rather than in the menu at the top for the reason the agents are not in the menu
- * either: this column is the plane, and the plugins are the plane's.
+ * At the bottom rather than in the menu at the top for the reason the agents are not in the menu
+ * either — this column is the plane, and the plugins are the plane's. Where the plane is used to be
+ * said here too and no longer is: the picker at the top of the same column already says it, and a
+ * second copy of a fact is a row spent on nothing.
  */
 .rail-foot {
 	border-top: 1px solid var(--line);
@@ -206,11 +207,6 @@
 	cursor: default;
 }
 
-.foot-where {
-	padding: 0 0.4rem 0.15rem;
-	color: color-mix(in srgb, var(--muted) 75%, transparent);
-	font-size: 0.76rem;
-}
 
 .field {
 	width: 100%;
@@ -620,6 +616,32 @@
 	   past, and what separates two of them has to be larger than what separates two paragraphs of
 	   the same one. */
 	gap: 1.7rem;
+}
+
+/*
+ * The other thing a pane holds: a screen that is read from the top down.
+ *
+ * Not `.scroll`, which is the conversation's and rests its content on the prompt — a list of what
+ * can be connected hanging off the bottom of the window would be the same rule applied where it
+ * means nothing.
+ */
+.pane-scroll {
+	flex: 1;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	min-height: 0;
+	padding: 1.6rem 1.2rem 2.5rem;
+}
+
+/* Wider than the conversation's measure, because this is cards to scan rather than lines to read,
+   and narrow enough that three of them across is the shape at any window size worth having. */
+.pane-column {
+	display: flex;
+	flex-direction: column;
+	gap: 1.6rem;
+	width: 100%;
+	max-width: 62rem;
+	margin-inline: auto;
 }
 
 /*

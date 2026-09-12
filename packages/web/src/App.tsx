@@ -319,6 +319,7 @@ export function App() {
 								setChosen(one.id);
 								setMaking(false);
 								setSetting(false);
+								show("none");
 							}}
 						/>
 					))}
@@ -329,6 +330,7 @@ export function App() {
 						onClick={() => {
 							setMaking(true);
 							setChosen(undefined);
+							show("none");
 						}}
 					>
 						<span className="mark">+</span>
@@ -350,9 +352,6 @@ export function App() {
 						<Blocks className="size-4 flex-none" />
 						<span className="row-name">Plugins</span>
 					</button>
-					{/* What this whole column is about, said where a column ends. The picker at the top is
-					    where it is changed; this is where it is confirmed without looking up. */}
-					<span className="foot-where">{at.origin === "" ? "on this computer" : at.origin}</span>
 				</div>
 			</nav>
 
@@ -381,6 +380,8 @@ export function App() {
 				)}
 				{making ? (
 					<NewAgent onMake={create} />
+				) : showing === "plugins" && plane !== undefined ? (
+					<Plugins plane={plane} agents={agents} />
 				) : agent !== undefined && plane !== undefined ? (
 					<Chat
 						key={agent.id}
@@ -438,16 +439,6 @@ export function App() {
 			{showing === "keys" && plane !== undefined && (
 				<Keys
 					plane={plane}
-					onClose={() => {
-						show("none");
-						void look();
-					}}
-				/>
-			)}
-			{showing === "plugins" && plane !== undefined && (
-				<Plugins
-					plane={plane}
-					agents={agents}
 					onClose={() => {
 						show("none");
 						void look();
