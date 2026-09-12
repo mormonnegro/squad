@@ -38,6 +38,22 @@ function placeAt(pathname: string): Place | "none" {
 	return PLACES[pathname as keyof typeof PLACES] ?? "none";
 }
 
+/**
+ * Where a conversation lives, under a prefix rather than at the top.
+ *
+ * `/scout` would have been shorter and would have made every agent a claim on a path this page may
+ * want for something else — `plugins` is a legal name for an agent, and an agent called that would
+ * have taken the plugins screen with it. A prefix costs seven characters and settles it forever.
+ */
+const AGENTS = "/agents/";
+
+/** Whose conversation an address names, or nobody for an address that names none. */
+function agentAt(pathname: string): string | undefined {
+	if (!pathname.startsWith(AGENTS)) return undefined;
+	const id = decodeURIComponent(pathname.slice(AGENTS.length));
+	return id === "" ? undefined : id;
+}
+
 /** Where a screen lives, or nothing for the ones that are questions rather than places. */
 function addressOf(showing: string): string | undefined {
 	if (showing === "none") return "/";
@@ -81,7 +97,8 @@ export function App() {
 	const [agents, setAgents] = useState<readonly AgentSummary[]>([]);
 	const [talk, setTalk] = useState<Record<string, readonly Utterance[]>>({});
 	const [live, setLive] = useState<Record<string, Live>>({});
-	const [chosen, setChosen] = useState<string | undefined>();
+	// Read off the address, so a link to a conversation opens that conversation.
+	const [chosen, setChosen] = useState<string | undefined>(() => agentAt(window.location.pathname));
 	const [making, setMaking] = useState(false);
 	/**
 	 * Whether this plane can pay for any of the models it is configured with.
@@ -107,17 +124,33 @@ export function App() {
 	 * The query is carried along. It is where the token arrives, and dropping it on the way to a
 	 * screen would be logging somebody out for opening one.
 	 */
-	const show = useCallback((next: typeof showing): void => {
-		setShowing(next);
-		const address = addressOf(next);
-		if (address === undefined || address === window.location.pathname) return;
-		window.history.pushState(null, "", `${address}${window.location.search}`);
-	}, []);
+	const show = useCallback(
+		(next: typeof showing, who?: string | null): void => {
+			setShowing(next);
+			// Putting a screen away is going back to what the pane was showing, which is a conversation
+			// or nobody — and `null` is how a caller says nobody while somebody is still selected.
+			const at = who === undefined ? chosen : (who ?? undefined);
+			const address =
+				next === "none" ? (at === undefined ? "/" : `${AGENTS}${at}`) : addressOf(next);
+			if (address === undefined || address === window.location.pathname) return;
+			window.history.pushState(null, "", `${address}${window.location.search}`);
+		},
+		[chosen],
+	);
 
 	// The other direction: back and forward are the same two keys everywhere else on the web, and a
 	// page that answers to an address has to answer to them or the address is decoration.
 	useEffect(() => {
-		const walked = (): void => setShowing(placeAt(window.location.pathname));
+		// Screen and conversation together, because they are one thing on the screen: walking back out
+		// of the plugins and walking back into the last conversation are the same key, and it has to
+		// land on what the address says rather than on half of it.
+		const walked = (): void => {
+			const at = window.location.pathname;
+			setShowing(placeAt(at));
+			setChosen(agentAt(at));
+			setMaking(false);
+			setSetting(false);
+		};
 		window.addEventListener("popstate", walked);
 		return () => window.removeEventListener("popstate", walked);
 	}, []);
@@ -255,19 +288,23 @@ export function App() {
 			setAgents([]);
 			setTalk({});
 			setLive({});
-			show("none");
+			show("none", null);
 		},
 		[show],
 	);
 
-	const create = useCallback(async (name: string) => {
-		const client = held.current;
-		if (client === undefined) return;
-		const made = await client.create(name);
-		setAgents((was) => [...was.filter((one) => one.id !== made.id), made]);
-		setChosen(made.id);
-		setMaking(false);
-	}, []);
+	const create = useCallback(
+		async (name: string) => {
+			const client = held.current;
+			if (client === undefined) return;
+			const made = await client.create(name);
+			setAgents((was) => [...was.filter((one) => one.id !== made.id), made]);
+			setChosen(made.id);
+			setMaking(false);
+			show("none", made.id);
+		},
+		[show],
+	);
 
 	const look = useCallback(async (): Promise<void> => {
 		if (plane === undefined) return;
@@ -319,7 +356,7 @@ export function App() {
 								setChosen(one.id);
 								setMaking(false);
 								setSetting(false);
-								show("none");
+								show("none", one.id);
 							}}
 						/>
 					))}
@@ -330,7 +367,7 @@ export function App() {
 						onClick={() => {
 							setMaking(true);
 							setChosen(undefined);
-							show("none");
+							show("none", null);
 						}}
 					>
 						<span className="mark">+</span>
