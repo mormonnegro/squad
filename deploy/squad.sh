@@ -287,6 +287,37 @@ start)
 	$DOCKER compose --project-directory "$PLANE_DIR" --profile tls start
 	list
 	;;
+dev)
+	# The plane, running the sources in the checkout you are standing in.
+	#
+	# It runs TypeScript directly, so there is nothing to build — which means the only thing between
+	# an edit and a running plane was an image, and an image is a minute. Mounted over the one the
+	# image shipped, one directory per package, so everything installed stays where the image put it:
+	# node_modules is the half that cannot come from a host with different platform binaries in it.
+	pick "${2:-}"
+	[ -f "$PWD/pnpm-workspace.yaml" ] || die "Run this from a squad checkout — it mounts its sources."
+	mounts=""
+	for one in "$PWD"/packages/*/src; do
+		[ -d "$one" ] || continue
+		pkg=$(basename "$(dirname "$one")")
+		mounts="$mounts      - $one:/srv/squad/packages/$pkg/src:ro
+"
+	done
+	printf 'services:\n  control-plane:\n    volumes:\n%s' "$mounts" >"$PLANE_DIR/compose.dev.yaml"
+	$DOCKER compose --project-directory "$PLANE_DIR" \
+		-f "$PLANE_DIR/compose.yaml" -f "$PLANE_DIR/compose.dev.yaml" up -d
+	# And restarted, always. `up` brings the mounts and then does nothing, correctly, when nothing
+	# about the container has changed — but the thing that changed is a file behind a mount, and the
+	# process read it at startup. Without this the second run of this command is a no-op that looks
+	# like the edit not working.
+	$DOCKER compose --project-directory "$PLANE_DIR" \
+		-f "$PLANE_DIR/compose.yaml" -f "$PLANE_DIR/compose.dev.yaml" restart control-plane
+	step "$PLANE_NAME is running your checkout"
+	note "$PWD"
+	note ""
+	note "Edit, then \`squad dev\` again to pick it up — it is a restart and not a build."
+	note "\`squad update\` puts it back on the published image."
+	;;
 logs)
 	pick "${2:-}"
 	$DOCKER logs -f "$PLANE_CONTAINER"
@@ -307,6 +338,7 @@ console)
 	note "squad stop [name]     and squad start [name]"
 	note "squad logs [name]     what the plane itself is saying"
 	note "squad console [name]  the console in a terminal, inside the plane"
+	note "squad dev [name]      run the checkout you are in, instead of the published image"
 	printf '\n'
 	note "The name can be left out wherever there is only one plane here."
 	;;

@@ -5,8 +5,28 @@ import tailwind from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-/** Where a plane on this machine is listening, which is what `pnpm dev` develops against. */
-const PLANE = process.env.SQUAD_WEB_ORIGIN ?? "http://127.0.0.1:8789";
+/**
+ * Which plane on this machine `pnpm dev` develops against.
+ *
+ * One name rather than an address and a directory. A deployment's port comes from a hash of its
+ * name, so the port is not something anybody should be looking up and typing — and getting it wrong
+ * means developing against the wrong plane, which looks like the change not working.
+ *
+ *   SQUAD_NAME=casa pnpm dev
+ */
+const NAME = process.env.SQUAD_NAME ?? "squad";
+const PLANE = process.env.SQUAD_WEB_ORIGIN ?? `http://127.0.0.1:${portOf(NAME)}`;
+
+/** The port that deployment published, read from the file the installer wrote it into. */
+function portOf(name: string): string {
+	try {
+		const env = readFileSync(join(homedir(), ".squad", name, "app", "deploy", ".env"), "utf8");
+		return /^SQUAD_WEB_PORT=(\d+)$/m.exec(env)?.[1] ?? "8789";
+	} catch {
+		// A name nobody installed under, or a server's layout. 8789 is what a first install takes.
+		return "8789";
+	}
+}
 
 /**
  * The plane's token, for the dev server to carry on the browser's behalf.
@@ -43,9 +63,8 @@ function token(): string | undefined {
 function stateDirs(): string[] {
 	const asked = process.env.SQUAD_STATE;
 	if (asked !== undefined && asked.length > 0) return [asked];
-	const name = process.env.SQUAD_NAME ?? "squad";
 	return [
-		join(homedir(), ".squad", name, "state"),
+		join(homedir(), ".squad", NAME, "state"),
 		// What every install before names wrote, for a machine that still has one.
 		join(homedir(), ".squad", "here"),
 	];
