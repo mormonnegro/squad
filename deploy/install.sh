@@ -367,6 +367,18 @@ else
 fi
 note "$($SUDO git -C "$DIR" log -1 --format='%h  %s')"
 
+# What this machine already answered, read before anything asks it again.
+#
+# A re-run is the update, and an update that re-opens a settled question is one that asks the
+# operator to defend a decision they made months ago — from a prompt whose default is to undo it.
+# Read here rather than where it used to be, two hundred lines down and after the build, which was
+# late enough that the question had already been asked.
+if [ -f "$DIR/deploy/.env" ]; then
+	[ -n "$DOMAIN_GIVEN" ] || DOMAIN=$($SUDO sed -n 's/^SQUAD_DOMAIN=//p' "$DIR/deploy/.env" | head -1)
+	[ -n "$RELAY_GIVEN" ] || RELAY=$($SUDO sed -n 's/^SQUAD_RELAY=//p' "$DIR/deploy/.env" | head -1)
+	[ -z "$DOMAIN" ] || CONSOLE_AT="https://$DOMAIN/"
+fi
+
 # Asked, and asked before anything is built.
 #
 # The keys were taken out of this install because a key is not a prerequisite: the plane accepts one
@@ -617,20 +629,12 @@ BIND=127.0.0.1
 [ "$OPEN" != yes ] || BIND=0.0.0.0
 set_env SQUAD_WEB_BIND "$BIND"
 
-if [ -n "$RELAY_GIVEN" ]; then
-	set_env SQUAD_RELAY "$RELAY"
-else
-	RELAY=$($SUDO sed -n 's/^SQUAD_RELAY=//p' .env 2>/dev/null | head -1)
-fi
-
+# Both were settled above — by a flag, by the answer to the question, or by what the file already
+# said. Written down here because here is where the file can be written to.
+[ -z "$RELAY_GIVEN" ] || set_env SQUAD_RELAY "$RELAY"
 if [ -n "$DOMAIN_GIVEN" ]; then
 	set_env SQUAD_DOMAIN "$DOMAIN"
 	[ -n "$DOMAIN" ] || note "the domain is given back — this plane goes back to loopback only"
-else
-	# Not told one, so the answer is whatever this install already had. A re-run that forgot the flag
-	# must not quietly take the certificate away and start printing an SSH forward instead.
-	DOMAIN=$($SUDO sed -n 's/^SQUAD_DOMAIN=//p' .env 2>/dev/null | head -1)
-	[ -z "$DOMAIN" ] || CONSOLE_AT="https://$DOMAIN/"
 fi
 
 # Set rather than added, for the same reason the domain is: which image this plane runs is what this
