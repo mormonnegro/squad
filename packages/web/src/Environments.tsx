@@ -131,7 +131,7 @@ export function Picker({
 					{hasDoor && (
 						<MenuItem onSelect={onDevices} disabled={!connected}>
 							<Laptop className="size-4 flex-none text-muted" />
-							Devices
+							Access
 						</MenuItem>
 					)}
 					<MenuItem onSelect={onManage}>

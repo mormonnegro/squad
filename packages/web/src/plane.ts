@@ -59,11 +59,30 @@ export interface Wake {
 export class PlaneError extends Error {}
 
 /** One browser that has been let in, as a screen shows it. */
+/**
+ * A way in that was handed to somebody: who it is for, until when, and what became of it.
+ *
+ * Written out here rather than imported, like everything else on this wire: what matters is that
+ * the two ends agree on the fields that are read.
+ */
+export interface Invitation {
+	readonly id: string;
+	readonly label: string;
+	readonly createdAt: string;
+	readonly expiresAt: string;
+	/** How many more browsers it may let in. Zero is spent. */
+	readonly left: number;
+	/** The devices that came in on it. */
+	readonly admitted: readonly string[];
+}
+
 export interface DeviceRow {
 	readonly id: string;
 	readonly name: string;
 	readonly createdAt: string;
 	readonly lastSeenAt: string;
+	/** The invitation this browser came in on, for the ones that did not come in on the token. */
+	readonly from?: string;
 }
 
 /** The connection under the client: how a line goes out, and how the lines coming back arrive. */
@@ -320,6 +339,36 @@ export class Plane {
 			gone?: boolean;
 		};
 		return answer.gone === true;
+	}
+
+	/** Every way in that was handed out, and what became of it. */
+	async invites(): Promise<readonly Invitation[]> {
+		const said = (await this.#door("/invites")) as { invites?: Invitation[] };
+		return said.invites ?? [];
+	}
+
+	/**
+	 * One more way in, for one person.
+	 *
+	 * The secret comes back once and is never readable again — the plane keeps a hash and nothing
+	 * else — so whatever asked for this has to put it in front of somebody before it forgets it.
+	 */
+	async invite(
+		label: string,
+		lasts: "hour" | "day" | "week",
+		uses: number,
+	): Promise<{ invite: Invitation; secret: string }> {
+		const said = (await this.#door("/invites", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ label, lasts, uses }),
+		})) as { invite: Invitation; secret: string };
+		return said;
+	}
+
+	/** Calls one off. What it already let in stays in, under its own name, in the device list. */
+	async revokeInvite(id: string): Promise<void> {
+		await this.#door(`/invites/${encodeURIComponent(id)}`, { method: "DELETE" });
 	}
 
 	async renameDevice(id: string, name: string): Promise<void> {

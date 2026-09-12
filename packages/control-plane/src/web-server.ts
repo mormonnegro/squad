@@ -6,6 +6,7 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import type { Dial } from "./control-client.ts";
 import { Devices, nameFromAgent } from "./devices.ts";
+import { Invites } from "./invites.ts";
 
 /**
  * Where the browser knocks. Loopback only, for the same reason 8788 is.
@@ -19,6 +20,9 @@ export const WEB_TOKEN_FILE = "web.token";
 
 /** The browsers that have been let in. A list, where there used to be only a secret. */
 export const DEVICES_FILE = "devices.json";
+
+/** The ways in that were handed out: for whom, until when, and whether they were used. */
+export const INVITES_FILE = "invites.json";
 
 /** The cookie the browser carries once it has spent its token. */
 const SESSION_COOKIE = "squad_web";
@@ -93,11 +97,13 @@ export class WebServer {
 	/** One live connection per session, opened by its event stream and closed with it. */
 	readonly #sessions = new Map<string, Duplex>();
 	readonly #devices: Devices;
+	readonly #invites: Invites;
 	#token = "";
 
 	constructor(options: WebServerOptions) {
 		this.#options = options;
 		this.#devices = new Devices(join(options.stateDir, DEVICES_FILE));
+		this.#invites = new Invites(join(options.stateDir, INVITES_FILE));
 		this.#server = createServer((request, response) => {
 			this.#route(request, response).catch((error: Error) => {
 				this.#fail(response, 500, error.message);
@@ -215,16 +221,45 @@ export class WebServer {
 		const carried =
 			inUrl ?? (typeof inHeader === "string" ? inHeader : cookie(request, SESSION_COOKIE));
 
-		if (inUrl !== null && !this.#isToken(inUrl)) {
-			this.#fail(response, 403, "That token is not this plane's.");
+		/*
+		 * Who this browser already is, asked before anything is spent.
+		 *
+		 * A link with `?t=` on it gets bookmarked, and an invitation runs out — so the browser that
+		 * used one and has held its own key ever since would otherwise be refused at the door by the
+		 * address it came in on. Whoever is already in is already in, and the stale key in the URL is
+		 * nothing: they are sent to the same page without it, like everybody else.
+		 *
+		 * Only when there is something in the address at all, because otherwise this is the same
+		 * question the line below already asks about the same cookie.
+		 */
+		const already =
+			inUrl === null ? undefined : await this.#devices.whose(cookie(request, SESSION_COOKIE));
+
+		// The two things an address can carry: this plane's own token, which is on the machine, and an
+		// invitation, which is what somebody is handed. Spent here because the answer decides both
+		// whether this request is refused and, further down, which invitation a new browser came in on.
+		const invited =
+			inUrl !== null && !this.#isToken(inUrl) && already === undefined
+				? await this.#invites.spend(inUrl)
+				: undefined;
+		if (inUrl !== null && !this.#isToken(inUrl) && invited === undefined && already === undefined) {
+			// One sentence for three cases — not this plane's, already spent, ran out — because the
+			// difference is only useful to somebody guessing, and whoever is holding a link that no
+			// longer works has to ask for another either way.
+			this.#fail(response, 403, "That key is not this plane's, or the invitation has run out.");
 			return;
 		}
 
 		// Who this is, which is a different question from whether they may be here and is the one worth
 		// being able to answer. A device is a line in a list with a name and a date; the bootstrap
 		// token is not one of them and never becomes one — it is the thing that hands them out.
-		const whose = this.#isToken(carried) ? undefined : await this.#devices.whose(carried);
-		if (!this.#isToken(carried) && whose === undefined) {
+		// Falling back to the cookie, for the browser that arrived with a key in the address that has
+		// since run out: what it is carrying in the URL is nothing, and what it is carrying in the
+		// cookie is itself.
+		const whose = this.#isToken(carried)
+			? undefined
+			: ((await this.#devices.whose(carried)) ?? already);
+		if (!this.#isToken(carried) && whose === undefined && invited === undefined) {
 			// Said plainly rather than with a login form, because there is no password to type: whoever
 			// should be here already holds a file on that machine.
 			//
@@ -253,16 +288,20 @@ export class WebServer {
 		// date, and a way to be taken out that takes nobody else out with it. The token stays what it
 		// was on the machine that holds it: the thing that admits browsers, not the thing they carry.
 		if (inUrl !== null && asked.pathname !== "/events" && asked.pathname !== "/rpc") {
-			// Asked of the cookie and not of the address, because those are different questions and only
-			// one of them is "has this browser been let in already". Opening the address a second time
-			// is the ordinary thing — a reload, `squad open` again, a link still in the bar — and it was
-			// minting a device every time, so one laptop became a column of identical rows and the list
-			// stopped being a list of who.
-			const already = await this.#devices.whose(cookie(request, SESSION_COOKIE));
+			// `already` is the cookie's own answer rather than the address's, because those are different
+			// questions and only one of them is "has this browser been let in". Opening the address a
+			// second time is the ordinary thing — a reload, `squad open` again, a link still in the bar
+			// — and it was minting a device every time, so one laptop became a column of identical rows
+			// and the list stopped being a list of who.
 			const admitted =
-				already === undefined && this.#isToken(carried)
-					? await this.#devices.issue(nameFromAgent(request.headers["user-agent"]))
+				already === undefined && (this.#isToken(carried) || invited !== undefined)
+					? await this.#devices.issue(nameFromAgent(request.headers["user-agent"]), invited?.id)
 					: undefined;
+			// Spent by the browser that used it, not by the one that opened the link twice: a reload
+			// carries the cookie it already holds and admits nobody, so it takes nothing off the count.
+			if (admitted !== undefined && invited !== undefined) {
+				await this.#invites.spent(invited.id, admitted.device.id);
+			}
 			const head: Record<string, string> = { location: asked.pathname };
 			// Only when there is a new one to hand over. A browser that already holds its key is sent
 			// back to the page with the key it has.
@@ -291,6 +330,53 @@ export class WebServer {
 				return;
 			}
 			this.#fail(response, 405, "That is not something to do to the list.");
+			return;
+		}
+		/*
+		 * The invitations: what has been handed out, one more, and calling one off.
+		 *
+		 * Beside the devices and for the same reason they are: this is a fact about this door rather
+		 * than about the plane. A console in a terminal reaches the same plane over a socket and is
+		 * already trusted by holding a file on the machine — it has no browser to let in and nothing
+		 * to be handed.
+		 */
+		if (asked.pathname === "/invites") {
+			if (request.method === "GET") {
+				await this.#invites.tidy();
+				this.#json(response, { invites: await this.#invites.all() });
+				return;
+			}
+			if (request.method === "POST") {
+				const said = await read(request);
+				const { label, lasts, uses } = JSON.parse(said || "{}") as {
+					label?: unknown;
+					lasts?: unknown;
+					uses?: unknown;
+				};
+				if (typeof label !== "string" || label.trim().length === 0) {
+					this.#fail(response, 400, "An invitation says who it is for.");
+					return;
+				}
+				const made = await this.#invites.issue({
+					label,
+					...(lasts === "hour" || lasts === "day" || lasts === "week" ? { lasts } : {}),
+					...(typeof uses === "number" ? { uses } : {}),
+				});
+				// The secret, once. It is never readable again from anywhere, which is why the screen
+				// that asked for it has to put it in front of somebody before it puts it away.
+				this.#json(response, { invite: made.invite, secret: made.secret });
+				return;
+			}
+			this.#fail(response, 405, "That is not something to do to the list.");
+			return;
+		}
+		if (asked.pathname.startsWith("/invites/")) {
+			const id = asked.pathname.slice("/invites/".length);
+			if (request.method === "DELETE") {
+				this.#json(response, { gone: await this.#invites.revoke(id) });
+				return;
+			}
+			this.#fail(response, 405, "That is not something to do to an invitation.");
 			return;
 		}
 		if (asked.pathname.startsWith("/devices/")) {

@@ -175,6 +175,124 @@ describe("the door", () => {
 		expect((await fetch(at("/"), { headers: { cookie: `squad_web=${other}` } })).status).toBe(200);
 	});
 
+	/**
+	 * The door an invitation opens, which is the same door and a different key.
+	 *
+	 * Before these, letting somebody in meant handing over the plane's own token: it never expires,
+	 * it is the same string for everybody, and taking that person out again was impossible — the
+	 * device list could remove their browser and they would walk back in with the token they still
+	 * had. An invitation is for one person, it runs out, and it is called off on its own.
+	 */
+	describe("an invitation", () => {
+		const invite = async (
+			label = "for Nico",
+			uses = 1,
+		): Promise<{ id: string; secret: string }> => {
+			const made = await fetch(at("/invites"), {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie: `squad_web=${web.token}` },
+				body: JSON.stringify({ label, lasts: "day", uses }),
+			});
+			const said = (await made.json()) as { invite: { id: string }; secret: string };
+			return { id: said.invite.id, secret: said.secret };
+		};
+
+		it("lets a browser in and gives it a key of its own", async () => {
+			const { secret } = await invite();
+
+			const response = await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" });
+
+			expect(response.status).toBe(302);
+			const cookie = response.headers.get("set-cookie") ?? "";
+			expect(cookie).toContain("squad_web=");
+			expect(cookie).not.toContain(secret);
+			expect(cookie).not.toContain(web.token);
+		});
+
+		// Which is the question a list of browsers could never answer by itself.
+		it("puts what it let in on the device list, saying which invitation let it in", async () => {
+			const { id, secret } = await invite();
+			await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" });
+
+			const listed = await fetch(at("/devices"), { headers: { cookie: `squad_web=${web.token}` } });
+			const { devices } = (await listed.json()) as { devices: { from?: string }[] };
+
+			expect(devices).toHaveLength(1);
+			expect(devices[0]?.from).toBe(id);
+		});
+
+		it("stops working the moment it has been used", async () => {
+			const { secret } = await invite();
+			await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" });
+
+			const again = await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" });
+
+			expect(again.status).toBe(403);
+		});
+
+		// A reload carries the cookie it already holds, so it admits nobody and takes nothing off the
+		// count — otherwise opening the link twice would burn an invitation on one person.
+		it("is not spent again by the browser that already used it", async () => {
+			const { secret } = await invite();
+			const first = await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" });
+			const carried = /squad_web=([^;]+)/.exec(first.headers.get("set-cookie") ?? "")?.[1] ?? "";
+
+			const again = await fetch(at(`/?t=${encodeURIComponent(secret)}`), {
+				redirect: "manual",
+				headers: { cookie: `squad_web=${carried}` },
+			});
+
+			expect(again.status).toBe(302);
+			const listed = await fetch(at("/devices"), { headers: { cookie: `squad_web=${web.token}` } });
+			expect(((await listed.json()) as { devices: unknown[] }).devices).toHaveLength(1);
+		});
+
+		it("lets several in when it was made for several", async () => {
+			const { secret } = await invite("the team", 2);
+
+			expect(
+				(await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" })).status,
+			).toBe(302);
+			expect(
+				(await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" })).status,
+			).toBe(302);
+			expect(
+				(await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" })).status,
+			).toBe(403);
+		});
+
+		it("is called off without touching the browser it already let in", async () => {
+			const { id, secret } = await invite("the team", 5);
+			await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" });
+
+			const gone = await fetch(at(`/invites/${id}`), {
+				method: "DELETE",
+				headers: { cookie: `squad_web=${web.token}` },
+			});
+			expect(((await gone.json()) as { gone: boolean }).gone).toBe(true);
+
+			expect(
+				(await fetch(at(`/?t=${encodeURIComponent(secret)}`), { redirect: "manual" })).status,
+			).toBe(403);
+			const listed = await fetch(at("/devices"), { headers: { cookie: `squad_web=${web.token}` } });
+			expect(((await listed.json()) as { devices: unknown[] }).devices).toHaveLength(1);
+		});
+
+		it("says who it is for, and refuses one that says nothing", async () => {
+			const { id } = await invite("for Nico");
+			const listed = await fetch(at("/invites"), { headers: { cookie: `squad_web=${web.token}` } });
+			const { invites } = (await listed.json()) as { invites: { id: string; label: string }[] };
+			expect(invites.find((one) => one.id === id)?.label).toBe("for Nico");
+
+			const refused = await fetch(at("/invites"), {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie: `squad_web=${web.token}` },
+				body: JSON.stringify({ label: "  " }),
+			});
+			expect(refused.status).toBe(400);
+		});
+	});
+
 	it("writes the token where only its owner can read it", async () => {
 		const path = webTokenPath(dir);
 		expect((await readFile(path, "utf8")).trim()).toBe(web.token);

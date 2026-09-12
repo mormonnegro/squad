@@ -90,9 +90,9 @@ export default defineConfig({
 		 * The addresses that are the plane's rather than the page's.
 		 *
 		 * Everything else is this server's, so a reload deep inside the application — a conversation,
-		 * the plugins — is answered here with the page and not forwarded. These three are doors: two
-		 * carry the protocol, and `/devices` is the one the browser was let in through, which also
-		 * answers what other browsers hold a key and takes one of them back.
+		 * the plugins — is answered here with the page and not forwarded. These four are doors: two
+		 * carry the protocol, and the other two are how a browser gets in and who else may — the list of
+		 * browsers that hold a key, and the invitations that were handed out.
 		 *
 		 * `/devices` was missing, and the shape of that failure is worth remembering: an unproxied
 		 * path is not a 404, it is this server's index.html, so a screen asking for JSON was handed a
@@ -102,6 +102,7 @@ export default defineConfig({
 			"/rpc": { target: PLANE, changeOrigin: false, ...carried },
 			"/events": { target: PLANE, changeOrigin: false, ...carried },
 			"/devices": { target: PLANE, changeOrigin: false, ...carried },
+			"/invites": { target: PLANE, changeOrigin: false, ...carried },
 		},
 	},
 });

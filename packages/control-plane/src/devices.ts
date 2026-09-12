@@ -20,6 +20,14 @@ export interface Device {
 	readonly name: string;
 	readonly createdAt: string;
 	readonly lastSeenAt: string;
+	/**
+	 * The invitation this came in on, for the ones that came in on one.
+	 *
+	 * A list of browsers cannot say who let one in, and that is the question somebody has when they
+	 * find a row they do not recognise. Absent on every device admitted by the plane's own token,
+	 * which is to say: by whoever was at the machine.
+	 */
+	readonly from?: string;
 }
 
 interface Kept extends Device {
@@ -55,13 +63,14 @@ export class Devices {
 	 * The secret comes back from here and is never available again — this is the only moment it
 	 * exists outside the browser that is about to hold it.
 	 */
-	async issue(name: string): Promise<{ device: Device; secret: string }> {
+	async issue(name: string, from?: string): Promise<{ device: Device; secret: string }> {
 		const secret = randomBytes(32).toString("base64url");
 		const device: Kept = {
 			id: randomBytes(8).toString("hex"),
 			name,
 			createdAt: new Date().toISOString(),
 			lastSeenAt: new Date().toISOString(),
+			...(from === undefined ? {} : { from }),
 			hash: hashOf(secret),
 		};
 		await this.#serialize(async () => {
@@ -175,7 +184,8 @@ export class Devices {
 	}
 }
 
-function hashOf(secret: string): string {
+/** How a secret is written down here: the hash, never the secret. Shared with the invitations. */
+export function hashOf(secret: string): string {
 	return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
