@@ -7,6 +7,7 @@ import { faceOf, nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
+import { Spin } from "./spin.tsx";
 
 /** Enough marks to say who was read, before the row turns into the list it is summarising. */
 const MOST_MARKS = 5;
@@ -199,7 +200,15 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 			<div>
 				<div className="said-who">
 					<span className="said-name">{nameOf(agentId)}</span>
-					{live.thinking && live.text.length === 0 && <span className="said-when">working…</span>}
+					{/* Turning, because a turn takes minutes and a still line through all of them reads
+					    like a line something left behind. It goes when the answer starts arriving: text
+					    appearing a piece at a time is the same fact, said better. */}
+					{live.thinking && live.text.length === 0 && (
+						<span className="said-when inline-flex items-center gap-1.5">
+							<Spin />
+							working…
+						</span>
+					)}
 				</div>
 				{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two
 				    asterisks on screen that no later delta can take away, so the answer arrives a
@@ -207,17 +216,26 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 				{live.text.length > 0 && <Markdown text={live.text.slice(0, safeEnd(live.text))} />}
 				{live.steps.length > 0 && (
 					<div className="steps">
-						{live.steps.slice(-8).map((step, index) => (
+						{live.steps.slice(-8).map((step, index, shown) => (
 							<div
 								className="step"
 								// biome-ignore lint/suspicious/noArrayIndexKey: append-only within one turn
 								key={index}
 								data-failed={step.failed === true}
+								// The last one is the one still running, so far as this screen can know: a step
+								// is written down when it starts, and the next one arriving is what says the one
+								// before it finished.
+								data-now={live.thinking && index === shown.length - 1}
 								// The tool and the argument it was called with, for whoever wants them. The row
 								// says what is happening; this is the same thing in the terms it happened in, and
 								// it belongs a hover away rather than in front of somebody waiting for an answer.
 								title={`${step.action} ${step.detail}`}
 							>
+								{/* Beside the marks rather than instead of them: what it has read so far is not
+								    something to take off the screen because it has not finished reading. */}
+								{live.thinking && index === shown.length - 1 && step.failed !== true && (
+									<Spin size={10} />
+								)}
 								<Sources urls={step.sources ?? []} />
 								<span className="step-say">{step.say || step.detail}</span>
 								{step.failed === true && <span className="step-why">✗ {step.detail}</span>}

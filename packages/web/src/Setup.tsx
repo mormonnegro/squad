@@ -4,6 +4,7 @@ import { nameOf } from "./face.ts";
 import { Modal } from "./Modal.tsx";
 import { Mark } from "./Plugins.tsx";
 import type { Connected, Plane } from "./plane.ts";
+import { Spin } from "./spin.tsx";
 
 /**
  * One agent's settings, where the agent is.
@@ -126,7 +127,8 @@ export function Setup({
 						/>
 						<span className="text-[0.8rem] text-muted">/ day</span>
 						<button type="submit" className="pill" data-yes="true" disabled={busy === "limit"}>
-							{busy === "limit" ? "…" : "set"}
+							{busy === "limit" && <Spin size={10} />}
+							{busy === "limit" ? "setting…" : "set"}
 						</button>
 						{ceiling !== undefined && (
 							<button

@@ -3,6 +3,7 @@ import { Blocks, Check, Plus, Tag, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nameOf } from "./face.ts";
 import type { Connected, Plane } from "./plane.ts";
+import { Spin } from "./spin.tsx";
 
 /** How long the screen keeps looking after a consent screen was opened in another tab. */
 const WATCH_MS = 3 * 60_000;
@@ -165,7 +166,10 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 						</p>
 					)}
 					{made === undefined && why === undefined && (
-						<span className="text-[0.85rem] text-muted">asking the plane…</span>
+						<span className="inline-flex items-center gap-2 text-[0.85rem] text-muted">
+							<Spin />
+							asking the plane…
+						</span>
 					)}
 
 					{connected.length > 0 && (
@@ -351,7 +355,8 @@ function Row({
 				{account &&
 					(one.loggedIn ? (
 						<button type="button" className="pill" disabled={working} onClick={onLogout}>
-							{working ? "…" : "log out"}
+							{working && <Spin size={10} />}
+							{working ? "logging out…" : "log out"}
 						</button>
 					) : (
 						<button
@@ -361,6 +366,7 @@ function Row({
 							disabled={working}
 							onClick={onLogin}
 						>
+							{working && <Spin size={10} />}
 							{working ? "opening…" : "log in"}
 						</button>
 					))}
@@ -496,6 +502,7 @@ function Card({
 			</div>
 			<p className="plug-says">{plugin.does}</p>
 			<button type="button" className="pill self-start" disabled={busy} onClick={onConnect}>
+				{busy && <Spin size={10} />}
 				{busy ? "connecting…" : held > 0 ? "connect another" : "connect"}
 			</button>
 		</div>
@@ -565,6 +572,7 @@ function Custom({
 					data-yes="true"
 					disabled={busy || name === "" || line === ""}
 				>
+					{busy && <Spin size={10} />}
 					{busy ? "adding…" : "add"}
 				</button>
 				<button type="button" className="pill" onClick={() => setOpen(false)}>

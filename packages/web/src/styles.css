@@ -550,8 +550,17 @@
 .mark[data-state="running"] {
 	color: var(--green);
 }
+/* The one in the column turns too, so an agent working is visible from the list without opening it. */
 .mark[data-state="busy"] {
 	color: var(--amber);
+	display: inline-block;
+	animation: spin 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.mark[data-state="busy"] {
+		animation-duration: 4s;
+	}
 }
 .mark[data-state="stopped"] {
 	color: var(--muted);
@@ -1522,4 +1531,40 @@ ol.md-list {
 
 .hold[data-held="true"]:hover .hold-off {
 	display: inline-block;
+}
+
+/* ── what has not stopped ────────────────────────────────────────────── */
+
+.spin {
+	display: inline-block;
+	flex: none;
+	border: 1.5px solid color-mix(in srgb, var(--amber) 22%, transparent);
+	border-top-color: var(--amber);
+	border-radius: 999px;
+	vertical-align: -1px;
+	animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(1turn);
+	}
+}
+
+/*
+ * Slower rather than still, for whoever asked their machine to stop moving things.
+ *
+ * Stopping it altogether would take away the one thing it is for — a stopped spinner and a spinner
+ * that was never there say the same nothing — so it turns once every three seconds instead, which
+ * is movement a person has to look for rather than movement that catches the eye.
+ */
+@media (prefers-reduced-motion: reduce) {
+	.spin {
+		animation-duration: 3s;
+	}
+}
+
+/* On the row of a step that is the one still running, where the marks of what it read will go. */
+.step[data-now="true"] .step-say {
+	color: var(--text);
 }
