@@ -179,28 +179,32 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 								count={connected.length}
 								says="Each row is one account, and says which agents can reach it. The same plugin can be here twice, with a different account behind each."
 							/>
-							{connected.map((one) => (
-								<Row
-									key={one.name}
-									one={one}
-									plugin={one.from === undefined ? undefined : known(one.from)}
-									agents={agents}
-									busy={busy}
-									onLogin={() => void run(`login:${one.name}`, () => open(one.name))}
-									onLogout={() => void run(`login:${one.name}`, () => plane.logoutPlugin(one.name))}
-									onHold={(agentId, held) =>
-										void run(`hold:${one.name}:${agentId}`, () =>
-											plane.holdPlugin(agentId, one.name, held),
-										)
-									}
-									onLabel={(label) =>
-										void run(`label:${one.name}`, () => plane.labelPlugin(one.name, label))
-									}
-									onForget={() =>
-										void run(`forget:${one.name}`, () => plane.forgetPlugin(one.name))
-									}
-								/>
-							))}
+							<div className="flex flex-col gap-3">
+								{connected.map((one) => (
+									<Row
+										key={one.name}
+										one={one}
+										plugin={one.from === undefined ? undefined : known(one.from)}
+										agents={agents}
+										busy={busy}
+										onLogin={() => void run(`login:${one.name}`, () => open(one.name))}
+										onLogout={() =>
+											void run(`login:${one.name}`, () => plane.logoutPlugin(one.name))
+										}
+										onHold={(agentId, held) =>
+											void run(`hold:${one.name}:${agentId}`, () =>
+												plane.holdPlugin(agentId, one.name, held),
+											)
+										}
+										onLabel={(label) =>
+											void run(`label:${one.name}`, () => plane.labelPlugin(one.name, label))
+										}
+										onForget={() =>
+											void run(`forget:${one.name}`, () => plane.forgetPlugin(one.name))
+										}
+									/>
+								))}
+							</div>
 						</section>
 					)}
 
@@ -226,7 +230,7 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 							const here = catalog.filter((one) => one.shelf === shelf);
 							if (here.length === 0) return null;
 							return (
-								<div key={shelf} className="flex flex-col gap-2.5">
+								<div key={shelf} className="flex flex-col gap-3">
 									<div className="shelf-label">{title}</div>
 									<div className="plugs">
 										{here.map((one) => (

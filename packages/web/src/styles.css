@@ -51,7 +51,7 @@
 	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
 
-	--rail: 15rem;
+	--rail: 17rem;
 
 	/*
 	 * How wide a line of the conversation is allowed to get.
@@ -538,7 +538,9 @@
 .pane-column {
 	display: flex;
 	flex-direction: column;
-	gap: 1.6rem;
+	/* Between sections, which is the distance that says two things are two things. Everything
+	   inside one is closer than this, and nothing inside one is as far apart. */
+	gap: 2.6rem;
 	width: 100%;
 	max-width: 62rem;
 	margin-inline: auto;
@@ -1164,13 +1166,20 @@ ol.md-list {
 .section {
 	display: flex;
 	flex-direction: column;
-	gap: 0.85rem;
+	gap: 1.15rem;
+}
+
+/* The line between what is connected and what could be, drawn rather than left to a gap: a page
+   this long needs the eye to be told where one list ends. */
+.section + .section {
+	border-top: 1px solid var(--line-soft);
+	padding-top: 2.2rem;
 }
 
 .section-head {
 	display: flex;
 	flex-direction: column;
-	gap: 0.25rem;
+	gap: 0.35rem;
 }
 
 .section-title {
@@ -1210,6 +1219,7 @@ ol.md-list {
 	letter-spacing: 0.09em;
 	text-transform: uppercase;
 	color: color-mix(in srgb, var(--muted) 80%, transparent);
+	margin-top: 0.5rem;
 }
 
 .shelf-label::after {
@@ -1221,19 +1231,31 @@ ol.md-list {
 
 .plugs {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
-	gap: 0.7rem;
+	grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr));
+	gap: 0.9rem;
 }
 
+/*
+ * A card with room in it.
+ *
+ * The grid stretches every card in a row to the tallest, so what makes them look like one row
+ * rather than three boxes is the thing that is pressed being at the same height in each — which is
+ * what the auto margin under the words does. Without it a two-line description and a three-line one
+ * put their buttons on different lines and the row reads as ragged.
+ */
 .plug {
 	display: flex;
 	flex-direction: column;
-	gap: 0.55rem;
-	padding: 0.85rem;
+	gap: 0.7rem;
+	padding: 1.05rem;
 	border: 1px solid var(--line);
-	border-radius: 10px;
+	border-radius: 12px;
 	background: var(--bg-raised);
 	transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.plug > .pill {
+	margin-top: auto;
 }
 
 .plug:hover {
@@ -1243,23 +1265,22 @@ ol.md-list {
 
 .plug-says {
 	margin: 0;
-	min-height: 2.6em;
-	font-size: 0.79rem;
-	line-height: 1.5;
+	font-size: 0.8rem;
+	line-height: 1.6;
 	color: var(--muted);
 }
 
 .conn {
 	border: 1px solid var(--line);
-	border-radius: 10px;
+	border-radius: 12px;
 	background: var(--bg-raised);
 }
 
 .conn-head {
 	display: flex;
 	align-items: center;
-	gap: 0.8rem;
-	padding: 0.75rem 0.85rem;
+	gap: 0.9rem;
+	padding: 0.95rem 1.05rem;
 }
 
 .conn-name {
@@ -1281,8 +1302,8 @@ ol.md-list {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 0.4rem;
-	padding: 0.6rem 0.85rem;
+	gap: 0.45rem;
+	padding: 0.7rem 1.05rem;
 	border-top: 1px solid var(--line-soft);
 }
 
