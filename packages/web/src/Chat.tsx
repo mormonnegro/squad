@@ -2,8 +2,9 @@ import type { AgentSummary, Utterance } from "@squad/control-plane";
 import { Settings2, Terminal, User } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
+import { Avatar } from "./avatar.tsx";
 import { type Command, completions, isCommand, isShell } from "./commands.ts";
-import { faceOf, nameOf } from "./face.ts";
+import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
@@ -27,7 +28,6 @@ export function Chat({
 	onLocal: (agentId: string, said: Utterance) => void;
 	onSetup: () => void;
 }) {
-	const face = faceOf(agent.id);
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
 	const [following, setFollowing] = useState(true);
@@ -45,9 +45,7 @@ export function Chat({
 	return (
 		<>
 			<header className="pane-head">
-				<span className="face" style={{ color: `var(--${face.accent})` }} aria-hidden="true">
-					{face.glyph}
-				</span>
+				<Avatar id={agent.id} />
 				<span className="pane-title">{nameOf(agent.id)}</span>
 				<div className="pane-facts">
 					{agent.model !== undefined && <span>{agent.model}</span>}
@@ -152,8 +150,7 @@ export function Chat({
  */
 function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint: string } {
 	if (said.from === "agent") {
-		const face = faceOf(agentId);
-		return { mark: face.glyph, tint: `var(--${face.accent})` };
+		return { mark: <Avatar id={agentId} size={34} />, tint: "inherit" };
 	}
 	if (said.from === "operator") {
 		return { mark: <User className="size-4" />, tint: "var(--text-strong)" };
@@ -161,9 +158,10 @@ function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint
 	if (said.from === "shell") {
 		return { mark: <Terminal className="size-3.5" />, tint: "var(--muted)" };
 	}
+	// A peer's own picture, by the same name and the same arithmetic, so `ledger` looks like `ledger`
+	// wherever it is read.
 	if (said.from === "other") {
-		const face = faceOf(said.via ?? "");
-		return { mark: face.glyph, tint: `var(--${face.accent})` };
+		return { mark: <Avatar id={said.via ?? ""} size={34} />, tint: "inherit" };
 	}
 	return { mark: "◇", tint: "var(--cyan)" };
 }
@@ -211,17 +209,9 @@ function Said({ said, agentId }: { said: Utterance; agentId: string }) {
 
 /** The turn as it happens: what it is doing, and the answer arriving a piece at a time. */
 function Turn({ agentId, live }: { agentId: string; live: Live }) {
-	const face = faceOf(agentId);
 	return (
 		<article className="said" data-from="agent">
-			<span
-				className="face"
-				data-size="big"
-				style={{ color: `var(--${face.accent})` }}
-				aria-hidden="true"
-			>
-				{face.glyph}
-			</span>
+			<Avatar id={agentId} size={34} />
 			<div>
 				<div className="said-who">
 					<span className="said-name">{nameOf(agentId)}</span>

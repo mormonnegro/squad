@@ -1,10 +1,11 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
 import { Blocks } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
 import { Devices } from "./Devices.tsx";
 import { FirstKey } from "./FirstKey.tsx";
-import { faceOf, nameOf } from "./face.ts";
+import { nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
 import { Plugins } from "./Plugins.tsx";
 import { browserWire, Plane } from "./plane.ts";
@@ -473,7 +474,6 @@ function AgentRow({
 	here: boolean;
 	onPick: () => void;
 }) {
-	const face = faceOf(agent.id);
 	// A question nobody has answered outranks everything else this row could say. It is the one
 	// state where the agent is stopped and waiting on the person reading this.
 	const state =
@@ -503,9 +503,7 @@ function AgentRow({
 				<span className="mark" data-state={state}>
 					{glyph}
 				</span>
-				<span className="face" style={{ color: `var(--${face.accent})` }} aria-hidden="true">
-					{face.glyph}
-				</span>
+				<Avatar id={agent.id} />
 				<span className="row-name">{nameOf(agent.id)}</span>
 			</button>
 			{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the

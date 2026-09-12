@@ -177,9 +177,16 @@ describe("logging in through a browser", () => {
 		const server = await authorizationServer({ register: false });
 		const { desk: door } = await desk();
 
-		await expect(
-			door.begin({ name: "notion", url: `${server.url}/mcp`, host: "127.0.0.1" }),
-		).rejects.toThrow(/does not register clients/);
+		const refused = await door
+			.begin({ name: "notion", url: `${server.url}/mcp`, host: "127.0.0.1" })
+			.catch((error: Error) => error);
+
+		// The wording is load-bearing: it crosses to a browser as a string, which is all an error can
+		// be on that wire, and the screen reads it to know it should offer the field for the id rather
+		// than leave somebody at a red line with nowhere to type. It carries the redirect for the same
+		// reason — that is the one thing the app they are about to make has to be told.
+		expect((refused as Error).message).toContain("does not register clients");
+		expect((refused as Error).message).toContain("http://localhost:8788/callback");
 
 		// With an id in hand it starts, on the port the operator can be told in advance.
 		const started = await door.begin({

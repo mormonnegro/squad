@@ -39,7 +39,7 @@ const GLYPHS = [
 ] as const;
 
 /** FNV-1a. Small, stable across machines, and nothing here needs it to be anything more. */
-function hash(text: string): number {
+export function hash(text: string): number {
 	let value = 0x811c9dc5;
 	for (let i = 0; i < text.length; i++) {
 		value ^= text.charCodeAt(i);

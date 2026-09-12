@@ -459,8 +459,15 @@ export class Plane {
 	 * The page is opened from here rather than by the plane, because the browser that can open it is
 	 * this one — the plane may be a container on a machine nobody is sitting at.
 	 */
-	async loginPlugin(name: string): Promise<{ url: string; redirectUri: string }> {
-		const answer = await this.#ask({ op: "login-plugin", name });
+	async loginPlugin(
+		name: string,
+		clientId?: string,
+	): Promise<{ url: string; redirectUri: string }> {
+		const answer = await this.#ask({
+			op: "login-plugin",
+			name,
+			...(clientId === undefined || clientId === "" ? {} : { clientId }),
+		});
 		const page = answer.page as { url?: string; redirectUri?: string } | undefined;
 		return { url: page?.url ?? "", redirectUri: page?.redirectUri ?? "" };
 	}

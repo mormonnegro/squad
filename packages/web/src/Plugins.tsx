@@ -31,6 +31,14 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 	const [watching, setWatching] = useState(false);
 	/** The consent screen this browser was sent to, so the address is on screen if the tab was not. */
 	const [sent, setSent] = useState<{ name: string; url: string; blocked: boolean } | undefined>();
+	/**
+	 * The connection whose server will not hand out a client, and the redirect its app needs.
+	 *
+	 * Most servers register one for whoever asks, which is what makes connecting a button. GitHub's
+	 * does not: an OAuth app is a thing somebody creates in their settings. The plane says so, and
+	 * said only that — a red line, naming a command, on a screen with nowhere to type the answer.
+	 */
+	const [needsApp, setNeedsApp] = useState<{ name: string; redirect: string } | undefined>();
 
 	const load = useCallback(async (): Promise<void> => {
 		try {
@@ -115,8 +123,21 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 	 * The address is kept either way. A blocked popup is silent, and a screen that answered a press
 	 * with nothing at all would be indistinguishable from one that failed.
 	 */
-	const open = async (name: string): Promise<void> => {
-		const page = await plane.loginPlugin(name);
+	const open = async (name: string, clientId?: string): Promise<void> => {
+		let page: { url: string; redirectUri: string };
+		try {
+			page = await plane.loginPlugin(name, clientId);
+		} catch (error) {
+			// The one refusal that is not a dead end: it is a thing to go and do, and the field to put
+			// the answer in belongs on this screen. Swallowed rather than rethrown, so the panel that
+			// says what to do is the whole message instead of a second copy of it in red.
+			if ((error as Error).message.includes("does not register clients")) {
+				setNeedsApp({ name, redirect: redirectIn((error as Error).message) });
+				return;
+			}
+			throw error;
+		}
+		setNeedsApp(undefined);
 		if (page.url === "") return;
 		const tab = window.open(page.url, "_blank");
 		if (tab !== null) tab.opener = null;
@@ -154,6 +175,16 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 					</div>
 
 					{why !== undefined && <span className="why block">{why}</span>}
+					{needsApp !== undefined && (
+						<NeedsApp
+							one={needsApp}
+							busy={busy === `login:${needsApp.name}`}
+							onUse={(clientId) =>
+								void run(`login:${needsApp.name}`, () => open(needsApp.name, clientId))
+							}
+							onClose={() => setNeedsApp(undefined)}
+						/>
+					)}
 					{sent !== undefined && (
 						<p className="section-says">
 							{sent.blocked
@@ -625,6 +656,90 @@ export function Mark({
 			onError={() => setDrawn(false)}
 		/>
 	);
+}
+
+/**
+ * What a server that will not register clients needs from somebody, and the one field it takes.
+ *
+ * The redirect is read out of the plane's own sentence rather than guessed here: it is the port
+ * that plane's login desk listens on, and a page that assumed the usual one would be right until
+ * somebody moved it.
+ */
+function NeedsApp({
+	one,
+	busy,
+	onUse,
+	onClose,
+}: {
+	one: { name: string; redirect: string };
+	busy: boolean;
+	onUse: (clientId: string) => void;
+	onClose: () => void;
+}) {
+	const [typed, setTyped] = useState("");
+	const [copied, setCopied] = useState(false);
+
+	return (
+		<div className="rounded-[10px] border border-working/40 bg-working/5 p-3.5">
+			<div className="mb-2.5 text-[0.84rem]/[1.6] text-said">
+				<strong>{one.name}</strong> will not hand out a client of its own. Make an OAuth app in that
+				company's settings with this as its redirect, then paste the app's client id here.
+			</div>
+			{one.redirect !== "" && (
+				<div className="mb-2 flex gap-2">
+					<input
+						className="field min-w-0 flex-1 font-mono"
+						readOnly
+						value={one.redirect}
+						onFocus={(event) => event.target.select()}
+					/>
+					<button
+						type="button"
+						className="pill"
+						onClick={() => {
+							void navigator.clipboard.writeText(one.redirect).then(
+								() => setCopied(true),
+								() => setCopied(false),
+							);
+						}}
+					>
+						{copied ? "copied" : "copy the redirect"}
+					</button>
+				</div>
+			)}
+			<form
+				className="flex gap-2"
+				onSubmit={(event) => {
+					event.preventDefault();
+					if (!busy && typed.trim() !== "") onUse(typed.trim());
+				}}
+			>
+				<input
+					className="field min-w-0 flex-1 font-mono"
+					value={typed}
+					placeholder="the client id of that app"
+					onChange={(event) => setTyped(event.target.value)}
+				/>
+				<button
+					type="submit"
+					className="pill"
+					data-yes="true"
+					disabled={busy || typed.trim() === ""}
+				>
+					{busy && <Spin size={10} />}
+					{busy ? "opening…" : "log in with it"}
+				</button>
+				<button type="button" className="pill" onClick={onClose}>
+					not now
+				</button>
+			</form>
+		</div>
+	);
+}
+
+/** The address the plane said its login desk is waiting at, out of the sentence it said it in. */
+function redirectIn(said: string): string {
+	return /https?:\/\/\S+\/callback/.exec(said)?.[0] ?? "";
 }
 
 function hostOf(url: string): string | undefined {

@@ -198,8 +198,18 @@ export type ControlRequest =
 	  }
 	/** One that is on nobody's shelf, typed the way the console takes it and read by the plane. */
 	| { readonly id: string; readonly op: "add-plugin"; readonly name: string; readonly line: string }
-	/** Opens the consent screen for one connection, and answers with where it is. */
-	| { readonly id: string; readonly op: "login-plugin"; readonly name: string }
+	/**
+	 * Opens the consent screen for one connection, and answers with where it is.
+	 *
+	 * `clientId` is for the servers that will not register a client themselves: an OAuth app the
+	 * operator made in that company's settings, named here so the login can use it.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "login-plugin";
+			readonly name: string;
+			readonly clientId?: string;
+	  }
 	| { readonly id: string; readonly op: "logout-plugin"; readonly name: string }
 	/**
 	 * What one agent may spend in a day, set from the screen rather than typed into its chat.
@@ -613,7 +623,7 @@ export class ControlServer {
 				await this.#plane.labelPlugin(request.name, request.label);
 				this.#write(socket, { id: request.id, ok: true, text: request.name });
 			} else if (request.op === "login-plugin") {
-				const page = await this.#plane.loginPlugin(request.name);
+				const page = await this.#plane.loginPlugin(request.name, request.clientId);
 				this.#write(socket, { id: request.id, ok: true, page });
 			} else if (request.op === "logout-plugin") {
 				const had = await this.#plane.logoutPlugin(request.name);

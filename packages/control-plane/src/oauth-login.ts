@@ -269,10 +269,22 @@ export class LoginDesk {
 		};
 	}
 
+	/**
+	 * A client, registered on the spot — or the reason somebody has to go and make one.
+	 *
+	 * Most servers hand out a client to whoever asks, which is what makes connecting one a button.
+	 * GitHub's does not: an OAuth app is a thing you create in their settings, and all this end can
+	 * do is say so and say what to put in the one field that matters.
+	 *
+	 * The wording is load-bearing. It crosses to a browser as a string — the only thing an error can
+	 * be on that wire — and the screen reads "does not register clients" to know it should offer the
+	 * field for the id rather than leave somebody at a red line with nowhere to type. A test holds
+	 * the sentence.
+	 */
 	async #register(endpoints: OAuthEndpoints, redirectUri: string): Promise<OAuthClient> {
 		if (endpoints.registrationUrl === undefined) {
 			throw new OAuthError(
-				`This server does not register clients. Make one, with ${redirectUri} as its redirect, and say /mcp login <name> <client-id>.`,
+				`This server does not register clients. Make an OAuth app of your own with ${redirectUri} as its redirect, and connect it with that app's client id.`,
 			);
 		}
 		return registerClient(endpoints.registrationUrl, redirectUri);
