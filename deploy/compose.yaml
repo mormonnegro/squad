@@ -52,7 +52,7 @@ services:
       # credential-injecting forwarder on the internet.
       - "${SQUAD_HOOK_PORT:-8787}:${SQUAD_HOOK_PORT:-8787}"
       # Bound to loopback, because the only thing that should ever reach it is a browser on this
-      # machine. `/mcp login` sends the operator to a consent screen that redirects to
+      # machine. `/plugins login` sends the operator to a consent screen that redirects to
       # localhost:8788, and without this the plane would be listening where nobody can knock.
       - "127.0.0.1:${SQUAD_OAUTH_PORT:-8788}:${SQUAD_OAUTH_PORT:-8788}"
       # The web console. Loopback by default and for a strong reason: this is the whole control

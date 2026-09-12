@@ -490,6 +490,103 @@ describe("the control socket", () => {
 			await expect(client.forward("nobody", 3000)).rejects.toThrow('No agent "nobody"');
 		});
 	});
+
+	/**
+	 * The plugins screen, over the socket the screen actually speaks.
+	 *
+	 * The catalogue comes down with the connections rather than being compiled into whatever is
+	 * drawing them, so this is also the test that a console built against an older plane still gets
+	 * the list that plane knows.
+	 */
+	describe("plugins", () => {
+		it("offers the shelf, and nothing connected on a plane where nobody has", async () => {
+			const said = await client.plugins();
+
+			expect(said.catalog.some((one) => one.id === "stripe")).toBe(true);
+			expect(said.instances).toEqual([]);
+		});
+
+		/**
+		 * The whole reason connections are a list. Two Stripe accounts are two of these, and neither
+		 * the second connect nor the name it takes is something the person doing it has to think about.
+		 */
+		it("connects the same plugin twice, under two names", async () => {
+			expect(await client.connectPlugin("stripe")).toEqual({ name: "stripe", wants: "login" });
+			expect(await client.connectPlugin("stripe", "the test account")).toEqual({
+				name: "stripe-2",
+				wants: "login",
+			});
+
+			const { instances } = await client.plugins();
+			expect(instances.map((one) => one.name)).toEqual(["stripe", "stripe-2"]);
+			expect(instances.map((one) => one.from)).toEqual(["stripe", "stripe"]);
+			expect(instances[1]?.label).toBe("the test account");
+			// Connected is not given: a grant follows the agents holding one, so a connection nobody
+			// has is an address written down.
+			expect(instances.every((one) => one.agents.length === 0)).toBe(true);
+		});
+
+		it("says a plugin that wants nothing wants nothing", async () => {
+			expect(await client.connectPlugin("deepwiki")).toEqual({
+				name: "deepwiki",
+				wants: "nothing",
+			});
+		});
+
+		it("refuses a plugin nobody shelved", async () => {
+			await expect(client.connectPlugin("not-a-plugin")).rejects.toThrow("no plugin");
+		});
+
+		it("hands one to an agent and takes it back", async () => {
+			await client.connectPlugin("linear");
+
+			await client.holdServer("scout", "linear", true);
+			expect((await client.plugins()).instances[0]?.agents).toEqual(["scout"]);
+
+			await client.holdServer("scout", "linear", false);
+			expect((await client.plugins()).instances[0]?.agents).toEqual([]);
+		});
+
+		it("says which copy one is, and stops saying it", async () => {
+			await client.connectPlugin("stripe");
+
+			await client.labelPlugin("stripe", "the live account");
+			expect((await client.plugins()).instances[0]?.label).toBe("the live account");
+
+			await client.labelPlugin("stripe", "");
+			expect((await client.plugins()).instances[0]?.label).toBeUndefined();
+		});
+
+		it("takes anything else from the line it was typed on", async () => {
+			await client.addPlugin("files", "mcp-files /tmp");
+
+			expect((await client.plugins()).instances[0]).toMatchObject({
+				name: "files",
+				server: { transport: "stdio", command: "mcp-files", args: ["/tmp"] },
+			});
+		});
+
+		it("refuses a line that is neither an address nor a command, and a name that is not one", async () => {
+			await expect(client.addPlugin("files", "")).rejects.toThrow("needs a URL");
+			await expect(client.addPlugin("My_Server", "mcp-files")).rejects.toThrow("not a name");
+		});
+	});
+
+	/** The ceiling, set from a screen rather than typed at the agent it is about. */
+	describe("what an agent may spend", () => {
+		it("sets it, and takes it off again", async () => {
+			await client.setLimit("scout", 5);
+			expect((await client.agents()).find((one) => one.id === "scout")?.limitUsd).toBe(5);
+
+			await client.setLimit("scout", null);
+			expect((await client.agents()).find((one) => one.id === "scout")?.limitUsd).toBeUndefined();
+		});
+
+		it("refuses an amount that is not one, and an agent that is not here", async () => {
+			await expect(client.setLimit("scout", 0)).rejects.toThrow("not an amount");
+			await expect(client.setLimit("nobody", 5)).rejects.toThrow("no agent");
+		});
+	});
 });
 
 describe("the control client without a plane", () => {

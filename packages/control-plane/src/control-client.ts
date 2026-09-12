@@ -2,7 +2,7 @@ import net from "node:net";
 import type { Duplex } from "node:stream";
 import type { CarrierSpec } from "@squad/channels";
 import type { Schedule } from "@squad/scheduler";
-import type { EmailOffer } from "./commands.ts";
+import type { EmailOffer, LoginPage } from "./commands.ts";
 import type { AgentSummary, PlaneEvent } from "./control-plane.ts";
 import { relayToPlane } from "./control-relay.ts";
 import { type ControlResponse, controlSocketPath } from "./control-server.ts";
@@ -10,6 +10,7 @@ import type { GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
+import type { Plugin } from "./plugins.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -275,6 +276,59 @@ export class ControlClient {
 	/** Takes one off the shelf, and off every agent holding it. */
 	async forgetServer(name: string): Promise<void> {
 		await this.#once({ op: "forget-server", name });
+	}
+
+	/** What there is to connect, and what has been connected — one screen's worth. */
+	async plugins(): Promise<{
+		readonly catalog: readonly Plugin[];
+		readonly instances: readonly ServerStanding[];
+	}> {
+		const response = await this.#once({ op: "plugins" });
+		if ("plugins" in response) return response.plugins;
+		throw new ControlError("unexpected answer to plugins");
+	}
+
+	/** One more copy of a plugin. The plane picks the name and says which one it took. */
+	async connectPlugin(
+		pluginId: string,
+		label?: string,
+	): Promise<{ readonly name: string; readonly wants: "login" | "nothing" }> {
+		const response = await this.#once({
+			op: "connect-plugin",
+			pluginId,
+			...(label !== undefined ? { label } : {}),
+		});
+		if ("made" in response) return response.made;
+		throw new ControlError("unexpected answer to connect-plugin");
+	}
+
+	/** One that is on no shelf, from the line as it was typed. The plane reads what it means. */
+	async addPlugin(name: string, line: string): Promise<void> {
+		await this.#once({ op: "add-plugin", name, line });
+	}
+
+	/** Says which copy a connection is. An empty label stops saying it. */
+	async labelPlugin(name: string, label: string): Promise<void> {
+		await this.#once({ op: "label-plugin", name, label });
+	}
+
+	/** Opens the consent screen for one connection, and says where it and its landing are. */
+	async loginPlugin(name: string): Promise<LoginPage> {
+		const response = await this.#once({ op: "login-plugin", name });
+		if ("page" in response) return response.page;
+		throw new ControlError("unexpected answer to login-plugin");
+	}
+
+	/** Closes the account behind a connection. Answers false if there was none to close. */
+	async logoutPlugin(name: string): Promise<boolean> {
+		const response = await this.#once({ op: "logout-plugin", name });
+		if ("text" in response) return response.text !== "";
+		throw new ControlError("unexpected answer to logout-plugin");
+	}
+
+	/** What an agent may spend in a day, or null for no ceiling. */
+	async setLimit(agentId: string, usd: number | null): Promise<void> {
+		await this.#once({ op: "set-limit", agentId, usd });
 	}
 
 	/** The mailbox this plane reads and the way its mail leaves, which is one screen's worth. */

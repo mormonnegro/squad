@@ -1,4 +1,5 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
+import { Settings2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { type Command, completions, isCommand, isShell } from "./commands.ts";
@@ -16,12 +17,14 @@ export function Chat({
 	said,
 	live,
 	onLocal,
+	onSetup,
 }: {
 	plane: Plane;
 	agent: AgentSummary;
 	said: readonly Utterance[];
 	live: Live;
 	onLocal: (agentId: string, said: Utterance) => void;
+	onSetup: () => void;
 }) {
 	const face = faceOf(agent.id);
 	const floor = useRef<HTMLDivElement>(null);
@@ -63,6 +66,12 @@ export function Chat({
 						${agent.spentUsd.toFixed(2)}
 						{agent.limitUsd !== undefined && ` / $${agent.limitUsd.toFixed(2)}`}
 					</span>
+					{/* The facts to the left of this are the ones this button sets: the model it thinks
+					    with and the ceiling it spends against are read here and changed there, which is
+					    why it sits at the end of them rather than anywhere else on the screen. */}
+					<button type="button" className="pane-gear" onClick={onSetup} title="Settings">
+						<Settings2 className="size-3.5" />
+					</button>
 				</div>
 			</header>
 

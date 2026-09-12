@@ -72,7 +72,14 @@ import {
 } from "./grants.ts";
 import { ProviderKeys } from "./keys.ts";
 import { MailboxStore, type MailStanding } from "./mailbox.ts";
-import { hostOf, type McpServer, McpShelf, readName, type ServerStanding } from "./mcp.ts";
+import {
+	hostOf,
+	type McpServer,
+	McpShelf,
+	readName,
+	readServer,
+	type ServerStanding,
+} from "./mcp.ts";
 import {
 	AddedModels,
 	type Catalog,
@@ -92,6 +99,7 @@ import {
 import { LoginDesk } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
+import { nameFor, PLUGINS, type Plugin, pluginOf, serverOf } from "./plugins.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import {
 	checkRepo,
@@ -1760,6 +1768,143 @@ export class ControlPlane {
 	}
 
 	/**
+	 * The plugins screen's whole answer: what there is to connect, and what has been connected.
+	 *
+	 * Both halves in one reply because they are one question — "what can this plane reach, and
+	 * through whose account" — and because the second is meaningless without the first: a row saying
+	 * `stripe-2` means nothing until something says that Stripe is a thing one can have two of.
+	 */
+	async plugins(): Promise<{
+		readonly catalog: readonly Plugin[];
+		readonly instances: readonly ServerStanding[];
+	}> {
+		return { catalog: PLUGINS, instances: await this.servers() };
+	}
+
+	/**
+	 * Connects a plugin, which is to say: makes one more copy of it under a name of its own.
+	 *
+	 * One plugin is not one connection. Connecting Stripe a second time is a legitimate, ordinary
+	 * thing — the company's account and the side project's are two accounts — so this never refuses
+	 * on the grounds that one is already here. It takes the next free name instead and says which it
+	 * took, because that name is what the login will be opened against and what the model will spell.
+	 *
+	 * Nobody is given it. The shelf is the plane's, a grant is derived from the agents holding a
+	 * server, and so an instance nobody was handed is an address written down and not a capability.
+	 */
+	async connectPlugin(
+		pluginId: string,
+		label?: string,
+	): Promise<{ readonly name: string; readonly wants: "login" | "nothing" }> {
+		const plugin = pluginOf(pluginId);
+		if (plugin === undefined) throw new Error(`There is no plugin called "${pluginId}".`);
+		const taken = (await this.#mcp.servers()).map((one) => one.name);
+		const name = nameFor(plugin.id, taken);
+		const server = serverOf(plugin);
+		await this.#mcp.add(name, server, {
+			from: plugin.id,
+			...(label !== undefined && label !== "" ? { label } : {}),
+		});
+		// Read off the catalogue rather than asked of the server, which is the one place in this file
+		// that is deliberately not the careful thing. Connecting has to be instant — it is a button
+		// press with a screen waiting on it — and the answer only decides whether a consent tab opens
+		// next. What actually settles it is the login itself, which asks the server on its way out.
+		return { name, wants: plugin.account === "oauth" ? "login" : "nothing" };
+	}
+
+	/**
+	 * Adds anything that is not on the shelf, from the line somebody typed.
+	 *
+	 * The line is read here rather than in the browser, because the reader is here: a URL is a URL
+	 * wherever it appears and anything that is not one is a command, and a second implementation of
+	 * that rule in a bundle would be a second thing that is nearly right.
+	 */
+	async addPlugin(name: string, line: string): Promise<void> {
+		const refused = readName(name);
+		if (refused !== undefined) throw new Error(refused);
+		const read = readServer(
+			line
+				.trim()
+				.split(/\s+/)
+				.filter((word) => word !== ""),
+		);
+		if ("refused" in read) throw new Error(read.refused);
+		await this.#mcp.add(name, read.server);
+	}
+
+	/** Says which copy a connection is, for the screens that have to tell two of them apart. */
+	async labelPlugin(name: string, label: string): Promise<void> {
+		if (!(await this.#mcp.servers()).some((one) => one.name === name)) {
+			throw new Error(`There is no connection called "${name}".`);
+		}
+		await this.#mcp.relabel(name, label);
+	}
+
+	/**
+	 * Opens the login for one connection, from the screen the connections are on.
+	 *
+	 * The same trip as `/plugins login` in a chat and deliberately not the same method: that one
+	 * writes what happened into the conversation it was asked from, because the person who asked is
+	 * reading a conversation. Here they are reading a list, and the list says so by the row going
+	 * green on the next poll.
+	 */
+	async loginPlugin(name: string, clientId?: string): Promise<LoginPage> {
+		const started = await this.#beginLogin(name, clientId);
+		void started.done.then(
+			() => this.#reregisterAll(),
+			() => {},
+		);
+		return { url: started.url, redirectUri: started.redirectUri };
+	}
+
+	/** Closes the account a connection was opened with, and takes the reach it carried with it. */
+	async logoutPlugin(name: string): Promise<boolean> {
+		await this.#desk.cancel(name);
+		const held = await this.#logins.forget(name);
+		if (held) await this.#reregisterAll();
+		return held;
+	}
+
+	/** The ceiling an agent is held to, in dollars a day, or nothing for no ceiling at all. */
+	async setLimit(agentId: string, usd: number | null): Promise<void> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		if (usd !== null && (!Number.isFinite(usd) || usd <= 0)) {
+			throw new Error(`"${usd}" is not an amount.`);
+		}
+		await this.#spend.setLimit(agentId, usd);
+	}
+
+	/**
+	 * Starts the trip to a consent screen, whoever is going to be told how it ended.
+	 *
+	 * The two callers differ only in that: one writes the landing into a conversation and one lets a
+	 * list redraw. Everything before the landing — finding the server, refusing a process that has no
+	 * account, asking it where its metadata lives — is the same work and is done once, here.
+	 */
+	async #beginLogin(name: string, clientId?: string) {
+		const found = (await this.#mcp.servers()).find((one) => one.name === name);
+		if (found === undefined) throw new Error(`There is no server called "${name}".`);
+		const host = hostOf(found.server);
+		if (found.server.transport === "stdio" || host === undefined) {
+			throw new Error(`"${name}" is a command this agent runs, not a place with an account.`);
+		}
+		// Asked first only for what the refusal names: a server that says where its metadata lives
+		// saves a round of guessing, and one that says nothing costs a request nobody waits on twice.
+		const said = await this.#reach(found.server);
+		const where = said.kind === "authorize" ? said.resourceMetadataUrl : undefined;
+		const started = await this.#desk.begin({
+			name,
+			url: found.server.url,
+			host,
+			...(clientId !== undefined ? { clientId } : {}),
+			...(where !== undefined ? { resourceMetadataUrl: where } : {}),
+		});
+		return { ...started, host };
+	}
+
+	/**
 	 * Opens a login for a server on the shelf, and arranges for its landing to be said out loud.
 	 *
 	 * The command answers long before the operator does, so what happens at the far end of the browser
@@ -1768,25 +1913,8 @@ export class ControlPlane {
 	 * plane heard about it.
 	 */
 	async #login(agentId: string, name: string, clientId?: string): Promise<LoginPage> {
-		const found = (await this.#mcp.servers()).find((one) => one.name === name);
-		if (found === undefined) throw new Error(`There is no server called "${name}".`);
-		const host = hostOf(found.server);
-		if (found.server.transport === "stdio" || host === undefined) {
-			throw new Error(`"${name}" is a command this agent runs, not a place with an account.`);
-		}
-
-		// Asked first only for what the refusal names: a server that says where its metadata lives
-		// saves a round of guessing, and one that says nothing costs a request nobody waits on twice.
-		const said = await this.#reach(found.server);
-		const where = said.kind === "authorize" ? said.resourceMetadataUrl : undefined;
-
-		const started = await this.#desk.begin({
-			name,
-			url: found.server.url,
-			host,
-			...(clientId !== undefined ? { clientId } : {}),
-			...(where !== undefined ? { resourceMetadataUrl: where } : {}),
-		});
+		const started = await this.#beginLogin(name, clientId);
+		const host = started.host;
 		void started.done
 			.then(
 				async () => {

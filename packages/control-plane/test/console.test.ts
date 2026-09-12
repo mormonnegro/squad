@@ -2088,12 +2088,12 @@ describe("Config", () => {
 	/**
 	 * The shelf, which is the plane's rather than an agent's.
 	 *
-	 * `/mcp` in a chat answers what this agent has. The question left over is what has anybody got,
+	 * `/plugins` in a chat answers what this agent has. The question left over is what has anybody got,
 	 * and is any of it going unused — which you would otherwise open every agent in turn to ask.
 	 */
-	describe("the mcp section", () => {
+	describe("the plugins section", () => {
 		const shelved = (props: Parameters<typeof pane>[0] = {}) =>
-			pane({ section: "mcp", columns: 90, ...props });
+			pane({ section: "plugins", columns: 90, ...props });
 
 		it("says what each server is, in the shape it was written in", () => {
 			const drawn = shelved();

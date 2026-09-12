@@ -34,7 +34,7 @@ function context(
 		limitUsd?: number;
 		/** Hosts the operator granted. Nothing a command does can add to this, which is the point. */
 		grants?: readonly string[];
-		/** Servers already on the shelf, as another agent's `/mcp add` would have left them. */
+		/** Plugins already on the shelf, as another agent's `/plugins add` would have left them. */
 		shelf?: Record<string, McpServer>;
 		/** What a server says when asked whether it wants an account. Open unless said otherwise. */
 		wantsAccount?: readonly string[];
@@ -680,7 +680,7 @@ describe("/clear", () => {
 
 		expect(answer).toContain("repository is untouched");
 		expect(answer).toContain("wrote down to remember");
-		expect(answer).toContain("/model, /mcp, /limit and /serve");
+		expect(answer).toContain("/model, /plugins, /limit and /serve");
 	});
 
 	// Stopping the turn is what makes the clearing stick, so it is not something to do quietly: an
@@ -732,7 +732,7 @@ describe("/config", () => {
 		const answer = await runCommand("/config emial", context().context);
 
 		expect(answer).toContain('"emial" is not a part of this plane');
-		expect(answer).toContain("models, search, grants, mcp, email");
+		expect(answer).toContain("models, search, grants, plugins, email");
 		// The help lists every command there is, and a mistyped word is not a person who is lost.
 		expect(answer).not.toContain("/serve");
 	});
@@ -1218,14 +1218,14 @@ describe("/model", () => {
 	});
 });
 
-describe("/mcp", () => {
+describe("/plugins", () => {
 	const linear = "https://mcp.linear.app/mcp";
 
 	it("says there are none, and the three ways to add one", async () => {
-		const answer = await runCommand("/mcp", context().context);
+		const answer = await runCommand("/plugins", context().context);
 
-		expect(answer).toContain("No MCP servers yet");
-		expect(answer).toContain("/mcp add <name> <url>");
+		expect(answer).toContain("No plugins here yet");
+		expect(answer).toContain("/plugins add <name> <url>");
 		expect(answer).toContain("sse");
 		expect(answer).toContain("<command>");
 	});
@@ -1233,7 +1233,7 @@ describe("/mcp", () => {
 	it("puts a server on the shelf and gives it to this agent in one line", async () => {
 		const { context: ctx, shelf, held } = context({ grants: ["mcp.linear.app"] });
 
-		const answer = await runCommand(`/mcp add linear ${linear}`, ctx);
+		const answer = await runCommand(`/plugins add linear ${linear}`, ctx);
 
 		expect(shelf.get("linear")).toEqual({ transport: "http", url: linear });
 		expect(held.has("linear")).toBe(true);
@@ -1247,7 +1247,7 @@ describe("/mcp", () => {
 			shelf: { linear: { transport: "http", url: linear } },
 		});
 
-		const answer = await runCommand("/mcp linear", ctx);
+		const answer = await runCommand("/plugins linear", ctx);
 
 		expect(held.has("linear")).toBe(true);
 		expect(answer).toContain(linear);
@@ -1256,11 +1256,11 @@ describe("/mcp", () => {
 	it("says which ones are there to be asked for", async () => {
 		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
 
-		const answer = await runCommand("/mcp", ctx);
+		const answer = await runCommand("/plugins", ctx);
 
 		expect(answer).toContain("This agent has none of them");
 		expect(answer).toContain("On the shelf");
-		expect(answer).toContain("/mcp linear gives this agent that one");
+		expect(answer).toContain("/plugins linear gives this agent that one");
 	});
 
 	/**
@@ -1271,7 +1271,7 @@ describe("/mcp", () => {
 	it("says a remote server cannot be reached, and what would grant it", async () => {
 		const { context: ctx, held } = context();
 
-		const answer = await runCommand(`/mcp add linear ${linear}`, ctx);
+		const answer = await runCommand(`/plugins add linear ${linear}`, ctx);
 
 		// Still attached: the operator asked for it, and it works the moment the grant exists.
 		expect(held.has("linear")).toBe(true);
@@ -1288,9 +1288,9 @@ describe("/mcp", () => {
 	it("offers a login instead of YAML when the server says it wants an account", async () => {
 		const { context: ctx } = context({ wantsAccount: ["linear"] });
 
-		const answer = await runCommand(`/mcp add linear ${linear}`, ctx);
+		const answer = await runCommand(`/plugins add linear ${linear}`, ctx);
 
-		expect(answer).toContain("/mcp login linear");
+		expect(answer).toContain("/plugins login linear");
 		expect(answer).not.toContain("host: mcp.linear.app");
 	});
 
@@ -1301,7 +1301,7 @@ describe("/mcp", () => {
 			reach: async () => ({ kind: "unreachable", why: "getaddrinfo ENOTFOUND" }) as const,
 		};
 
-		expect(await runCommand(`/mcp add linear ${linear}`, unreachable)).toContain(
+		expect(await runCommand(`/plugins add linear ${linear}`, unreachable)).toContain(
 			"cannot reach mcp.linear.app either",
 		);
 	});
@@ -1309,14 +1309,14 @@ describe("/mcp", () => {
 	it("says nothing about grants for a server the operator did grant", async () => {
 		const { context: ctx } = context({ grants: ["mcp.linear.app"] });
 
-		expect(await runCommand(`/mcp add linear ${linear}`, ctx)).not.toContain("cannot be reached");
+		expect(await runCommand(`/plugins add linear ${linear}`, ctx)).not.toContain("cannot be reached");
 	});
 
 	// It has nowhere to go on its own account: what it reaches for is the sandbox's own road out.
 	it("says nothing about grants for a server that is a process", async () => {
 		const { context: ctx } = context();
 
-		const answer = await runCommand("/mcp add files mcp-files /tmp", ctx);
+		const answer = await runCommand("/plugins add files mcp-files /tmp", ctx);
 
 		expect(answer).not.toContain("cannot be reached");
 	});
@@ -1324,7 +1324,7 @@ describe("/mcp", () => {
 	it("marks the ones nothing can reach in the list too", async () => {
 		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
 
-		expect(await runCommand("/mcp", ctx)).toContain("(no grant)");
+		expect(await runCommand("/plugins", ctx)).toContain("(no grant)");
 	});
 
 	// The stronger of the two facts, and the only one the operator can do anything about from here.
@@ -1334,7 +1334,7 @@ describe("/mcp", () => {
 			loggedIn: ["linear"],
 		});
 
-		const answer = await runCommand("/mcp", ctx);
+		const answer = await runCommand("/plugins", ctx);
 
 		expect(answer).toContain("(logged in)");
 		expect(answer).not.toContain("(no grant)");
@@ -1342,9 +1342,9 @@ describe("/mcp", () => {
 
 	it("takes one off this agent while leaving it for the others", async () => {
 		const { context: ctx, shelf, held } = context({ grants: ["mcp.linear.app"] });
-		await runCommand(`/mcp add linear ${linear}`, ctx);
+		await runCommand(`/plugins add linear ${linear}`, ctx);
 
-		const answer = await runCommand("/mcp drop linear", ctx);
+		const answer = await runCommand("/plugins drop linear", ctx);
 
 		expect(held.has("linear")).toBe(false);
 		expect(shelf.has("linear")).toBe(true);
@@ -1355,9 +1355,9 @@ describe("/mcp", () => {
 
 	it("takes a forgotten one off the shelf and off this agent at once", async () => {
 		const { context: ctx, shelf, held } = context();
-		await runCommand("/mcp add files mcp-files", ctx);
+		await runCommand("/plugins add files mcp-files", ctx);
 
-		await runCommand("/mcp forget files", ctx);
+		await runCommand("/plugins forget files", ctx);
 
 		expect(shelf.has("files")).toBe(false);
 		expect(held.has("files")).toBe(false);
@@ -1366,73 +1366,73 @@ describe("/mcp", () => {
 	it("answers a name nothing is called with the names there are", async () => {
 		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
 
-		const answer = await runCommand("/mcp githob", ctx);
+		const answer = await runCommand("/plugins githob", ctx);
 
-		expect(answer).toContain('no server called "githob"');
+		expect(answer).toContain('no plugin called "githob"');
 		expect(answer).toContain("linear");
 	});
 
 	it("says an agent already has what it already has, rather than saying it twice", async () => {
 		const { context: ctx } = context({ grants: ["mcp.linear.app"] });
-		await runCommand(`/mcp add linear ${linear}`, ctx);
+		await runCommand(`/plugins add linear ${linear}`, ctx);
 
-		expect(await runCommand("/mcp linear", ctx)).toContain("already has");
+		expect(await runCommand("/plugins linear", ctx)).toContain("already has");
 	});
 
-	// `/mcp drop` would then be ambiguous forever, and the ambiguity would be discovered by whoever
+	// `/plugins drop` would then be ambiguous forever, and the ambiguity would be discovered by whoever
 	// tried to drop it.
 	it("refuses a name it uses for something else", async () => {
 		const { context: ctx, shelf } = context();
 
-		const answer = await runCommand("/mcp add drop mcp-files", ctx);
+		const answer = await runCommand("/plugins add drop mcp-files", ctx);
 
-		expect(answer).toContain("is a word /mcp uses");
+		expect(answer).toContain("is a word /plugins uses");
 		expect(shelf.size).toBe(0);
 	});
 
 	it("refuses a name no model could spell back", async () => {
 		const { context: ctx, shelf } = context();
 
-		expect(await runCommand("/mcp add My_Server mcp-files", ctx)).toContain("not a name");
+		expect(await runCommand("/plugins add My_Server mcp-files", ctx)).toContain("not a name");
 		expect(shelf.size).toBe(0);
 	});
 
 	it("says what it is missing rather than storing half a server", async () => {
 		const { context: ctx, shelf } = context();
 
-		expect(await runCommand("/mcp add", ctx)).toContain("needs a name");
-		expect(await runCommand("/mcp add linear", ctx)).toContain("needs a URL");
+		expect(await runCommand("/plugins add", ctx)).toContain("needs a name");
+		expect(await runCommand("/plugins add linear", ctx)).toContain("needs a URL");
 		expect(shelf.size).toBe(0);
 	});
 
 	it("does not pretend to drop something this agent never had", async () => {
 		const { context: ctx } = context({ shelf: { linear: { transport: "http", url: linear } } });
 
-		expect(await runCommand("/mcp drop linear", ctx)).toContain("does not have");
+		expect(await runCommand("/plugins drop linear", ctx)).toContain("does not have");
 	});
 });
 
-describe("/mcp login", () => {
+describe("/plugins login", () => {
 	const linear = "https://mcp.linear.app/mcp";
 	const shelf = { linear: { transport: "http", url: linear } as const };
 
 	it("sends the operator to a page, and says where the answer is expected back", async () => {
 		const { context: ctx, started } = context({ shelf });
 
-		const answer = await runCommand("/mcp login linear", ctx);
+		const answer = await runCommand("/plugins login linear", ctx);
 
 		expect(started).toEqual([{ name: "linear", clientId: undefined }]);
 		expect(answer).toContain("https://auth.test/authorize?for=linear");
 		// Both halves matter: the address it is waiting at, and what to do if that page cannot reach it.
 		expect(answer).toContain(WAITING_AT);
-		expect(answer).toContain("/mcp login linear <address>");
+		expect(answer).toContain("/plugins login linear <address>");
 	});
 
 	/** For a server that will not register a client, where the operator made one themselves. */
 	it("passes on a client id the operator has in hand", async () => {
 		const { context: ctx, started } = context({ shelf });
 
-		await runCommand("/mcp login linear abc123", ctx);
+		await runCommand("/plugins login linear abc123", ctx);
 
 		expect(started).toEqual([{ name: "linear", clientId: "abc123" }]);
 	});
@@ -1445,7 +1445,7 @@ describe("/mcp login", () => {
 		const { context: ctx, started, pasted, logins } = context({ shelf });
 		const landed = `${WAITING_AT}?code=abc&state=xyz`;
 
-		const answer = await runCommand(`/mcp login linear ${landed}`, ctx);
+		const answer = await runCommand(`/plugins login linear ${landed}`, ctx);
 
 		expect(pasted).toEqual([{ name: "linear", redirected: landed }]);
 		expect(started).toEqual([]);
@@ -1463,7 +1463,7 @@ describe("/mcp login", () => {
 			},
 		};
 
-		expect(await runCommand("/mcp login linear", refuses)).toContain("does not register clients");
+		expect(await runCommand("/plugins login linear", refuses)).toContain("does not register clients");
 	});
 
 	it("has no account to offer for a server that is a process", async () => {
@@ -1471,20 +1471,20 @@ describe("/mcp login", () => {
 			shelf: { files: { transport: "stdio", command: "mcp-files", args: [] } },
 		});
 
-		expect(await runCommand("/mcp login files", ctx)).toContain("not a place with an account");
+		expect(await runCommand("/plugins login files", ctx)).toContain("not a place with an account");
 		expect(started).toEqual([]);
 	});
 
 	it("asks which one when there is more than nothing to log in to", async () => {
 		const { context: ctx } = context({ shelf });
 
-		expect(await runCommand("/mcp login", ctx)).toContain("/mcp login linear");
+		expect(await runCommand("/plugins login", ctx)).toContain("/plugins login linear");
 	});
 
 	it("takes the token away again, and says the reach went with it", async () => {
 		const { context: ctx, logins } = context({ shelf, loggedIn: ["linear"] });
 
-		const answer = await runCommand("/mcp logout linear", ctx);
+		const answer = await runCommand("/plugins logout linear", ctx);
 
 		expect(logins.has("linear")).toBe(false);
 		expect(answer).toContain("Logged out of mcp.linear.app");
@@ -1493,15 +1493,17 @@ describe("/mcp login", () => {
 	it("does not claim to have logged out of something nothing was logged in to", async () => {
 		const { context: ctx } = context({ shelf });
 
-		expect(await runCommand("/mcp logout linear", ctx)).toContain("was not logged in");
+		expect(await runCommand("/plugins logout linear", ctx)).toContain("was not logged in");
 	});
 
-	// Otherwise `/mcp login` would be ambiguous forever, discovered by whoever tried to use it.
+	// Otherwise `/plugins login` would be ambiguous forever, discovered by whoever tried to use it.
 	it("refuses to name a server after either of its own words", async () => {
 		const { context: ctx, shelf: added } = context();
 
-		expect(await runCommand(`/mcp add login ${linear}`, ctx)).toContain("is a word /mcp uses");
-		expect(await runCommand(`/mcp add logout ${linear}`, ctx)).toContain("is a word /mcp uses");
+		expect(await runCommand(`/plugins add login ${linear}`, ctx)).toContain("is a word /plugins uses");
+		expect(await runCommand(`/plugins add logout ${linear}`, ctx)).toContain(
+			"is a word /plugins uses",
+		);
 		expect(added.size).toBe(0);
 	});
 });
@@ -2237,10 +2239,10 @@ describe("agentMayNot", () => {
 	// The half that carries an address is the operator walking back from that screen. An agent
 	// holding one has not been to a screen: it has an address it got somewhere.
 	it("does not let it walk back from the consent screen itself", () => {
-		const refusal = agentMayNot("/mcp login ahrefs https://localhost/callback?code=x", scout);
+		const refusal = agentMayNot("/plugins login ahrefs https://localhost/callback?code=x", scout);
 
 		expect(refusal).toContain("yours to make");
-		expect(refusal).toContain("/mcp login ahrefs <address>");
+		expect(refusal).toContain("/plugins login ahrefs <address>");
 	});
 
 	// Holding a repository spends the operator's GitHub token on it, which is the widening every other
@@ -2323,15 +2325,17 @@ describe("agentMayNot", () => {
 
 	// The shelf is shared. A drop is this agent giving one up; a forget takes it off every agent
 	// that has it, including the ones nobody was looking at.
-	it("refuses taking a server off every other agent", () => {
+	// Typed by the name this used to have, which is the point: `/mcp` is still routed, and what it
+	// answers with is the name it has now.
+	it("refuses taking a plugin off every other agent", () => {
 		const refusal = agentMayNot("/mcp forget ahrefs", scout);
 
 		expect(refusal).toContain("every agent");
-		expect(refusal).toContain("/mcp forget ahrefs");
+		expect(refusal).toContain("/plugins forget ahrefs");
 	});
 
 	it("refuses closing an account the operator opened", () => {
-		expect(agentMayNot("/mcp logout ahrefs", scout)).toContain("/mcp logout ahrefs");
+		expect(agentMayNot("/mcp logout ahrefs", scout)).toContain("/plugins logout ahrefs");
 	});
 
 	/**

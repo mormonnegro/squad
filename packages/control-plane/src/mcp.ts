@@ -20,6 +20,17 @@ export type McpServer =
 export interface NamedServer {
 	readonly name: string;
 	readonly server: McpServer;
+	/**
+	 * The catalogue entry this was made from, for the ones that were made from one.
+	 *
+	 * A name and a URL do not say which plugin a connection is a connection to: `stripe-test` and
+	 * `billing` are the same company, and a screen that draws Stripe's mark beside both has to be
+	 * told so. Absent on anything typed in by hand, which is a server and not an instance of
+	 * anything.
+	 */
+	readonly from?: string;
+	/** What this copy is, when there is more than one of it: "the live account", "the test one". */
+	readonly label?: string;
 }
 
 /**
@@ -104,10 +115,47 @@ export function written(server: McpServer): string {
 		: `${server.transport === "sse" ? "sse " : ""}${server.url}`;
 }
 
+/** One entry as it is stored: the server, and what the screens need to say which one it is. */
+interface Kept {
+	server: McpServer;
+	from?: string;
+	label?: string;
+}
+
 interface Shelf {
-	readonly servers: Record<string, McpServer>;
+	readonly servers: Record<string, Kept>;
 	/** Agent id to the names it has been given. Names, not copies: forgetting one forgets it here too. */
 	readonly attached: Record<string, string[]>;
+}
+
+/**
+ * One entry, however old the file it came out of is.
+ *
+ * The shelf used to hold the server itself under each name, and the shelves written then are still
+ * on disk on every machine this has ever run on. A server is told from an entry by the field only a
+ * server has, so the two shapes can share a file and the older one is quietly the newer one from
+ * the first read — nobody migrates anything, and nothing has to be right about a version number.
+ */
+function kept(stored: unknown): Kept | undefined {
+	if (typeof stored !== "object" || stored === null) return undefined;
+	if ("transport" in stored) return { server: stored as McpServer };
+	const entry = stored as Partial<Kept>;
+	if (entry.server === undefined) return undefined;
+	return {
+		server: entry.server,
+		...(entry.from !== undefined ? { from: entry.from } : {}),
+		...(entry.label !== undefined ? { label: entry.label } : {}),
+	};
+}
+
+/** The entry as the rest of the plane reads one: flattened, and under its name. */
+function named(name: string, entry: Kept): NamedServer {
+	return {
+		name,
+		server: entry.server,
+		...(entry.from !== undefined ? { from: entry.from } : {}),
+		...(entry.label !== undefined ? { label: entry.label } : {}),
+	};
 }
 
 /**
@@ -132,7 +180,7 @@ export class McpShelf {
 	async servers(): Promise<readonly NamedServer[]> {
 		const shelf = await this.#serialize(() => this.#read());
 		return Object.entries(shelf.servers)
-			.map(([name, server]) => ({ name, server }))
+			.map(([name, entry]) => named(name, entry))
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
@@ -140,9 +188,8 @@ export class McpShelf {
 	async holding(): Promise<readonly (NamedServer & { readonly agents: readonly string[] })[]> {
 		const shelf = await this.#serialize(() => this.#read());
 		return Object.entries(shelf.servers)
-			.map(([name, server]) => ({
-				name,
-				server,
+			.map(([name, entry]) => ({
+				...named(name, entry),
 				agents: Object.entries(shelf.attached)
 					.filter(([, names]) => names.includes(name))
 					.map(([agentId]) => agentId)
@@ -155,16 +202,40 @@ export class McpShelf {
 		const shelf = await this.#serialize(() => this.#read());
 		return (shelf.attached[agentId] ?? [])
 			.flatMap((name) => {
-				const server = shelf.servers[name];
-				return server === undefined ? [] : [{ name, server }];
+				const entry = shelf.servers[name];
+				return entry === undefined ? [] : [named(name, entry)];
 			})
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
-	/** Puts a server on the shelf under a name, replacing whatever was there under it. */
-	async add(name: string, server: McpServer): Promise<void> {
+	/**
+	 * Puts a server on the shelf under a name, replacing whatever was there under it.
+	 *
+	 * `made` is what the catalogue knew and the server itself does not: which plugin this is a copy
+	 * of, and which copy. Left off by whoever typed an address in by hand, because there is nothing
+	 * truthful to put there.
+	 */
+	async add(
+		name: string,
+		server: McpServer,
+		made?: { from?: string; label?: string },
+	): Promise<void> {
 		await this.#change((shelf) => {
-			shelf.servers[name] = server;
+			shelf.servers[name] = {
+				server,
+				...(made?.from !== undefined ? { from: made.from } : {}),
+				...(made?.label !== undefined ? { label: made.label } : {}),
+			};
+		});
+	}
+
+	/** Says which copy this one is, or stops saying it. The connection itself is untouched. */
+	async relabel(name: string, label: string): Promise<void> {
+		await this.#change((shelf) => {
+			const entry = shelf.servers[name];
+			if (entry === undefined) return;
+			if (label === "") delete entry.label;
+			else entry.label = label;
 		});
 	}
 
@@ -217,8 +288,16 @@ export class McpShelf {
 			if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
 				return { servers: {}, attached: {} };
 			}
-			const { servers, attached } = parsed as Partial<Shelf>;
-			return { servers: servers ?? {}, attached: attached ?? {} };
+			const { servers, attached } = parsed as {
+				servers?: Record<string, unknown>;
+				attached?: Record<string, string[]>;
+			};
+			const held: Record<string, Kept> = {};
+			for (const [name, stored] of Object.entries(servers ?? {})) {
+				const entry = kept(stored);
+				if (entry !== undefined) held[name] = entry;
+			}
+			return { servers: held, attached: attached ?? {} };
 		} catch {
 			return { servers: {}, attached: {} };
 		}

@@ -410,19 +410,19 @@ the plane without waking anything — a turn spent reading a settings change is 
 slash opens the list of what there is, over the prompt, filtered by whatever is typed after it:
 
 ```
- ▸ /limit [<amount>|off]                     what it has spent today, and the ceiling for it
-   /model [<name>]                           what it thinks with, and what else there is
-   /mcp [<name>|add …|login …]               the MCP servers it has, and the shelf to add from
-   /serve [<port>|stop <port>]               open a port inside it on the machine you are sitting at
-   /reach <host>                             ask to open a host on the way out, answered here with one key
-   /repo [<owner/name> [<branch>…]|drop …]   the GitHub repositories it holds, and which branches it may push
-   /team [<name>|drop <name>]                the agents it may write to, and what it has asked to write to
-   /telegram [<token>|off]                   the Telegram bot it answers on, and how to pair one
-   /email [<address>|<password>|off]         the address it is reached at, and how to connect a mailbox
-   /clear                                    forget the conversation, and start it again on nothing
-   /delete                                   delete this agent, after asking whether you meant it
-   /config [models|search|grants|mcp|email]  the whole plane's screen: its keys, models, reach and mailbox
-   /help                                     every command there is
+ ▸ /limit [<amount>|off]                             what it has spent today, and the ceiling for it
+   /model [<name>]                                   what it thinks with, and what else there is
+   /plugins [<name>|add …|login …]                   the plugins it has, and the ones on the shelf to give it
+   /serve [<port>|stop <port>]                       open a port inside it on the machine you are sitting at
+   /reach <host>                                     ask to open a host on the way out, answered here with one key
+   /repo [<owner/name> [<branch>…]|drop …]           the GitHub repositories it holds, and which branches it may push
+   /team [<name>|drop <name>]                        the agents it may write to, and what it has asked to write to
+   /telegram [<token>|off]                           the Telegram bot it answers on, and how to pair one
+   /email [<address>|<password>|allow …|deny …|off]  the address it is reached at, and whose mail is read as instructions
+   /clear                                            forget the conversation, and start it again on nothing
+   /delete                                           delete this agent, after asking whether you meant it
+   /config [models|search|grants|plugins|email]      the whole plane's screen: its keys, models, reach and mailbox
+   /help                                             every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │
 ╰──────────────────────────────────────────────────────────────────────╯
@@ -497,7 +497,7 @@ scout has forgotten the conversation.
 
 The repository is untouched: scout's soul, its skills and whatever it wrote down to remember
 are what outlive a conversation, and are why throwing one away costs little. So is everything
-/model, /mcp, /limit and /serve have set. The next thing said starts it again on nothing.
+/model, /plugins, /limit and /serve have set. The next thing said starts it again on nothing.
 ```
 
 It says that every time, and the saying is half the command: a clear nobody is sure of the cost of
@@ -1524,21 +1524,21 @@ sits in the sandbox image beside `wake_me` and `web_search` and is a whole one �
 three transports, and the tools that come back registered as pi's own, so the model cannot tell
 which of them live somewhere else.
 
-Finding a server is the expensive part and it only has to happen once. `/mcp add` puts it on a shelf
+Finding a server is the expensive part and it only has to happen once. `/plugins add` puts it on a shelf
 the plane keeps, and gives it to the agent you typed it at:
 
 ```
-> /mcp add linear https://mcp.linear.app/mcp
+> /plugins add linear https://mcp.linear.app/mcp
 "linear" is on the shelf, and this agent has it.
 
-Any other agent can have it too, with /mcp linear.
+Any other agent can have it too, with /plugins linear.
 ```
 
 From the second agent on it is a name off a list, which is the whole point of the shelf being the
 plane's rather than the agent's:
 
 ```
-> /mcp
+> /plugins
 This agent has:
   files   mcp-files /home/agent
 
@@ -1546,15 +1546,15 @@ On the shelf:
   linear  https://mcp.linear.app/mcp   (logged in)
   sentry  https://mcp.sentry.dev/mcp   (no grant)
 
-/mcp linear gives this agent that one.
+/plugins linear gives this agent that one.
 
-> /mcp linear
+> /plugins linear
 This agent has "linear": https://mcp.linear.app/mcp
 ```
 
 A URL is a remote server, `sse <url>` is one speaking the older transport — the one thing about a
 server a line cannot show by itself — and anything else is a command the agent starts for itself.
-`/mcp drop` takes one off this agent and leaves it on the shelf; `/mcp forget` takes it off the
+`/plugins drop` takes one off this agent and leaves it on the shelf; `/plugins forget` takes it off the
 shelf and off every agent that had it, because an attachment naming a server that is gone is not an
 attachment.
 
@@ -1575,7 +1575,7 @@ once rather than one agent's share of it:
 │                      ││                                                                │
 │                      ││ None of them holds a key. A remote one is reached through the  │
 │                      ││ proxy like every other host, and one that wants an account is  │
-│                      ││ logged into from an agent that has it, with /mcp login.        │
+│                      ││ logged into from an agent that has it, with /plugins login.    │
 │                      ││                                                                │
 │                      ││ ● linear  https://mcp.linear.app/mcp                           │
 │                      ││ ○ notion  https://mcp.notion.com/mcp                           │
@@ -1592,9 +1592,9 @@ The dot means what it means in the agents column: something that is actually rea
 server nobody was given is a URL written down — `notion` above — and finding that is the question
 you would otherwise open every agent in turn to ask. `⏎` gives the row under the cursor to the agent
 `tab` names, and `⏎` again takes it back, because a row that says who holds it is a row that already
-means both. `⌫` is `/mcp forget` and asks first.
+means both. `⌫` is `/plugins forget` and asks first.
 
-The row that adds one takes the same line `/mcp add` takes — a name and then a URL or a command —
+The row that adds one takes the same line `/plugins add` takes — a name and then a URL or a command —
 rather than a second grammar that would be nearly right.
 
 **There is nowhere in a server to put a credential.** A local one inherits a sandbox whose only road
@@ -1605,17 +1605,17 @@ README, so the server is asked — `initialize` is what any client sends first, 
 would refuse the agent refuses that identically:
 
 ```
-> /mcp add notion https://mcp.notion.com/mcp
+> /plugins add notion https://mcp.notion.com/mcp
 "notion" is on the shelf, and this agent has it.
 
-It wants an account first: /mcp login notion
+It wants an account first: /plugins login notion
 ```
 
-`/mcp login` registers a client, opens the consent screen at the console — which is the machine the
+`/plugins login` registers a client, opens the consent screen at the console — which is the machine the
 person is at, where a plane in a container is not — and waits on port 8788 for the browser to come
 back. One number rather than one per login, because that door has to be published out of the
 container in advance; the deployment binds it to loopback, and one login happens at a time. Where
-even that cannot be reached, the address the browser lands on can be pasted back instead — `/mcp
+even that cannot be reached, the address the browser lands on can be pasted back instead — `/plugins
 login notion <address>` — and the state check makes that exactly as safe as the other way. What
 comes back is held on the plane, 0600, next to the CA key; the sandbox never sees a token, and
 neither does the agent.
@@ -1625,11 +1625,11 @@ deliberate and it is narrow: a consent screen is a person reading a host name an
 a stronger act of approval than a line of YAML rather than a weaker one. An agent can ask for that
 screen to be put in front of its operator, below, and gets no further by asking — what comes back is
 a person's answer to a question they were shown. The grant it makes is one host, that
-server's own path, and only for as long as the agent is holding the server — `/mcp drop` takes the
-reach with it, and `/mcp logout` takes it from everyone.
+server's own path, and only for as long as the agent is holding the server — `/plugins drop` takes the
+reach with it, and `/plugins logout` takes it from everyone.
 
 A server that wants no account and is still out of reach is the other case, and it stays the
-operator's: `/mcp` prints the grant to paste but will not write it, because putting the whole of an
+operator's: `/plugins` prints the grant to paste but will not write it, because putting the whole of an
 agent's reach one typo away from the box its messages are typed into is not a convenience.
 
 The list is written into the sandbox before every turn rather than baked into the container, so a
@@ -1637,7 +1637,7 @@ server added from the console reaches an agent that is already up on its next tu
 away stops being offered.
 
 **And the agent is told which ones it is holding**, in its own system prompt, every turn. Having the
-tools is not the same as knowing they arrived. The console's answer to `/mcp login` goes to the
+tools is not the same as knowing they arrived. The console's answer to `/plugins login` goes to the
 operator, because the operator is the one with the browser it ends in — so an agent that asked for a
 server is never told it got one. It has only its tool list to infer from, and what it does instead is
 remember: the turn before, it told the operator the login was pending, so this turn it says so again,
@@ -1742,18 +1742,18 @@ everything right. `console_command` is a pi extension shipped in the image besid
 `web_search`, and it asks for console commands by name:
 
 ```
-‹ask› /mcp add ahrefs https://mcp.ahrefs.com/mcp
+‹ask› /plugins add ahrefs https://mcp.ahrefs.com/mcp
 "ahrefs" is on the shelf, and this agent has it.
 
-It wants an account first: /mcp login ahrefs
+It wants an account first: /plugins login ahrefs
 
-‹ask› /mcp login ahrefs
+‹ask› /plugins login ahrefs
 Log in to mcp.ahrefs.com here — opened already, if this console is somewhere with a browser:
 
   https://auth.ahrefs.com/authorize?response_type=code&client_id=…
 
 Waiting at http://localhost:8788/callback. If that page cannot reach the plane, paste
-the address it lands on back as: /mcp login ahrefs <address>
+the address it lands on back as: /plugins login ahrefs <address>
 ```
 
 The link opens in the operator's browser, and that is the whole of what the agent could not do for

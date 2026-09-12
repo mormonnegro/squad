@@ -1322,7 +1322,7 @@ describe("/config, typed at an agent", () => {
 		try {
 			await screen.press("/co");
 
-			expect(screen.screen()).toContain("/config [models|search|grants|mcp|email]");
+			expect(screen.screen()).toContain("/config [models|search|grants|plugins|email]");
 		} finally {
 			screen.close();
 		}

@@ -61,6 +61,7 @@ export {
 	type ReadServer,
 	readName,
 	readServer,
+	type ServerStanding,
 	written,
 } from "./mcp.ts";
 export {
@@ -89,6 +90,15 @@ export {
 	type PiSessionChannelOptions,
 	RELAY_PATH,
 } from "./pi-session.ts";
+export {
+	nameFor,
+	PLUGINS,
+	type Plugin,
+	pluginOf,
+	SHELVES,
+	type Shelf,
+	serverOf,
+} from "./plugins.ts";
 export {
 	checkRepo,
 	GITHUB_TOKEN_ENV,

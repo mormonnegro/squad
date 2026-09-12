@@ -279,7 +279,7 @@ export interface Command {
  * Here rather than only on the screen because the command that opens it has to say what it takes,
  * and a menu row offering an argument the screen has since renamed is worse than offering none.
  */
-export const CONFIG_SECTIONS = ["models", "search", "grants", "mcp", "email"] as const;
+export const CONFIG_SECTIONS = ["models", "search", "grants", "plugins", "email"] as const;
 
 /**
  * Every command there is, in one list rather than in a paragraph.
@@ -300,9 +300,9 @@ export const COMMANDS: readonly Command[] = [
 		does: "what it thinks with, and what else there is",
 	},
 	{
-		name: "/mcp",
+		name: "/plugins",
 		takes: "[<name>|add …|login …]",
-		does: "the MCP servers it has, and the shelf to add from",
+		does: "the plugins it has, and the ones on the shelf to give it",
 	},
 	{
 		name: "/serve",
@@ -759,14 +759,14 @@ async function serving(context: CommandContext): Promise<string> {
 	].join("\n");
 }
 
-/** The words `/mcp` reads as instructions, and therefore not names a server may be given. */
+/** The words `/plugins` reads as instructions, and therefore not names a plugin may be given. */
 const VERBS = ["add", "drop", "forget", "login", "logout"];
 
 /** How to add one, which is the answer to "and what do I type", asked in three different ways. */
 const ADDING = [
-	"/mcp add <name> <url>              a remote server",
-	"/mcp add <name> sse <url>          one speaking the older transport",
-	"/mcp add <name> <command> [args]   one the agent starts for itself",
+	"/plugins add <name> <url>              a remote server",
+	"/plugins add <name> sse <url>          one speaking the older transport",
+	"/plugins add <name> <command> [args]   one the agent starts for itself",
 ].join("\n");
 
 /**
@@ -785,7 +785,7 @@ async function whatNext(name: string, server: McpServer, context: CommandContext
 
 	const said = await context.reach(server);
 	if (said.kind === "authorize") {
-		return `\n\nIt wants an account first: /mcp login ${name}`;
+		return `\n\nIt wants an account first: /plugins login ${name}`;
 	}
 	if (said.kind === "unreachable") {
 		return `\n\nThe plane cannot reach ${host} either: ${said.why}`;
@@ -854,7 +854,7 @@ async function logIn(
 			`  ${page.url}`,
 			"",
 			`Waiting at ${page.redirectUri}. If that page cannot reach the plane, paste`,
-			`the address it lands on back as: /mcp login ${name} <address>`,
+			`the address it lands on back as: /plugins login ${name} <address>`,
 		].join("\n");
 	} catch (error) {
 		// Answered rather than thrown: a login that could not start is news about the server, and it
@@ -870,7 +870,7 @@ async function logOut(name: string, host: string, context: CommandContext): Prom
 
 async function listing(context: CommandContext): Promise<string> {
 	const { shelf, held } = await context.mcp();
-	if (shelf.length === 0) return `No MCP servers yet.\n\n${ADDING}`;
+	if (shelf.length === 0) return `No plugins here yet.\n\n${ADDING}`;
 
 	const spare = shelf.filter((one) => !held.some((has) => has.name === one.name));
 	const said = [
@@ -880,7 +880,7 @@ async function listing(context: CommandContext): Promise<string> {
 	];
 	if (spare.length > 0) {
 		said.push(`On the shelf:\n${laidOut(await rows(spare, context))}`);
-		said.push(`/mcp ${spare[0]?.name} gives this agent that one.`);
+		said.push(`/plugins ${spare[0]?.name} gives this agent that one.`);
 	}
 	return said.join("\n\n");
 }
@@ -891,7 +891,7 @@ async function listing(context: CommandContext): Promise<string> {
  * Adding is separate from attaching because finding a server is the expensive part and it only has
  * to happen once: from the second agent on, the whole of it is a name off a list.
  */
-async function mcp(words: readonly string[], context: CommandContext): Promise<string> {
+async function plugins(words: readonly string[], context: CommandContext): Promise<string> {
 	const [verb = "", ...rest] = words;
 	const [named = "", ...target] = rest;
 
@@ -899,9 +899,9 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 
 	if (verb === "add") {
 		if (named === "") return `A server needs a name to be called by.\n\n${ADDING}`;
-		// Checked before the name is read, so the answer to `/mcp add add …` is the real problem with
+		// Checked before the name is read, so the answer to `/plugins add add …` is the real problem with
 		// it rather than a complaint about characters that were all perfectly fine.
-		if (VERBS.includes(named)) return `"${named}" is a word /mcp uses. Call it something else.`;
+		if (VERBS.includes(named)) return `"${named}" is a word /plugins uses. Call it something else.`;
 		const complaint = readName(named);
 		if (complaint !== undefined) return complaint;
 		const read = readServer(target);
@@ -912,7 +912,7 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 		return [
 			`"${named}" is on the shelf, and this agent has it.`,
 			await whatNext(named, read.server, context),
-			`\n\nAny other agent can have it too, with /mcp ${named}.`,
+			`\n\nAny other agent can have it too, with /plugins ${named}.`,
 		].join("");
 	}
 
@@ -923,10 +923,10 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 			const names = shelf.map((one) => one.name);
 			return names.length === 0
 				? `There is nothing to log ${verb === "login" ? "in" : "out"} of yet.\n\n${ADDING}`
-				: `Which one? ${names.map((one) => `/mcp ${verb} ${one}`).join(", ")}`;
+				: `Which one? ${names.map((one) => `/plugins ${verb} ${one}`).join(", ")}`;
 		}
 		const found = shelf.find((one) => one.name === named);
-		if (found === undefined) return `There is no server called "${named}".`;
+		if (found === undefined) return `There is no plugin called "${named}".`;
 		const host = hostOf(found.server);
 		if (host === undefined) {
 			return `"${named}" is a command this agent runs, not a place with an account.`;
@@ -938,15 +938,15 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 
 	if (verb === "drop" || verb === "forget") {
 		if (named === "")
-			return `Which one? ${shelf.map((one) => `/mcp ${verb} ${one.name}`).join(", ")}`;
+			return `Which one? ${shelf.map((one) => `/plugins ${verb} ${one.name}`).join(", ")}`;
 		if (verb === "drop") {
 			if (!held.some((one) => one.name === named)) return `This agent does not have "${named}".`;
 			await context.detachServer(named);
 			// Said, because the two words do different things and which one was wanted is not obvious
 			// from either. Nobody should have to find out by typing the wrong one.
-			return `This agent no longer has "${named}". It is still on the shelf: /mcp ${named} gives it back.`;
+			return `This agent no longer has "${named}". It is still on the shelf: /plugins ${named} gives it back.`;
 		}
-		if (!shelf.some((one) => one.name === named)) return `There is no server called "${named}".`;
+		if (!shelf.some((one) => one.name === named)) return `There is no plugin called "${named}".`;
 		await context.forgetServer(named);
 		return `"${named}" is off the shelf, and off every agent that had it.`;
 	}
@@ -954,8 +954,8 @@ async function mcp(words: readonly string[], context: CommandContext): Promise<s
 	// Anything else is a name, which is the short way and the one the second agent uses.
 	const found = shelf.find((one) => one.name === verb);
 	if (found === undefined) {
-		if (shelf.length === 0) return `There is no server called "${verb}".\n\n${ADDING}`;
-		return `There is no server called "${verb}". There is: ${shelf.map((one) => one.name).join(", ")}.`;
+		if (shelf.length === 0) return `There is no plugin called "${verb}".\n\n${ADDING}`;
+		return `There is no plugin called "${verb}". There is: ${shelf.map((one) => one.name).join(", ")}.`;
 	}
 	if (held.some((one) => one.name === verb)) {
 		return `This agent already has "${verb}": ${written(found.server)}`;
@@ -1460,7 +1460,7 @@ async function clear(words: readonly string[], context: CommandContext): Promise
 		"",
 		`The repository is untouched: ${id}'s soul, its skills and whatever it wrote down to remember`,
 		"are what outlive a conversation, and are why throwing one away costs little. So is everything",
-		"/model, /mcp, /limit and /serve have set. The next thing said starts it again on nothing.",
+		"/model, /plugins, /limit and /serve have set. The next thing said starts it again on nothing.",
 	].join("\n");
 }
 
@@ -1633,7 +1633,10 @@ export async function runCommand(line: string, context: CommandContext): Promise
 
 	// The words rather than the argument: a server is a name and then a whole command line, and
 	// joining those back into one string only to split them again would lose where each of them ended.
-	if (name === "mcp") return mcp(rest, context);
+	// `/mcp` is what this was called, and is kept: it is in everybody's history and in every note
+	// anybody wrote down about this plane, and a command that stops existing to be renamed is a
+	// rename that costs its users an error message.
+	if (name === "plugins" || name === "mcp") return plugins(rest, context);
 	if (name === "model") return models(rest, context);
 	if (name === "serve") return serve(rest, context);
 	if (name === "telegram") return telegram(rest, context);
@@ -1790,19 +1793,19 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 		return "This agent asked for the config screen. It is a screen rather than a command, and it is the whole plane's rather than this agent's — the keys every agent is paid for with, and the mailbox all of them are reached at: /config, to see what it was after.";
 	}
 
-	if (name === "mcp") {
+	if (name === "mcp" || name === "plugins") {
 		const [verb = "", named = "", ...target] = rest;
 		if (verb === "forget") {
-			return `This agent asked to take "${named}" off the shelf, which takes it off every agent that has it and not only this one: /mcp forget ${named}, if you meant it.`;
+			return `This agent asked to take "${named}" off the shelf, which takes it off every agent that has it and not only this one: /plugins forget ${named}, if you meant it.`;
 		}
 		if (verb === "logout") {
-			return `This agent asked to log out of "${named}". The account is one you opened in a browser and it is yours to close: /mcp logout ${named}.`;
+			return `This agent asked to log out of "${named}". The account is one you opened in a browser and it is yours to close: /plugins logout ${named}.`;
 		}
 		// The half of a login that carries an address is the operator walking back from a consent
 		// screen. An agent holding one has not been to a consent screen; it has an address it got
 		// somewhere, and finishing a login with it is the one way this could end in a token.
 		if (verb === "login" && /^https?:\/\//i.test(target[0] ?? "")) {
-			return `This agent asked to finish a login with an address of its own. The trip back from a consent screen is yours to make: /mcp login ${named} <address>.`;
+			return `This agent asked to finish a login with an address of its own. The trip back from a consent screen is yours to make: /plugins login ${named} <address>.`;
 		}
 	}
 

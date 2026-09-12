@@ -5,12 +5,13 @@ import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import type { CarrierSpec, Channel, Reply } from "@squad/channels";
 import type { Schedule } from "@squad/scheduler";
-import type { EmailOffer } from "./commands.ts";
+import type { EmailOffer, LoginPage } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
 import type { GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
+import type { Plugin } from "./plugins.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -168,6 +169,50 @@ export type ControlRequest =
 			readonly held: boolean;
 	  }
 	| { readonly id: string; readonly op: "forget-server"; readonly name: string }
+	/**
+	 * The plugins screen: the catalogue, and the connections made from it.
+	 *
+	 * The catalogue is a constant and could have been compiled into the page, which would have put
+	 * the list of what this plane can reach into a bundle that is cached, versioned and served from
+	 * a different machine than the plane it describes. It comes down the socket instead, so a plane
+	 * that knows about one more plugin tells its own console about it.
+	 */
+	| { readonly id: string; readonly op: "plugins" }
+	/**
+	 * One more copy of a plugin, under a name of its own, with nobody holding it yet.
+	 *
+	 * The name is the plane's to pick: it is derived from what is already on the shelf, and a screen
+	 * that guessed it locally would race every other screen open on the same plane.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "connect-plugin";
+			readonly pluginId: string;
+			readonly label?: string;
+	  }
+	| {
+			readonly id: string;
+			readonly op: "label-plugin";
+			readonly name: string;
+			readonly label: string;
+	  }
+	/** One that is on nobody's shelf, typed the way the console takes it and read by the plane. */
+	| { readonly id: string; readonly op: "add-plugin"; readonly name: string; readonly line: string }
+	/** Opens the consent screen for one connection, and answers with where it is. */
+	| { readonly id: string; readonly op: "login-plugin"; readonly name: string }
+	| { readonly id: string; readonly op: "logout-plugin"; readonly name: string }
+	/**
+	 * What one agent may spend in a day, set from the screen rather than typed into its chat.
+	 *
+	 * `null` is no ceiling, which is a thing an operator may say and an agent may not: the same rule
+	 * `/limit` enforces, and the reason this op exists on the operator's socket only.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "set-limit";
+			readonly agentId: string;
+			readonly usd: number | null;
+	  }
 	/** The mailbox this plane reads and the carrier it writes through, which is one screen's worth. */
 	| { readonly id: string; readonly op: "mail" }
 	/**
@@ -238,6 +283,22 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly plugins: {
+				readonly catalog: readonly Plugin[];
+				readonly instances: readonly ServerStanding[];
+			};
+	  }
+	/** A connection just made: the name it took, and whether it wants an account before it answers. */
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly made: { readonly name: string; readonly wants: "login" | "nothing" };
+	  }
+	/** Where the consent screen is, and where the trip back from it lands. */
+	| { readonly id: string; readonly ok: true; readonly page: LoginPage }
 	| { readonly id: string; readonly ok: true; readonly mail: MailStanding }
 	/** What was found out about an address before anybody was asked for a password for it. */
 	| { readonly id: string; readonly ok: true; readonly offer: EmailOffer }
@@ -540,6 +601,26 @@ export class ControlServer {
 			} else if (request.op === "forget-server") {
 				await this.#plane.forgetServer(request.name);
 				this.#write(socket, { id: request.id, ok: true, text: request.name });
+			} else if (request.op === "plugins") {
+				this.#write(socket, { id: request.id, ok: true, plugins: await this.#plane.plugins() });
+			} else if (request.op === "connect-plugin") {
+				const made = await this.#plane.connectPlugin(request.pluginId, request.label);
+				this.#write(socket, { id: request.id, ok: true, made });
+			} else if (request.op === "add-plugin") {
+				await this.#plane.addPlugin(request.name, request.line);
+				this.#write(socket, { id: request.id, ok: true, text: request.name });
+			} else if (request.op === "label-plugin") {
+				await this.#plane.labelPlugin(request.name, request.label);
+				this.#write(socket, { id: request.id, ok: true, text: request.name });
+			} else if (request.op === "login-plugin") {
+				const page = await this.#plane.loginPlugin(request.name);
+				this.#write(socket, { id: request.id, ok: true, page });
+			} else if (request.op === "logout-plugin") {
+				const had = await this.#plane.logoutPlugin(request.name);
+				this.#write(socket, { id: request.id, ok: true, text: had ? request.name : "" });
+			} else if (request.op === "set-limit") {
+				await this.#plane.setLimit(request.agentId, request.usd);
+				this.#write(socket, { id: request.id, ok: true, text: request.agentId });
 			} else if (request.op === "mail") {
 				this.#write(socket, { id: request.id, ok: true, mail: await this.#plane.mail() });
 			} else if (request.op === "offer-mail") {

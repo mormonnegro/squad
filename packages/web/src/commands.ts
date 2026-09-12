@@ -25,9 +25,9 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{ name: "/model", takes: "[<name>]", does: "what it thinks with, and what else there is" },
 	{
-		name: "/mcp",
+		name: "/plugins",
 		takes: "[<name>|add …|login …]",
-		does: "the MCP servers it has, and the shelf to add from",
+		does: "the plugins it has, and the ones on the shelf to give it",
 	},
 	{
 		name: "/serve",
@@ -63,7 +63,7 @@ export const COMMANDS: readonly Command[] = [
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{
 		name: "/config",
-		takes: "[models|search|grants|mcp|email]",
+		takes: "[models|search|grants|plugins|email]",
 		does: "the whole plane's screen: its keys, models, reach and mailbox",
 	},
 	{ name: "/help", takes: "", does: "every command there is" },

@@ -1140,3 +1140,20 @@ ol.md-list {
 	color: var(--red);
 	font-size: 0.85rem;
 }
+
+/* The way into one agent's own settings, at the end of the facts it sets. Quiet until it is wanted:
+   a title row is read for the name and the spend, and a lit control there would be read first. */
+.pane-gear {
+	display: grid;
+	place-items: center;
+	width: 1.6rem;
+	height: 1.6rem;
+	margin-left: -0.4rem;
+	border-radius: 6px;
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.pane-gear:hover {
+	background: #ffffff0d;
+	color: var(--text-strong);
+}

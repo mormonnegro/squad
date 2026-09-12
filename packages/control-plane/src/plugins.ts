@@ -1,0 +1,324 @@
+import type { McpServer } from "./mcp.ts";
+
+/**
+ * A plugin as somebody looks for one, which is by the name of the company rather than by a URL.
+ *
+ * The shelf underneath this is a list of servers: a name, a transport and an address that somebody
+ * had to go and find in a README. That is the right thing to store and the wrong thing to ask for.
+ * Nobody sets out to add `https://mcp.stripe.com`; they set out to give an agent their Stripe, and
+ * the address is a detail of how that is done.
+ *
+ * So this is the shelf as a shop: what each one is for, which company it belongs to — so its own
+ * mark can be drawn beside it — and whether reaching it means opening an account. Everything here
+ * is a fact about a third party that can change without telling us, which is why `account` is a
+ * hint for the screen and never a gate: what actually decides is the server's own refusal, asked
+ * for at the moment of connecting.
+ */
+export interface Plugin {
+	readonly id: string;
+	readonly title: string;
+	/** What it is for, in the words somebody would use to decide whether they want it. */
+	readonly does: string;
+	/** Which group it is found under, because twenty of these unsorted is a list nobody reads. */
+	readonly shelf: Shelf;
+	/** The company's own domain. Its mark is asked of it there, rather than of a favicon service. */
+	readonly mark: string;
+	readonly transport: "http" | "sse";
+	readonly url: string;
+	/** What it wants before it answers: a browser trip, or nothing at all. */
+	readonly account: "oauth" | "open";
+}
+
+export type Shelf = "money" | "work" | "code" | "runs" | "data" | "read";
+
+/** The groups, in the order a screen shows them: what you pay with, then what you work in. */
+export const SHELVES: readonly (readonly [Shelf, string])[] = [
+	["money", "Money"],
+	["work", "Work"],
+	["code", "Code"],
+	["runs", "Where it runs"],
+	["data", "Data"],
+	["read", "Reading"],
+];
+
+/**
+ * The plugins offered on the first screen, each one reached and answering as of this writing.
+ *
+ * A curated list rather than a registry: a registry is a thing to maintain and a search box to
+ * stare at, and the honest shape of "what can I connect" for one person is two dozen names they
+ * already recognise. Anything not here is still one paste away — the screen takes a URL, and so
+ * does `/plugins add`.
+ *
+ * Every address was verified by speaking MCP to it: a `401` is the right answer, and it is the
+ * answer these give, because a server that hands its tools to an unauthenticated stranger is one
+ * nobody should be connecting an agent to.
+ */
+export const PLUGINS: readonly Plugin[] = [
+	{
+		id: "stripe",
+		title: "Stripe",
+		does: "Payments, customers, subscriptions and the invoices behind them.",
+		shelf: "money",
+		mark: "stripe.com",
+		transport: "http",
+		url: "https://mcp.stripe.com",
+		account: "oauth",
+	},
+	{
+		id: "paypal",
+		title: "PayPal",
+		does: "Orders, payouts and disputes on a PayPal business account.",
+		shelf: "money",
+		mark: "paypal.com",
+		transport: "http",
+		url: "https://mcp.paypal.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "square",
+		title: "Square",
+		does: "Catalogue, orders and payments for a Square seller.",
+		shelf: "money",
+		mark: "squareup.com",
+		transport: "sse",
+		url: "https://mcp.squareup.com/sse",
+		account: "oauth",
+	},
+	{
+		id: "linear",
+		title: "Linear",
+		does: "Issues, projects and cycles, read and written.",
+		shelf: "work",
+		mark: "linear.app",
+		transport: "http",
+		url: "https://mcp.linear.app/mcp",
+		account: "oauth",
+	},
+	{
+		id: "atlassian",
+		title: "Atlassian",
+		does: "Jira issues and Confluence pages on one account.",
+		shelf: "work",
+		mark: "atlassian.com",
+		transport: "sse",
+		url: "https://mcp.atlassian.com/v1/sse",
+		account: "oauth",
+	},
+	{
+		id: "asana",
+		title: "Asana",
+		does: "Tasks, projects and their status across a workspace.",
+		shelf: "work",
+		mark: "asana.com",
+		transport: "sse",
+		url: "https://mcp.asana.com/sse",
+		account: "oauth",
+	},
+	{
+		id: "slack",
+		title: "Slack",
+		does: "Channels, messages and the search over them.",
+		shelf: "work",
+		mark: "slack.com",
+		transport: "http",
+		url: "https://mcp.slack.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "intercom",
+		title: "Intercom",
+		does: "Conversations, contacts and what support has already been told.",
+		shelf: "work",
+		mark: "intercom.com",
+		transport: "http",
+		url: "https://mcp.intercom.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "hubspot",
+		title: "HubSpot",
+		does: "Contacts, companies and deals in a CRM.",
+		shelf: "work",
+		mark: "hubspot.com",
+		transport: "http",
+		url: "https://mcp.hubspot.com/anthropic",
+		account: "oauth",
+	},
+	{
+		id: "notion",
+		title: "Notion",
+		does: "Pages and databases, searched and edited.",
+		shelf: "work",
+		mark: "notion.so",
+		transport: "http",
+		url: "https://mcp.notion.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "github",
+		title: "GitHub",
+		does: "Repositories, issues, pull requests and the code in them.",
+		shelf: "code",
+		mark: "github.com",
+		transport: "http",
+		url: "https://api.githubcopilot.com/mcp/",
+		account: "oauth",
+	},
+	{
+		id: "sentry",
+		title: "Sentry",
+		does: "Errors as they happen, with the stack that threw them.",
+		shelf: "code",
+		mark: "sentry.io",
+		transport: "http",
+		url: "https://mcp.sentry.dev/mcp",
+		account: "oauth",
+	},
+	{
+		id: "semgrep",
+		title: "Semgrep",
+		does: "Scans code for the bugs a pattern can find.",
+		shelf: "code",
+		mark: "semgrep.dev",
+		transport: "http",
+		url: "https://mcp.semgrep.ai/mcp",
+		account: "oauth",
+	},
+	{
+		id: "vercel",
+		title: "Vercel",
+		does: "Projects, deployments and the logs of a build that failed.",
+		shelf: "runs",
+		mark: "vercel.com",
+		transport: "http",
+		url: "https://mcp.vercel.com",
+		account: "oauth",
+	},
+	{
+		id: "cloudflare",
+		title: "Cloudflare",
+		does: "Workers, DNS and what the edge did with a request.",
+		shelf: "runs",
+		mark: "cloudflare.com",
+		transport: "http",
+		url: "https://mcp.cloudflare.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "supabase",
+		title: "Supabase",
+		does: "A Postgres project: tables, rows, and the SQL over them.",
+		shelf: "data",
+		mark: "supabase.com",
+		transport: "http",
+		url: "https://mcp.supabase.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "neon",
+		title: "Neon",
+		does: "Postgres branches, and queries against any of them.",
+		shelf: "data",
+		mark: "neon.tech",
+		transport: "http",
+		url: "https://mcp.neon.tech/mcp",
+		account: "oauth",
+	},
+	{
+		id: "airtable",
+		title: "Airtable",
+		does: "Bases, tables and records.",
+		shelf: "data",
+		mark: "airtable.com",
+		transport: "http",
+		url: "https://mcp.airtable.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "ahrefs",
+		title: "Ahrefs",
+		does: "Backlinks, keywords and what a domain ranks for.",
+		shelf: "data",
+		mark: "ahrefs.com",
+		transport: "http",
+		url: "https://api.ahrefs.com/mcp/mcp",
+		account: "oauth",
+	},
+	{
+		id: "canva",
+		title: "Canva",
+		does: "Designs, brand templates and exports of them.",
+		shelf: "work",
+		mark: "canva.com",
+		transport: "http",
+		url: "https://mcp.canva.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "figma",
+		title: "Figma",
+		does: "Files and frames, and the design tokens inside them.",
+		shelf: "work",
+		mark: "figma.com",
+		transport: "http",
+		url: "https://mcp.figma.com/mcp",
+		account: "oauth",
+	},
+	{
+		id: "context7",
+		title: "Context7",
+		does: "Up-to-date documentation for a library, by version.",
+		shelf: "read",
+		mark: "context7.com",
+		transport: "http",
+		url: "https://mcp.context7.com/mcp",
+		account: "open",
+	},
+	{
+		id: "deepwiki",
+		title: "DeepWiki",
+		does: "A read of any public repository, asked in sentences.",
+		shelf: "read",
+		mark: "deepwiki.com",
+		transport: "http",
+		url: "https://mcp.deepwiki.com/mcp",
+		account: "open",
+	},
+	{
+		id: "huggingface",
+		title: "Hugging Face",
+		does: "Models, datasets and spaces, searched.",
+		shelf: "read",
+		mark: "huggingface.co",
+		transport: "http",
+		url: "https://huggingface.co/mcp",
+		account: "open",
+	},
+];
+
+export function pluginOf(id: string): Plugin | undefined {
+	return PLUGINS.find((one) => one.id === id);
+}
+
+/** The plugin as the shelf underneath stores one: an address and how to speak to it. */
+export function serverOf(plugin: Plugin): McpServer {
+	return { transport: plugin.transport, url: plugin.url };
+}
+
+/**
+ * A name for one more copy of the same plugin.
+ *
+ * One plugin is not one connection. A person with a Stripe account for the company and another for
+ * the side project wants both, on different agents, with different tokens — and since the account
+ * is opened against the name, two names is exactly what two accounts are. The first copy gets the
+ * plain name because that is the one that will be typed; the rest are numbered, which is honest
+ * about being a second one and leaves them free to be renamed into `stripe-live` later.
+ */
+export function nameFor(id: string, taken: readonly string[]): string {
+	if (!taken.includes(id)) return id;
+	for (let next = 2; next < 100; next++) {
+		const tried = `${id}-${next}`;
+		if (!taken.includes(tried)) return tried;
+	}
+	return `${id}-${Date.now().toString(36)}`;
+}

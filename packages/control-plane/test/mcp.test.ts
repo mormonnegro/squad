@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -222,5 +222,95 @@ describe("McpShelf", () => {
 		await Promise.all([shelf.add("linear", linear), shelf.add("files", files)]);
 
 		expect((await shelf.servers()).map((each) => each.name)).toEqual(["files", "linear"]);
+	});
+});
+
+/**
+ * What a connection is, on top of what a server is.
+ *
+ * The shelf holds two kinds of thing now: a server somebody typed in, and a copy of a plugin off
+ * the catalogue — and the second knows which plugin it is a copy of and which copy it is. Both live
+ * in one file, and the file that was written before any of this existed still reads.
+ */
+describe("a connection, and the shelf it was written to before it was one", () => {
+	it("remembers which plugin a connection is a copy of, and which copy", async () => {
+		await shelf.add(
+			"stripe-2",
+			{ transport: "http", url: "https://mcp.stripe.com" },
+			{ from: "stripe", label: "the test account" },
+		);
+
+		expect(await shelf.servers()).toEqual([
+			{
+				name: "stripe-2",
+				server: { transport: "http", url: "https://mcp.stripe.com" },
+				from: "stripe",
+				label: "the test account",
+			},
+		]);
+	});
+
+	it("says nothing about where one came from when nobody knows", async () => {
+		await shelf.add("files", { transport: "stdio", command: "mcp-files", args: [] });
+
+		const [only] = await shelf.servers();
+		expect(only).toEqual({
+			name: "files",
+			server: { transport: "stdio", command: "mcp-files", args: [] },
+		});
+	});
+
+	it("changes the label without touching the connection, and drops it when it is emptied", async () => {
+		await shelf.add(
+			"stripe",
+			{ transport: "http", url: "https://mcp.stripe.com" },
+			{ from: "stripe" },
+		);
+
+		await shelf.relabel("stripe", "the live one");
+		expect((await shelf.servers())[0]?.label).toBe("the live one");
+
+		await shelf.relabel("stripe", "");
+		expect((await shelf.servers())[0]).not.toHaveProperty("label");
+	});
+
+	// The shape written by every version of this before today, on every machine it has run on. A
+	// migration nobody runs is the only kind that never fails halfway.
+	it("reads a shelf written when the server was stored on its own", async () => {
+		await writeFile(
+			join(dir, "mcp.json"),
+			JSON.stringify({
+				servers: { linear: { transport: "http", url: "https://mcp.linear.app/mcp" } },
+				attached: { scout: ["linear"] },
+			}),
+			"utf8",
+		);
+
+		expect(await shelf.servers()).toEqual([
+			{ name: "linear", server: { transport: "http", url: "https://mcp.linear.app/mcp" } },
+		]);
+		expect(await shelf.attached("scout")).toEqual([
+			{ name: "linear", server: { transport: "http", url: "https://mcp.linear.app/mcp" } },
+		]);
+	});
+
+	it("keeps holding what an old shelf held once something new is written beside it", async () => {
+		await writeFile(
+			join(dir, "mcp.json"),
+			JSON.stringify({
+				servers: { linear: { transport: "http", url: "https://mcp.linear.app/mcp" } },
+				attached: { scout: ["linear"] },
+			}),
+			"utf8",
+		);
+
+		await shelf.add(
+			"stripe",
+			{ transport: "http", url: "https://mcp.stripe.com" },
+			{ from: "stripe" },
+		);
+
+		expect((await shelf.servers()).map((one) => one.name)).toEqual(["linear", "stripe"]);
+		expect((await shelf.attached("scout")).map((one) => one.name)).toEqual(["linear"]);
 	});
 });

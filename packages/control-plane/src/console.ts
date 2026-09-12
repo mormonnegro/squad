@@ -1411,7 +1411,7 @@ const PLACES = [
 const SERVERS = [
 	"A server is something somebody went and found — a URL, a command, the reading of a README — so the plane keeps it once and every agent after the first is a name off this list.",
 	"",
-	"None of them holds a key. A remote one is reached through the proxy like every other host, and one that wants an account is logged into from an agent that has it, with /mcp login.",
+	"None of them holds a key. A remote one is reached through the proxy like every other host, and one that wants an account is logged into from an agent that has it, with /plugins login.",
 ];
 
 /**
@@ -1485,7 +1485,7 @@ const SECTIONS: Readonly<
 	models: { does: "the providers this plane can pay, and what its agents think with", said: KEYS },
 	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
 	grants: { does: "the hosts the agents may reach, and what they carry there", said: REACH },
-	mcp: { does: "the servers on the shelf, and which agents hold them", said: SERVERS },
+	plugins: { does: "the plugins connected here, and which agents hold them", said: SERVERS },
 	email: { does: "the mailbox agents are reached at, and whose mail they read", said: MAIL },
 };
 
@@ -1567,7 +1567,7 @@ export function configRows(
 					]),
 		];
 	}
-	if (section === "mcp") {
+	if (section === "plugins") {
 		return [
 			...servers.map((server) => ({ kind: "server", server }) as const),
 			{ kind: "add-server" } as const,
@@ -1839,7 +1839,7 @@ export function Config({
 								: mail.mailbox === undefined
 									? "no mailbox, so nobody can write to an agent"
 									: `${mail.mailbox}${mail.writes ? "" : "   reading only"}`
-							: which === "mcp"
+							: which === "plugins"
 								? servers.length === 0
 									? "nothing on the shelf yet"
 									: `${servers.length} on the shelf, ${servers.filter((server) => server.agents.length > 0).length} of them given to somebody`
@@ -2065,7 +2065,7 @@ export function Config({
 			columns,
 		});
 	}
-	if (section === "mcp") {
+	if (section === "plugins") {
 		const widestName = Math.max(0, ...servers.map((server) => server.name.length));
 		for (const [index, server] of servers.entries()) {
 			// Filled in when somebody has it, because a server on the shelf that no agent was given is
@@ -2943,7 +2943,7 @@ export function App({
 	);
 
 	/**
-	 * Puts a server on the shelf from the line that was typed, the way `/mcp add` does.
+	 * Puts a plugin on the shelf from the line that was typed, the way `/plugins add` does.
 	 *
 	 * The same grammar and the same reading of it, because a second way of writing down a server would
 	 * be a second thing that is nearly right: a URL is a URL wherever it appears, and anything that is

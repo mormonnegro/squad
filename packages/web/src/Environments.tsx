@@ -1,4 +1,5 @@
 import {
+	Blocks,
 	Check,
 	ChevronsUpDown,
 	Cloud,
@@ -46,6 +47,7 @@ export function Picker({
 	onPick,
 	onAdd,
 	onKeys,
+	onPlugins,
 	onDevices,
 	hasDoor,
 	onManage,
@@ -56,6 +58,7 @@ export function Picker({
 	onPick: (one: Connection) => void;
 	onAdd: () => void;
 	onKeys: () => void;
+	onPlugins: () => void;
 	onDevices: () => void;
 	/** Whether this connection goes through the plane's own door, which a relayed one does not. */
 	hasDoor: boolean;
@@ -116,6 +119,12 @@ export function Picker({
 					<MenuItem onSelect={onKeys} disabled={!connected}>
 						<KeyRound className="size-4 flex-none text-muted" />
 						Keys
+					</MenuItem>
+					{/* Beside the keys, and for the same reason: a plugin is connected once for the whole
+					    environment, and which agent gets to use it is a second question asked later. */}
+					<MenuItem onSelect={onPlugins} disabled={!connected}>
+						<Blocks className="size-4 flex-none text-muted" />
+						Plugins
 					</MenuItem>
 					{/* Only where there is a door to ask. A relayed environment reaches the plane past it,
 					    so the list it would show is not this connection's to show. */}

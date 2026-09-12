@@ -1,8 +1,11 @@
 import type {
 	AgentSummary,
 	ModelOffer,
+	ModelStanding,
 	PlaneEvent,
+	Plugin,
 	ProviderStanding,
+	ServerStanding,
 	Utterance,
 } from "@squad/control-plane";
 import { link } from "@squad/relay/link";
@@ -20,6 +23,15 @@ type Answer =
 	| { readonly id: string; readonly chunk: string }
 	| { readonly id: string; readonly ok: false; readonly error: string }
 	| { readonly id: string; readonly ok: true };
+
+/**
+ * A plugin that has been connected: which one it is, under what name, and who holds it.
+ *
+ * The plane calls this a server standing, because underneath it is a server on a shelf. On this
+ * side it is a connection somebody made — one of possibly several to the same company — and the
+ * screen is about accounts rather than about addresses.
+ */
+export type Connected = ServerStanding;
 
 /** What an `ok` carried, which differs per operation and is read by the method that asked. */
 type Payload = Readonly<Record<string, unknown>>;
@@ -330,6 +342,18 @@ export class Plane {
 		return { offers: catalog?.offers ?? [], trouble: catalog?.trouble ?? [] };
 	}
 
+	/**
+	 * Every model this plane is configured with, and whether it can pay for it.
+	 *
+	 * The agent settings screen picks from this rather than from what the providers offer: what an
+	 * agent may be set to is what the plane has been configured with, and offering the rest would be
+	 * a menu whose entries fail at the proxy.
+	 */
+	async models(): Promise<readonly ModelStanding[]> {
+		const answer = await this.#ask({ op: "models" });
+		return (answer.models as ModelStanding[] | undefined) ?? [];
+	}
+
 	/** Every key this plane could be given, and whether it is holding one. Never the values. */
 	async providers(): Promise<readonly ProviderStanding[]> {
 		const answer = await this.#ask({ op: "providers" });
@@ -345,6 +369,78 @@ export class Plane {
 	 */
 	async setKey(keyEnv: string, value: string): Promise<void> {
 		await this.#ask({ op: "key", keyEnv, value });
+	}
+
+	/**
+	 * The plugins screen in one answer: what there is to connect, and what has been.
+	 *
+	 * The catalogue comes down the wire with the connections rather than being compiled into this
+	 * page, so a plane that knows about a plugin this bundle has never heard of still offers it.
+	 */
+	async plugins(): Promise<{ catalog: readonly Plugin[]; instances: readonly Connected[] }> {
+		const answer = await this.#ask({ op: "plugins" });
+		const said = answer.plugins as { catalog?: Plugin[]; instances?: Connected[] } | undefined;
+		return { catalog: said?.catalog ?? [], instances: said?.instances ?? [] };
+	}
+
+	/** One more copy of a plugin. The plane picks the name, because the shelf is the plane's. */
+	async connectPlugin(
+		pluginId: string,
+		label?: string,
+	): Promise<{ name: string; wants: "login" | "nothing" }> {
+		const answer = await this.#ask({
+			op: "connect-plugin",
+			pluginId,
+			...(label !== undefined && label !== "" ? { label } : {}),
+		});
+		const made = answer.made as { name?: string; wants?: "login" | "nothing" } | undefined;
+		return { name: made?.name ?? pluginId, wants: made?.wants ?? "login" };
+	}
+
+	/**
+	 * Adds one that is on no shelf, from the line as it was typed.
+	 *
+	 * The line goes up whole and is read there: a URL, `sse` and a URL, or the command to start. The
+	 * plane owns what those mean, and a page that guessed would be a second answer to one question.
+	 */
+	async addPlugin(name: string, line: string): Promise<void> {
+		await this.#ask({ op: "add-plugin", name, line });
+	}
+
+	/** Says which copy a connection is — "the live account" — or stops saying it when empty. */
+	async labelPlugin(name: string, label: string): Promise<void> {
+		await this.#ask({ op: "label-plugin", name, label });
+	}
+
+	/**
+	 * Opens the consent screen for one connection and answers with where it is.
+	 *
+	 * The page is opened from here rather than by the plane, because the browser that can open it is
+	 * this one — the plane may be a container on a machine nobody is sitting at.
+	 */
+	async loginPlugin(name: string): Promise<{ url: string; redirectUri: string }> {
+		const answer = await this.#ask({ op: "login-plugin", name });
+		const page = answer.page as { url?: string; redirectUri?: string } | undefined;
+		return { url: page?.url ?? "", redirectUri: page?.redirectUri ?? "" };
+	}
+
+	async logoutPlugin(name: string): Promise<void> {
+		await this.#ask({ op: "logout-plugin", name });
+	}
+
+	/** Gives an agent one of the connections, or takes it back. */
+	async holdPlugin(agentId: string, name: string, held: boolean): Promise<void> {
+		await this.#ask({ op: "hold-server", agentId, name, held });
+	}
+
+	/** Takes a connection off the shelf, and off every agent that had it. */
+	async forgetPlugin(name: string): Promise<void> {
+		await this.#ask({ op: "forget-server", name });
+	}
+
+	/** What one agent may spend in a day. `null` takes the ceiling off. */
+	async setLimit(agentId: string, usd: number | null): Promise<void> {
+		await this.#ask({ op: "set-limit", agentId, usd });
 	}
 }
 

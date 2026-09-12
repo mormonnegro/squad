@@ -7,7 +7,9 @@ import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { FirstKey } from "./FirstKey.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
+import { Plugins } from "./Plugins.tsx";
 import { Plane, wireTo } from "./plane.ts";
+import { Setup } from "./Setup.tsx";
 import { When } from "./When.tsx";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
@@ -27,8 +29,15 @@ export function App() {
 	const [at, setAt] = useState<Connection>(() => readConnections()[0] ?? HERE);
 	// The connection screens: where a first one is made, and where the rest are managed.
 	const [showing, setShowing] = useState<
-		"none" | "connect" | "planes" | "keys" | "devices" | "first-key"
+		"none" | "connect" | "planes" | "keys" | "plugins" | "devices" | "first-key"
 	>("none");
+	/**
+	 * Whether the selected agent's own settings are open.
+	 *
+	 * Kept apart from the screens above because it is not one: those are the environment's and this
+	 * is one agent's, and it closes by itself when the conversation moves to another.
+	 */
+	const [setting, setSetting] = useState(false);
 	/**
 	 * Whether the first-key screen has been put away.
 	 *
@@ -232,6 +241,7 @@ export function App() {
 						onPick={goTo}
 						onAdd={() => setShowing("connect")}
 						onKeys={() => setShowing("keys")}
+						onPlugins={() => setShowing("plugins")}
 						onDevices={() => setShowing("devices")}
 						hasDoor={plane?.hasDoor ?? false}
 						onManage={() => setShowing("planes")}
@@ -250,6 +260,7 @@ export function App() {
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
+								setSetting(false);
 							}}
 						/>
 					))}
@@ -307,6 +318,7 @@ export function App() {
 						said={talk[agent.id] ?? []}
 						live={live[agent.id] ?? QUIET}
 						onLocal={local}
+						onSetup={() => setSetting(true)}
 					/>
 				) : (
 					<Nothing onMake={() => setMaking(true)} />
@@ -359,6 +371,26 @@ export function App() {
 						setShowing("none");
 						void look();
 					}}
+				/>
+			)}
+			{showing === "plugins" && plane !== undefined && (
+				<Plugins
+					plane={plane}
+					agents={agents}
+					onClose={() => {
+						setShowing("none");
+						void look();
+					}}
+				/>
+			)}
+			{/* One agent's, so it goes with that agent: picking another closes it rather than quietly
+			    setting a limit on somebody else. */}
+			{setting && plane !== undefined && agent !== undefined && (
+				<Setup
+					plane={plane}
+					agent={agent}
+					onChanged={() => void look()}
+					onClose={() => setSetting(false)}
 				/>
 			)}
 			{showing === "planes" && (

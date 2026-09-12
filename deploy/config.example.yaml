@@ -129,7 +129,7 @@ agents:
     # with an @ in what you write to this one opens a door for that turn alone.
     talksTo: [ledger]
 
-    # An MCP server the operator logged into needs nothing here. `/mcp login <name>` sends them to
+    # A plugin the operator logged into needs nothing here. `/plugins login <name>` sends them to
     # that server's consent screen, and what comes back grants one host and that server's own path,
     # for as long as the agent holds the server. It is the only capability not in this file, and it
     # is allowed because a consent screen is a person approving a named host, which is a stronger
