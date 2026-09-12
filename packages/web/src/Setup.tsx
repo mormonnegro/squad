@@ -125,13 +125,13 @@ export function Setup({
 							onChange={(event) => setLimit(event.target.value)}
 						/>
 						<span className="text-[0.8rem] text-muted">/ day</span>
-						<button type="submit" className="key" data-yes="true" disabled={busy === "limit"}>
+						<button type="submit" className="pill" data-yes="true" disabled={busy === "limit"}>
 							{busy === "limit" ? "…" : "set"}
 						</button>
 						{ceiling !== undefined && (
 							<button
 								type="button"
-								className="key"
+								className="pill"
 								disabled={busy === "limit"}
 								onClick={() => {
 									setLimit("");
@@ -182,16 +182,14 @@ export function Setup({
 							{/* The account, because a plugin held without one is a tool that answers 401 and an
 							    agent that spends a turn finding that out. */}
 							{where !== undefined && !one.loggedIn && plugin?.account !== "open" && (
-								<span className="flex-none rounded border border-working/40 px-1.5 py-0.5 font-mono text-[0.65rem] text-working">
+								<span className="badge" data-tone="warn">
 									no account
 								</span>
 							)}
-							<span
-								className={`flex-none rounded border px-1.5 py-0.5 font-mono text-[0.65rem] ${
-									held ? "border-up/40 text-up" : "border-line text-muted"
-								}`}
-							>
-								{held ? "✓ held" : "give"}
+							{/* The same two chips the plugins screen draws, because they are the same two
+							    states and a second shape for them would be a second thing to learn. */}
+							<span className="hold" data-held={held}>
+								{held ? "✓ held" : "+ give"}
 							</span>
 						</button>
 					);
@@ -211,7 +209,7 @@ export function Setup({
 						<button
 							key={model.id}
 							type="button"
-							className="key"
+							className="pill"
 							data-yes={model.id === agent.model}
 							disabled={busy === "model" || !model.held}
 							title={model.held ? model.model : `${model.keyEnv} is not set on this plane`}

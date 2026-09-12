@@ -1,5 +1,5 @@
 import type { AgentSummary, Plugin } from "@squad/control-plane";
-import { Blocks } from "lucide-react";
+import { Blocks, Check, Plus, Tag, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nameOf } from "./face.ts";
 import type { Connected, Plane } from "./plane.ts";
@@ -117,11 +117,14 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 
 			<div className="pane-scroll">
 				<div className="pane-column">
-					<p className="lede">
-						A plugin gives an agent tools it did not have: a Stripe to read, a Linear to file into,
-						a Postgres to ask. Connecting one opens an account here and nothing else — no agent has
-						it until it is handed over below, and the agents never hold the token.
-					</p>
+					<div className="page-head">
+						<h1 className="page-title">Plugins</h1>
+						<p className="page-says">
+							Tools an agent did not have: a Stripe to read, a Linear to file into, a Postgres to
+							ask. Connecting one opens an account here and nothing else — no agent can reach it
+							until it is handed over, and no agent ever holds the token.
+						</p>
+					</div>
 
 					{why !== undefined && <span className="why block">{why}</span>}
 					{made === undefined && why === undefined && (
@@ -129,10 +132,11 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 					)}
 
 					{connected.length > 0 && (
-						<section className="flex flex-col gap-2">
+						<section className="section">
 							<Head
-								title={`Connected · ${connected.length}`}
-								says="Each row is one account. The same plugin can be here twice, with a different account behind each."
+								title="Connected"
+								count={connected.length}
+								says="Each row is one account, and says which agents can reach it. The same plugin can be here twice, with a different account behind each."
 							/>
 							{connected.map((one) => (
 								<Row
@@ -159,9 +163,10 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 						</section>
 					)}
 
-					<section className="flex flex-col gap-3">
+					<section className="section">
 						<Head
 							title="Add a plugin"
+							count={catalog.length}
 							says="Connecting one you already have connected makes a second, separate account — which is what two Stripe accounts are."
 						/>
 						{/* An empty shop is the one failure this screen can have that looks like nothing at all,
@@ -180,11 +185,9 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 							const here = catalog.filter((one) => one.shelf === shelf);
 							if (here.length === 0) return null;
 							return (
-								<div key={shelf} className="flex flex-col gap-1.5">
-									<div className="font-medium text-[0.72rem] text-muted uppercase tracking-[0.07em]">
-										{title}
-									</div>
-									<div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
+								<div key={shelf} className="flex flex-col gap-2.5">
+									<div className="shelf-label">{title}</div>
+									<div className="plugs">
 										{here.map((one) => (
 											<Card
 												key={one.id}
@@ -227,11 +230,14 @@ const SHELVES: readonly (readonly [string, string])[] = [
 	["read", "Reading"],
 ];
 
-function Head({ title, says }: { title: string; says: string }) {
+function Head({ title, count, says }: { title: string; count?: number; says: string }) {
 	return (
-		<div>
-			<h3 className="font-medium text-[0.88rem] text-said">{title}</h3>
-			<p className="mt-1 text-[0.8rem]/[1.5] text-muted">{says}</p>
+		<div className="section-head">
+			<h2 className="section-title">
+				{title}
+				{count !== undefined && <span className="tally">{count}</span>}
+			</h2>
+			<p className="section-says">{says}</p>
 		</div>
 	);
 }
@@ -242,6 +248,14 @@ function Head({ title, says }: { title: string; says: string }) {
  * The agents are toggles rather than a list with an "edit" behind it. Handing a plugin to an agent
  * is the most common thing anybody does on this screen, it is reversible, and a screen where the
  * common act costs two clicks and a second dialog is a screen people stop using.
+ */
+/**
+ * One connection: whose account it is, who can reach it, and what can be done about either.
+ *
+ * The four things on this row are not four equal things, and drawing them as four identical boxes
+ * said they were. Logging in is what somebody came here to do; the label is a note to self; removing
+ * is the thing you do once and carefully. So: a state, a way to change it, and two quiet controls
+ * that say what they are when the cursor is on them.
  */
 function Row({
 	one,
@@ -268,6 +282,7 @@ function Row({
 	const [typed, setTyped] = useState(one.label ?? "");
 	const field = useRef<HTMLInputElement>(null);
 	const where = one.server.transport === "stdio" ? undefined : hostOf(one.server.url);
+	const account = where !== undefined && plugin?.account !== "open";
 	const working = busy === `login:${one.name}`;
 
 	useEffect(() => {
@@ -275,12 +290,12 @@ function Row({
 	}, [naming]);
 
 	return (
-		<div className="rounded-lg border border-line bg-raised p-3">
-			<div className="flex items-center gap-3">
-				<Mark host={plugin?.mark ?? where} letter={one.name} size={30} />
+		<div className="conn">
+			<div className="conn-head">
+				<Mark host={plugin?.mark ?? where} letter={one.name} size={32} />
 				<div className="min-w-0 flex-1">
 					<div className="flex items-baseline gap-2">
-						<span className="font-mono font-medium text-said">{one.name}</span>
+						<span className="conn-name">{one.name}</span>
 						{plugin !== undefined && (
 							<span className="text-[0.78rem] text-muted">{plugin.title}</span>
 						)}
@@ -288,27 +303,23 @@ function Row({
 							<span className="truncate text-[0.78rem] text-here">{one.label}</span>
 						)}
 					</div>
-					<div className="truncate font-mono text-[0.72rem] text-muted">
+					<span className="conn-where">
 						{one.server.transport === "stdio"
 							? [one.server.command, ...one.server.args].join(" ")
 							: one.server.url}
-					</div>
+					</span>
 				</div>
-				<Standing
-					loggedIn={one.loggedIn}
-					needs={where !== undefined}
-					open={plugin?.account === "open"}
-				/>
-				{where !== undefined &&
-					plugin?.account !== "open" &&
+
+				<Standing loggedIn={one.loggedIn} needs={where !== undefined} open={!account} />
+				{account &&
 					(one.loggedIn ? (
-						<button type="button" className="key" disabled={working} onClick={onLogout}>
+						<button type="button" className="pill" disabled={working} onClick={onLogout}>
 							{working ? "…" : "log out"}
 						</button>
 					) : (
 						<button
 							type="button"
-							className="key"
+							className="pill"
 							data-yes="true"
 							disabled={working}
 							onClick={onLogin}
@@ -316,17 +327,28 @@ function Row({
 							{working ? "opening…" : "log in"}
 						</button>
 					))}
-				<button type="button" className="key" onClick={() => setNaming((was) => !was)}>
-					label
+				<button
+					type="button"
+					className="icon-key"
+					title={one.label === undefined ? "name this copy" : "rename this copy"}
+					onClick={() => setNaming((was) => !was)}
+				>
+					<Tag className="size-3.5" />
 				</button>
-				<button type="button" className="key" onClick={onForget}>
-					remove
+				<button
+					type="button"
+					className="icon-key"
+					data-bad="true"
+					title="remove this connection, and take it off every agent"
+					onClick={onForget}
+				>
+					<Trash2 className="size-3.5" />
 				</button>
 			</div>
 
 			{naming && (
 				<form
-					className="mt-3 flex gap-2 border-line border-t pt-3"
+					className="flex gap-2 border-line border-t px-3 py-2.5"
 					onSubmit={(event) => {
 						event.preventDefault();
 						onLabel(typed.trim());
@@ -340,18 +362,24 @@ function Row({
 						placeholder="the live account"
 						onChange={(event) => setTyped(event.target.value)}
 					/>
-					<button type="submit" className="key" data-yes="true">
+					<button type="submit" className="pill" data-yes="true">
 						save
 					</button>
 				</form>
 			)}
 
-			{/* Who has it. A connection nobody was given reaches nothing at all, which is the one thing
-			    a list of connections otherwise leaves you to find out by opening every agent. */}
-			<div className="mt-3 flex flex-wrap items-center gap-1.5 border-line border-t pt-3">
-				<span className="mr-1 text-[0.76rem] text-muted">Given to</span>
+			{/*
+			 * Who can reach it, and the way to stop them.
+			 *
+			 * A connection nobody holds reaches nothing at all, and that is not visible from the URL —
+			 * so the whole answer is on the row rather than an agent away. Held is a filled chip and the
+			 * rest are offers, because those are two different things and a row of identical ticks made
+			 * you read every one to find out which.
+			 */}
+			<div className="conn-given">
+				<span className="mr-1 text-[0.76rem] text-muted">Reached by</span>
 				{agents.length === 0 && (
-					<span className="text-[0.76rem] text-muted">nobody yet — no agents here</span>
+					<span className="text-[0.76rem] text-muted">nobody — there are no agents here yet</span>
 				)}
 				{agents.map((agent) => {
 					const held = one.agents.includes(agent.id);
@@ -359,12 +387,27 @@ function Row({
 						<button
 							key={agent.id}
 							type="button"
-							className="key"
-							data-yes={held}
+							className="hold"
+							data-held={held}
 							disabled={busy === `hold:${one.name}:${agent.id}`}
+							title={
+								held
+									? `take "${one.name}" off ${nameOf(agent.id)}`
+									: `give "${one.name}" to ${nameOf(agent.id)}`
+							}
 							onClick={() => onHold(agent.id, !held)}
 						>
-							{held ? "✓ " : "+ "}
+							{/* Held says so, and hovering it says what pressing it would do: the tick becomes a
+							    cross and the chip goes red, because taking an agent's reach away is the one
+							    thing on this row that should never happen by accident. */}
+							{held ? (
+								<>
+									<Check className="hold-on size-3" />
+									<X className="hold-off size-3" />
+								</>
+							) : (
+								<Plus className="size-3" />
+							)}
 							{nameOf(agent.id)}
 						</button>
 					);
@@ -374,33 +417,18 @@ function Row({
 	);
 }
 
-/**
- * Whether there is an account behind this connection, and whether there was meant to be one.
- *
- * "No account" on something that wants none is a warning about nothing, and a screen that warns
- * about nothing is one whose warnings stop being read. The ones that answer to anybody say so.
- */
+/** Whether there is an account behind this connection, and whether there was meant to be one. */
 function Standing({ loggedIn, needs, open }: { loggedIn: boolean; needs: boolean; open: boolean }) {
-	if (!needs) {
-		return (
-			<span className="flex-none rounded border border-line px-1.5 py-0.5 font-mono text-[0.65rem] text-muted">
-				runs here
-			</span>
-		);
-	}
-	if (open && !loggedIn) {
-		return (
-			<span className="flex-none rounded border border-line px-1.5 py-0.5 font-mono text-[0.65rem] text-muted">
-				no account needed
-			</span>
-		);
-	}
+	if (!needs) return <span className="badge">runs in the sandbox</span>;
+	// "No account" on something that wants none is a warning about nothing, and a screen that warns
+	// about nothing is one whose warnings stop being read.
+	if (open) return <span className="badge">open to anybody</span>;
 	return loggedIn ? (
-		<span className="flex-none rounded border border-up/40 px-1.5 py-0.5 font-mono text-[0.65rem] text-up">
+		<span className="badge" data-tone="up">
 			logged in
 		</span>
 	) : (
-		<span className="flex-none rounded border border-working/40 px-1.5 py-0.5 font-mono text-[0.65rem] text-working">
+		<span className="badge" data-tone="warn">
 			no account
 		</span>
 	);
@@ -419,18 +447,18 @@ function Card({
 	onConnect: () => void;
 }) {
 	return (
-		<div className="flex flex-col gap-2 rounded-lg border border-line bg-raised p-3">
+		<div className="plug">
 			<div className="flex items-center gap-2.5">
 				<Mark host={plugin.mark} letter={plugin.title} size={26} />
 				<span className="min-w-0 flex-1 truncate font-medium text-said">{plugin.title}</span>
 				{held > 0 && (
-					<span className="flex-none rounded border border-up/40 px-1.5 py-0.5 font-mono text-[0.65rem] text-up">
+					<span className="badge" data-tone="up" title={`${held} connected`}>
 						{held}
 					</span>
 				)}
 			</div>
-			<p className="min-h-[2.4em] text-[0.78rem]/[1.5] text-muted">{plugin.does}</p>
-			<button type="button" className="key self-start" disabled={busy} onClick={onConnect}>
+			<p className="plug-says">{plugin.does}</p>
+			<button type="button" className="pill self-start" disabled={busy} onClick={onConnect}>
 				{busy ? "connecting…" : held > 0 ? "connect another" : "connect"}
 			</button>
 		</div>
@@ -458,15 +486,16 @@ function Custom({
 
 	if (!open) {
 		return (
-			<button type="button" className="key self-start" onClick={() => setOpen(true)}>
-				＋ something else
+			<button type="button" className="pill self-start" onClick={() => setOpen(true)}>
+				<Plus className="size-3.5" />
+				something else
 			</button>
 		);
 	}
 
 	return (
 		<form
-			className="flex flex-col gap-2 rounded-lg border border-line bg-raised p-3"
+			className="section rounded-[10px] border border-line bg-raised p-3.5"
 			onSubmit={(event) => {
 				event.preventDefault();
 				void onAdd(name.trim(), line.trim()).then(() => {
@@ -480,7 +509,7 @@ function Custom({
 				title="Anything else"
 				says="A URL for a remote server, sse and a URL for the older transport, or the command the sandbox should start."
 			/>
-			<div className="flex gap-2">
+			<div className="flex flex-wrap gap-2">
 				<input
 					className="field w-40 font-mono"
 					value={name}
@@ -488,20 +517,20 @@ function Custom({
 					onChange={(event) => setName(event.target.value)}
 				/>
 				<input
-					className="field min-w-0 flex-1 font-mono"
+					className="field min-w-[16rem] flex-1 font-mono"
 					value={line}
 					placeholder="https://mcp.example.com/mcp"
 					onChange={(event) => setLine(event.target.value)}
 				/>
 				<button
 					type="submit"
-					className="key"
+					className="pill"
 					data-yes="true"
 					disabled={busy || name === "" || line === ""}
 				>
 					{busy ? "adding…" : "add"}
 				</button>
-				<button type="button" className="key" onClick={() => setOpen(false)}>
+				<button type="button" className="pill" onClick={() => setOpen(false)}>
 					cancel
 				</button>
 			</div>
@@ -509,13 +538,6 @@ function Custom({
 	);
 }
 
-/**
- * A company's mark, asked of the company.
- *
- * From the site itself rather than from a favicon service, which would be the shorter line and
- * would tell a third party every plugin anybody here connects. A site that serves nothing gets an
- * initial in the same space, so a row is the same height either way.
- */
 export function Mark({
 	host,
 	letter,

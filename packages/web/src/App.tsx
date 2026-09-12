@@ -307,7 +307,7 @@ export function App() {
 				</div>
 
 				<div className="rail-scroll">
-					<div className="group">Agents</div>
+					<div className="rail-group">Agents</div>
 					{agents.map((one) => (
 						<AgentRow
 							key={one.id}
