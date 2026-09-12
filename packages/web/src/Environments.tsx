@@ -46,6 +46,8 @@ export function Picker({
 	onPick,
 	onAdd,
 	onKeys,
+	onDevices,
+	hasDoor,
 	onManage,
 }: {
 	all: readonly Connection[];
@@ -54,6 +56,9 @@ export function Picker({
 	onPick: (one: Connection) => void;
 	onAdd: () => void;
 	onKeys: () => void;
+	onDevices: () => void;
+	/** Whether this connection goes through the plane's own door, which a relayed one does not. */
+	hasDoor: boolean;
 	onManage: () => void;
 }) {
 	return (
@@ -112,6 +117,14 @@ export function Picker({
 						<KeyRound className="size-4 flex-none text-muted" />
 						Keys
 					</MenuItem>
+					{/* Only where there is a door to ask. A relayed environment reaches the plane past it,
+					    so the list it would show is not this connection's to show. */}
+					{hasDoor && (
+						<MenuItem onSelect={onDevices} disabled={!connected}>
+							<Laptop className="size-4 flex-none text-muted" />
+							Devices
+						</MenuItem>
+					)}
 					<MenuItem onSelect={onManage}>
 						<Settings className="size-4 flex-none text-muted" />
 						Manage and share

@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import type { Dial } from "./control-client.ts";
+import { Devices, nameFromAgent } from "./devices.ts";
 
 /**
  * Where the browser knocks. Loopback only, for the same reason 8788 is.
@@ -15,6 +16,9 @@ import type { Dial } from "./control-client.ts";
 export const WEB_PORT = Number(process.env.SQUAD_WEB_PORT ?? "") || 8789;
 
 export const WEB_TOKEN_FILE = "web.token";
+
+/** The browsers that have been let in. A list, where there used to be only a secret. */
+export const DEVICES_FILE = "devices.json";
 
 /** The cookie the browser carries once it has spent its token. */
 const SESSION_COOKIE = "squad_web";
@@ -88,10 +92,12 @@ export class WebServer {
 	readonly #server: Server;
 	/** One live connection per session, opened by its event stream and closed with it. */
 	readonly #sessions = new Map<string, Duplex>();
+	readonly #devices: Devices;
 	#token = "";
 
 	constructor(options: WebServerOptions) {
 		this.#options = options;
+		this.#devices = new Devices(join(options.stateDir, DEVICES_FILE));
 		this.#server = createServer((request, response) => {
 			this.#route(request, response).catch((error: Error) => {
 				this.#fail(response, 500, error.message);
@@ -213,7 +219,12 @@ export class WebServer {
 			this.#fail(response, 403, "That token is not this plane's.");
 			return;
 		}
-		if (!this.#isToken(carried)) {
+
+		// Who this is, which is a different question from whether they may be here and is the one worth
+		// being able to answer. A device is a line in a list with a name and a date; the bootstrap
+		// token is not one of them and never becomes one — it is the thing that hands them out.
+		const whose = this.#isToken(carried) ? undefined : await this.#devices.whose(carried);
+		if (!this.#isToken(carried) && whose === undefined) {
 			// Said plainly rather than with a login form, because there is no password to type: whoever
 			// should be here already holds a file on that machine.
 			//
@@ -236,13 +247,58 @@ export class WebServer {
 		// A page opened with the token in its address is sent back to the same page without it, holding
 		// a cookie instead: an address is copied, pasted and left in a history, and a cookie is not.
 		// The stream and the wire are not pages and have nowhere to be redirected to.
+		//
+		// What the cookie holds is no longer the token. Arriving with the token is how a browser is
+		// let in, and what it leaves with is a secret of its own — one line in a list, with a name, a
+		// date, and a way to be taken out that takes nobody else out with it. The token stays what it
+		// was on the machine that holds it: the thing that admits browsers, not the thing they carry.
 		if (inUrl !== null && asked.pathname !== "/events" && asked.pathname !== "/rpc") {
+			const admitted = this.#isToken(carried)
+				? await this.#devices.issue(nameFromAgent(request.headers["user-agent"]))
+				: undefined;
 			response
 				.writeHead(302, {
 					location: asked.pathname,
-					"set-cookie": `${SESSION_COOKIE}=${this.#token}; HttpOnly; SameSite=Strict; Path=/`,
+					"set-cookie": `${SESSION_COOKIE}=${admitted?.secret ?? carried}; HttpOnly; SameSite=Strict; Path=/`,
 				})
 				.end();
+			return;
+		}
+
+		// The list, and the way out of it. Here rather than on the control protocol because a device is
+		// a fact about this door and not about the plane: the console in a terminal reaches the same
+		// plane over a socket and has no device, so an operation it could never answer has no business
+		// on a protocol it speaks.
+		if (asked.pathname === "/devices") {
+			if (request.method === "GET") {
+				this.#json(response, {
+					devices: await this.#devices.all(),
+					// Which of them is reading this, so a screen can say "this one" on the right row and
+					// ask twice before somebody locks themselves out of the thing they are looking at.
+					...(whose === undefined ? {} : { here: whose.id }),
+				});
+				return;
+			}
+			this.#fail(response, 405, "That is not something to do to the list.");
+			return;
+		}
+		if (asked.pathname.startsWith("/devices/")) {
+			const id = asked.pathname.slice("/devices/".length);
+			if (request.method === "DELETE") {
+				this.#json(response, { gone: await this.#devices.revoke(id) });
+				return;
+			}
+			if (request.method === "POST") {
+				const named = await read(request);
+				const name = (JSON.parse(named || "{}") as { name?: unknown }).name;
+				if (typeof name !== "string" || name.trim().length === 0) {
+					this.#fail(response, 400, "A device needs a name to be given one.");
+					return;
+				}
+				this.#json(response, { renamed: await this.#devices.rename(id, name.trim().slice(0, 60)) });
+				return;
+			}
+			this.#fail(response, 405, "That is not something to do to a device.");
 			return;
 		}
 
@@ -386,6 +442,16 @@ export class WebServer {
 		// Compared in constant time, and length-checked first because timingSafeEqual throws on a
 		// mismatch — which would itself be the answer, told by how the request failed.
 		return mine.byteLength === theirs.byteLength && timingSafeEqual(mine, theirs);
+	}
+
+	/** An answer a screen reads rather than a person. Never cached: this is a list that changes. */
+	#json(response: ServerResponse, what: unknown): void {
+		response
+			.writeHead(200, {
+				"content-type": "application/json; charset=utf-8",
+				"cache-control": "no-store",
+			})
+			.end(`${JSON.stringify(what)}\n`);
 	}
 
 	#fail(response: ServerResponse, code: number, why: string): void {

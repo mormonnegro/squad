@@ -106,9 +106,73 @@ describe("the door", () => {
 		expect(response.status).toBe(302);
 		expect(response.headers.get("location")).toBe("/");
 		const cookie = response.headers.get("set-cookie") ?? "";
-		expect(cookie).toContain(`squad_web=${web.token}`);
+		expect(cookie).toContain("squad_web=");
 		expect(cookie).toContain("HttpOnly");
 		expect(cookie).toContain("SameSite=Strict");
+	});
+
+	// The token admits a browser; it is not what the browser then carries. That is the whole of the
+	// difference between a secret everybody shares and a list somebody can be taken off.
+	it("hands out a secret of its own rather than the token it was opened with", async () => {
+		const response = await fetch(at(`/?t=${web.token}`), { redirect: "manual" });
+		const cookie = response.headers.get("set-cookie") ?? "";
+		expect(cookie).not.toContain(web.token);
+		const carried = /squad_web=([^;]+)/.exec(cookie)?.[1] ?? "";
+		expect(carried.length).toBeGreaterThan(20);
+		// And it opens the door on its own, which is the point of having been given it.
+		const again = await fetch(at("/"), { headers: { cookie: `squad_web=${carried}` } });
+		expect(again.status).toBe(200);
+	});
+
+	it("puts the browser it let in on a list, with a name and a way out", async () => {
+		const first = await fetch(at(`/?t=${web.token}`), {
+			redirect: "manual",
+			headers: {
+				"user-agent":
+					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0 Safari/537.36",
+			},
+		});
+		const carried = /squad_web=([^;]+)/.exec(first.headers.get("set-cookie") ?? "")?.[1] ?? "";
+
+		const listed = (await (
+			await fetch(at("/devices"), { headers: { cookie: `squad_web=${carried}` } })
+		).json()) as { devices: { id: string; name: string }[]; here?: string };
+		expect(listed.devices).toHaveLength(1);
+		expect(listed.devices[0]?.name).toBe("Chrome on a Mac");
+		// Which row is the one reading this, so a screen can ask twice before it locks itself out.
+		expect(listed.here).toBe(listed.devices[0]?.id);
+
+		const out = await fetch(at(`/devices/${listed.devices[0]?.id}`), {
+			method: "DELETE",
+			headers: { cookie: `squad_web=${carried}` },
+		});
+		expect(((await out.json()) as { gone: boolean }).gone).toBe(true);
+		// And it is out: the cookie that was working a line ago is now nobody's.
+		const after = await fetch(at("/"), { headers: { cookie: `squad_web=${carried}` } });
+		expect(after.status).toBe(401);
+	});
+
+	// Two browsers, and taking one out leaves the other exactly where it was. This is the thing a
+	// single secret could not do and the reason any of this exists.
+	it("takes one out without taking the rest out", async () => {
+		const one = /squad_web=([^;]+)/.exec(
+			(await fetch(at(`/?t=${web.token}`), { redirect: "manual" })).headers.get("set-cookie") ?? "",
+		)?.[1] as string;
+		const other = /squad_web=([^;]+)/.exec(
+			(await fetch(at(`/?t=${web.token}`), { redirect: "manual" })).headers.get("set-cookie") ?? "",
+		)?.[1] as string;
+		expect(one).not.toBe(other);
+
+		const listed = (await (
+			await fetch(at("/devices"), { headers: { cookie: `squad_web=${one}` } })
+		).json()) as { devices: { id: string }[]; here: string };
+		await fetch(at(`/devices/${listed.here}`), {
+			method: "DELETE",
+			headers: { cookie: `squad_web=${one}` },
+		});
+
+		expect((await fetch(at("/"), { headers: { cookie: `squad_web=${one}` } })).status).toBe(401);
+		expect((await fetch(at("/"), { headers: { cookie: `squad_web=${other}` } })).status).toBe(200);
 	});
 
 	it("writes the token where only its owner can read it", async () => {
@@ -304,7 +368,7 @@ describe("the three ways in", () => {
 		const response = await fetch(at(`/agents/scout?t=${web.token}`), { redirect: "manual" });
 		expect(response.status).toBe(302);
 		expect(response.headers.get("location")).toBe("/agents/scout");
-		expect(response.headers.get("set-cookie")).toContain(web.token);
+		expect(response.headers.get("set-cookie")).toContain("squad_web=");
 	});
 
 	it("refuses a wrong token in the address before anything else", async () => {

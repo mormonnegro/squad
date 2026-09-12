@@ -40,6 +40,14 @@ export interface Wake {
 
 export class PlaneError extends Error {}
 
+/** One browser that has been let in, as a screen shows it. */
+export interface DeviceRow {
+	readonly id: string;
+	readonly name: string;
+	readonly createdAt: string;
+	readonly lastSeenAt: string;
+}
+
 /** The connection under the client: how a line goes out, and how the lines coming back arrive. */
 export interface Wire {
 	open(
@@ -55,6 +63,18 @@ export interface Wire {
 		 */
 		onUp?: () => void,
 	): Promise<Session>;
+
+	/**
+	 * The plane's own HTTP door, where this connection has one.
+	 *
+	 * Not everything about a plane travels the protocol. Which browsers have been let in is a fact
+	 * about that door — who knocked on it and what it handed back — and a connection that does not go
+	 * through it has no answer to give. A relayed one is exactly that: it reaches the control socket
+	 * sealed, past the door entirely, and what authorises it is the plane's own token rather than a
+	 * device. So this is missing there, and a screen that needs it asks first instead of being told
+	 * a half-truth.
+	 */
+	door?(path: string, init?: RequestInit): Promise<unknown>;
 }
 
 export interface Session {
@@ -246,6 +266,51 @@ export class Plane {
 		await this.#ask({ op: "talk", agentId, to, open });
 	}
 
+	/**
+	 * The browsers this plane has let in, and which of them is asking.
+	 *
+	 * Over HTTP rather than down the protocol, because a device is a fact about the browser's door
+	 * and not about the plane: a console in a terminal reaches the same plane over a socket and has
+	 * no device at all, so this is not a question that protocol could answer.
+	 */
+	async devices(): Promise<{ devices: readonly DeviceRow[]; here?: string }> {
+		const answer = (await this.#door("/devices")) as { devices?: DeviceRow[]; here?: string };
+		return {
+			devices: answer.devices ?? [],
+			...(answer.here === undefined ? {} : { here: answer.here }),
+		};
+	}
+
+	/** Whether this connection can answer for the door at all. A relayed one cannot. */
+	get hasDoor(): boolean {
+		return this.#wire.door !== undefined;
+	}
+
+	async #door(path: string, init?: RequestInit): Promise<unknown> {
+		const knock = this.#wire.door;
+		if (knock === undefined) {
+			throw new PlaneError("This environment is reached through a relay, which has no door.");
+		}
+		return knock.call(this.#wire, path, init);
+	}
+
+	/** Out, for that one. Every other browser is untouched, which is the point of the list. */
+	async revoke(id: string): Promise<boolean> {
+		const answer = (await this.#door(`/devices/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		})) as {
+			gone?: boolean;
+		};
+		return answer.gone === true;
+	}
+
+	async renameDevice(id: string, name: string): Promise<void> {
+		await this.#door(`/devices/${encodeURIComponent(id)}`, {
+			method: "POST",
+			body: JSON.stringify({ name }),
+		});
+	}
+
 	/** Every key this plane could be given, and whether it is holding one. Never the values. */
 	async providers(): Promise<readonly ProviderStanding[]> {
 		const answer = await this.#ask({ op: "providers" });
@@ -319,6 +384,21 @@ export function browserWire(origin = "", token?: string): Wire {
 	// takes it in a header, where an address cannot be copied out of a history.
 	const carried = token === undefined ? "" : `?t=${encodeURIComponent(token)}`;
 	return {
+		async door(path, init) {
+			const response = await fetch(`${origin}${path}`, {
+				...init,
+				headers: {
+					"content-type": "application/json",
+					...(token === undefined ? {} : { "x-squad-token": token }),
+					...(init?.headers ?? {}),
+				},
+				// Same-origin and cross-origin both: the cookie is what a page this plane served has,
+				// and the header is what a page somewhere else has.
+				credentials: "include",
+			});
+			if (!response.ok) throw new PlaneError((await response.text()).trim());
+			return response.json();
+		},
 		open(onLine, onDown, onUp) {
 			return new Promise<Session>((settle, fail) => {
 				const source = new EventSource(`${origin}/events${carried}`);

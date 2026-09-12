@@ -2,6 +2,7 @@ import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./Chat.tsx";
 import { type Connection, HERE, keyOf, readConnections, SERVED_BY_A_PLANE } from "./connections.ts";
+import { Devices } from "./Devices.tsx";
 import { AddEnvironment, Environments, Picker } from "./Environments.tsx";
 import { faceOf, nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
@@ -24,7 +25,9 @@ export function App() {
 	const [planes, setPlanes] = useState<readonly Connection[]>(() => readConnections());
 	const [at, setAt] = useState<Connection>(() => readConnections()[0] ?? HERE);
 	// The connection screens: where a first one is made, and where the rest are managed.
-	const [showing, setShowing] = useState<"none" | "connect" | "planes" | "keys">("none");
+	const [showing, setShowing] = useState<"none" | "connect" | "planes" | "keys" | "devices">(
+		"none",
+	);
 	const [plane, setPlane] = useState<Plane | undefined>();
 	const [down, setDown] = useState<string | undefined>();
 	const [agents, setAgents] = useState<readonly AgentSummary[]>([]);
@@ -220,6 +223,8 @@ export function App() {
 						onPick={goTo}
 						onAdd={() => setShowing("connect")}
 						onKeys={() => setShowing("keys")}
+						onDevices={() => setShowing("devices")}
+						hasDoor={plane?.hasDoor ?? false}
 						onManage={() => setShowing("planes")}
 					/>
 				</div>
@@ -312,6 +317,9 @@ export function App() {
 					// while there is genuinely nothing behind it.
 					onClose={() => setShowing("none")}
 				/>
+			)}
+			{showing === "devices" && plane !== undefined && (
+				<Devices plane={plane} onClose={() => setShowing("none")} />
 			)}
 			{showing === "keys" && plane !== undefined && (
 				<Keys
