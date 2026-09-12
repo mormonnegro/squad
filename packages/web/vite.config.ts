@@ -21,12 +21,34 @@ const PLANE = process.env.SQUAD_WEB_ORIGIN ?? "http://127.0.0.1:8789";
 function token(): string | undefined {
 	const named = process.env.SQUAD_WEB_TOKEN;
 	if (named !== undefined && named.length > 0) return named;
-	const state = process.env.SQUAD_STATE ?? join(homedir(), ".squad", "here");
-	try {
-		return readFileSync(join(state, "web.token"), "utf8").trim();
-	} catch {
-		return undefined;
+	for (const state of stateDirs()) {
+		try {
+			return readFileSync(join(state, "web.token"), "utf8").trim();
+		} catch {
+			// The next one. A directory with no token in it is a plane that has not come up, or a name
+			// nobody installed, and neither is worth stopping for.
+		}
 	}
+	return undefined;
+}
+
+/**
+ * Where a plane on this machine keeps its state, most specific first.
+ *
+ * It used to be one path — `~/.squad/here` — from when there was one deployment and it had no name.
+ * There are names now, and that path stopped existing, so the dev server carried no token, every
+ * proxied request came back 401, and the screen said the plane had gone. Which was true of the
+ * connection and not of the plane, and impossible to tell apart from the outside.
+ */
+function stateDirs(): string[] {
+	const asked = process.env.SQUAD_STATE;
+	if (asked !== undefined && asked.length > 0) return [asked];
+	const name = process.env.SQUAD_NAME ?? "squad";
+	return [
+		join(homedir(), ".squad", name, "state"),
+		// What every install before names wrote, for a machine that still has one.
+		join(homedir(), ".squad", "here"),
+	];
 }
 
 const held = token();
