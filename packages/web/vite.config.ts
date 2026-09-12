@@ -86,11 +86,22 @@ export default defineConfig({
 		emptyOutDir: true,
 	},
 	server: {
-		// The two addresses that are the plane's rather than the page's. Everything else is this
-		// server's, so a reload deep inside the application is answered here and not forwarded.
+		/*
+		 * The addresses that are the plane's rather than the page's.
+		 *
+		 * Everything else is this server's, so a reload deep inside the application — a conversation,
+		 * the plugins — is answered here with the page and not forwarded. These three are doors: two
+		 * carry the protocol, and `/devices` is the one the browser was let in through, which also
+		 * answers what other browsers hold a key and takes one of them back.
+		 *
+		 * `/devices` was missing, and the shape of that failure is worth remembering: an unproxied
+		 * path is not a 404, it is this server's index.html, so a screen asking for JSON was handed a
+		 * page and said `Unexpected token '<'`. Nothing about that message names the proxy.
+		 */
 		proxy: {
 			"/rpc": { target: PLANE, changeOrigin: false, ...carried },
 			"/events": { target: PLANE, changeOrigin: false, ...carried },
+			"/devices": { target: PLANE, changeOrigin: false, ...carried },
 		},
 	},
 });

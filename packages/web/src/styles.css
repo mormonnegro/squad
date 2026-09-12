@@ -1029,6 +1029,13 @@ ol.md-list {
 	gap: 0.5rem;
 }
 
+/*
+ * A key, which is a key: a thing on a keyboard, named after the letter that presses it.
+ *
+ * Square and set in mono on purpose, and left that way when everything else here became a pill —
+ * `y open` and `n keep it shut` and `⏎ build` are not buttons that happen to be clickable, they are
+ * the shape of the key you can press instead. What is only ever clicked is a pill.
+ */
 .key {
 	border: 1px solid var(--line);
 	border-radius: 4px;

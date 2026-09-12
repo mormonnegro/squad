@@ -223,7 +223,7 @@ function Paste({
 				/>
 				<button
 					type="submit"
-					className="key"
+					className="pill"
 					data-yes="true"
 					disabled={busy || typed.trim() === ""}
 				>

@@ -154,7 +154,7 @@ function Row({
 				</div>
 				<Standing held={row.held} here={row.here} />
 				{!open && (
-					<button type="button" className="key" onClick={() => setOpen(true)}>
+					<button type="button" className="pill" onClick={() => setOpen(true)}>
 						{row.held ? "replace" : "add key"}
 					</button>
 				)}
@@ -179,18 +179,18 @@ function Row({
 						placeholder={`${row.keyEnv}…`}
 						onChange={(event) => setTyped(event.target.value)}
 					/>
-					<button type="submit" className="key" data-yes="true" disabled={busy || typed === ""}>
+					<button type="submit" className="pill" data-yes="true" disabled={busy || typed === ""}>
 						{busy ? "saving…" : "save"}
 					</button>
 					{/* Only the ones this plane was handed can be taken back. A key the machine exports
 					    is the machine's, and a button here that pretended to remove it would leave a row
 					    that says it is still held. */}
 					{row.here && (
-						<button type="button" className="key" disabled={busy} onClick={() => void send("")}>
+						<button type="button" className="pill" disabled={busy} onClick={() => void send("")}>
 							remove
 						</button>
 					)}
-					<button type="button" className="key" disabled={busy} onClick={() => setOpen(false)}>
+					<button type="button" className="pill" disabled={busy} onClick={() => setOpen(false)}>
 						cancel
 					</button>
 				</form>

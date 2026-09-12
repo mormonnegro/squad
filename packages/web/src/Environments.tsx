@@ -361,7 +361,7 @@ function Rest({
 						placeholder={where === "code" ? "squad_…" : "http://127.0.0.1:8789/?t=…"}
 						onChange={(event) => setTyped(event.target.value)}
 					/>
-					<button type="submit" className="key" data-yes="true" disabled={trying}>
+					<button type="submit" className="pill" data-yes="true" disabled={trying}>
 						{trying ? "knocking…" : "connect"}
 					</button>
 				</form>
@@ -429,7 +429,7 @@ export function Environments({
 				))}
 			</div>
 			<div className="ask-keys">
-				<button type="button" className="key" data-yes="true" onClick={onAdd}>
+				<button type="button" className="pill" data-yes="true" onClick={onAdd}>
 					+ add an environment
 				</button>
 			</div>
@@ -463,12 +463,12 @@ function Row({
 					<span className="row-note">{one.origin === "" ? "serving this page" : one.origin}</span>
 				</button>
 				{shareable && (
-					<button type="button" className="key" onClick={() => setShown((was) => !was)}>
+					<button type="button" className="pill" onClick={() => setShown((was) => !was)}>
 						{shown ? "hide code" : "share"}
 					</button>
 				)}
 				{one.origin !== "" && (
-					<button type="button" className="key" onClick={onForget}>
+					<button type="button" className="pill" onClick={onForget}>
 						forget
 					</button>
 				)}
@@ -484,7 +484,7 @@ function Row({
 						<input className="field" readOnly value={code} onFocus={(e) => e.target.select()} />
 						<button
 							type="button"
-							className="key"
+							className="pill"
 							onClick={() => {
 								void navigator.clipboard.writeText(code).then(
 									() => setCopied(true),

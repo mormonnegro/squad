@@ -111,7 +111,7 @@ function Row({
 				{/* Asked twice for this one only. Every other row takes somebody else out; this row is the
 				    screen you are reading, and the click that closes it looks exactly the same. */}
 				{!asking && (
-					<button type="button" className="key" disabled={busy} onClick={() => setAsking(true)}>
+					<button type="button" className="pill" disabled={busy} onClick={() => setAsking(true)}>
 						{here ? "sign out" : "remove"}
 					</button>
 				)}
@@ -120,11 +120,11 @@ function Row({
 						<span className="text-[0.78rem] text-muted">
 							{here ? "this is the browser you are in —" : "sure?"}
 						</span>
-						<button type="button" className="key" disabled={busy} onClick={() => void out()}>
+						<button type="button" className="pill" disabled={busy} onClick={() => void out()}>
 							<ShieldOff className="mr-1 inline size-3.5" />
 							{busy ? "…" : here ? "sign out anyway" : "remove"}
 						</button>
-						<button type="button" className="key" disabled={busy} onClick={() => setAsking(false)}>
+						<button type="button" className="pill" disabled={busy} onClick={() => setAsking(false)}>
 							cancel
 						</button>
 					</span>
