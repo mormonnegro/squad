@@ -268,7 +268,7 @@ function Invites({
 						data-yes="true"
 						disabled={busy || label.trim() === ""}
 					>
-						{busy && <Spin size={10} />}
+						{busy && <Spin />}
 						{busy ? "making…" : "make the link"}
 					</button>
 					<button type="button" className="pill" onClick={() => setMaking(false)}>
@@ -310,7 +310,7 @@ function Handed({ one, onRevoke }: { one: Invitation; onRevoke: () => Promise<vo
 						void onRevoke().finally(() => setBusy(false));
 					}}
 				>
-					{busy && <Spin size={10} />}
+					{busy && <Spin />}
 					{busy ? "calling off…" : "call it off"}
 				</button>
 			)}
@@ -376,7 +376,7 @@ function Row({
 							{here ? "this is the browser you are in —" : "sure?"}
 						</span>
 						<button type="button" className="pill" disabled={busy} onClick={() => void out()}>
-							{busy ? <Spin size={10} /> : <ShieldOff className="size-3.5" />}
+							{busy ? <Spin /> : <ShieldOff className="size-3.5" />}
 							{busy ? "removing…" : here ? "sign out anyway" : "remove"}
 						</button>
 						<button type="button" className="pill" disabled={busy} onClick={() => setAsking(false)}>

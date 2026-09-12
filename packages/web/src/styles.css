@@ -1436,19 +1436,82 @@ ol.md-list {
 
 /* ── what has not stopped ────────────────────────────────────────────── */
 
-.spin {
-	display: inline-block;
+/*
+ * A light going around a ring of nine squares.
+ *
+ * Eight cells lit one at a time with the one behind it half lit and a dark middle — the shape a
+ * terminal spinner has had since braille ones, which is the right shape here for the same reason
+ * everything else in this console is: it is a terminal's idea, drawn in a browser.
+ *
+ * One animation and eight delays, because that is what this is. The order is the ring read
+ * clockwise — cells 0,1,2,5,8,7,6,3 — so the delays are not the children's order and cannot be
+ * written as a loop over nth-child.
+ */
+.orbit {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 12%;
 	flex: none;
-	border: 1.5px solid color-mix(in srgb, var(--amber) 22%, transparent);
-	border-top-color: var(--amber);
-	border-radius: 999px;
-	vertical-align: -1px;
-	animation: spin 0.7s linear infinite;
+	color: var(--amber);
 }
 
-@keyframes spin {
-	to {
-		transform: rotate(1turn);
+/* On a control it takes that control's colour: the ring is saying this button is working, and a
+   second colour on a button that already has one reads as two things happening. */
+.pill .orbit,
+.icon-key .orbit {
+	color: inherit;
+}
+
+.orbit i {
+	background: currentColor;
+	border-radius: 1px;
+	opacity: 0.15;
+	animation: orbit 1.2s linear infinite;
+}
+
+/* The middle never lights: it is what makes the eight around it read as a ring. */
+.orbit i:nth-child(5) {
+	animation: none;
+}
+
+.orbit i:nth-child(1) {
+	animation-delay: 0s;
+}
+.orbit i:nth-child(2) {
+	animation-delay: -1.05s;
+}
+.orbit i:nth-child(3) {
+	animation-delay: -0.9s;
+}
+.orbit i:nth-child(6) {
+	animation-delay: -0.75s;
+}
+.orbit i:nth-child(9) {
+	animation-delay: -0.6s;
+}
+.orbit i:nth-child(8) {
+	animation-delay: -0.45s;
+}
+.orbit i:nth-child(7) {
+	animation-delay: -0.3s;
+}
+.orbit i:nth-child(4) {
+	animation-delay: -0.15s;
+}
+
+@keyframes orbit {
+	0% {
+		opacity: 1;
+	}
+	12.5% {
+		opacity: 0.5;
+	}
+	25%,
+	87.5% {
+		opacity: 0.15;
+	}
+	100% {
+		opacity: 1;
 	}
 }
 
@@ -1456,11 +1519,11 @@ ol.md-list {
  * Slower rather than still, for whoever asked their machine to stop moving things.
  *
  * Stopping it altogether would take away the one thing it is for — a stopped spinner and a spinner
- * that was never there say the same nothing — so it turns once every three seconds instead, which
- * is movement a person has to look for rather than movement that catches the eye.
+ * that was never there say the same nothing — so it goes round once every three seconds instead,
+ * which is movement a person has to look for rather than movement that catches the eye.
  */
 @media (prefers-reduced-motion: reduce) {
-	.spin {
+	.orbit i {
 		animation-duration: 3s;
 	}
 }

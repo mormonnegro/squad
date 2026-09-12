@@ -332,7 +332,7 @@ function Token({
 					onChange={(event) => setTyped(event.target.value)}
 				/>
 				<button type="submit" className="pill" data-yes="true" disabled={busy || typed === ""}>
-					{busy && <Spin size={10} />}
+					{busy && <Spin />}
 					{busy ? "keeping…" : "keep it"}
 				</button>
 				<button type="button" className="pill" onClick={() => setOpen(false)}>
@@ -442,7 +442,7 @@ function Held({
 											title={`${nameOf(agent.id)} may ${width.means} in ${one.repo}`}
 											onClick={() => onHold(agent.id, width.push)}
 										>
-											{mine && scope === width.id && <Spin size={9} />}
+											{mine && scope === width.id && <Spin />}
 											{width.said}
 										</button>
 									))}
@@ -516,11 +516,7 @@ function Offer({
 						title={`give ${one.repo} to ${nameOf(agent.id)}, on its own branches`}
 						onClick={() => onGive(agent.id)}
 					>
-						{busy === `give:${one.repo}:${agent.id}` ? (
-							<Spin size={9} />
-						) : (
-							<Plus className="size-3" />
-						)}
+						{busy === `give:${one.repo}:${agent.id}` ? <Spin /> : <Plus className="size-3" />}
 						{nameOf(agent.id)}
 					</button>
 				);

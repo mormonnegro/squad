@@ -248,9 +248,7 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 							>
 								{/* Beside the marks rather than instead of them: what it has read so far is not
 								    something to take off the screen because it has not finished reading. */}
-								{live.thinking && index === shown.length - 1 && step.failed !== true && (
-									<Spin size={10} />
-								)}
+								{live.thinking && index === shown.length - 1 && step.failed !== true && <Spin />}
 								<Sources urls={step.sources ?? []} />
 								<span className="step-say">{step.say || step.detail}</span>
 								{step.failed === true && <span className="step-why">✗ {step.detail}</span>}

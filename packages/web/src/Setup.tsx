@@ -127,7 +127,7 @@ export function Setup({
 						/>
 						<span className="text-[0.8rem] text-muted">/ day</span>
 						<button type="submit" className="pill" data-yes="true" disabled={busy === "limit"}>
-							{busy === "limit" && <Spin size={10} />}
+							{busy === "limit" && <Spin />}
 							{busy === "limit" ? "setting…" : "set"}
 						</button>
 						{ceiling !== undefined && (

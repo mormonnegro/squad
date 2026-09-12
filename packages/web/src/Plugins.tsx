@@ -390,7 +390,7 @@ function Row({
 				{account &&
 					(one.loggedIn ? (
 						<button type="button" className="pill" disabled={working} onClick={onLogout}>
-							{working && <Spin size={10} />}
+							{working && <Spin />}
 							{working ? "logging out…" : "log out"}
 						</button>
 					) : (
@@ -401,7 +401,7 @@ function Row({
 							disabled={working}
 							onClick={onLogin}
 						>
-							{working && <Spin size={10} />}
+							{working && <Spin />}
 							{working ? "opening…" : "log in"}
 						</button>
 					))}
@@ -537,7 +537,7 @@ function Card({
 			</div>
 			<p className="plug-says">{plugin.does}</p>
 			<button type="button" className="pill self-start" disabled={busy} onClick={onConnect}>
-				{busy && <Spin size={10} />}
+				{busy && <Spin />}
 				{busy ? "connecting…" : held > 0 ? "connect another" : "connect"}
 			</button>
 		</div>
@@ -607,7 +607,7 @@ function Custom({
 					data-yes="true"
 					disabled={busy || name === "" || line === ""}
 				>
-					{busy && <Spin size={10} />}
+					{busy && <Spin />}
 					{busy ? "adding…" : "add"}
 				</button>
 				<button type="button" className="pill" onClick={() => setOpen(false)}>
@@ -726,7 +726,7 @@ function NeedsApp({
 					data-yes="true"
 					disabled={busy || typed.trim() === ""}
 				>
-					{busy && <Spin size={10} />}
+					{busy && <Spin />}
 					{busy ? "opening…" : "log in with it"}
 				</button>
 				<button type="button" className="pill" onClick={onClose}>
