@@ -562,6 +562,7 @@
 .pane-facts {
 	margin-left: auto;
 	display: flex;
+	align-items: center;
 	gap: 1rem;
 	font: 0.76rem var(--mono);
 	color: var(--muted);
@@ -1146,9 +1147,10 @@ ol.md-list {
 .pane-gear {
 	display: grid;
 	place-items: center;
-	width: 1.6rem;
-	height: 1.6rem;
-	margin-left: -0.4rem;
+	width: 1.5rem;
+	height: 1.5rem;
+	/* Against the numbers rather than a gap away from them: it sets what they say. */
+	margin-left: -0.5rem;
 	border-radius: 6px;
 	color: color-mix(in srgb, var(--muted) 80%, transparent);
 }

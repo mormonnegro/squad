@@ -117,6 +117,9 @@ export function Plugins({
 			</p>
 
 			{why !== undefined && <span className="why block">{why}</span>}
+			{made === undefined && why === undefined && (
+				<span className="text-[0.85rem] text-muted">asking the plane…</span>
+			)}
 
 			{connected.length > 0 && (
 				<section className="flex flex-col gap-2">
@@ -152,6 +155,18 @@ export function Plugins({
 					title="Add a plugin"
 					says="Connecting one you already have connected makes a second, separate account — which is what two Stripe accounts are."
 				/>
+				{/* An empty shop is the one failure this screen can have that looks like nothing at all,
+				    and it has one cause: the catalogue comes from the plane, and the plane is older than
+				    the page it is serving. Said here, with the two words that fix it, rather than left as
+				    a heading with nothing under it. */}
+				{made !== undefined && catalog.length === 0 && (
+					<p className="text-[0.8rem]/[1.5] text-muted">
+						This plane has no catalogue to offer: it is running a version older than this console.{" "}
+						<code className="md-code">squad dev</code> puts your checkout behind it, and{" "}
+						<code className="md-code">squad update</code> puts it on the published image. Anything
+						below still works — an address is an address.
+					</p>
+				)}
 				{SHELVES.map(([shelf, title]) => {
 					const here = catalog.filter((one) => one.shelf === shelf);
 					if (here.length === 0) return null;
