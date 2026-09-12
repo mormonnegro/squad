@@ -1,5 +1,5 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
-import { Settings2 } from "lucide-react";
+import { Settings2, Terminal, User } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { type Command, completions, isCommand, isShell } from "./commands.ts";
@@ -137,9 +137,39 @@ export function Chat({
 	);
 }
 
+/**
+ * Who said it, as the mark beside it.
+ *
+ * An agent has a face of its own, derived from its name, and the same on every machine that ever
+ * draws it. The other three voices were all one grey dot, which said only "not the agent" — and
+ * they are not one thing: the plane answering a command is this program speaking, the sandbox is
+ * what a command printed, and the third is you.
+ *
+ * So the plane gets the mark this program is drawn with everywhere else — the same one at the head
+ * of the column and on the empty screen — the sandbox gets a terminal, and you get a person. A
+ * peer's message gets that peer's own face, by the same hash of the same name, so a message from
+ * `ledger` looks like `ledger` wherever it is read.
+ */
+function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint: string } {
+	if (said.from === "agent") {
+		const face = faceOf(agentId);
+		return { mark: face.glyph, tint: `var(--${face.accent})` };
+	}
+	if (said.from === "operator") {
+		return { mark: <User className="size-4" />, tint: "var(--text-strong)" };
+	}
+	if (said.from === "shell") {
+		return { mark: <Terminal className="size-3.5" />, tint: "var(--muted)" };
+	}
+	if (said.from === "other") {
+		const face = faceOf(said.via ?? "");
+		return { mark: face.glyph, tint: `var(--${face.accent})` };
+	}
+	return { mark: "◇", tint: "var(--cyan)" };
+}
+
 function Said({ said, agentId }: { said: Utterance; agentId: string }) {
-	const mine = said.from === "agent";
-	const face = faceOf(agentId);
+	const face = markOf(said, agentId);
 	const who =
 		said.from === "operator"
 			? "You"
@@ -153,13 +183,8 @@ function Said({ said, agentId }: { said: Utterance; agentId: string }) {
 
 	return (
 		<article className="said" data-from={said.from} data-tone={said.tone}>
-			<span
-				className="face"
-				data-size="big"
-				style={{ color: mine ? `var(--${face.accent})` : "var(--muted)" }}
-				aria-hidden="true"
-			>
-				{mine ? face.glyph : said.from === "operator" ? "◍" : "·"}
+			<span className="face" data-size="big" style={{ color: face.tint }} aria-hidden="true">
+				{face.mark}
 			</span>
 			<div>
 				<div className="said-who">
