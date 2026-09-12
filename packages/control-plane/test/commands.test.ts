@@ -791,14 +791,26 @@ describe("/serve", () => {
 
 	// Nothing is published off the server and the sandbox network is as unrouted as it was. An answer
 	// that left that out would read as a port on the internet, which is the opposite of what this is.
-	it("says where the link works, every time it prints one", async () => {
+	/**
+	 * Both roads, every time, because they are reachable from different places.
+	 *
+	 * The path hangs off whatever address the console is being read at and works wherever that does.
+	 * The `localhost` one is a real port on the machine a terminal console is running on, which is
+	 * better when you are at that machine and absent when you are not — and printing only that one
+	 * is what made a plane on a server hand out a link to whatever laptop was reading it.
+	 */
+	it("says both ways in, every time it prints one", async () => {
 		const opened = await runCommand("/serve 3000", context().context);
 		const listed = await runCommand(
 			"/serve",
 			context({ serving: [{ port: 3000, at: 3000 }] }).context,
 		);
 
-		for (const said of [opened, listed]) expect(said).toContain("and from nowhere else");
+		for (const said of [opened, listed]) {
+			expect(said).toContain("/at/scout/3000/");
+			expect(said).toContain("scout.localhost:3000");
+			expect(said).toContain("whatever address you are reading this console at");
+		}
 	});
 
 	it("takes a port written with the colon a person would type", async () => {

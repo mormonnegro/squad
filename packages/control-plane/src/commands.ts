@@ -3,7 +3,7 @@ import type { LoginStatus, Reachability } from "@squad/proxy";
 import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
-import { type Served, servedAt, unservable } from "./ports.ts";
+import { type Served, servedAt, servedPath, unservable } from "./ports.ts";
 import {
 	looksLikeGithubToken,
 	type RepoHold,
@@ -670,11 +670,21 @@ async function models(words: readonly string[], context: CommandContext): Promis
 	return `${moved}\n\nNothing here holds ${found.keyEnv} yet, so turns on it will be refused at the proxy until this plane has it.`;
 }
 
-/** Where a served port is reachable from, said once wherever the links are. */
+/**
+ * Where a served port is reachable from, said once wherever the links are.
+ *
+ * Two ways in and they are not alternatives: the first hangs off whatever address this console is
+ * being read at and is the one that always works, and the second is a real port on the machine a
+ * terminal console happens to be running on, which is better when you are at that machine and
+ * absent when you are not.
+ *
+ * Nothing is published off the server either way. The sandbox network is as unrouted as it was and
+ * both roads run through the plane, which is the thing that was already let in.
+ */
 const ONLY_HERE = [
-	"A console is what opens these, on the machine it is running on. They are reachable from",
-	"there and from nowhere else: nothing is published off the server, and the sandbox network",
-	"is still as unrouted as it was.",
+	"The first hangs off whatever address you are reading this console at, so it works from",
+	"wherever the console does. The second is a port on the machine a terminal console is",
+	"running on, and exists only while one is. Nothing is published off the server either way.",
 ].join("\n");
 
 /**
@@ -719,6 +729,7 @@ async function serve(words: readonly string[], context: CommandContext): Promise
 	return [
 		`${id} is serving ${port}${moved}`,
 		"",
+		`  ${servedPath(id, port)}`,
 		`  ${servedAt(id, opened)}`,
 		"",
 		(await context.listening(port))
@@ -734,8 +745,9 @@ async function serving(context: CommandContext): Promise<string> {
 	const { mine, theirs } = await context.served();
 	if (mine.length === 0) {
 		return [
-			`${id} is serving nothing. /serve 3000 opens a port inside it on the machine you are`,
-			"sitting at, whether or not anything is listening on it in there yet.",
+			`${id} is serving nothing. /serve 3000 opens a port inside it — on this console's own`,
+			"address, and on the machine a terminal console is running on — whether or not anything",
+			"is listening on it in there yet.",
 			"",
 			ONLY_HERE,
 		].join("\n");
@@ -748,7 +760,7 @@ async function serving(context: CommandContext): Promise<string> {
 				(one) =>
 					[
 						`  ${one.port}`,
-						`${servedAt(id, one)}${one.at === one.port ? "" : `   (${one.port} is ${theirs.get(one.port) ?? "another agent"}'s here)`}`,
+						`${servedPath(id, one.port)}   ${servedAt(id, one)}${one.at === one.port ? "" : `   (${one.port} is ${theirs.get(one.port) ?? "another agent"}'s here)`}`,
 					] as const,
 			),
 		),

@@ -90,7 +90,7 @@ export default defineConfig({
 		 * The addresses that are the plane's rather than the page's.
 		 *
 		 * Everything else is this server's, so a reload deep inside the application — a conversation,
-		 * the plugins — is answered here with the page and not forwarded. These four are doors: two
+		 * the plugins — is answered here with the page and not forwarded. These five are doors: two
 		 * carry the protocol, and the other two are how a browser gets in and who else may — the list of
 		 * browsers that hold a key, and the invitations that were handed out.
 		 *
@@ -103,6 +103,9 @@ export default defineConfig({
 			"/events": { target: PLANE, changeOrigin: false, ...carried },
 			"/devices": { target: PLANE, changeOrigin: false, ...carried },
 			"/invites": { target: PLANE, changeOrigin: false, ...carried },
+			// A port an agent opened, which is the plane's too — and the one that has to carry an
+			// upgrade, because a dev server in a sandbox talks over a websocket.
+			"/at": { target: PLANE, changeOrigin: false, ws: true, ...carried },
 		},
 	},
 });

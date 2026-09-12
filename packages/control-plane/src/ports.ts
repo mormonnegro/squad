@@ -116,6 +116,19 @@ export class ServedPorts {
 }
 
 /**
+ * Where a served port hangs off the console's own address.
+ *
+ * A path and not a URL, because the one thing this end cannot know is which address you are reading
+ * the console at: a plane behind a domain, a laptop on loopback and a container published to a port
+ * are the same plane, and the only honest answer is the one the browser completes. Whatever origin
+ * the console came from is reachable, by definition — that is the whole of why this works
+ * everywhere the old link did not.
+ */
+export function servedPath(agentId: string, port: number): string {
+	return `/at/${agentId}/${port}/`;
+}
+
+/**
  * Where a served port is opened, as an address to put in front of a person.
  *
  * `<agent>.localhost` rather than `localhost` because every modern browser resolves it to loopback

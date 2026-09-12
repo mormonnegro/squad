@@ -1,7 +1,13 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+	createServer,
+	request as httpRequest,
+	type IncomingMessage,
+	type Server,
+	type ServerResponse,
+} from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import type { Dial } from "./control-client.ts";
@@ -24,6 +30,20 @@ export const DEVICES_FILE = "devices.json";
 /** The ways in that were handed out: for whom, until when, and whether they were used. */
 export const INVITES_FILE = "invites.json";
 
+/**
+ * Where a port an agent opened is reached, through the door this console came in by.
+ *
+ * `/serve` writes down that a port should be reachable, and what made it so was the terminal
+ * console: it bound the port on the machine it was running on and tunnelled each connection over
+ * the control socket. Right when you are at that machine, and a lie everywhere else — a plane on a
+ * server pointed the link at whatever laptop happened to be reading it.
+ *
+ * Here the plane serves it under its own address. Whatever origin the console is being read from is
+ * one that can be reached, by definition, which is the whole idea: the link is built where it is
+ * clicked rather than guessed where it is written.
+ */
+export const SERVED_PREFIX = "/at/";
+
 /** The cookie the browser carries once it has spent its token. */
 const SESSION_COOKIE = "squad_web";
 
@@ -41,6 +61,98 @@ const SESSION_HEADER = "x-squad-session";
  * ignored by `EventSource`, which is exactly what a heartbeat should be.
  */
 const HEARTBEAT_MS = 25_000;
+
+/** How much HTML is held whole to put a `<base>` in it. Past this it is a download, not a page. */
+const MOST_HTML = 2 * 1024 * 1024;
+
+/** Whose port a path names, and what it was asking that port for. */
+function servedAt(
+	pathname: string,
+): { agentId: string; port: number; path: string; prefix: string } | undefined {
+	if (!pathname.startsWith(SERVED_PREFIX)) return undefined;
+	const [agentId = "", said = "", ...rest] = pathname.slice(SERVED_PREFIX.length).split("/");
+	const port = Number(said);
+	if (agentId === "" || !Number.isInteger(port) || port < 1 || port > 65_535) return undefined;
+	return {
+		agentId,
+		port,
+		path: `/${rest.join("/")}`,
+		prefix: `${SERVED_PREFIX}${agentId}/${port}/`,
+	};
+}
+
+/**
+ * The port a page came from, for the things it asks for that do not come from it.
+ *
+ * A page served under a prefix and asking for `/assets/app.js` is asking this door for a file that
+ * is not one of its own, and the only thing on the request that knows which sandbox it meant is
+ * where it came from. Not a guess and not a fallback for everything: it is read only when the
+ * referer is itself a served page, which is a thing nothing else on this door can be.
+ */
+function servedBy(
+	referer: string | undefined,
+	pathname: string,
+): { agentId: string; port: number; path: string; prefix: string } | undefined {
+	if (referer === undefined) return undefined;
+	let from: URL;
+	try {
+		from = new URL(referer);
+	} catch {
+		return undefined;
+	}
+	const served = servedAt(from.pathname);
+	if (served === undefined) return undefined;
+	return { ...served, path: pathname };
+}
+
+/**
+ * A page told where it is being read from.
+ *
+ * One `<base>`, as early as the head allows, so every relative address inside resolves under the
+ * prefix this door serves it at. A page that already has one is left alone: it said where it wants
+ * its links resolved and that is not this door's to overrule.
+ */
+function based(html: string, prefix: string): string {
+	if (/<base\s/i.test(html)) return html;
+	const tag = `<base href="${prefix}">`;
+	const head = /<head[^>]*>/i.exec(html);
+	if (head !== null) {
+		const at = head.index + head[0].length;
+		return html.slice(0, at) + tag + html.slice(at);
+	}
+	// No head at all is a fragment or a page written by hand, and the top of it is still earlier than
+	// anything that could resolve against a base.
+	return tag + html;
+}
+
+/** The first line written on a socket, and whatever arrived behind it. */
+async function firstLine(socket: Duplex): Promise<Buffer> {
+	return new Promise<Buffer>((settle, fail) => {
+		let held = Buffer.alloc(0);
+		const onData = (chunk: Buffer): void => {
+			held = Buffer.concat([held, chunk]);
+			if (held.indexOf(0x0a) === -1) return;
+			stop();
+			settle(held);
+		};
+		const onEnd = (): void => {
+			stop();
+			fail(new Error("the plane closed the connection"));
+		};
+		const stop = (): void => {
+			socket.off("data", onData);
+			socket.off("end", onEnd);
+			socket.off("error", onError);
+		};
+		const onError = (error: Error): void => {
+			stop();
+			fail(error);
+		};
+		socket.on("data", onData);
+		socket.once("end", onEnd);
+		socket.once("error", onError);
+	});
+}
 
 export function webTokenPath(stateDir: string): string {
 	return join(stateDir, WEB_TOKEN_FILE);
@@ -108,6 +220,12 @@ export class WebServer {
 			this.#route(request, response).catch((error: Error) => {
 				this.#fail(response, 500, error.message);
 			});
+		});
+		// A socket that stops being HTTP: a served port with a websocket in it, which is most dev
+		// servers. Nothing else here upgrades, so anything that is not a served path is refused
+		// rather than routed — this door has one kind of upgrade and no opinion about the rest.
+		this.#server.on("upgrade", (request, socket, head) => {
+			void this.#upgraded(request, socket as Duplex, head).catch(() => socket.destroy());
 		});
 	}
 
@@ -407,6 +525,21 @@ export class WebServer {
 			await this.#relay(request, response);
 			return;
 		}
+
+		/*
+		 * A port inside a sandbox, and then the same port again for whatever that page asked for next.
+		 *
+		 * The second half is the `Referer`, and it is not a nicety: a page served under a prefix that
+		 * asks for `/assets/app.js` is asking this door for a file, and the only thing that knows
+		 * which sandbox it meant is the page it came from. A `<base>` is written into the HTML for
+		 * everything relative; this is for everything that is not.
+		 */
+		const served = servedAt(asked.pathname) ?? servedBy(request.headers.referer, asked.pathname);
+		if (served !== undefined) {
+			await this.#served(request, response, served);
+			return;
+		}
+
 		await this.#file(asked.pathname, response);
 	}
 
@@ -471,6 +604,168 @@ export class WebServer {
 	}
 
 	/** One request from the browser, written to that session's socket exactly as it arrived. */
+	/**
+	 * A websocket into a served port, which is a request that stops being one halfway through.
+	 *
+	 * Written out as bytes rather than spoken as HTTP, because after the handshake there is no HTTP
+	 * left to speak: the upgrade line and its headers go down the tunnel as they arrived, and from
+	 * the answer onwards the two sockets are the same conversation.
+	 */
+	async #upgraded(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+		const to = servedAt(new URL(request.url ?? "/", "http://127.0.0.1").pathname);
+		// The same key the rest of this door wants. An upgrade skips `#route`, so it asks here or it
+		// is a way in that asks nobody.
+		const carried = cookie(request, SESSION_COOKIE);
+		const whose = this.#isToken(carried) ? undefined : await this.#devices.whose(carried);
+		if (to === undefined || (!this.#isToken(carried) && whose === undefined)) {
+			socket.end("HTTP/1.1 403 Forbidden\r\nconnection: close\r\n\r\n");
+			return;
+		}
+
+		const tunnel = await this.#forward(to.agentId, to.port);
+		const lines = [
+			`${request.method ?? "GET"} ${to.path}${new URL(request.url ?? "/", "http://127.0.0.1").search} HTTP/1.1`,
+		];
+		for (const [name, value] of Object.entries(request.headers)) {
+			if (value === undefined) continue;
+			const said = name === "host" ? `127.0.0.1:${to.port}` : value;
+			for (const one of Array.isArray(said) ? said : [said]) lines.push(`${name}: ${one}`);
+		}
+		tunnel.write(`${lines.join("\r\n")}\r\n\r\n`);
+		if (head.byteLength > 0) tunnel.write(head);
+
+		tunnel.pipe(socket);
+		socket.pipe(tunnel);
+		// Either end going is the end of both. A half-open one is a browser holding a connection to a
+		// server that has gone, and a socket left open in a sandbox nobody is reading.
+		socket.on("error", () => tunnel.destroy());
+		tunnel.on("error", () => socket.destroy());
+		socket.once("close", () => tunnel.destroy());
+	}
+
+	/**
+	 * One request into a port an agent opened, and its answer back out.
+	 *
+	 * Spoken as HTTP over the tunnel rather than piped as bytes, because two things have to be
+	 * changed on the way through and both of them are in the headers: an HTML page gets a `<base>`
+	 * so everything relative inside it resolves under this prefix, and a redirect to `/somewhere`
+	 * gets the prefix put back on it. A byte pipe would be shorter and would serve pages whose links
+	 * all point out of the door they came in by.
+	 */
+	async #served(
+		request: IncomingMessage,
+		response: ServerResponse,
+		to: { agentId: string; port: number; path: string; prefix: string },
+	): Promise<void> {
+		let tunnel: Duplex;
+		try {
+			tunnel = await this.#forward(to.agentId, to.port);
+		} catch (error) {
+			this.#fail(response, 502, (error as Error).message);
+			return;
+		}
+
+		const headers = { ...request.headers };
+		// The port inside the sandbox is what that server thinks it is behind, and everything this
+		// door knows about the outside is wrong there: its host, its protocol, its idea of the path.
+		headers.host = `127.0.0.1:${to.port}`;
+		delete headers["accept-encoding"];
+		delete headers.connection;
+
+		const asked = httpRequest(
+			{
+				createConnection: () => tunnel as never,
+				method: request.method ?? "GET",
+				path: to.path,
+				headers,
+			},
+			(answer) => {
+				const type = String(answer.headers["content-type"] ?? "");
+				const out = { ...answer.headers };
+				delete out["content-encoding"];
+				delete out["transfer-encoding"];
+				delete out.connection;
+				// A redirect inside the sandbox is written from that sandbox's root, which is not this
+				// one: `/login` there is `/at/scout/3000/login` here.
+				const where = answer.headers.location;
+				if (typeof where === "string" && where.startsWith("/")) {
+					out.location = `${to.prefix}${where.slice(1)}`;
+				}
+
+				if (!type.includes("text/html")) {
+					response.writeHead(answer.statusCode ?? 502, out);
+					answer.pipe(response);
+					return;
+				}
+
+				// Held whole, because a `<base>` has to go in before the first thing that resolves
+				// against it. Capped, because a page that is not a page should not be a page this
+				// console holds in memory — past the cap it goes through untouched, which is the right
+				// failure: a large HTML body is a download, and a download needs no base.
+				const parts: Buffer[] = [];
+				let size = 0;
+				let whole = true;
+				answer.on("data", (chunk: Buffer) => {
+					size += chunk.byteLength;
+					if (!whole) return;
+					if (size > MOST_HTML) {
+						whole = false;
+						response.writeHead(answer.statusCode ?? 502, out);
+						for (const part of parts) response.write(part);
+						response.write(chunk);
+						answer.pipe(response);
+						return;
+					}
+					parts.push(chunk);
+				});
+				answer.once("end", () => {
+					if (!whole) return;
+					const said = based(Buffer.concat(parts).toString("utf8"), to.prefix);
+					delete out["content-length"];
+					response.writeHead(answer.statusCode ?? 502, {
+						...out,
+						"content-length": String(Buffer.byteLength(said)),
+					});
+					response.end(said);
+				});
+			},
+		);
+
+		asked.on("error", (error: Error) => {
+			tunnel.destroy();
+			if (!response.headersSent) this.#fail(response, 502, error.message);
+			else response.end();
+		});
+		response.once("close", () => tunnel.destroy());
+		request.pipe(asked);
+	}
+
+	/**
+	 * A stream to a port inside a sandbox, opened the way the console opens one.
+	 *
+	 * The control protocol turns a connection into a pipe: one request written, one answer read, and
+	 * everything after it on that socket is the port. Written here rather than borrowed from the
+	 * client because this end has a `dial` and not a client — the same four lines either way.
+	 */
+	async #forward(agentId: string, port: number): Promise<Duplex> {
+		const socket = await this.#options.dial();
+		socket.write(`${JSON.stringify({ id: "forward", op: "forward", agentId, port })}\n`);
+		const answered = await firstLine(socket);
+		const newline = answered.indexOf(0x0a);
+		const said = JSON.parse(answered.subarray(0, newline).toString("utf8")) as {
+			ok?: boolean;
+			error?: string;
+		};
+		if (said.ok === false) {
+			socket.destroy();
+			throw new Error(said.error ?? "that port is not being served");
+		}
+		// Anything that arrived behind the answer is already the port talking.
+		const rest = answered.subarray(newline + 1);
+		if (rest.byteLength > 0) socket.unshift(rest);
+		return socket;
+	}
+
 	async #relay(request: IncomingMessage, response: ServerResponse): Promise<void> {
 		const id = request.headers[SESSION_HEADER];
 		const socket = typeof id === "string" ? this.#sessions.get(id) : undefined;
