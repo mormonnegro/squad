@@ -11,6 +11,7 @@ import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Plugin } from "./plugins.ts";
+import type { RepoOffer } from "./repos.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -328,6 +329,52 @@ export class ControlClient {
 		const response = await this.#once({ op: "logout-plugin", name });
 		if ("text" in response) return response.text !== "";
 		throw new ControlError("unexpected answer to logout-plugin");
+	}
+
+	/** Every repository held here, who holds it with what, and whether there is a token at all. */
+	async repos(): Promise<{
+		readonly token: boolean;
+		readonly repos: readonly {
+			readonly repo: string;
+			readonly url: string;
+			readonly by: readonly {
+				readonly agentId: string;
+				readonly push: readonly string[];
+				readonly origin: "file" | "here";
+			}[];
+		}[];
+	}> {
+		const response = await this.#once({ op: "repos" });
+		if ("repos" in response) return response.repos;
+		throw new ControlError("unexpected answer to repos");
+	}
+
+	/** What this plane's token can see on GitHub. */
+	async githubRepos(): Promise<readonly RepoOffer[]> {
+		const response = await this.#once({ op: "github-repos" });
+		if ("offers" in response) return response.offers;
+		throw new ControlError("unexpected answer to github-repos");
+	}
+
+	/** The token every repository here is reached with. */
+	async setGithubToken(token: string): Promise<void> {
+		await this.#once({ op: "github-token", token });
+	}
+
+	/** Gives one agent a repository. `push` empty is read-only; left out is that agent's own lane. */
+	async holdRepo(agentId: string, repo: string, push?: readonly string[]): Promise<string> {
+		const response = await this.#once({
+			op: "hold-repo",
+			agentId,
+			repo,
+			...(push === undefined ? {} : { push }),
+		});
+		if ("text" in response) return response.text;
+		throw new ControlError("unexpected answer to hold-repo");
+	}
+
+	async dropRepo(agentId: string, repo: string): Promise<void> {
+		await this.#once({ op: "drop-repo", agentId, repo });
 	}
 
 	/** What an agent may spend in a day, or null for no ceiling. */

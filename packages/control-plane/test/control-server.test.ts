@@ -593,6 +593,39 @@ describe("the control socket", () => {
 		});
 	});
 
+	/**
+	 * Repositories, the other way up.
+	 *
+	 * `/repo` gives one to the agent whose conversation it was typed in. The question left over is who
+	 * can touch a given repository and how far, and asking it of the per-agent lists means opening
+	 * every agent in turn — which is what this answers in one.
+	 */
+	describe("repositories", () => {
+		it("says there is no token, and nothing held, on a plane where nobody has", async () => {
+			const said = await client.repos();
+
+			expect(said.token).toBe(false);
+			expect(said.repos).toEqual([]);
+		});
+
+		it("refuses to list anything from GitHub without a token", async () => {
+			await expect(client.githubRepos()).rejects.toThrow("no GitHub token");
+		});
+
+		it("refuses to hand one over without a token, rather than writing it down", async () => {
+			await expect(client.holdRepo("scout", "acme/website")).rejects.toThrow("no GitHub token");
+			expect((await client.repos()).repos).toEqual([]);
+		});
+
+		// A token is kept before anything is checked against it, because there is nothing to check it
+		// against on its own — but an empty one is not a token, and keeping it would leave a plane
+		// that says it holds one and refuses every repository.
+		it("refuses an empty token", async () => {
+			await expect(client.setGithubToken("   ")).rejects.toThrow("not a token");
+			expect((await client.repos()).token).toBe(false);
+		});
+	});
+
 	/** The ceiling, set from a screen rather than typed at the agent it is about. */
 	describe("what an agent may spend", () => {
 		it("sets it, and takes it off again", async () => {

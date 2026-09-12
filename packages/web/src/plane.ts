@@ -75,6 +75,32 @@ export interface Invitation {
 	readonly admitted: readonly string[];
 }
 
+/**
+ * A repository this plane holds, and who holds it with what.
+ *
+ * Written out here rather than imported, like everything else on this wire: what matters is that
+ * the two ends agree on the fields that are read.
+ */
+export interface RepoRow {
+	readonly repo: string;
+	readonly url: string;
+	readonly by: readonly {
+		readonly agentId: string;
+		/** The branches that agent may push. Empty is read-only. */
+		readonly push: readonly string[];
+		/** `file` is the operator's configuration, and not this console's to change. */
+		readonly origin: "file" | "here";
+	}[];
+}
+
+/** One repository the plane's token can see, as something to pick from a list. */
+export interface RepoOffer {
+	readonly repo: string;
+	readonly push: boolean;
+	readonly private: boolean;
+	readonly pushedAt?: string;
+}
+
 export interface DeviceRow {
 	readonly id: string;
 	readonly name: string;
@@ -484,6 +510,50 @@ export class Plane {
 	/** Takes a connection off the shelf, and off every agent that had it. */
 	async forgetPlugin(name: string): Promise<void> {
 		await this.#ask({ op: "forget-server", name });
+	}
+
+	/** Every repository held here, who holds it with what, and whether there is a token at all. */
+	async repos(): Promise<{ token: boolean; repos: readonly RepoRow[] }> {
+		const answer = await this.#ask({ op: "repos" });
+		const said = answer.repos as { token?: boolean; repos?: RepoRow[] } | undefined;
+		return { token: said?.token ?? false, repos: said?.repos ?? [] };
+	}
+
+	/**
+	 * What this plane's token can see on GitHub.
+	 *
+	 * Asked of GitHub every time. A token is given repositories and taken off them elsewhere, and a
+	 * list kept on this side would be a list that is quietly wrong about what can be handed over.
+	 */
+	async githubRepos(): Promise<readonly RepoOffer[]> {
+		const answer = await this.#ask({ op: "github-repos" });
+		return (answer.offers as RepoOffer[] | undefined) ?? [];
+	}
+
+	/** The token every repository here is reached with. Nothing comes back but the name of it. */
+	async setGithubToken(token: string): Promise<void> {
+		await this.#ask({ op: "github-token", token });
+	}
+
+	/**
+	 * Gives one agent a repository with a scope on it.
+	 *
+	 * `push` is the branches it may push: `[]` is a repository it may only read, and leaving it out
+	 * is the agent's own lane. What comes back is a sentence worth showing or an empty one — GitHub
+	 * saying the token can see it and not write to it is the case that has to be said out loud.
+	 */
+	async holdRepo(agentId: string, repo: string, push?: readonly string[]): Promise<string> {
+		const answer = await this.#ask({
+			op: "hold-repo",
+			agentId,
+			repo,
+			...(push === undefined ? {} : { push }),
+		});
+		return (answer.text as string | undefined) ?? "";
+	}
+
+	async dropRepo(agentId: string, repo: string): Promise<void> {
+		await this.#ask({ op: "drop-repo", agentId, repo });
 	}
 
 	/** What one agent may spend in a day. `null` takes the ceiling off. */

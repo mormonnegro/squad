@@ -120,6 +120,64 @@ export function standingOf(agentId: string, spec: RepoSpec, origin: RepoOrigin):
 
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
+/** One repository as the account sees it, for a screen that picks from the list rather than typing. */
+export interface RepoOffer {
+	readonly repo: string;
+	/** Whether the token may write to it, which decides whether offering push is honest. */
+	readonly push: boolean;
+	readonly private: boolean;
+	/** When anything last landed on it, so the ones somebody actually works in come first. */
+	readonly pushedAt?: string;
+}
+
+/**
+ * Every repository this plane's token can see, newest first.
+ *
+ * The list is the token's rather than the account's, and that is the useful thing about it: a
+ * fine-grained token answers for the repositories somebody chose when they made it, so the choosing
+ * already happened on GitHub and this reads it back rather than asking for it twice.
+ *
+ * One page of a hundred. Past that the screen has a search box and the answer to "where is my
+ * repository" is to type its name, which is faster than paging through four hundred rows anyway.
+ */
+export async function listRepos(
+	token: string,
+	fetchImpl: typeof fetch = fetch,
+): Promise<readonly RepoOffer[]> {
+	const response = await fetchImpl(
+		`https://${GITHUB_API_HOST}/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member`,
+		{
+			headers: {
+				authorization: `Bearer ${token}`,
+				accept: "application/vnd.github+json",
+				"user-agent": "squad",
+				"x-github-api-version": "2022-11-28",
+			},
+			signal: AbortSignal.timeout(20_000),
+		},
+	);
+	if (response.status === 401) throw new Error("GitHub does not know this token");
+	if (!response.ok) throw new Error(`GitHub answered ${response.status} asking for the list`);
+	const body = (await response.json()) as readonly {
+		readonly full_name?: unknown;
+		readonly private?: unknown;
+		readonly pushed_at?: unknown;
+		readonly permissions?: { readonly push?: unknown };
+	}[];
+	return body.flatMap((one) =>
+		typeof one.full_name === "string"
+			? [
+					{
+						repo: one.full_name,
+						push: one.permissions?.push === true,
+						private: one.private === true,
+						...(typeof one.pushed_at === "string" ? { pushedAt: one.pushed_at } : {}),
+					},
+				]
+			: [],
+	);
+}
+
 /**
  * Takes `owner/name` out of whatever was pasted, because what a person has to hand is a URL.
  *

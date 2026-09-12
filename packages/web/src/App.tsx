@@ -1,5 +1,5 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
-import { Blocks } from "lucide-react";
+import { Blocks, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
@@ -10,6 +10,7 @@ import { Keys } from "./Keys.tsx";
 import { Plugins } from "./Plugins.tsx";
 import { browserWire, Plane } from "./plane.ts";
 import { RailHead } from "./RailHead.tsx";
+import { Repos } from "./Repos.tsx";
 import { Setup } from "./Setup.tsx";
 import { When } from "./When.tsx";
 
@@ -28,6 +29,7 @@ const POLL_MS = 2000;
  */
 const PLACES = {
 	"/plugins": "plugins",
+	"/repos": "repos",
 	"/keys": "keys",
 } as const;
 
@@ -79,9 +81,9 @@ export function App() {
 	 * between on every open — and it is gone until running one squad is simple enough to be worth
 	 * pointing at several.
 	 */
-	const [showing, setShowing] = useState<"none" | "keys" | "plugins" | "devices" | "first-key">(
-		() => placeAt(window.location.pathname),
-	);
+	const [showing, setShowing] = useState<
+		"none" | "keys" | "plugins" | "repos" | "devices" | "first-key"
+	>(() => placeAt(window.location.pathname));
 	/**
 	 * Whether the selected agent's own settings are open.
 	 *
@@ -335,6 +337,16 @@ export function App() {
 						<Blocks className="size-4 flex-none" />
 						<span className="row-name">Plugins</span>
 					</button>
+					<button
+						type="button"
+						className="rail-screen"
+						data-here={showing === "repos"}
+						disabled={plane === undefined}
+						onClick={() => show("repos")}
+					>
+						<GitBranch className="size-4 flex-none" />
+						<span className="row-name">Repositories</span>
+					</button>
 
 					<div className="rail-group">Agents</div>
 					{agents.map((one) => (
@@ -346,7 +358,7 @@ export function App() {
 							// Where you are, not what you last opened: the plugins take the pane, so while they
 							// are up nothing in this list is the thing on screen. A dialog is different — the
 							// conversation is still behind it, and that is still where you are.
-							here={one.id === chosen && showing !== "plugins" && !making}
+							here={one.id === chosen && showing === "none" && !making}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
@@ -398,6 +410,8 @@ export function App() {
 					<NewAgent onMake={create} />
 				) : showing === "plugins" && plane !== undefined ? (
 					<Plugins plane={plane} agents={agents} />
+				) : showing === "repos" && plane !== undefined ? (
+					<Repos plane={plane} agents={agents} />
 				) : agent !== undefined && plane !== undefined ? (
 					<Chat
 						key={agent.id}

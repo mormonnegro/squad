@@ -12,6 +12,7 @@ import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Plugin } from "./plugins.ts";
+import type { RepoOffer } from "./repos.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -212,6 +213,42 @@ export type ControlRequest =
 	  }
 	| { readonly id: string; readonly op: "logout-plugin"; readonly name: string }
 	/**
+	 * The repositories screen: what is held here, by whom, and whether there is a token at all.
+	 *
+	 * The other way up from an agent's own list, because the question this answers is "who can touch
+	 * this repository" — which, asked of the per-agent lists, means opening every agent in turn.
+	 */
+	| { readonly id: string; readonly op: "repos" }
+	/** What the plane's token can see on GitHub, asked of GitHub rather than written down. */
+	| { readonly id: string; readonly op: "github-repos" }
+	/**
+	 * The token every repository here is reached with.
+	 *
+	 * On the operator's socket only, like every other key: it is one credential for the whole plane,
+	 * the agents never see it, and the proxy writes it onto the request on its way out.
+	 */
+	| { readonly id: string; readonly op: "github-token"; readonly token: string }
+	/**
+	 * Gives one agent a repository with a scope, or takes it back.
+	 *
+	 * `push` is the branches it may push there: empty is a repository it may only read, and left out
+	 * is the agent's own lane. Nothing else about a repository is per-agent, which is why this is the
+	 * whole of the assignment.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "hold-repo";
+			readonly agentId: string;
+			readonly repo: string;
+			readonly push?: readonly string[];
+	  }
+	| {
+			readonly id: string;
+			readonly op: "drop-repo";
+			readonly agentId: string;
+			readonly repo: string;
+	  }
+	/**
 	 * What one agent may spend in a day, set from the screen rather than typed into its chat.
 	 *
 	 * `null` is no ceiling, which is a thing an operator may say and an agent may not: the same rule
@@ -293,6 +330,23 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly repos: {
+				readonly token: boolean;
+				readonly repos: readonly {
+					readonly repo: string;
+					readonly url: string;
+					readonly by: readonly {
+						readonly agentId: string;
+						readonly push: readonly string[];
+						readonly origin: "file" | "here";
+					}[];
+				}[];
+			};
+	  }
+	| { readonly id: string; readonly ok: true; readonly offers: readonly RepoOffer[] }
 	| {
 			readonly id: string;
 			readonly ok: true;
@@ -628,6 +682,29 @@ export class ControlServer {
 			} else if (request.op === "logout-plugin") {
 				const had = await this.#plane.logoutPlugin(request.name);
 				this.#write(socket, { id: request.id, ok: true, text: had ? request.name : "" });
+			} else if (request.op === "repos") {
+				this.#write(socket, { id: request.id, ok: true, repos: await this.#plane.heldRepos() });
+			} else if (request.op === "github-repos") {
+				this.#write(socket, { id: request.id, ok: true, offers: await this.#plane.githubRepos() });
+			} else if (request.op === "github-token") {
+				await this.#plane.setGithubToken(request.token);
+				// The name of what was set and never the value, like every other key on this socket.
+				this.#write(socket, { id: request.id, ok: true, text: "GITHUB_TOKEN" });
+			} else if (request.op === "hold-repo") {
+				const held = await this.#plane.holdRepo(request.agentId, {
+					repo: request.repo,
+					...(request.push === undefined ? {} : { push: request.push }),
+				});
+				if (held.kind === "refused") throw new Error(held.why);
+				if (held.kind === "token-needed") throw new Error("This plane holds no GitHub token yet.");
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: held.warning ?? "",
+				});
+			} else if (request.op === "drop-repo") {
+				await this.#plane.dropRepo(request.agentId, request.repo);
+				this.#write(socket, { id: request.id, ok: true, text: request.repo });
 			} else if (request.op === "set-limit") {
 				await this.#plane.setLimit(request.agentId, request.usd);
 				this.#write(socket, { id: request.id, ok: true, text: request.agentId });

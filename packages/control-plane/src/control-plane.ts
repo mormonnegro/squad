@@ -103,10 +103,13 @@ import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./p
 import { type Served, ServedPorts } from "./ports.ts";
 import {
 	checkRepo,
+	listRepos,
 	GITHUB_TOKEN_ENV,
 	HeldRepos,
 	type RepoHold,
 	type RepoSpec,
+	type RepoOffer,
+	type RepoOrigin,
 	type RepoStanding,
 	repoGrants,
 	standingOf as repoStanding,
@@ -1592,6 +1595,72 @@ export class ControlPlane {
 			...declared.map((spec) => repoStanding(agentId, spec, "file")),
 			...here.map((spec) => repoStanding(agentId, spec, "here")),
 		];
+	}
+
+	/**
+	 * Every repository anybody here holds, and who holds it with what.
+	 *
+	 * The other way up from `repos(agentId)`, and the way a screen about repositories needs it: the
+	 * question that screen answers is "who can touch this one", and asking it of the per-agent list
+	 * means opening every agent in turn and holding the answer in your head.
+	 *
+	 * Whether there is a token comes with it, because it decides what the screen can do at all —
+	 * without one there is nothing to list from GitHub and nothing to hand over.
+	 */
+	async heldRepos(): Promise<{
+		readonly token: boolean;
+		readonly repos: readonly {
+			readonly repo: string;
+			readonly url: string;
+			readonly by: readonly {
+				readonly agentId: string;
+				readonly push: readonly string[];
+				readonly origin: RepoOrigin;
+			}[];
+		}[];
+	}> {
+		const held = new Map<
+			string,
+			{
+				repo: string;
+				url: string;
+				by: { agentId: string; push: readonly string[]; origin: RepoOrigin }[];
+			}
+		>();
+		for (const agent of this.#agents) {
+			for (const one of await this.repos(agent.id)) {
+				const row = held.get(one.repo) ?? { repo: one.repo, url: one.url, by: [] };
+				row.by.push({ agentId: agent.id, push: one.push, origin: one.origin });
+				held.set(one.repo, row);
+			}
+		}
+		const token = await this.#secrets.resolve({ ref: GITHUB_TOKEN_ENV });
+		return {
+			token: token !== undefined && token.length > 0,
+			repos: [...held.values()].sort((a, b) => a.repo.localeCompare(b.repo)),
+		};
+	}
+
+	/**
+	 * What this plane's token can see on GitHub.
+	 *
+	 * Asked of GitHub every time rather than written down: a token is given repositories and taken
+	 * off them elsewhere, and a list of them kept here would be a list that is quietly wrong about
+	 * what somebody can be given.
+	 */
+	async githubRepos(): Promise<readonly RepoOffer[]> {
+		const token = await this.#secrets.resolve({ ref: GITHUB_TOKEN_ENV });
+		if (token === undefined || token.length === 0) {
+			throw new Error("This plane holds no GitHub token yet.");
+		}
+		return listRepos(token);
+	}
+
+	/** Keeps the token every repository here is reached with. Nothing is checked until one is given. */
+	async setGithubToken(token: string): Promise<void> {
+		const said = token.trim();
+		if (said === "") throw new Error("That is not a token.");
+		await this.#keys.keep(GITHUB_TOKEN_ENV, said);
 	}
 
 	/**
