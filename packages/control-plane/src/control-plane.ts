@@ -76,6 +76,7 @@ import {
 	hostOf,
 	type McpServer,
 	McpShelf,
+	type NamedServer,
 	readName,
 	readServer,
 	type ServerStanding,
@@ -1550,7 +1551,7 @@ export class ControlPlane {
 	async #grantsFor(agentId: string): Promise<readonly Grant[]> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.grants ?? [];
 		const earned: Grant[] = [];
-		for (const { name, server } of await this.#mcp.attached(agentId)) {
+		for (const { name, server } of await this.#serversFor(agentId)) {
 			const host = hostOf(server);
 			if (host === undefined) continue;
 			if ((await this.#logins.get(name)) === undefined) continue;
@@ -1838,6 +1839,25 @@ export class ControlPlane {
 	}
 
 	/**
+	 * What an agent holds, with anything the catalogue has since moved put right.
+	 *
+	 * A connection made from the catalogue is a copy of a catalogue entry, and the entry is where
+	 * that plugin actually is. When one moves — a company publishes a server where there was none,
+	 * an address changes — every connection made from it should follow, and the alternative is what
+	 * happened here: a shelf pointing at a command that no longer exists in any image, an agent
+	 * saying `spawn squad-gmail ENOENT` on every turn, and nothing on any screen admitting it.
+	 *
+	 * Only for the ones that came from the catalogue. An address somebody typed in is theirs, and
+	 * this never touches it.
+	 */
+	async #serversFor(agentId: string): Promise<readonly NamedServer[]> {
+		return (await this.#mcp.attached(agentId)).map((one) => {
+			const plugin = one.from === undefined ? undefined : pluginOf(one.from);
+			return plugin === undefined ? one : { ...one, server: serverOf(plugin) };
+		});
+	}
+
+	/**
 	 * The plugins screen's whole answer: what there is to connect, and what has been connected.
 	 *
 	 * Both halves in one reply because they are one question — "what can this plane reach, and
@@ -1852,7 +1872,12 @@ export class ControlPlane {
 		// drawing it: the catalogue is on this side, and every screen asking this question wants the
 		// same answer.
 		const instances = (await this.servers()).map((one) => {
-			if (one.from !== undefined) return one;
+			if (one.from !== undefined) {
+				// Drawn as it will be reached, which is the catalogue's address and not whatever was
+				// written down the day this connection was made.
+				const plugin = pluginOf(one.from);
+				return plugin === undefined ? one : { ...one, server: serverOf(plugin) };
+			}
 			const from = pluginAt(one.server);
 			return from === undefined ? one : { ...one, from };
 		});
@@ -2351,7 +2376,7 @@ export class ControlPlane {
 			setModel: (id) => this.#choices.choose(agentId, id),
 			mcp: async () => ({
 				shelf: await this.#mcp.servers(),
-				held: await this.#mcp.attached(agentId),
+				held: await this.#serversFor(agentId),
 			}),
 			served: async () => {
 				const all = await this.#served.all();
@@ -2815,7 +2840,7 @@ export class ControlPlane {
 			onStep: (agentId, step) => this.#emit({ kind: "step", agentId, step }),
 			// Asked again each turn rather than read once here, so a server added from the console
 			// reaches an agent that is already up on its next turn, without recreating anything.
-			servers: (agentId) => this.#mcp.attached(agentId),
+			servers: (agentId) => this.#serversFor(agentId),
 			// Asked again each turn for the same reason, so `/model` reaches an agent that is already
 			// up on its next turn rather than on its next container.
 			model: (agentId) => this.#thinksWith(agentId),

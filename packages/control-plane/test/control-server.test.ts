@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -548,6 +548,39 @@ describe("the control socket", () => {
 			// the redirect is the one thing the app being made has to be told.
 			await expect(client.loginPlugin("gmail")).rejects.toThrow(/does not register clients/);
 			await expect(client.loginPlugin("gmail")).rejects.toThrow(/callback/);
+		});
+
+		/**
+		 * A connection follows the plugin it is a copy of.
+		 *
+		 * Gmail was a command running in the sandbox until Google published a server; every connection
+		 * made before that pointed at a command no image has, and said so once per turn as
+		 * `spawn squad-gmail ENOENT` while every screen went on calling it connected. What the
+		 * catalogue says is where that plugin is, and a copy of it is not a place of its own.
+		 */
+		it("reaches a plugin where the catalogue says it is, not where it was written down", async () => {
+			// The shelf as an older version of this left it: a copy of the Gmail plugin, pointing at
+			// the command that plugin used to be.
+			await writeFile(
+				join(stateDir, "mcp.json"),
+				JSON.stringify({
+					servers: {
+						gmail: {
+							server: { transport: "stdio", command: "squad-gmail", args: [] },
+							from: "gmail",
+						},
+					},
+					attached: { scout: ["gmail"] },
+				}),
+				"utf8",
+			);
+
+			const [only] = (await client.plugins()).instances;
+			expect(only?.from).toBe("gmail");
+			expect(only?.server).toEqual({
+				transport: "http",
+				url: "https://gmailmcp.googleapis.com/mcp/v1",
+			});
 		});
 
 		it("refuses a plugin nobody shelved", async () => {
