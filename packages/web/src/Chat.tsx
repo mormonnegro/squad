@@ -3,7 +3,7 @@ import { Settings2, Square, Terminal, User } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
-import { type Command, completions, isCommand, isShell } from "./commands.ts";
+import { type Command, completing, completions, isCommand, isShell } from "./commands.ts";
 import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
@@ -487,11 +487,13 @@ function Composer({
 						}
 						if (event.key === "Enter" && !event.shiftKey) {
 							event.preventDefault();
-							const chosen = menu[pick];
-							// Enter on an open menu chooses the row rather than sending. What is in the box is
-							// half a command, and sending half a command is an error message for a keystroke.
-							if (chosen !== undefined) {
-								setDraft(chosen.takes.length > 0 ? `${chosen.name} ` : chosen.name);
+							// Enter on an open menu chooses the row rather than sending — while there is
+							// something to choose. What is in the box is half a command, and sending half a
+							// command is an error message for a keystroke; but a command with nothing after
+							// it is whole the moment it is typed, and the menu goes on matching it.
+							const completed = completing(draft, menu[pick]);
+							if (completed !== undefined) {
+								setDraft(completed);
 								return;
 							}
 							void send();

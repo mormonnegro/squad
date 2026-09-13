@@ -83,6 +83,24 @@ export function isShell(line: string): boolean {
  * Nothing once there is a space, because past the command's own name the argument is the agent's
  * business — a port number, a hostname, a repository — and this menu knows none of those.
  */
+/**
+ * What return does while the menu under a slash is open, as the draft it would leave behind.
+ *
+ * Choosing a row and sending a line are the same key, and which of the two it is depends on whether
+ * there is anything left to choose. `/cl` has a command to finish. `/clear` is that command
+ * finished — and the menu goes on matching it, which is what made every return choose the row again
+ * and nothing ever get sent. Every command that takes no argument was unsendable from this box.
+ *
+ * So the rule is written as what the draft would become: if choosing would not change a character,
+ * there was nothing to choose, and the key means the other thing.
+ */
+export function completing(draft: string, chosen: Command | undefined): string | undefined {
+	if (chosen === undefined) return undefined;
+	// The trailing space is the gesture that opens what comes next: `/model ` is a list of models.
+	const finished = chosen.takes.length > 0 ? `${chosen.name} ` : chosen.name;
+	return finished === draft ? undefined : finished;
+}
+
 export function completions(draft: string): readonly Command[] {
 	if (!isCommand(draft) || /\s/.test(draft)) return [];
 	return COMMANDS.filter((command) => command.name.startsWith(draft));
