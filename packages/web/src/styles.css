@@ -156,14 +156,10 @@
  * column — an element in a gutter of its own is the thing this layout is most often wrong about.
  */
 .rail-screen {
-	display: flex;
-	align-items: center;
-	gap: 0.55rem;
 	width: 100%;
 	padding: 0.42rem 0.9rem;
 	border-left: 2px solid transparent;
 	color: var(--muted);
-	text-align: left;
 }
 
 .rail-screen:hover {
@@ -234,41 +230,97 @@
 	padding: 1rem 0.95rem 0.45rem;
 }
 
+/*
+ * One grid for everything in this column.
+ *
+ * Three things in a row and every row the same three: whether it is working, what it is, and what
+ * it is called. An agent has a dot and a face, a channel has a `#`, a screen has its icon and a new
+ * one has a `+` — and all of them are the same width in the same place, so the names line up on one
+ * edge and the column reads as a list rather than as four lists that happen to be stacked.
+ *
+ * The last column is the disclosure an agent row carries. It is reserved on every row, because a
+ * thing that appears on hover must not be a thing that moves the row it appears in.
+ */
+.rail {
+	--row-mark: 0.85rem;
+	--row-face: 1.375rem;
+	--row-tail: 1.1rem;
+	--row-gap: 0.5rem;
+}
+
 .row {
 	display: flex;
 	align-items: center;
-	gap: 0.5rem;
+	gap: var(--row-gap);
 	width: 100%;
 	padding: 0.32rem 0.9rem;
 	text-align: left;
 	color: var(--text);
 	border-left: 2px solid transparent;
+	/* What this row is painted on, for the things drawn as cut out of it. Kept as a variable so a
+	   row that lights up takes its cut-outs with it instead of leaving them ringed in the old dark. */
+	--row-bg: var(--bg);
 }
 
-/* The name and its marks, which is what opens the conversation. The rest of the row is not that. */
-.row-pick {
-	display: flex;
+/*
+ * The name and its marks, which is what opens the conversation. The rest of the row is not that.
+ *
+ * A grid rather than a flex line, so that a row with no face — a screen, a channel, the `+` at the
+ * end of a list — still leaves the space one would have taken instead of sliding its name left.
+ */
+.row-pick,
+.rail-screen,
+.row-line {
+	display: grid;
+	grid-template-columns: var(--row-mark) var(--row-face) minmax(0, 1fr) auto;
 	align-items: center;
-	gap: 0.5rem;
-	flex: 1;
+	gap: var(--row-gap);
 	min-width: 0;
 	text-align: left;
 	color: inherit;
+}
+
+/* The one that sits inside a row rather than being one: the row has the padding, this has none. */
+.row-pick {
+	flex: 1;
 	padding: 0;
+}
+
+/* Whatever stands for the thing itself: a face, a `#`, an icon, a `+`. Always the second column. */
+.row-icon {
+	grid-column: 2;
+	display: grid;
+	place-items: center;
+	width: var(--row-face);
+	height: var(--row-face);
+	color: inherit;
+}
+
+/* The `#` a channel is called by, the size the faces beside it are, and as quiet as the word it
+   belongs to — it is part of the name rather than a mark on it. */
+.row-hash {
+	font: 1rem var(--mono);
+	color: var(--muted);
+}
+
+.row[data-here="true"] .row-hash {
+	color: var(--text-strong);
 }
 
 .row:hover {
 	background: #ffffff08;
+	--row-bg: color-mix(in srgb, #fff 3%, var(--bg));
 }
 
 .row[data-here="true"] {
 	background: #ffffff0f;
+	--row-bg: color-mix(in srgb, #fff 6%, var(--bg));
 	border-left-color: var(--cyan);
 	color: var(--text-strong);
 }
 
 .row-name {
-	flex: 1;
+	grid-column: 3;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -309,8 +361,8 @@
 	display: grid;
 	place-items: center;
 	flex: none;
-	width: 1.1rem;
-	height: 1.1rem;
+	width: var(--row-tail);
+	height: var(--row-tail);
 	color: var(--muted);
 	opacity: 0;
 	transition: opacity 120ms ease, transform 150ms ease;
@@ -337,7 +389,9 @@
 	display: flex;
 	flex-direction: column;
 	gap: 0.55rem;
-	margin: 0.15rem 0.9rem 0.5rem 2.1rem;
+	/* Hung in the column the status dot is in, so the words start where the faces above them do:
+	   the list belongs to that row and lines up with it rather than with the edge of the rail. */
+	margin: 0.15rem 0.9rem 0.5rem 1.6rem;
 	padding-left: 0.7rem;
 	border-left: 1px solid var(--line);
 	font: 0.78rem / 1.5 var(--sans);
@@ -619,12 +673,28 @@
 	color: var(--text);
 }
 
-/* The faces in a rail row, which is how one channel is told from another at a glance. */
+/*
+ * Who is in a channel, at the end of its row: a channel is its members, and three faces are read
+ * at a glance where three names would have to be read.
+ *
+ * Overlapped, the way a group of people is drawn everywhere else, and stopped where an agent row's
+ * disclosure begins so that the two columns end on one edge.
+ */
 .row-faces {
+	grid-column: 4;
 	display: inline-flex;
 	align-items: center;
-	gap: 0.15rem;
-	flex: none;
+	margin-right: calc(var(--row-tail) + var(--row-gap));
+}
+
+.row-faces > * + * {
+	margin-left: -0.3rem;
+}
+
+/* Each one cut out of the one behind it, so a stack reads as several and not as a smear. */
+.row-faces > * {
+	outline: 2px solid var(--row-bg);
+	border-radius: 999px;
 }
 
 .scroll {

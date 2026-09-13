@@ -1,5 +1,5 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
-import { Blocks, ChevronRight, GitBranch, Hash } from "lucide-react";
+import { Blocks, ChevronRight, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
@@ -399,7 +399,7 @@ export function App() {
 						disabled={plane === undefined}
 						onClick={() => show("plugins")}
 					>
-						<Blocks className="size-4 flex-none" />
+						<Blocks className="row-icon size-4" />
 						<span className="row-name">Plugins</span>
 					</button>
 					<button
@@ -409,7 +409,7 @@ export function App() {
 						disabled={plane === undefined}
 						onClick={() => show("repos")}
 					>
-						<GitBranch className="size-4 flex-none" />
+						<GitBranch className="row-icon size-4" />
 						<span className="row-name">Repositories</span>
 					</button>
 
@@ -435,7 +435,7 @@ export function App() {
 					))}
 					<button
 						type="button"
-						className="row"
+						className="row row-line"
 						data-here={making}
 						onClick={() => {
 							setMaking(true);
@@ -443,7 +443,7 @@ export function App() {
 							show("none", null);
 						}}
 					>
-						<span className="mark">+</span>
+						<span className="row-icon">+</span>
 						<span className="row-name">New agent</span>
 					</button>
 
@@ -454,11 +454,11 @@ export function App() {
 						<button
 							key={one.name}
 							type="button"
-							className="row row-pick"
+							className="row row-line"
 							data-here={one.name === inRoom}
 							onClick={() => openRoom(one.name)}
 						>
-							<Hash className="size-3.5 flex-none text-muted" />
+							<span className="row-icon row-hash">#</span>
 							<span className="row-name">{one.name}</span>
 							{/* Who is in it, small. A room is its members, and a list of names with no faces
 							    is a list of rooms nobody can tell apart. */}
@@ -474,7 +474,7 @@ export function App() {
 					))}
 					<button
 						type="button"
-						className="row"
+						className="row row-line"
 						data-here={makingRoom}
 						disabled={plane === undefined}
 						onClick={() => {
@@ -482,7 +482,7 @@ export function App() {
 							setInRoom(undefined);
 						}}
 					>
-						<span className="mark">+</span>
+						<span className="row-icon">+</span>
 						<span className="row-name">New channel</span>
 					</button>
 				</div>
@@ -651,7 +651,9 @@ function AgentRow({
 					<span className="mark" data-state={state}>
 						{glyph}
 					</span>
-					<Avatar id={agent.id} />
+					<span className="row-icon">
+						<Avatar id={agent.id} />
+					</span>
 					<span className="row-name">{nameOf(agent.id)}</span>
 				</button>
 				{/* When it comes back, which is the one thing about a sleeping agent worth knowing and
