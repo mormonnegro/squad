@@ -514,6 +514,119 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* ── a room, which is a conversation with more than one voice in it ─── */
+
+/*
+ * The `#`, which is what a channel is called everywhere a person has seen one.
+ *
+ * Muted and set in mono, so it reads as part of the name rather than as a decoration in front of
+ * it: `#standup` is the room's name, the way `@scout` is an agent's.
+ */
+.room-hash {
+	font: 1.05rem var(--mono);
+	color: var(--muted);
+}
+
+/* Who is in it, at the end of the title row where an agent's facts are. */
+.room-who {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	flex-wrap: wrap;
+}
+
+.room-one {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	padding: 0.12rem 0.4rem 0.12rem 0.15rem;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	color: var(--muted);
+	font: 0.74rem var(--sans);
+}
+
+.room-one:hover {
+	border-color: var(--line);
+	color: var(--text-strong);
+}
+
+/* Taking somebody out of a room is not something to offer until it is wanted. */
+.room-off {
+	opacity: 0;
+	color: var(--red);
+}
+
+.room-one:hover .room-off {
+	opacity: 1;
+}
+
+.room-add {
+	display: grid;
+	place-items: center;
+	width: 1.5rem;
+	height: 1.5rem;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	color: var(--muted);
+}
+
+.room-add:hover {
+	border-color: var(--muted);
+	color: var(--text-strong);
+}
+
+/* The agents not in it, offered under the row that says who is. */
+.room-pick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	padding: 0.7rem 1.2rem;
+	border-bottom: 1px solid var(--line);
+	background: var(--bg-raised);
+}
+
+/* What a room is, said once, in the room, while there is nothing else in it to read. */
+.room-empty {
+	max-width: var(--measure);
+	margin-inline: auto;
+	color: var(--muted);
+	font-size: 0.9rem;
+	line-height: 1.6;
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+}
+
+.room-note {
+	font-size: 0.84rem;
+}
+
+.room-why {
+	max-width: var(--measure);
+	margin: 0 auto;
+	padding: 0 1.2rem;
+	color: var(--red);
+	font-size: 0.85rem;
+}
+
+/* The question in the title row, where the room it is about is still on the screen behind it. */
+.room-sure {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	font: 0.78rem var(--sans);
+	color: var(--text);
+}
+
+/* The faces in a rail row, which is how one channel is told from another at a glance. */
+.row-faces {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	flex: none;
+}
+
 .scroll {
 	flex: 1;
 	overflow-y: auto;
@@ -1406,6 +1519,16 @@ ol.md-list {
 
 .pill[data-yes="true"]:hover {
 	background: color-mix(in srgb, var(--cyan) 12%, transparent);
+}
+
+/* The one that takes something away. Red rather than cyan, because it is the opposite answer. */
+.pill[data-no="true"] {
+	border-color: color-mix(in srgb, var(--red) 45%, transparent);
+	color: var(--red);
+}
+
+.pill[data-no="true"]:hover {
+	background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 
 .pill:disabled {

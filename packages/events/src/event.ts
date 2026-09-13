@@ -15,6 +15,15 @@ export const EVENT_SOURCES: readonly EventSource[] = ["channel", "schedule", "we
  */
 export const AGENT_CHANNEL = "agent";
 
+/**
+ * The channel prefix a message in a room arrives on, as `room:<name>`.
+ *
+ * Here for the same reason as the one above: a room is the one other place where who is speaking
+ * changes how the message is introduced. Everyone in the room hears what the operator says, and an
+ * agent answering into it is answering in front of the others rather than to whoever wrote.
+ */
+export const ROOM_CHANNEL = "room";
+
 export interface EventActor {
 	/** Stable identifier within the channel, e.g. a Slack user id. */
 	readonly id: string;

@@ -55,6 +55,23 @@ export interface Wake {
 	readonly lastRunAt?: string;
 }
 
+/**
+ * A room, and who is in it.
+ *
+ * Written out here like everything else on this wire. A room's conversation is not part of it: it
+ * arrives with the others, under the address its lines come in on, because to a console it is one
+ * more thing being said somewhere.
+ */
+export interface Room {
+	readonly name: string;
+	readonly members: readonly string[];
+}
+
+/** Where a room's conversation is kept, and the channel its lines arrive on. */
+export function roomChannel(name: string): string {
+	return `room:${name}`;
+}
+
 export class PlaneError extends Error {}
 
 /** One browser that has been let in, as a screen shows it. */
@@ -298,6 +315,36 @@ export class Plane {
 	/** Stops one of an agent's own wakeups. The plane refuses the ones its configuration declares. */
 	async unschedule(agentId: string, scheduleId: string): Promise<void> {
 		await this.#ask({ op: "unschedule", agentId, scheduleId });
+	}
+
+	async rooms(): Promise<readonly Room[]> {
+		const answer = await this.#ask({ op: "rooms" });
+		return (answer.rooms as Room[] | undefined) ?? [];
+	}
+
+	async makeRoom(name: string, members: readonly string[]): Promise<readonly Room[]> {
+		const answer = await this.#ask({ op: "makeRoom", name, members });
+		return (answer.rooms as Room[] | undefined) ?? [];
+	}
+
+	async joinRoom(name: string, agentId: string): Promise<readonly Room[]> {
+		const answer = await this.#ask({ op: "joinRoom", name, agentId });
+		return (answer.rooms as Room[] | undefined) ?? [];
+	}
+
+	async leaveRoom(name: string, agentId: string): Promise<readonly Room[]> {
+		const answer = await this.#ask({ op: "leaveRoom", name, agentId });
+		return (answer.rooms as Room[] | undefined) ?? [];
+	}
+
+	async dropRoom(name: string): Promise<readonly Room[]> {
+		const answer = await this.#ask({ op: "dropRoom", name });
+		return (answer.rooms as Room[] | undefined) ?? [];
+	}
+
+	/** Says something to everybody in a room. Each of them takes a turn on it. */
+	async sayInRoom(name: string, text: string): Promise<void> {
+		await this.#ask({ op: "sayInRoom", name, text });
 	}
 
 	async transcripts(): Promise<Record<string, readonly Utterance[]>> {

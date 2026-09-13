@@ -13,6 +13,7 @@ import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Plugin } from "./plugins.ts";
 import type { RepoOffer } from "./repos.ts";
+import type { Room } from "./rooms.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -59,6 +60,35 @@ export type ControlRequest =
 	 * sent for every agent every two seconds to be looked at once.
 	 */
 	| { readonly id: string; readonly op: "schedules"; readonly agentId: string }
+	/**
+	 * The rooms, and who is in each.
+	 *
+	 * A room is the unit above an agent: several of them given the same brief, in one thread. These
+	 * five ops are the whole of it — what a room has beyond a name and a roster is what was said in
+	 * it, which arrives as a conversation like any other.
+	 */
+	| { readonly id: string; readonly op: "rooms" }
+	| {
+			readonly id: string;
+			readonly op: "makeRoom";
+			readonly name: string;
+			readonly members: readonly string[];
+	  }
+	| {
+			readonly id: string;
+			readonly op: "joinRoom";
+			readonly name: string;
+			readonly agentId: string;
+	  }
+	| {
+			readonly id: string;
+			readonly op: "leaveRoom";
+			readonly name: string;
+			readonly agentId: string;
+	  }
+	| { readonly id: string; readonly op: "dropRoom"; readonly name: string }
+	/** What the operator said to everybody in one. Every member is woken; it is why they are there. */
+	| { readonly id: string; readonly op: "sayInRoom"; readonly name: string; readonly text: string }
 	/**
 	 * One more wakeup for an agent, on the operator's say-so.
 	 *
@@ -345,6 +375,7 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly models: readonly ModelStanding[] }
 	| { readonly id: string; readonly ok: true; readonly grants: readonly GrantStanding[] }
 	| { readonly id: string; readonly ok: true; readonly schedules: readonly Schedule[] }
+	| { readonly id: string; readonly ok: true; readonly rooms: readonly Room[] }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
@@ -568,6 +599,40 @@ export class ControlServer {
 					ok: true,
 					schedules: await this.#plane.scheduler.list(request.agentId),
 				});
+			} else if (request.op === "rooms") {
+				this.#write(socket, { id: request.id, ok: true, rooms: await this.#plane.rooms() });
+			} else if (request.op === "makeRoom") {
+				await this.#plane.makeRoom(request.name, request.members);
+				this.#write(socket, { id: request.id, ok: true, rooms: await this.#plane.rooms() });
+			} else if (request.op === "joinRoom") {
+				const joined = await this.#plane.joinRoom(request.name, request.agentId);
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: joined ? `${request.agentId} is in #${request.name}.` : "Already in.",
+					rooms: await this.#plane.rooms(),
+				});
+			} else if (request.op === "leaveRoom") {
+				const left = await this.#plane.leaveRoom(request.name, request.agentId);
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: left ? `${request.agentId} is out of #${request.name}.` : "Was not in it.",
+					rooms: await this.#plane.rooms(),
+				});
+			} else if (request.op === "dropRoom") {
+				const gone = await this.#plane.dropRoom(request.name);
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: gone ? `#${request.name} is gone.` : `There was no room called #${request.name}.`,
+					rooms: await this.#plane.rooms(),
+				});
+			} else if (request.op === "sayInRoom") {
+				await this.#plane.sayInRoom(request.name, request.text);
+				// The words are already in the room's thread and on their way to every member; there is
+				// nothing further to say back than that they went.
+				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else if (request.op === "schedule") {
 				const made = await this.#plane.schedule(
 					request.agentId,

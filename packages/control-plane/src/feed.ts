@@ -62,6 +62,9 @@ export class LogFeed {
 		// For a pane holding the conversation, which a feed is not: this is the record of what happened
 		// and clearing one is a thing that happened, reported as the note that comes with it.
 		if (event.kind === "cleared") return;
+		// A roster is a thing a console holds, not a thing that happened: the note beside it says who
+		// joined what, in the words the person who did it would use.
+		if (event.kind === "rooms") return;
 		if (event.kind === "step") this.#step(event.agentId, event.step);
 		else if (event.kind === "audit") this.#egress(event.entry);
 		else if (event.kind === "error") this.#error(event.context, event.message);

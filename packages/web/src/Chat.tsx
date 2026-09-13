@@ -177,7 +177,14 @@ function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint
 	return { mark: "◇", tint: "var(--cyan)" };
 }
 
-function Said({ said, agentId }: { said: Utterance; agentId: string }) {
+/**
+ * One line of a conversation, whoever said it.
+ *
+ * Exported because a room is the same conversation with more voices in it: the operator, and several
+ * agents each drawn as itself. A second copy of this for rooms would be a second answer to what a
+ * message looks like, and the two would drift the first time either was touched.
+ */
+export function Said({ said, agentId }: { said: Utterance; agentId: string }) {
 	const face = markOf(said, agentId);
 	const who =
 		said.from === "operator"

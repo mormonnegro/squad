@@ -12,6 +12,7 @@ import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Plugin } from "./plugins.ts";
 import type { RepoOffer } from "./repos.ts";
+import type { Room } from "./rooms.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -519,6 +520,37 @@ export class ControlClient {
 	/** Cancels one of an agent's own wakeups. Refuses the ones the operator's file declares. */
 	async unschedule(agentId: string, scheduleId: string): Promise<void> {
 		await this.#once({ op: "unschedule", agentId, scheduleId });
+	}
+
+	/** The rooms this plane has, and who is in each. */
+	async rooms(): Promise<readonly Room[]> {
+		const answer = await this.#once({ op: "rooms" });
+		return "rooms" in answer ? answer.rooms : [];
+	}
+
+	async makeRoom(name: string, members: readonly string[]): Promise<readonly Room[]> {
+		const answer = await this.#once({ op: "makeRoom", name, members });
+		return "rooms" in answer ? answer.rooms : [];
+	}
+
+	async joinRoom(name: string, agentId: string): Promise<readonly Room[]> {
+		const answer = await this.#once({ op: "joinRoom", name, agentId });
+		return "rooms" in answer ? answer.rooms : [];
+	}
+
+	async leaveRoom(name: string, agentId: string): Promise<readonly Room[]> {
+		const answer = await this.#once({ op: "leaveRoom", name, agentId });
+		return "rooms" in answer ? answer.rooms : [];
+	}
+
+	async dropRoom(name: string): Promise<readonly Room[]> {
+		const answer = await this.#once({ op: "dropRoom", name });
+		return "rooms" in answer ? answer.rooms : [];
+	}
+
+	/** Says something to everybody in a room. Every member takes a turn on it. */
+	async sayInRoom(name: string, text: string): Promise<void> {
+		await this.#once({ op: "sayInRoom", name, text });
 	}
 
 	/** Books one more turn for an agent. `when` is read by the plane, not here. */

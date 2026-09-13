@@ -121,6 +121,7 @@ import {
 	repoGrants,
 	standingOf as repoStanding,
 } from "./repos.ts";
+import { nameRefused, type Room, RoomChannel, Rooms, roomChannel } from "./rooms.ts";
 import {
 	DEFAULT_SEARCH_PROVIDER,
 	resolveSearch,
@@ -299,6 +300,13 @@ export type PlaneEvent =
 	 * appending to it.
 	 */
 	| { readonly kind: "cleared"; readonly agentId: string }
+	/**
+	 * The rooms have changed: one made, one gone, somebody in or out of one.
+	 *
+	 * Said without saying what changed, because a roster is four names and asking for it again is
+	 * cheaper than describing an edit — and every console watching wants the same answer anyway.
+	 */
+	| { readonly kind: "rooms" }
 	/**
 	 * A turn starting, which is a different moment from the message that caused it: a burst is one
 	 * turn, and a message arriving at a busy agent waits for the one in front of it to finish.
@@ -513,6 +521,9 @@ export class ControlPlane {
 	/** The hosts opened at the console, on top of the ones the file grants every agent. */
 	readonly #addedGrants: AddedGrants;
 	readonly #addedTeam: TeamEdges;
+	/** The rooms made at a console, and what each one has said, which is a conversation of its own. */
+	readonly #rooms: Rooms;
+	readonly #roomTalk: Transcript;
 	/** The repositories given to agents at the console, on top of the ones their file declares. */
 	readonly #repos: HeldRepos;
 	/**
@@ -626,6 +637,10 @@ export class ControlPlane {
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
 		this.#addedTeam = new TeamEdges(join(this.#stateDir, "added-team.json"));
+		this.#rooms = new Rooms(join(this.#stateDir, "rooms.json"));
+		// Its own, beside the agents': a room's thread is not any one agent's conversation, and the
+		// agent that answered in it has the same line in its own pane for its own reasons.
+		this.#roomTalk = new Transcript(join(this.#stateDir, "rooms"));
 		this.#repos = new HeldRepos(join(this.#stateDir, "repos.json"));
 		this.#choices = new ModelChoices(join(this.#stateDir, "models.json"));
 		this.#keys = new ProviderKeys(
@@ -731,6 +746,16 @@ export class ControlPlane {
 				hops: (agentId) => this.#turn.get(agentId)?.hops ?? 0,
 			}),
 		);
+		// The rooms, on the same terms: an agent spoken to in one answers in it, and the answer goes
+		// where the question was asked rather than to whoever happened to write.
+		this.router.register(
+			new RoomChannel({
+				members: async (name) => (await this.#rooms.of(name))?.members ?? [],
+				post: (name, from, body) => this.#inRoom(name, { from: "other", via: from, text: body }),
+				publish: (event) => this.bus.publish(event),
+				hops: (agentId) => this.#turn.get(agentId)?.hops ?? 0,
+			}),
+		);
 	}
 
 	/** Host path of the CA certificate mounted into every sandbox. */
@@ -759,7 +784,14 @@ export class ControlPlane {
 		const conversations = await Promise.all(
 			this.#agents.map(async (agent) => [agent.id, await this.#transcript.read(agent.id)] as const),
 		);
-		return Object.fromEntries(conversations);
+		// The rooms in the same answer, under the address their lines arrive at. A console holds one
+		// map of conversations and an agent's name cannot be a room's: `room:` is not a name.
+		const rooms = await Promise.all(
+			(await this.#rooms.all()).map(
+				async (room) => [roomChannel(room.name), await this.#roomTalk.read(room.name)] as const,
+			),
+		);
+		return Object.fromEntries([...conversations, ...rooms]);
 	}
 
 	/** What each agent is and whether its sandbox is up. */
@@ -886,6 +918,10 @@ export class ControlPlane {
 			// Doors opened at the console, from both ends. A name is reused, and an agent made again
 			// with this one would inherit correspondents nobody in this plane ever gave it.
 			await this.#addedTeam.forget(agentId);
+			// And out of every room, for the same reason and with the same care: the room stays, so
+			// what was said in it is still there to read, and nobody is quietly re-admitted to it.
+			await this.#rooms.forget(agentId);
+			this.#emit({ kind: "rooms" });
 			// The bot is this agent as far as anyone writing to it is concerned, so it goes with the name.
 			// The token stays good at BotFather's end; what stops is this plane answering with it.
 			await this.disconnectTelegram(agentId);
@@ -1201,7 +1237,16 @@ export class ControlPlane {
 	async team(agentId: string): Promise<readonly Teammate[]> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.talksTo ?? [];
 		const added = await this.#addedTeam.open(agentId).catch(() => []);
-		const open = new Set([...declared, ...added, ...(this.#turn.get(agentId)?.opened ?? [])]);
+		// Being put in a room together is the operator saying these two work on this, and an agent
+		// that may be asked something in front of everybody but may not answer the person who asked
+		// would be a door opened halfway.
+		const mates = await this.#rooms.mates(agentId).catch(() => []);
+		const open = new Set([
+			...declared,
+			...added,
+			...mates,
+			...(this.#turn.get(agentId)?.opened ?? []),
+		]);
 		return this.#agents
 			.filter((agent) => agent.id !== agentId)
 			.map((agent) => ({
@@ -1251,6 +1296,119 @@ export class ControlPlane {
 			throw new Error(`${to} is in the config file, so it is not ours to change`);
 		}
 		return await this.#addedTeam.drop(agentId, to);
+	}
+
+	// ── rooms ──────────────────────────────────────────────────────────
+
+	/** Every room, and who is in it. */
+	async rooms(): Promise<readonly Room[]> {
+		return await this.#rooms.all();
+	}
+
+	/**
+	 * Makes one, with the agents that are to work in it.
+	 *
+	 * The members are checked against the agents this plane has, rather than kept as written: a room
+	 * with a typo in it would be a room whose brief quietly reaches two of the three people it was
+	 * addressed to, and the operator would find out by noticing the silence.
+	 */
+	async makeRoom(name: string, members: readonly string[]): Promise<Room> {
+		const refused = nameRefused(name);
+		if (refused !== undefined) throw new Error(refused);
+		for (const id of members) {
+			if (!this.#agents.some((agent) => agent.id === id)) {
+				throw new Error(`There is no agent called "${id}", so nobody was put in #${name}.`);
+			}
+		}
+		const made = await this.#rooms.make(name, members);
+		this.#emit({ kind: "rooms" });
+		this.#emit({
+			kind: "note",
+			who: `#${name}`,
+			action: "made",
+			detail: members.length === 0 ? "with nobody in it yet" : `with ${members.join(", ")}`,
+		});
+		return made;
+	}
+
+	async joinRoom(name: string, agentId: string): Promise<boolean> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}".`);
+		}
+		const joined = await this.#rooms.join(name, agentId);
+		if (joined) {
+			this.#emit({ kind: "rooms" });
+			this.#emit({ kind: "note", who: `#${name}`, action: "joined", detail: agentId });
+		}
+		return joined;
+	}
+
+	async leaveRoom(name: string, agentId: string): Promise<boolean> {
+		const left = await this.#rooms.leave(name, agentId);
+		if (left) {
+			this.#emit({ kind: "rooms" });
+			this.#emit({ kind: "note", who: `#${name}`, action: "left", detail: agentId });
+		}
+		return left;
+	}
+
+	/** Takes the room away, and the thread with it: it was the room's and there is no room. */
+	async dropRoom(name: string): Promise<boolean> {
+		const gone = await this.#rooms.drop(name);
+		if (!gone) return false;
+		await this.#roomTalk.forget(name).catch(() => undefined);
+		this.#emit({ kind: "rooms" });
+		this.#emit({ kind: "cleared", agentId: roomChannel(name) });
+		this.#emit({
+			kind: "note",
+			who: `#${name}`,
+			action: "gone",
+			detail: "the room and its thread",
+		});
+		return true;
+	}
+
+	/**
+	 * Says something to everybody in a room, which is the whole of what a room is for.
+	 *
+	 * Every member is woken, and that is the cost of asking three agents at once rather than the
+	 * accident of it: three turns, because three of them were asked. What they say back wakes only
+	 * whoever they name.
+	 */
+	async sayInRoom(name: string, text: string): Promise<void> {
+		const room = await this.#rooms.of(name);
+		if (room === undefined) throw new Error(`There is no room called #${name}.`);
+		const said = text.trim();
+		if (said.length === 0) return;
+		if (room.members.length === 0) {
+			throw new Error(`#${name} has nobody in it. Add an agent, and it will hear this.`);
+		}
+
+		await this.#inRoom(name, { from: "operator", text: withoutSecrets(said) });
+		for (const member of room.members) {
+			await this.bus.publish({
+				agentId: member,
+				source: "channel",
+				channel: roomChannel(name),
+				// The operator typed it, and a room is one more place they type. What the room changes
+				// is who else heard it, which the renderer says and the trust level does not.
+				trust: "operator",
+				body: said,
+				metadata: {
+					hops: "1",
+					with: room.members.filter((one) => one !== member).join(", "),
+				},
+			});
+		}
+	}
+
+	/** A line in a room's thread: said to whoever is watching, and written down under the room. */
+	async #inRoom(name: string, said: Utterance): Promise<void> {
+		const one: Utterance = { at: new Date().toISOString(), ...said };
+		this.#emit({ kind: "said", agentId: roomChannel(name), said: one });
+		await this.#roomTalk.append(name, one).catch((error: Error) => {
+			this.#onError?.(`#${name} transcript`, error);
+		});
 	}
 
 	/**

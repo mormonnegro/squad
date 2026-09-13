@@ -1,5 +1,5 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
-import { Blocks, ChevronRight, GitBranch } from "lucide-react";
+import { Blocks, ChevronRight, GitBranch, Hash } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
@@ -7,11 +7,14 @@ import { Devices } from "./Devices.tsx";
 import { FirstKey } from "./FirstKey.tsx";
 import { nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
+import { Modal } from "./Modal.tsx";
 import { Plugins } from "./Plugins.tsx";
-import { browserWire, Plane } from "./plane.ts";
+import { browserWire, Plane, roomChannel, type Room as Standing } from "./plane.ts";
 import { RailHead } from "./RailHead.tsx";
 import { Repos } from "./Repos.tsx";
+import { Room } from "./Room.tsx";
 import { Setup } from "./Setup.tsx";
+import { Spin } from "./spin.tsx";
 import { Tasks } from "./Tasks.tsx";
 import { until } from "./until.ts";
 
@@ -55,6 +58,19 @@ function agentAt(pathname: string): string | undefined {
 	if (!pathname.startsWith(AGENTS)) return undefined;
 	const id = decodeURIComponent(pathname.slice(AGENTS.length));
 	return id === "" ? undefined : id;
+}
+
+/**
+ * Where a room lives. `channels` rather than `rooms` in the address, because that is the word on
+ * the screen — what a person would type is what they were shown.
+ */
+const ROOMS = "/channels/";
+
+/** Which room an address names, or none. */
+function roomAt(pathname: string): string | undefined {
+	if (!pathname.startsWith(ROOMS)) return undefined;
+	const name = decodeURIComponent(pathname.slice(ROOMS.length));
+	return name === "" ? undefined : name;
 }
 
 /** Where a screen lives, or nothing for the ones that are questions rather than places. */
@@ -108,6 +124,10 @@ export function App() {
 	// Read off the address, so a link to a conversation opens that conversation.
 	const [chosen, setChosen] = useState<string | undefined>(() => agentAt(window.location.pathname));
 	const [making, setMaking] = useState(false);
+	/** The rooms, and which one is open. A room is a place like a conversation, not a screen over one. */
+	const [rooms, setRooms] = useState<readonly Standing[]>([]);
+	const [inRoom, setInRoom] = useState<string | undefined>(() => roomAt(window.location.pathname));
+	const [makingRoom, setMakingRoom] = useState(false);
 	/**
 	 * Whether this plane can pay for any of the models it is configured with.
 	 *
@@ -135,6 +155,11 @@ export function App() {
 	const show = useCallback(
 		(next: typeof showing, who?: string | null): void => {
 			setShowing(next);
+			// A screen and a room are the two things that can hold the pane, and only one of them can:
+			// opening either is leaving the other, and a rail that stayed lit on both would be lying
+			// about where you are.
+			setInRoom(undefined);
+			setMakingRoom(false);
 			// Putting a screen away is going back to what the pane was showing, which is a conversation
 			// or nobody — and `null` is how a caller says nobody while somebody is still selected.
 			const at = who === undefined ? chosen : (who ?? undefined);
@@ -156,7 +181,9 @@ export function App() {
 			const at = window.location.pathname;
 			setShowing(placeAt(at));
 			setChosen(agentAt(at));
+			setInRoom(roomAt(at));
 			setMaking(false);
+			setMakingRoom(false);
 			setSetting(false);
 		};
 		window.addEventListener("popstate", walked);
@@ -230,6 +257,14 @@ export function App() {
 						setTalk((was) => ({ ...was, [event.agentId]: [] }));
 						setLive((was) => ({ ...was, [event.agentId]: QUIET }));
 						break;
+					// A roster changed, here or at another console. Asked for again rather than patched:
+					// four names cost nothing to fetch and there is one true answer.
+					case "rooms":
+						void held.current?.rooms().then(
+							(all) => alive && setRooms(all),
+							() => {},
+						);
+						break;
 					case "open":
 						// The agent asked for a browser and this is one. Opened rather than printed,
 						// because a login that needs a copied URL is a login half the time nobody finishes.
@@ -242,6 +277,11 @@ export function App() {
 
 			await client.transcripts().then(
 				(all) => alive && setTalk(all),
+				() => {},
+			);
+			await client.rooms().then(
+				(all) => alive && setRooms(all),
+				// An older plane does not know what a room is, and a console talking to one shows none.
 				() => {},
 			);
 		})();
@@ -274,6 +314,9 @@ export function App() {
 	}, [plane]);
 
 	const agent = useMemo(() => agents.find((one) => one.id === chosen), [agents, chosen]);
+	// The open room as the plane last described it, so adding somebody to it redraws the roster
+	// under the thread rather than only in the rail.
+	const room = useMemo(() => rooms.find((one) => one.name === inRoom), [rooms, inRoom]);
 
 	// A refusal, which is the one thing the plane does not write down: it comes back as the failed
 	// answer to the request that asked, on the connection that asked, so no event carries it and no
@@ -294,6 +337,26 @@ export function App() {
 		},
 		[show],
 	);
+
+	/**
+	 * Opens a room, which is a place and so has an address.
+	 *
+	 * Its own function rather than another argument to `show`, because a room is not a screen over
+	 * the conversation: it is the thing in the pane, the way a conversation is. What they share is
+	 * that opening either one puts the other away.
+	 */
+	const openRoom = useCallback((name: string): void => {
+		setInRoom(name);
+		setShowing("none");
+		setChosen(undefined);
+		setMaking(false);
+		setMakingRoom(false);
+		setSetting(false);
+		const address = `${ROOMS}${name}`;
+		if (address !== window.location.pathname) {
+			window.history.pushState(null, "", `${address}${window.location.search}`);
+		}
+	}, []);
 
 	const look = useCallback(async (): Promise<void> => {
 		if (plane === undefined) return;
@@ -383,6 +446,45 @@ export function App() {
 						<span className="mark">+</span>
 						<span className="row-name">New agent</span>
 					</button>
+
+					{/* Below the agents, because a room is made out of them: you have agents, and then you
+					    put some of them in a room together. */}
+					<div className="rail-group">Channels</div>
+					{rooms.map((one) => (
+						<button
+							key={one.name}
+							type="button"
+							className="row row-pick"
+							data-here={one.name === inRoom}
+							onClick={() => openRoom(one.name)}
+						>
+							<Hash className="size-3.5 flex-none text-muted" />
+							<span className="row-name">{one.name}</span>
+							{/* Who is in it, small. A room is its members, and a list of names with no faces
+							    is a list of rooms nobody can tell apart. */}
+							<span className="row-faces">
+								{one.members.slice(0, 3).map((id) => (
+									<Avatar key={id} id={id} size={16} />
+								))}
+								{one.members.length > 3 && (
+									<span className="row-note">+{one.members.length - 3}</span>
+								)}
+							</span>
+						</button>
+					))}
+					<button
+						type="button"
+						className="row"
+						data-here={makingRoom}
+						disabled={plane === undefined}
+						onClick={() => {
+							setMakingRoom(true);
+							setInRoom(undefined);
+						}}
+					>
+						<span className="mark">+</span>
+						<span className="row-name">New channel</span>
+					</button>
 				</div>
 			</nav>
 
@@ -411,6 +513,16 @@ export function App() {
 				)}
 				{making ? (
 					<NewAgent onMake={create} />
+				) : room !== undefined && plane !== undefined ? (
+					<Room
+						key={room.name}
+						plane={plane}
+						room={room}
+						agents={agents}
+						said={talk[roomChannel(room.name)] ?? []}
+						live={live}
+						onGone={() => show("none", null)}
+					/>
 				) : showing === "plugins" && plane !== undefined ? (
 					<Plugins plane={plane} agents={agents} />
 				) : showing === "repos" && plane !== undefined ? (
@@ -449,6 +561,17 @@ export function App() {
 					onDone={() => {
 						show("none");
 						void look();
+					}}
+				/>
+			)}
+			{makingRoom && plane !== undefined && (
+				<NewRoom
+					agents={agents}
+					onClose={() => setMakingRoom(false)}
+					onMake={async (name, members) => {
+						await plane.makeRoom(name, members);
+						setRooms(await plane.rooms());
+						openRoom(name);
 					}}
 				/>
 			)}
@@ -552,6 +675,104 @@ function AgentRow({
 			</div>
 			{open && <Tasks plane={plane} agentId={agent.id} onChanged={onChanged} />}
 		</>
+	);
+}
+
+/**
+ * Making a room: a name, and who is in it.
+ *
+ * Both at once rather than a room first and members after, because a room with nobody in it does
+ * nothing at all — the first thing anybody would type into it goes nowhere — and the question "who
+ * is this for" is the one that makes a person pick a name.
+ */
+function NewRoom({
+	agents,
+	onMake,
+	onClose,
+}: {
+	agents: readonly AgentSummary[];
+	onMake: (name: string, members: readonly string[]) => Promise<void>;
+	onClose: () => void;
+}) {
+	const [name, setName] = useState("");
+	const [members, setMembers] = useState<readonly string[]>([]);
+	const [why, setWhy] = useState<string | undefined>();
+	const [busy, setBusy] = useState(false);
+	const ok = /^[a-z0-9][a-z0-9-]{0,30}$/.test(name);
+
+	return (
+		<Modal wide title="New channel" onClose={onClose}>
+			<form
+				className="flex flex-col gap-4"
+				onSubmit={(event) => {
+					event.preventDefault();
+					if (!ok || busy) return;
+					setBusy(true);
+					setWhy(undefined);
+					void onMake(name, members).catch((error: Error) => {
+						setWhy(error.message);
+						setBusy(false);
+					});
+				}}
+			>
+				<label className="flex flex-col gap-1.5">
+					<span className="text-[0.78rem] text-muted">Name</span>
+					<div className="flex items-center gap-2">
+						<span className="room-hash">#</span>
+						<input
+							className="field font-mono"
+							value={name}
+							// biome-ignore lint/a11y/noAutofocus: a dialog with one first field, opened on purpose
+							autoFocus
+							placeholder="standup"
+							spellCheck={false}
+							onChange={(event) => setName(event.target.value)}
+						/>
+					</div>
+					{name.length > 0 && !ok && (
+						<span className="why">
+							Lowercase letters, digits and dashes, starting with a letter or digit.
+						</span>
+					)}
+				</label>
+				<div className="flex flex-col gap-1.5">
+					<span className="text-[0.78rem] text-muted">Who is in it</span>
+					<div className="flex flex-wrap gap-1.5">
+						{agents.map((one) => (
+							<button
+								key={one.id}
+								type="button"
+								className="pill"
+								data-yes={members.includes(one.id)}
+								onClick={() =>
+									setMembers((was) =>
+										was.includes(one.id) ? was.filter((id) => id !== one.id) : [...was, one.id],
+									)
+								}
+							>
+								<Avatar id={one.id} size={18} />
+								{nameOf(one.id)}
+							</button>
+						))}
+					</div>
+					<span className="text-[0.78rem] text-muted leading-relaxed">
+						What you say in a channel is said to all of them, and each one takes a turn on it. They
+						can reach each other from in there too: an agent that writes <code>@name</code> in its
+						answer wakes that one.
+					</span>
+				</div>
+				{why !== undefined && <span className="why">{why}</span>}
+				<div className="flex gap-2">
+					<button type="submit" className="pill" data-yes="true" disabled={!ok || busy}>
+						{busy && <Spin />}
+						{busy ? "making…" : "make it"}
+					</button>
+					<button type="button" className="pill" onClick={onClose}>
+						cancel
+					</button>
+				</div>
+			</form>
+		</Modal>
 	);
 }
 

@@ -118,6 +118,80 @@ describe("the control socket", () => {
 		});
 	});
 
+	/**
+	 * The unit above an agent: several of them given one brief, with the answers in one thread.
+	 *
+	 * Taken through the socket rather than against the plane directly, because the point of a room is
+	 * that a console can hold one — a roster, a conversation, and a way to say something to all of it.
+	 */
+	describe("a room", () => {
+		it("wakes everybody in it, and keeps what they answer in its own thread", async () => {
+			await answerWith("scout", () => "scout looked");
+			await answerWith("scribe", () => "scribe looked");
+			await client.makeRoom("standup", ["scout", "scribe"]);
+
+			await client.sayInRoom("standup", "¿Cómo venimos con el deploy?");
+			await plane.bus.drain();
+
+			const said = (await client.transcripts())["room:standup"] ?? [];
+			expect(said[0]).toMatchObject({ from: "operator", text: "¿Cómo venimos con el deploy?" });
+			// Both answers, in whichever order two agents woken at once happen to finish.
+			expect(
+				said
+					.slice(1)
+					.map((one) => `${one.via}: ${one.text}`)
+					.sort(),
+			).toEqual(["scout: scout looked", "scribe: scribe looked"]);
+			// Who said it, since a room has several voices and a thread that only said "agent" would
+			// be unreadable at three.
+			expect(said.slice(1).every((one) => one.from === "other")).toBe(true);
+		});
+
+		it("tells each of them who else is in the room", async () => {
+			const heard: string[] = [];
+			await answerWith("scout", (prompt) => {
+				heard.push(prompt);
+				return "";
+			});
+			await client.makeRoom("standup", ["scout", "scribe"]);
+			await client.sayInRoom("standup", "empecemos");
+			await plane.bus.drain();
+			expect(heard.join("\n")).toContain("#standup");
+			expect(heard.join("\n")).toContain("scribe");
+		});
+
+		// Being put in a room together is the operator saying these two work on this. An agent that
+		// may be asked something in front of everybody and may not answer would be half a door.
+		it("lets its members write to each other", async () => {
+			expect((await plane.team("scout")).find((one) => one.id === "scribe")?.open).toBe(false);
+			await client.makeRoom("standup", ["scout", "scribe"]);
+			expect((await plane.team("scout")).find((one) => one.id === "scribe")?.open).toBe(true);
+			await client.leaveRoom("standup", "scribe");
+			expect((await plane.team("scout")).find((one) => one.id === "scribe")?.open).toBe(false);
+		});
+
+		it("refuses a room with somebody in it who is not here", async () => {
+			await expect(client.makeRoom("standup", ["nobody"])).rejects.toThrow(/no agent/);
+			expect(await client.rooms()).toEqual([]);
+		});
+
+		it("says so rather than sending into an empty room", async () => {
+			await client.makeRoom("standup", []);
+			await expect(client.sayInRoom("standup", "hola")).rejects.toThrow(/nobody in it/);
+		});
+
+		it("takes the room and its thread away together", async () => {
+			await answerWith("scout", () => "listo");
+			await client.makeRoom("standup", ["scout"]);
+			await client.sayInRoom("standup", "hola");
+			await plane.bus.drain();
+			expect((await client.transcripts())["room:standup"]).toBeDefined();
+			await client.dropRoom("standup");
+			expect(await client.rooms()).toEqual([]);
+			expect((await client.transcripts())["room:standup"]).toBeUndefined();
+		});
+	});
+
 	afterEach(async () => {
 		vi.unstubAllGlobals();
 		client.close();

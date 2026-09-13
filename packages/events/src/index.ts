@@ -13,8 +13,9 @@ export {
 	EventError,
 	type EventSource,
 	type NewAgentEvent,
+	ROOM_CHANNEL,
 } from "./event.ts";
-export { fromAgent, isOwnNote, renderEvent, renderTurn } from "./render.ts";
+export { fromAgent, inRoom, isOwnNote, renderEvent, renderTurn } from "./render.ts";
 export {
 	type EventStore,
 	FileEventStore,
