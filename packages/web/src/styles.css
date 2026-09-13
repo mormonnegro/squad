@@ -191,6 +191,31 @@
 	padding: 0.5rem 0.7rem;
 }
 
+/*
+ * A field with a number in it, at the width of the number.
+ *
+ * `width: 100%` is right for the one somebody types a sentence into and wrong for the one that
+ * holds `5`, which otherwise stretches to whatever it is inside and takes the words that belong on
+ * its line onto three of their own.
+ */
+.field-short {
+	width: 5rem;
+	flex: none;
+}
+
+/* And one that holds a name: wide enough for the longest one anybody types, and not wider. */
+.field-name {
+	width: 14rem;
+	flex: none;
+}
+
+/* Inside a labelled line the field takes what is left, so every one of them ends on one edge. */
+.ask-line > .field {
+	flex: 1;
+	min-width: 0;
+	width: auto;
+}
+
 .field:focus {
 	outline: none;
 	border-color: var(--cyan);
@@ -1510,6 +1535,188 @@ ol.md-list {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr));
 	gap: 0.9rem;
+}
+
+/* ── one agent's settings ────────────────────────────────────────────── */
+
+/*
+ * Six unrelated facts about an agent, on a screen wide enough to hold them.
+ *
+ * Two columns, because half of them are a number or a switch and a row of their own for those is a
+ * row of mostly nothing — and the other half are lists and addresses that need the whole width, so
+ * they take it. One column as soon as two would be cramped, which is where a list stops being a
+ * list and becomes a stack of wrapped lines.
+ */
+.setup-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 2.4rem 2.2rem;
+	align-items: start;
+}
+
+/*
+ * The rule that separates one section from the next is for a column of them.
+ *
+ * Here the sections are laid out two across, where that rule draws a short line over the right-hand
+ * one and pushes it half an inch below its neighbour — two things side by side, one of them lower
+ * than the other for no reason a reader could name. The gap does the separating on this screen.
+ */
+.setup-grid > .section + .section {
+	border-top: none;
+	padding-top: 0;
+}
+
+.setup-grid > .wide {
+	grid-column: 1 / -1;
+}
+
+@media (max-width: 62rem) {
+	.setup-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+/* What a section's controls stand in: one box, one border, and air between the things inside it. */
+.panel {
+	display: flex;
+	flex-direction: column;
+	gap: 0.85rem;
+	padding: 1rem 1.1rem;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--bg-raised);
+}
+
+/* The sentence under a control that says what it means. Never a heading, never a label. */
+.note {
+	margin: 0;
+	font-size: 0.8rem;
+	line-height: 1.55;
+	color: var(--muted);
+}
+
+/* One thing in a list inside a panel: a trigger, a skill. Ruled off the one above it, not boxed. */
+.row-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding-bottom: 0.85rem;
+	border-bottom: 1px solid var(--line-soft);
+}
+
+/* The one just made, lit for as long as it is the thing you came back to the screen for. */
+.row-card[data-fresh="true"] {
+	border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent);
+	border-radius: 10px;
+	padding: 0.85rem;
+	background: color-mix(in srgb, var(--cyan) 6%, transparent);
+}
+
+/* What is true about it, under it: small, grey, and in one line until there is no room for one. */
+.row-card-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.78rem;
+	color: var(--muted);
+}
+
+/*
+ * An address, or a secret: a long string whose whole purpose is to end up somewhere else.
+ *
+ * Not read, taken. So it wraps rather than being cut off — a URL with its middle missing is a URL
+ * nobody can check — and the button that takes it is beside it rather than somewhere else.
+ */
+.address {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.5rem 0.6rem;
+	border-radius: 8px;
+	background: var(--bg-code);
+	border: 1px solid var(--line-soft);
+}
+
+.address code {
+	flex: 1;
+	min-width: 0;
+	font: 0.82rem / 1.5 var(--mono);
+	color: var(--cyan);
+	overflow-wrap: anywhere;
+}
+
+.address .pill {
+	flex: none;
+}
+
+/* A form whose fields are sentences: a label, then the thing, one under the other. */
+.stack {
+	display: flex;
+	flex-direction: column;
+	gap: 0.7rem;
+	padding-top: 0.85rem;
+	border-top: 1px solid var(--line-soft);
+}
+
+.ask-line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.6rem;
+}
+
+/* The same width for every one of them, so the fields beside them line up on one edge. */
+.ask-name {
+	flex: none;
+	width: 5.5rem;
+	font-size: 0.8rem;
+	color: var(--muted);
+}
+
+/* The plugins an agent holds, as rows rather than cards: this is a list to tick, not a shelf. */
+.plug-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+	gap: 0.7rem;
+}
+
+.plug-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.7rem 0.8rem;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--bg-raised);
+	text-align: left;
+	transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.plug-row:hover {
+	border-color: color-mix(in srgb, var(--muted) 45%, var(--line));
+	background: #ffffff05;
+}
+
+.plug-row[data-here="true"] {
+	border-color: color-mix(in srgb, var(--cyan) 35%, var(--line));
+}
+
+/* The way back to the conversation, at the head of the screen that was opened from it. */
+.pane-back {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 1.6rem;
+	height: 1.6rem;
+	margin-left: -0.3rem;
+	border-radius: 7px;
+	color: var(--muted);
+}
+
+.pane-back:hover {
+	background: #ffffff0f;
+	color: var(--text-strong);
 }
 
 /*

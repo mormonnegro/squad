@@ -53,11 +53,23 @@ function placeAt(pathname: string): Place | "none" {
  */
 const AGENTS = "/agents/";
 
-/** Whose conversation an address names, or nobody for an address that names none. */
+/**
+ * Whose conversation an address names, or nobody for an address that names none.
+ *
+ * The settings live one segment further down — `/agents/scout/settings` — and are still that
+ * agent's screen, so the name is read off the first segment either way.
+ */
 function agentAt(pathname: string): string | undefined {
 	if (!pathname.startsWith(AGENTS)) return undefined;
-	const id = decodeURIComponent(pathname.slice(AGENTS.length));
-	return id === "" ? undefined : id;
+	const [id = ""] = pathname.slice(AGENTS.length).split("/");
+	return id === "" ? undefined : decodeURIComponent(id);
+}
+
+/** Whether an address names an agent's settings rather than its conversation. */
+const SETTINGS = "/settings";
+
+function settingsAt(pathname: string): boolean {
+	return pathname.startsWith(AGENTS) && pathname.endsWith(SETTINGS);
 }
 
 /**
@@ -102,12 +114,13 @@ export function App() {
 		"none" | "keys" | "plugins" | "repos" | "devices" | "first-key"
 	>(() => placeAt(window.location.pathname));
 	/**
-	 * Whether the selected agent's own settings are open.
+	 * Whether the selected agent's own settings are the thing on screen.
 	 *
-	 * Kept apart from the screens above because it is not one: those are the environment's and this
-	 * is one agent's, and it closes by itself when the conversation moves to another.
+	 * Kept apart from the screens above because it is not one of them: those are the plane's and
+	 * this is one agent's, so it lives under that agent's address and closes by itself when the
+	 * conversation moves to another.
 	 */
-	const [setting, setSetting] = useState(false);
+	const [setting, setSetting] = useState(() => settingsAt(window.location.pathname));
 	/**
 	 * Whether the first-key screen has been put away.
 	 *
@@ -165,6 +178,7 @@ export function App() {
 			const at = who === undefined ? chosen : (who ?? undefined);
 			const address =
 				next === "none" ? (at === undefined ? "/" : `${AGENTS}${at}`) : addressOf(next);
+			setSetting(false);
 			if (address === undefined || address === window.location.pathname) return;
 			window.history.pushState(null, "", `${address}${window.location.search}`);
 		},
@@ -184,7 +198,7 @@ export function App() {
 			setInRoom(roomAt(at));
 			setMaking(false);
 			setMakingRoom(false);
-			setSetting(false);
+			setSetting(settingsAt(at));
 		};
 		window.addEventListener("popstate", walked);
 		return () => window.removeEventListener("popstate", walked);
@@ -345,6 +359,25 @@ export function App() {
 	 * the conversation: it is the thing in the pane, the way a conversation is. What they share is
 	 * that opening either one puts the other away.
 	 */
+	/**
+	 * One agent's settings, which are a screen and so have an address.
+	 *
+	 * Under the agent rather than beside it: what is on it is true of that agent and of nothing
+	 * else, and a link to it is a link to that agent's settings.
+	 */
+	const openSetup = useCallback((agentId: string): void => {
+		setSetting(true);
+		setShowing("none");
+		setChosen(agentId);
+		setInRoom(undefined);
+		setMaking(false);
+		setMakingRoom(false);
+		const address = `${AGENTS}${agentId}${SETTINGS}`;
+		if (address !== window.location.pathname) {
+			window.history.pushState(null, "", `${address}${window.location.search}`);
+		}
+	}, []);
+
 	const openRoom = useCallback((name: string): void => {
 		setInRoom(name);
 		setShowing("none");
@@ -428,7 +461,7 @@ export function App() {
 							// Where you are, not what you last opened: the plugins take the pane, so while they
 							// are up nothing in this list is the thing on screen. A dialog is different — the
 							// conversation is still behind it, and that is still where you are.
-							here={one.id === chosen && showing === "none" && !making}
+							here={one.id === chosen && showing === "none" && !making && !setting}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
@@ -531,6 +564,16 @@ export function App() {
 					<Plugins plane={plane} agents={agents} />
 				) : showing === "repos" && plane !== undefined ? (
 					<Repos plane={plane} agents={agents} />
+				) : setting && agent !== undefined && plane !== undefined ? (
+					<Setup
+						key={agent.id}
+						plane={plane}
+						agent={agent}
+						agents={agents}
+						onChanged={() => void look()}
+						// Back to the conversation this was opened from, which is where the address goes too.
+						onClose={() => show("none", agent.id)}
+					/>
 				) : agent !== undefined && plane !== undefined ? (
 					<Chat
 						key={agent.id}
@@ -539,7 +582,7 @@ export function App() {
 						said={talk[agent.id] ?? []}
 						live={live[agent.id] ?? QUIET}
 						onLocal={local}
-						onSetup={() => setSetting(true)}
+						onSetup={() => openSetup(agent.id)}
 					/>
 				) : (
 					<Nothing onMake={() => setMaking(true)} />
@@ -589,17 +632,6 @@ export function App() {
 						show("none");
 						void look();
 					}}
-				/>
-			)}
-			{/* One agent's, so it goes with that agent: picking another closes it rather than quietly
-			    setting a limit on somebody else. */}
-			{setting && plane !== undefined && agent !== undefined && (
-				<Setup
-					plane={plane}
-					agent={agent}
-					agents={agents}
-					onChanged={() => void look()}
-					onClose={() => setSetting(false)}
 				/>
 			)}
 		</div>
