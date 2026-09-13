@@ -311,11 +311,15 @@ export const PLUGINS: readonly Plugin[] = [
 		does: "Reads your mail: search it, and read a message it found.",
 		shelf: "work",
 		mark: "google.com",
-		// Google's own MCP server for Gmail exists and answers the protocol — and every call to it
-		// comes back asking for the Workspace Developer Preview Program, which takes a Workspace
-		// account, a form, and days. Its API underneath is generally available and has been for
-		// fifteen years, so this reaches that instead: a process in the sandbox speaking plain HTTPS,
-		// with the token written on at the proxy and never in its hands.
+		/*
+		 * Your mail, through an app of your own.
+		 *
+		 * Google hands nobody a key to somebody else's mailbox without an audit, so the application
+		 * here is yours: a client id and a secret you make once, in your own project, and consent to
+		 * once in a browser. There is no shorter road and no third party in the middle — what holds
+		 * the token afterwards is this plane, and what reaches Gmail is a process in the sandbox that
+		 * carries nothing at all.
+		 */
 		transport: "http",
 		url: "https://gmail.googleapis.com/gmail/v1/users/me/",
 		runs: ["squad-gmail"],
@@ -328,6 +332,8 @@ export const PLUGINS: readonly Plugin[] = [
 		oauth: {
 			authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
 			tokenUrl: "https://oauth2.googleapis.com/token",
+			// Reading and nothing else. There is no tool here that sends, and the grant under it is
+			// `GET` on one path, so neither could there be.
 			scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
 			// Without the first there is no refresh token at all, and without the second there is one
 			// only on the very first consent — a login that stops working within the hour.
@@ -335,10 +341,10 @@ export const PLUGINS: readonly Plugin[] = [
 			wantsSecret: true,
 			makeAt: "https://console.cloud.google.com/apis/credentials",
 			steps: [
-				"In a Google Cloud project, enable the Gmail API. Only that one — the Gmail MCP API is a preview programme with a form and a wait, and none of this needs it.",
+				"In a Google Cloud project, enable the Gmail API.",
 				"On the OAuth consent screen add the scope gmail.readonly and publish the app — in Testing, Google expires the refresh token every seven days.",
 				"Make an OAuth client of type Desktop app, and paste its id and secret here.",
-				"Google will warn you that the app is unverified. It is yours, and you are its only user: Advanced, then go to it anyway.",
+				"Google will warn you that the app is unverified. It is yours and you are its only user: Advanced, then go to it anyway.",
 			],
 		},
 	},

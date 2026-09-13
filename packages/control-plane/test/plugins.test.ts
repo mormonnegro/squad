@@ -19,16 +19,15 @@ describe("the shelf of plugins", () => {
 	/**
 	 * The one whose account is at a provider that advertises nothing.
 	 *
-	 * Google's Gmail server is an MCP server and is not one: it answers the protocol, and the two
-	 * well-knowns an MCP server publishes to say where its authorization lives are 404 there. So the
-	 * addresses are written down, and the scopes with them — read and draft, and nothing that sends.
+	 * Every other login here discovers where to go by asking the server. Google is not a server: it
+	 * is an API this plane reaches on an agent's behalf, and its two addresses have not moved in a
+	 * decade. So they are written down, with the scope — reading, and nothing that sends.
 	 */
 	it("carries the addresses for the one that publishes none", () => {
 		const gmail = pluginOf("gmail");
 
-		// A process rather than a place, reaching the API that is generally available: Google's own
-		// MCP server for Gmail answers the protocol and refuses every real call until the project is
-		// enrolled in a preview programme, which takes a Workspace account and days.
+		// A process rather than a place: it reaches Gmail's own API with an app the operator made, and
+		// carries nothing — the proxy writes the token on, for one host, one path, and `GET`.
 		expect(gmail?.runs).toEqual(["squad-gmail"]);
 		expect(serverOf(gmail as never)).toEqual({
 			transport: "stdio",

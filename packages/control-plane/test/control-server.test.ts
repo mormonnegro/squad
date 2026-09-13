@@ -553,10 +553,10 @@ describe("the control socket", () => {
 		/**
 		 * A connection follows the plugin it is a copy of.
 		 *
-		 * Gmail was a command running in the sandbox until Google published a server; every connection
-		 * made before that pointed at a command no image has, and said so once per turn as
-		 * `spawn squad-gmail ENOENT` while every screen went on calling it connected. What the
-		 * catalogue says is where that plugin is, and a copy of it is not a place of its own.
+		 * Gmail moved twice in an afternoon, and every connection made before a move went on pointing
+		 * where that plugin used to be — saying so once per turn, in a conversation nobody was
+		 * reading, while every screen went on calling it connected. What the catalogue says is where
+		 * a plugin is, and a copy of it is not a place of its own.
 		 */
 		it("reaches a plugin where the catalogue says it is, not where it was written down", async () => {
 			// The shelf as an older version of this left it: a copy of the Gmail plugin, pointing at
@@ -566,7 +566,7 @@ describe("the control socket", () => {
 				JSON.stringify({
 					servers: {
 						gmail: {
-							server: { transport: "http", url: "https://gmailmcp.googleapis.com/mcp/v1" },
+							server: { transport: "http", url: "https://where.gmail.used.to.be/mcp" },
 							from: "gmail",
 						},
 					},
