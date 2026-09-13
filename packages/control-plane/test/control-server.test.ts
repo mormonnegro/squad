@@ -566,7 +566,7 @@ describe("the control socket", () => {
 				JSON.stringify({
 					servers: {
 						gmail: {
-							server: { transport: "stdio", command: "squad-gmail", args: [] },
+							server: { transport: "http", url: "https://gmailmcp.googleapis.com/mcp/v1" },
 							from: "gmail",
 						},
 					},
@@ -577,10 +577,7 @@ describe("the control socket", () => {
 
 			const [only] = (await client.plugins()).instances;
 			expect(only?.from).toBe("gmail");
-			expect(only?.server).toEqual({
-				transport: "http",
-				url: "https://gmailmcp.googleapis.com/mcp/v1",
-			});
+			expect(only?.server).toEqual({ transport: "stdio", command: "squad-gmail", args: [] });
 		});
 
 		it("refuses a plugin nobody shelved", async () => {

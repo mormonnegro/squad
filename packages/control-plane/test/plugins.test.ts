@@ -26,12 +26,22 @@ describe("the shelf of plugins", () => {
 	it("carries the addresses for the one that publishes none", () => {
 		const gmail = pluginOf("gmail");
 
-		expect(gmail?.url).toBe("https://gmailmcp.googleapis.com/mcp/v1");
+		// A process rather than a place, reaching the API that is generally available: Google's own
+		// MCP server for Gmail answers the protocol and refuses every real call until the project is
+		// enrolled in a preview programme, which takes a Workspace account and days.
+		expect(gmail?.runs).toEqual(["squad-gmail"]);
+		expect(serverOf(gmail as never)).toEqual({
+			transport: "stdio",
+			command: "squad-gmail",
+			args: [],
+		});
+		expect(gmail?.reaches).toEqual({
+			host: "gmail.googleapis.com",
+			pathPrefix: "/gmail/v1/users/me/",
+			methods: ["GET"],
+		});
 		expect(gmail?.oauth?.authorizationUrl).toBe("https://accounts.google.com/o/oauth2/v2/auth");
-		expect(gmail?.oauth?.scopes).toEqual([
-			"https://www.googleapis.com/auth/gmail.readonly",
-			"https://www.googleapis.com/auth/gmail.compose",
-		]);
+		expect(gmail?.oauth?.scopes).toEqual(["https://www.googleapis.com/auth/gmail.readonly"]);
 		// Without the first there is no refresh token at all, and without the second there is one only
 		// on the very first consent — which is a login that stops working within the hour.
 		expect(gmail?.oauth?.extra).toEqual({ access_type: "offline", prompt: "consent" });

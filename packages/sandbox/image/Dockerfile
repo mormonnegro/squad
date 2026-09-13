@@ -22,6 +22,12 @@ RUN userdel -r node \
 
 COPY relay.mjs /usr/local/lib/squad/relay.mjs
 
+# A plugin of ours that runs in here rather than answering somewhere: it speaks Gmail's own API and
+# carries no credential, because the proxy writes the operator's onto every request on the way out.
+COPY gmail.mjs /usr/local/lib/squad/gmail.mjs
+RUN printf '#!/bin/sh\nexec node /usr/local/lib/squad/gmail.mjs "$@"\n' > /usr/local/bin/squad-gmail \
+	&& chmod 755 /usr/local/bin/squad-gmail
+
 
 # On PATH rather than under lib, because this one is typed by the agent and a path it has to
 # remember is a path it will get wrong on the turn that matters.

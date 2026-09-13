@@ -28,6 +28,27 @@ export interface Plugin {
 	/** What it wants before it answers: a browser trip, or nothing at all. */
 	readonly account: "oauth" | "open";
 	/**
+	 * A plugin that is a process rather than a place, started inside the sandbox.
+	 *
+	 * The shelf has always taken these — `/plugins add files mcp-files /tmp` — and they have always
+	 * been somebody else's program. These are ours, and they exist for the one thing a remote server
+	 * cannot do: reach an API that has no MCP anybody can use, with a credential the agent never
+	 * sees, because what goes out is bare and the proxy writes the token onto it.
+	 */
+	readonly runs?: readonly string[];
+	/**
+	 * The host such a plugin reaches, and how far into it.
+	 *
+	 * This is the grant it earns, and it is earned only while an agent holds the plugin and the
+	 * account behind it is open. Written as narrow as the tools are: Gmail's is `GET` and one path,
+	 * so the token that reaches it cannot send, delete, or read anything else in that account.
+	 */
+	readonly reaches?: {
+		readonly host: string;
+		readonly pathPrefix?: string;
+		readonly methods?: readonly ("GET" | "POST" | "PUT" | "PATCH" | "DELETE")[];
+	};
+	/**
 	 * Where to authorize, for a provider that is not an MCP server and advertises nothing.
 	 *
 	 * `makeAt` is the page where the operator makes the app this uses. It is theirs and not ours on
@@ -287,36 +308,37 @@ export const PLUGINS: readonly Plugin[] = [
 	{
 		id: "gmail",
 		title: "Gmail",
-		does: "Reads your mail — threads, messages, labels — and writes drafts, never sending one.",
+		does: "Reads your mail: search it, and read a message it found.",
 		shelf: "work",
 		mark: "google.com",
+		// Google's own MCP server for Gmail exists and answers the protocol — and every call to it
+		// comes back asking for the Workspace Developer Preview Program, which takes a Workspace
+		// account, a form, and days. Its API underneath is generally available and has been for
+		// fifteen years, so this reaches that instead: a process in the sandbox speaking plain HTTPS,
+		// with the token written on at the proxy and never in its hands.
 		transport: "http",
-		url: "https://gmailmcp.googleapis.com/mcp/v1",
+		url: "https://gmail.googleapis.com/gmail/v1/users/me/",
+		runs: ["squad-gmail"],
+		reaches: {
+			host: "gmail.googleapis.com",
+			pathPrefix: "/gmail/v1/users/me/",
+			methods: ["GET"],
+		},
 		account: "oauth",
 		oauth: {
-			// Google's own, and it advertises none of this: the two well-knowns an MCP server answers
-			// are 404 there, because it is a Google API wearing MCP rather than an MCP server that
-			// happens to be Google's. Written down is the only way to reach it, and these two addresses
-			// have not moved in a decade.
 			authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
 			tokenUrl: "https://oauth2.googleapis.com/token",
-			// What its own tools need and no more: it reads, and it drafts. There is no tool in it that
-			// sends, which is the one thing worth knowing before handing it to something that runs on
-			// its own overnight.
-			scopes: [
-				"https://www.googleapis.com/auth/gmail.readonly",
-				"https://www.googleapis.com/auth/gmail.compose",
-			],
+			scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
 			// Without the first there is no refresh token at all, and without the second there is one
 			// only on the very first consent — a login that stops working within the hour.
 			extra: { access_type: "offline", prompt: "consent" },
 			wantsSecret: true,
 			makeAt: "https://console.cloud.google.com/apis/credentials",
 			steps: [
-				"Join the Google Workspace Developer Preview Program — this server is in preview and answers nobody outside it.",
-				"In a Google Cloud project, enable both the Gmail API and the Gmail MCP API.",
-				"On the OAuth consent screen add the scopes gmail.readonly and gmail.compose, and publish the app — in Testing, Google expires the refresh token every seven days.",
+				"In a Google Cloud project, enable the Gmail API. Only that one — the Gmail MCP API is a preview programme with a form and a wait, and none of this needs it.",
+				"On the OAuth consent screen add the scope gmail.readonly and publish the app — in Testing, Google expires the refresh token every seven days.",
 				"Make an OAuth client of type Desktop app, and paste its id and secret here.",
+				"Google will warn you that the app is unverified. It is yours, and you are its only user: Advanced, then go to it anyway.",
 			],
 		},
 	},
@@ -370,11 +392,21 @@ export function pluginOf(id: string): Plugin | undefined {
 export function pluginAt(server: McpServer): string | undefined {
 	const host = hostOf(server);
 	if (host === undefined) return undefined;
-	return PLUGINS.find((one) => hostOf(serverOf(one)) === host)?.id;
+	return PLUGINS.find((one) => one.runs === undefined && hostOf(serverOf(one)) === host)?.id;
 }
 
-/** The plugin as the shelf underneath stores one: an address and how to speak to it. */
+/**
+ * The plugin as the shelf underneath stores one.
+ *
+ * A place for the ones that are a place, and a process for the ones that run in the sandbox — the
+ * shelf has taken both since before any of this, which is why a plugin of ours can be either
+ * without the shelf learning a new shape.
+ */
 export function serverOf(plugin: Plugin): McpServer {
+	if (plugin.runs !== undefined) {
+		const [command = "", ...args] = plugin.runs;
+		return { transport: "stdio", command, args };
+	}
 	return { transport: plugin.transport, url: plugin.url };
 }
 
