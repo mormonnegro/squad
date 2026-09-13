@@ -260,6 +260,9 @@
 	text-align: left;
 	color: var(--text);
 	border-left: 2px solid transparent;
+	/* Somewhere for the disclosure to hang, which is the only thing in a row that is not in the flow:
+	   a control that appears on hover must cost nothing when it is not there. */
+	position: relative;
 	/* What this row is painted on, for the things drawn as cut out of it. Kept as a variable so a
 	   row that lights up takes its cut-outs with it instead of leaving them ringed in the old dark. */
 	--row-bg: var(--bg);
@@ -367,17 +370,23 @@
 /*
  * The way into what an agent is going to do.
  *
- * Faint until the row is under a mouse or already open, because a column of twelve chevrons is a
- * column of twelve things to decide about, and the name is what this list is read for.
+ * Absent until the row is under a mouse or already open — and absent from the layout, not merely
+ * invisible: a column of twelve chevrons is twelve things to decide about, and a slot kept empty
+ * for one is a strip of nothing down the right of every row in the list.
+ *
+ * So it hangs over the end of the row instead, and what was written there steps aside while it is
+ * up. Faded rather than hidden, so it is still a thing the keyboard can reach.
  */
 .row-open {
+	position: absolute;
+	right: 0.9rem;
 	display: grid;
 	place-items: center;
-	flex: none;
 	width: var(--row-tail);
 	height: var(--row-tail);
 	color: var(--muted);
 	opacity: 0;
+	pointer-events: none;
 	transition: opacity 120ms ease, transform 150ms ease;
 }
 
@@ -385,6 +394,20 @@
 .row:focus-within .row-open,
 .row[data-open="true"] .row-open {
 	opacity: 1;
+	pointer-events: auto;
+}
+
+/*
+ * What the row says about itself, while nothing is being asked of it.
+ *
+ * The spend and the countdown live where the disclosure appears, and only one of them can be read
+ * at a time. The facts win by default and stand down for the control, which is the way round that
+ * costs nothing: they are back the moment the mouse leaves.
+ */
+.row:hover .row-note,
+.row:focus-within .row-note,
+.row[data-open="true"] .row-note {
+	visibility: hidden;
 }
 
 .row[data-open="true"] .row-open {
@@ -719,7 +742,6 @@
 	grid-column: 3;
 	display: inline-flex;
 	align-items: center;
-	margin-right: calc(var(--row-tail) + var(--row-gap));
 }
 
 .row-faces > * + * {
