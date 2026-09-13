@@ -66,7 +66,13 @@ export function overheard(event: AgentEvent): Utterance {
 	}
 	// Another agent is named by its name rather than by its channel, because that is what it is to
 	// whoever is reading: `via scout` is who wrote, where `via agent:scout` is the address it came to.
-	return { from: "other", via: fromAgent(event) ?? event.channel, text: event.body };
+	// Named rather than addressed, for the reason a peer is: the operator called the trigger
+	// `stripe-cancels`, and `webhook:stripe-cancels` is where it arrived rather than what it is.
+	return {
+		from: "other",
+		via: fromAgent(event) ?? carriedBy(event.channel) ?? event.channel,
+		text: event.body,
+	};
 }
 
 /**

@@ -159,6 +159,7 @@ import { TelegramBots } from "./telegram.ts";
 import { overheard, sentTo, Transcript, type Utterance } from "./transcript.ts";
 import {
 	hookOf,
+	newName,
 	newSecret,
 	type Trigger,
 	Triggers,
@@ -1384,13 +1385,17 @@ export class ControlPlane {
 		from: Signer,
 		only: readonly string[],
 	): Promise<Trigger> {
-		const refused = triggerRefused(name);
+		// No name, and the plane makes one: an unguessable address for a trigger whose address is
+		// what guards it. This is the one-click path — pick an agent, get a URL — and the reason it
+		// can be one click is that there is nothing else to decide before it works.
+		const asked = name.trim() === "" || from === "url" ? newName(agentId) : name.trim();
+		const refused = triggerRefused(asked);
 		if (refused !== undefined) throw new Error(refused);
 		if (!this.#agents.some((agent) => agent.id === agentId)) {
 			throw new Error(`There is no agent called "${agentId}"`);
 		}
 		const trigger: Trigger = {
-			name,
+			name: asked,
 			agentId,
 			from,
 			secret: newSecret(),
@@ -1405,7 +1410,7 @@ export class ControlPlane {
 			kind: "note",
 			who: agentId,
 			action: "woken by",
-			detail: `${from} at /hooks/${name}`,
+			detail: `${from} at /hooks/${asked}`,
 		});
 		return trigger;
 	}

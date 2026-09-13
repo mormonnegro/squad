@@ -227,6 +227,37 @@ describe("the control socket", () => {
 			expect(await post("cancels", body, stripe(body, made.secret))).toBe(401);
 		});
 
+		/**
+		 * The one-click kind, which is what most people want a webhook to be: an address, and a turn
+		 * for whatever posts to it. The address is the credential, the way it is at every product
+		 * that offers one in a click — so the plane makes it rather than taking a name for it.
+		 */
+		it("takes anything at all when the address is the secret", async () => {
+			const heard: string[] = [];
+			await answerWith("scout", (prompt) => {
+				heard.push(prompt);
+				return "";
+			});
+			const made = await plane.addTrigger("scout", "", "url", []);
+			expect(made.name.startsWith("scout-")).toBe(true);
+			// Long enough that it is an address rather than a name.
+			expect(made.name.length).toBeGreaterThan(24);
+
+			const body = JSON.stringify({ whatever: "a script of mine" });
+			expect(await post(made.name, body, { "content-type": "application/json" })).toBe(202);
+			await plane.bus.drain();
+			expect(heard).toHaveLength(1);
+			expect(heard[0]).toContain("a script of mine");
+			// Still data, and still fenced: nothing about being unsigned makes it more trustworthy.
+			expect(heard[0]).toContain("UNTRUSTED");
+		});
+
+		it("is still refused at an address that is not one of them", async () => {
+			await answerWith("scout", () => "");
+			await plane.addTrigger("scout", "", "url", []);
+			expect(await post("scout-guessed", "{}", { "content-type": "application/json" })).toBe(401);
+		});
+
 		it("refuses one for an agent that is not here", async () => {
 			await expect(plane.addTrigger("nobody", "cancels", "stripe", [])).rejects.toThrow(/nobody/);
 		});

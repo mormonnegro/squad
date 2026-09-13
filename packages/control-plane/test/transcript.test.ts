@@ -79,8 +79,10 @@ describe("overheard", () => {
 	});
 
 	// The bug this exists to prevent: a webhook drawn the way the operator is drawn, in a pane that
-	// is read back through to work out who asked for what.
-	it("is somebody else, named for the channel, when it is not trusted", () => {
+	// is read back through to work out who asked for what. Named for what the operator called it
+	// rather than for the address it came to, the way a peer is: they named the trigger `github`,
+	// and `webhook:github` is where it landed.
+	it("is somebody else, named for what it is, when it is not trusted", () => {
 		const said = overheard(
 			arriving({
 				agentId: "scout",
@@ -91,7 +93,7 @@ describe("overheard", () => {
 			}),
 		);
 
-		expect(said).toEqual({ from: "other", via: "webhook:github", text: "ship it" });
+		expect(said).toEqual({ from: "other", via: "github", text: "ship it" });
 	});
 });
 

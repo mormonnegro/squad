@@ -34,7 +34,7 @@ export interface Trigger {
 }
 
 /** Named like everything else a person types and puts in a URL. */
-const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/;
+const NAME = /^[a-z0-9][a-z0-9-]{0,64}$/;
 
 export function nameRefused(name: string): string | undefined {
 	if (name.length === 0) return "A trigger needs a name.";
@@ -42,6 +42,17 @@ export function nameRefused(name: string): string | undefined {
 		return `"${name}" will not do as a trigger name: lowercase letters, digits and dashes, starting with a letter or a digit.`;
 	}
 	return undefined;
+}
+
+/**
+ * An address nobody can guess, for a trigger whose address is its secret.
+ *
+ * The agent's name in front so that a person reading a list of them, or a log of what posted where,
+ * can tell which is which — and ninety-six bits behind it, which is what makes it an address rather
+ * than a name. Short enough to paste into a form without wrapping.
+ */
+export function newName(agentId: string): string {
+	return `${agentId}-${randomBytes(12).toString("hex")}`;
 }
 
 /**

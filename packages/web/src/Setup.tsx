@@ -38,6 +38,8 @@ export function Setup({
 	const [keeping, setKeeping] = useState("");
 	const [triggers, setTriggers] = useState<readonly Trigger[]>([]);
 	const [making, setMaking] = useState({ name: "", from: "stripe", only: "" });
+	/** Whether the signed kind is on screen. Shut, because the one-click kind is what is wanted. */
+	const [signing, setSigning] = useState(false);
 	/** The one just made, kept on screen until this dialog closes: its secret is shown once. */
 	const [fresh, setFresh] = useState<Trigger | undefined>();
 	const [why, setWhy] = useState<string | undefined>();
@@ -221,7 +223,7 @@ export function Setup({
 			<section className="flex flex-col gap-2">
 				<Head
 					title="Triggers"
-					says="What outside this plane gives it a turn. A wakeup answers when; this answers when something happens — Stripe cancels a subscription, GitHub merges a branch. Say which events are worth a turn, or every one the sender has will be one."
+					says="An address that gives this agent a turn. Paste it into whatever should wake it — Stripe, GitHub, a script of yours — and anything posted there is a turn, with the payload in its hands."
 				/>
 				<div className="flex flex-col gap-2 rounded-lg border border-line bg-raised p-3">
 					{triggers.length === 0 && fresh === undefined && (
@@ -257,17 +259,57 @@ export function Setup({
 					{/* Once, here, and never again: it is pasted into a form on the sender's own site the
 					    moment it exists, and a console that could show it later would be one it could be
 					    taken from. */}
-					{fresh?.secret !== undefined && (
+					{/* The one just made, so the address is on screen the moment it exists rather than
+					    somewhere in the list above it. */}
+					{fresh !== undefined && (
 						<div className="flex flex-col gap-1 border-line-soft border-t pt-2">
 							<span className="text-[0.78rem] text-said">
-								Paste this into {fresh.from}, with the address above. It is not shown again:
+								{fresh.from === "url"
+									? `Paste this where it goes. Anything that posts to it wakes ${nameOf(agent.id)}:`
+									: `The address, and the secret to sign with — which is not shown again:`}
 							</span>
-							<code className="md-code break-all">{fresh.secret}</code>
+							<code className="md-code break-all">{`${window.location.origin}/hooks/${fresh.name}`}</code>
+							{fresh.secret !== undefined && (
+								<code className="md-code break-all">{fresh.secret}</code>
+							)}
 						</div>
 					)}
 
+					{/* One button, and the address exists. Everything under it is a refinement of this,
+					    and a refinement belongs after the thing works rather than in front of it. */}
+					<div className="flex flex-wrap items-center gap-2 border-line-soft border-t pt-2">
+						<button
+							type="button"
+							className="pill"
+							data-yes="true"
+							disabled={busy === "webhook"}
+							onClick={() =>
+								void run("webhook", async () => {
+									setFresh(await plane.addTrigger(agent.id, "", "url", []));
+								})
+							}
+						>
+							{busy === "webhook" && <Spin />}＋ webhook for {nameOf(agent.id)}
+						</button>
+						<span className="flex-1 text-[0.78rem] text-muted">
+							— an address nobody can guess. Anything that posts to it wakes {nameOf(agent.id)}, so
+							paste it where it is going and nowhere else.
+						</span>
+						<button
+							type="button"
+							className="pill"
+							aria-expanded={signing}
+							onClick={() => setSigning(!signing)}
+						>
+							{signing ? "−" : "+"} signed
+						</button>
+					</div>
+
+					{/* For a sender that signs: the signature is checked, and only the events named are
+					    worth a turn. Stripe posts every event on the account to anything that takes one. */}
 					<form
 						className="flex flex-wrap items-center gap-2 border-line-soft border-t pt-2"
+						hidden={!signing}
 						onSubmit={(event) => {
 							event.preventDefault();
 							const name = making.name.trim();
@@ -294,7 +336,7 @@ export function Setup({
 							spellCheck={false}
 							onChange={(event) => setMaking({ ...making, name: event.target.value })}
 						/>
-						{SIGNERS.map((one) => (
+						{SIGNERS.filter((one) => one !== "url").map((one) => (
 							<button
 								key={one}
 								type="button"
@@ -483,7 +525,7 @@ export function Setup({
  * refuses anything it does not know, which is what keeps the two lists from drifting.
  */
 /** Who can be at the other end of a trigger. The plane refuses anything it does not know. */
-const SIGNERS = ["stripe", "github", "squad"] as const;
+const SIGNERS = ["url", "stripe", "github", "squad"] as const;
 
 const GATES = [
 	{ id: "mail", name: "Mail", said: "by mail" },

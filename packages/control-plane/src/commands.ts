@@ -341,7 +341,7 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/trigger",
-		takes: "[<name> from <stripe|github|squad> [on <event>…]|drop <name>]",
+		takes: "[new|<name> from <stripe|github> [on <event>…]|drop <name>]",
 		does: "what outside this plane gives it a turn, and the address each one is posted to",
 	},
 	{
@@ -1628,10 +1628,11 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 			return [
 				`Nothing outside this plane wakes ${id}.`,
 				"",
-				"  /trigger stripe-cancels from stripe on customer.subscription.deleted",
+				`  /trigger new       an address that wakes ${id}, and nothing else to decide`,
+				"  /trigger <name> from stripe on customer.subscription.deleted",
 				"",
-				"makes one: an address to paste into Stripe, a secret to sign with, and a turn for",
-				`${id} every time that event lands — and no turn at all for any of the others.`,
+				"The first is a URL you paste into whatever should wake it. The second is for a sender",
+				"that signs — it checks the signature, and takes a turn only on the events you name.",
 			].join("\n");
 		}
 		return [
@@ -1655,6 +1656,32 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 			: `There is no trigger called "${name}".`;
 	}
 
+	/*
+	 * An address that wakes this agent, and nothing else to decide.
+	 *
+	 * The whole of what most people want from a webhook, and what every product that offers one in a
+	 * click gives them: a URL nobody can guess. Everything else here — who signs, which events — is
+	 * a refinement of this, and refinements belong after the thing works rather than in front of it.
+	 */
+	if (first === "new") {
+		try {
+			const made = await context.addTrigger("", "url", []);
+			return [
+				`Anything that posts to this wakes ${id}:`,
+				"",
+				`  /hooks/${made.name}`,
+				"",
+				"on whatever address this plane is reachable at. The address is the secret — anybody who",
+				"has it can wake this agent — so paste it where it is going and nowhere else.",
+				"",
+				"If the sender signs what it posts, /trigger <name> from stripe on <event> checks the",
+				"signature as well, and takes a turn only on the events you name.",
+			].join("\n");
+		} catch (error) {
+			return (error as Error).message;
+		}
+	}
+
 	// `<name> from <signer> on <event> <event>` — read as words rather than as flags, because this
 	// is a sentence somebody says out loud and every flag in it would be a thing to look up.
 	const name = first;
@@ -1663,10 +1690,12 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 	const said = at === -1 ? "" : (rest[at + 1] ?? "");
 	if (!isSigner(said)) {
 		return [
-			`/trigger ${name} from <${SIGNERS.join("|")}> — who is at the other end, which is how`,
-			"the signature on what arrives gets read.",
+			`/trigger ${name} from <${SIGNERS.filter((one) => one !== "url").join("|")}> — who is at`,
+			"the other end, which is how the signature on what arrives gets read.",
 			"",
 			...SIGNERS.map((one) => `  ${one.padEnd(7)} ${SIGNER_SAID[one]}`),
+			"",
+			"Or /trigger new, for an address that wakes it with nothing else to set up.",
 		].join("\n");
 	}
 	const only = on === -1 ? [] : rest.slice(on + 1).filter((word) => word !== "");

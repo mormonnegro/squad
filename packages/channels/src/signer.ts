@@ -12,9 +12,9 @@ import { isFresh, SIGNATURE_HEADER, sign, TIMESTAMP_HEADER, verify } from "./sig
  * `squad` is this plane's own, which is what anything we write posts with. The other two are there
  * because they are what people actually want to be woken by.
  */
-export type Signer = "squad" | "stripe" | "github";
+export type Signer = "url" | "squad" | "stripe" | "github";
 
-export const SIGNERS: readonly Signer[] = ["squad", "stripe", "github"];
+export const SIGNERS: readonly Signer[] = ["url", "squad", "stripe", "github"];
 
 export function isSigner(said: string): said is Signer {
 	return (SIGNERS as readonly string[]).includes(said);
@@ -22,6 +22,7 @@ export function isSigner(said: string): said is Signer {
 
 /** How each of them is described where somebody is choosing between them. */
 export const SIGNER_SAID: Record<Signer, string> = {
+	url: "anything at all — the address itself is the secret",
 	squad: "anything squad signs, and anything you write yourself",
 	stripe: "Stripe, with the signing secret from its webhook page",
 	github: "GitHub, with the secret from the repository's webhook",
@@ -55,6 +56,20 @@ function hmac(secret: string, payload: string): string {
  */
 export function authentic(signer: Signer, presented: Presented): boolean {
 	const { headers, body, secret, now, toleranceSeconds } = presented;
+
+	/*
+	 * The address is the secret.
+	 *
+	 * What every product that offers a webhook in one click does, and for the reason they do it: a
+	 * sender that has to be taught to sign is a sender half of which never gets set up, and an
+	 * unguessable URL is a credential — the same credential a signing secret is, carried in the one
+	 * field every sender on earth already has.
+	 *
+	 * It is weaker in exactly one way, and the way is worth saying: anyone who ever sees the address
+	 * can post to it. So the plane makes these addresses rather than taking one, with enough in them
+	 * that they cannot be guessed, and what arrives is data at public trust like everything else.
+	 */
+	if (signer === "url") return true;
 
 	if (signer === "squad") {
 		const timestamp = headers[TIMESTAMP_HEADER];
