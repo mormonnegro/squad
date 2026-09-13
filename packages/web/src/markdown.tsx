@@ -236,6 +236,19 @@ function cells(line: string): readonly string[] {
  * address opened itself, which is how a good deal of Wikipedia is addressed and which is a 404
  * without it.
  */
+/**
+ * Whether an underscore here is inside a word, where it is an underscore and not an emphasis.
+ *
+ * `evt_real_1` and `customer_id` are not italics, and a JSON payload from Stripe is most of a
+ * screen of them. The rule is CommonMark's and for its reason: `*` is punctuation nobody puts in
+ * an identifier and `_` is punctuation everybody does, so only `_` has to look at the letter to
+ * its left before deciding it is a mark.
+ */
+function inWord(text: string, at: number): boolean {
+	const before = text[at - 1];
+	return before !== undefined && /[\p{L}\p{N}]/u.test(before);
+}
+
 function addressOf(run: string): string {
 	let url = run;
 	while (url.length > 0) {
@@ -322,7 +335,8 @@ export function inline(text: string): ReactNode[] {
 			continue;
 		}
 
-		const strong = /^\*\*([^\n]+?)\*\*/.exec(rest) ?? /^__([^\n]+?)__/.exec(rest);
+		const strong =
+			/^\*\*([^\n]+?)\*\*/.exec(rest) ?? (inWord(text, i) ? null : /^__([^\n]+?)__/.exec(rest));
 		if (strong !== null) {
 			keep();
 			out.push(<strong key={key++}>{inline(strong[1] ?? "")}</strong>);
@@ -332,7 +346,8 @@ export function inline(text: string): ReactNode[] {
 
 		// One star, and not the first of two: `**` is handled above, so a lone one that reaches here
 		// is emphasis or it is punctuation, and punctuation is what it stays if nothing closes it.
-		const em = /^\*([^*\n]+?)\*/.exec(rest) ?? /^_([^_\n]+?)_/.exec(rest);
+		const em =
+			/^\*([^*\n]+?)\*/.exec(rest) ?? (inWord(text, i) ? null : /^_([^_\n]+?)_/.exec(rest));
 		if (em !== null) {
 			keep();
 			out.push(<em key={key++}>{inline(em[1] ?? "")}</em>);

@@ -165,3 +165,25 @@ describe("an address, which arrives as itself far more often than as a mark", ()
 		expect(inline("`https://squad.dev`").map(clicked)).toEqual([undefined]);
 	});
 });
+
+describe("underscores inside a word", () => {
+	/** What the pieces are, so a run that stayed text can be told from one that became a mark. */
+	const marks = (text: string): string[] =>
+		inline(text).map((one) =>
+			typeof one === "string" ? "text" : ((one as { type?: unknown }).type as string) || "node",
+		);
+
+	// A Stripe payload is most of a screen of these, and `evt_real_1` drawn as `evt<em>real</em>1`
+	// is a page quietly rewriting the identifier somebody is trying to read.
+	it("are underscores, not emphasis", () => {
+		expect(marks("evt_real_1")).toEqual(["text"]);
+		expect(marks('{"id":"evt_real_1"}')).toEqual(["text"]);
+		expect(marks("sub_abc__def")).toEqual(["text"]);
+	});
+
+	it("still open emphasis at the edge of a word", () => {
+		expect(marks("_sí_")).toEqual(["em"]);
+		expect(marks("__muy__")).toEqual(["strong"]);
+		expect(marks("dice _esto_ acá")).toEqual(["text", "em", "text"]);
+	});
+});
