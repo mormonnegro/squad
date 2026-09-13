@@ -1567,3 +1567,32 @@ ol.md-list {
 	border-radius: 8px;
 	box-shadow: inset 0 0 0 1px #ffffff14;
 }
+
+/*
+ * The way out of a turn, at the end of the row that is holding one up.
+ *
+ * Quiet until it is wanted and red when it is: stopping is not the ordinary thing to do with a
+ * turn, and a control that looked like the send button would be the wrong one under a hand that
+ * meant to press the other. It appears only while there is something to stop, so the row it sits in
+ * is the row of a box that is still taking keys — what gets typed while it is there is queued, and
+ * that has not changed.
+ */
+.box-stop {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	flex: none;
+	align-self: flex-end;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	padding: 0.22rem 0.7rem;
+	font: 500 0.78rem var(--sans);
+	color: var(--muted);
+	transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.box-stop:hover {
+	border-color: color-mix(in srgb, var(--red) 45%, transparent);
+	background: color-mix(in srgb, var(--red) 10%, transparent);
+	color: var(--red);
+}

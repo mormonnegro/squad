@@ -1,5 +1,5 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
-import { Settings2, Terminal, User } from "lucide-react";
+import { Settings2, Square, Terminal, User } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -135,7 +135,13 @@ export function Chat({
 				)}
 			</div>
 
-			<Composer plane={plane} agent={agent} busy={live.thinking} onLocal={onLocal} />
+			<Composer
+				plane={plane}
+				agent={agent}
+				busy={live.thinking}
+				onLocal={onLocal}
+				onStop={() => void plane.stop(agent.id)}
+			/>
 		</>
 	);
 }
@@ -357,6 +363,7 @@ function Ask({ what, onAnswer }: { what: React.ReactNode; onAnswer: (open: boole
 }
 
 function Composer({
+	onStop,
 	plane,
 	agent,
 	busy,
@@ -366,6 +373,8 @@ function Composer({
 	agent: AgentSummary;
 	busy: boolean;
 	onLocal: (agentId: string, said: Utterance) => void;
+	/** Ends the turn in flight where it is. The half it wrote is kept; nothing takes it again. */
+	onStop: () => void;
 }) {
 	const [draft, setDraft] = useState("");
 	const [pick, setPick] = useState(0);
@@ -461,6 +470,14 @@ function Composer({
 						field.style.height = `${field.scrollHeight}px`;
 					}}
 					onKeyDown={(event) => {
+						// The key the terminal console stops a turn with, in the one place a hand already
+						// is. Only while there is something to stop: at any other moment it is a key
+						// pressed at nothing, and a box that swallowed it would be a box with a mode.
+						if (event.key === "Escape" && busy && menu.length === 0) {
+							event.preventDefault();
+							onStop();
+							return;
+						}
 						if (menu.length > 0 && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
 							event.preventDefault();
 							setPick(
@@ -481,6 +498,20 @@ function Composer({
 						}
 					}}
 				/>
+				{/*
+				 * The way out of a turn, at the end of the row it is holding up.
+				 *
+				 * Not a report — the spinner and what it is doing stay in the conversation above, where
+				 * they belong — but a thing to press, and the moment somebody wants it they are already
+				 * here, typing the message they were about to queue. `esc` does the same, which is the
+				 * key the terminal console has always used.
+				 */}
+				{busy && (
+					<button type="button" className="box-stop" title="stop this turn (esc)" onClick={onStop}>
+						<Square className="size-3" />
+						stop
+					</button>
+				)}
 			</div>
 		</div>
 	);
