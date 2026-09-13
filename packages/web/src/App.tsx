@@ -399,7 +399,9 @@ export function App() {
 						disabled={plane === undefined}
 						onClick={() => show("plugins")}
 					>
-						<Blocks className="row-icon size-4" />
+						<span className="row-icon">
+							<Blocks className="size-4" />
+						</span>
 						<span className="row-name">Plugins</span>
 					</button>
 					<button
@@ -409,7 +411,9 @@ export function App() {
 						disabled={plane === undefined}
 						onClick={() => show("repos")}
 					>
-						<GitBranch className="row-icon size-4" />
+						<span className="row-icon">
+							<GitBranch className="size-4" />
+						</span>
 						<span className="row-name">Repositories</span>
 					</button>
 
@@ -630,7 +634,14 @@ function AgentRow({
 				: agent.running
 					? "running"
 					: "stopped";
-	const glyph = { asking: "?", busy: "◐", running: "●", stopped: "○" }[state];
+	// The word for it, since the dot itself is a colour. On the dot rather than in the row: four
+	// states in four colours is legible at a glance and unreadable to somebody who needs the word.
+	const says = {
+		asking: "waiting on you",
+		busy: "working",
+		running: "running",
+		stopped: "stopped",
+	}[state];
 	const heat =
 		agent.limitUsd === undefined
 			? undefined
@@ -648,11 +659,13 @@ function AgentRow({
 		<>
 			<div className="row" data-here={here} data-open={open}>
 				<button type="button" className="row-pick" onClick={onPick}>
-					<span className="mark" data-state={state}>
-						{glyph}
-					</span>
+					{/* On the face rather than beside it. A column of its own put every name in this rail
+					    fourteen pixels further from the edge to say a thing that fits in the corner of
+					    the picture it is about — which is where every program that has ever drawn who is
+					    online puts it. */}
 					<span className="row-icon">
 						<Avatar id={agent.id} />
+						<span className="mark" data-state={state} title={says} />
 					</span>
 					<span className="row-name">{nameOf(agent.id)}</span>
 				</button>

@@ -33,8 +33,11 @@ export function RailHead({
 }) {
 	return (
 		<Menu>
-			<MenuTrigger className="flex w-full items-center gap-2.5 px-3 py-3 text-left outline-none hover:bg-white/5 data-[state=open]:bg-white/5">
-				<MenuTile>◇</MenuTile>
+			{/* On the rail's own grid: the same left edge, the same face column, the same gap — so the
+			    plane's name and every name under it stand in one line. The transparent border is the
+			    two pixels a row keeps for the stripe that marks where you are. */}
+			<MenuTrigger className="flex w-full items-center gap-2 border-transparent border-l-2 px-[0.9rem] py-3 text-left outline-none hover:bg-white/5 data-[state=open]:bg-white/5">
+				<MenuTile size="row">◇</MenuTile>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate font-semibold text-[0.92rem] text-said">squad</span>
 					<span className="block truncate font-mono text-[0.72rem] text-muted">{where()}</span>

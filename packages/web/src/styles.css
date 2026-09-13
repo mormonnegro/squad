@@ -155,11 +155,12 @@
  * end anybody scrolls to. On the same left edge as the marks in that list, so the column stays a
  * column — an element in a gutter of its own is the thing this layout is most often wrong about.
  */
+/* The two screens at the top of the rail. A row like the rest of them, quieter: what is under it is
+   the work, and these are the two doors beside it. */
 .rail-screen {
 	width: 100%;
-	padding: 0.42rem 0.9rem;
+	padding: 0.32rem 0.9rem;
 	border-left: 2px solid transparent;
-	color: var(--muted);
 }
 
 .rail-screen:hover {
@@ -233,16 +234,18 @@
 /*
  * One grid for everything in this column.
  *
- * Three things in a row and every row the same three: whether it is working, what it is, and what
- * it is called. An agent has a dot and a face, a channel has a `#`, a screen has its icon and a new
- * one has a `+` — and all of them are the same width in the same place, so the names line up on one
- * edge and the column reads as a list rather than as four lists that happen to be stacked.
+ * Two things in a row and every row the same two: what it is, and what it is called. An agent has a
+ * face, a channel has a `#`, a screen has its icon and a new one has a `+` — all the same width, in
+ * the same place, hard against the left edge, so the names line up and the column reads as a list
+ * rather than as four lists that happen to be stacked.
+ *
+ * Whether an agent is working is drawn on its face and not in a column: a rail is narrow, and a
+ * fact that fits in the corner of a picture must not push every name in the list away from the edge.
  *
  * The last column is the disclosure an agent row carries. It is reserved on every row, because a
  * thing that appears on hover must not be a thing that moves the row it appears in.
  */
 .rail {
-	--row-mark: 0.85rem;
 	--row-face: 1.375rem;
 	--row-tail: 1.1rem;
 	--row-gap: 0.5rem;
@@ -272,7 +275,7 @@
 .rail-screen,
 .row-line {
 	display: grid;
-	grid-template-columns: var(--row-mark) var(--row-face) minmax(0, 1fr) auto;
+	grid-template-columns: var(--row-face) minmax(0, 1fr) auto;
 	align-items: center;
 	gap: var(--row-gap);
 	min-width: 0;
@@ -286,9 +289,19 @@
 	padding: 0;
 }
 
-/* Whatever stands for the thing itself: a face, a `#`, an icon, a `+`. Always the second column. */
+.rail-screen {
+	color: var(--muted);
+}
+
+.rail-screen:hover,
+.rail-screen[data-here="true"] {
+	color: var(--text-strong);
+}
+
+/* Whatever stands for the thing itself: a face, a `#`, an icon, a `+`. Always the first column. */
 .row-icon {
-	grid-column: 2;
+	grid-column: 1;
+	position: relative;
 	display: grid;
 	place-items: center;
 	width: var(--row-face);
@@ -320,7 +333,7 @@
 }
 
 .row-name {
-	grid-column: 3;
+	grid-column: 2;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -391,7 +404,7 @@
 	gap: 0.55rem;
 	/* Hung in the column the status dot is in, so the words start where the faces above them do:
 	   the list belongs to that row and lines up with it rather than with the edge of the rail. */
-	margin: 0.15rem 0.9rem 0.5rem 1.6rem;
+	margin: 0.15rem 0.9rem 0.5rem 0.95rem;
 	padding-left: 0.7rem;
 	border-left: 1px solid var(--line);
 	font: 0.78rem / 1.5 var(--sans);
@@ -489,20 +502,39 @@
 }
 
 /* The one glyph that says whether an agent is up, mid-turn, or stopped. */
+/*
+ * Whether an agent is working, in the corner of its own face.
+ *
+ * A dot rather than a glyph, because at this size a glyph is a smudge and the thing that carries
+ * here is colour: green is up, amber is thinking, red is waiting on you, and an empty ring is
+ * stopped. The word is on the title, for whoever needs the word.
+ *
+ * Cut out of whatever the row is painted on, so it reads as sitting on the face rather than as part
+ * of the picture — the same trick the faces in a channel row are stacked with.
+ */
 .mark {
-	width: 0.85rem;
-	text-align: center;
-	font-size: 0.7rem;
-	line-height: 1;
+	position: absolute;
+	right: -1px;
+	bottom: -1px;
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: 999px;
+	background: currentColor;
+	outline: 2px solid var(--row-bg);
 }
 .mark[data-state="running"] {
 	color: var(--green);
 }
-/* The one in the column turns too, so an agent working is visible from the list without opening it. */
+/* It beats, so an agent that is working is visible from the list without opening it. */
 .mark[data-state="busy"] {
 	color: var(--amber);
-	display: inline-block;
-	animation: spin 1.4s linear infinite;
+	animation: beat 1.4s ease-in-out infinite;
+}
+
+@keyframes beat {
+	50% {
+		opacity: 0.35;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -510,8 +542,11 @@
 		animation-duration: 4s;
 	}
 }
+
+/* Nothing is running, so nothing is lit: a ring with the row showing through it. */
 .mark[data-state="stopped"] {
-	color: var(--muted);
+	background: transparent;
+	border: 1px solid var(--muted);
 }
 .mark[data-state="asking"] {
 	color: var(--red);
@@ -681,7 +716,7 @@
  * disclosure begins so that the two columns end on one edge.
  */
 .row-faces {
-	grid-column: 4;
+	grid-column: 3;
 	display: inline-flex;
 	align-items: center;
 	margin-right: calc(var(--row-tail) + var(--row-gap));

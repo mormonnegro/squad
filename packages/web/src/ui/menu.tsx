@@ -64,10 +64,29 @@ export function MenuItem({ className, children, ...rest }: Primitive.DropdownMen
 }
 
 /** A square with a letter in it, which is how a thing with no picture gets one. */
-export function MenuTile({ children, accent }: { children: React.ReactNode; accent?: string }) {
+export function MenuTile({
+	children,
+	accent,
+	size = "tile",
+}: {
+	children: React.ReactNode;
+	accent?: string;
+	/**
+	 * `row` is the size the faces in the rail are drawn at.
+	 *
+	 * The plane's own mark stands at the head of that list and has to stand in the same column as
+	 * everything under it — a tile four pixels wider would put the name beside it four pixels off
+	 * every other name, which reads as a mistake rather than as a heading.
+	 */
+	size?: "tile" | "row";
+}) {
 	return (
 		<span
-			className="grid size-7 flex-none place-items-center rounded-md border border-[#2b3037] bg-sunk font-mono text-[0.72rem]"
+			className={
+				size === "row"
+					? "grid size-[1.375rem] flex-none place-items-center rounded-md border border-[#2b3037] bg-sunk font-mono text-[0.6rem]"
+					: "grid size-7 flex-none place-items-center rounded-md border border-[#2b3037] bg-sunk font-mono text-[0.72rem]"
+			}
 			style={accent === undefined ? undefined : { color: `var(--color-${accent})` }}
 		>
 			{children}
