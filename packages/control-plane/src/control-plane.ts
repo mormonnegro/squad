@@ -1369,11 +1369,15 @@ export class ControlPlane {
 	}
 
 	/**
-	 * Says something to everybody in a room, which is the whole of what a room is for.
+	 * Says something in a room, and wakes whoever it names.
 	 *
-	 * Every member is woken, and that is the cost of asking three agents at once rather than the
-	 * accident of it: three turns, because three of them were asked. What they say back wakes only
-	 * whoever they name.
+	 * One rule for everybody who speaks in here, the operator included: a turn is taken by the agents
+	 * that were named and by nobody else. Naming is what asking is — `@scout, ¿cómo va el deploy?` is
+	 * a question put to scout in front of the others, and the others reading it later is the point of
+	 * having said it here rather than in scout's own pane.
+	 *
+	 * A line that names nobody is still worth saying: it is written into the thread, where everyone
+	 * in the room reads it the next time they are woken. It just does not cost three turns to say.
 	 */
 	async sayInRoom(name: string, text: string): Promise<void> {
 		const room = await this.#rooms.of(name);
@@ -1385,7 +1389,9 @@ export class ControlPlane {
 		}
 
 		await this.#inRoom(name, { from: "operator", text: withoutSecrets(said) });
-		for (const member of room.members) {
+
+		const named = mentioned(said, room.members);
+		for (const member of named) {
 			await this.bus.publish({
 				agentId: member,
 				source: "channel",
@@ -1398,6 +1404,21 @@ export class ControlPlane {
 					hops: "1",
 					with: room.members.filter((one) => one !== member).join(", "),
 				},
+			});
+		}
+
+		// Somebody was named who is not in here. Said in the room rather than thrown, because the
+		// message itself went nowhere wrong — it is in the thread — and what went wrong is that the
+		// agent it was addressed to is not going to see it.
+		const elsewhere = mentioned(
+			said,
+			this.#agents.map((agent) => agent.id),
+		).filter((id) => !room.members.includes(id));
+		if (elsewhere.length > 0) {
+			await this.#inRoom(name, {
+				from: "plane",
+				tone: "bad",
+				text: `${elsewhere.join(" and ")} ${elsewhere.length === 1 ? "is" : "are"} not in #${name}, so ${elsewhere.length === 1 ? "it was" : "they were"} not woken. Add ${elsewhere.length === 1 ? "it" : "them"} to the room, or say this where ${elsewhere.length === 1 ? "it is" : "they are"}.`,
 			});
 		}
 	}

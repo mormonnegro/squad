@@ -771,9 +771,9 @@ function NewRoom({
 						))}
 					</div>
 					<span className="text-[0.78rem] text-muted leading-relaxed">
-						What you say in a channel is said to all of them, and each one takes a turn on it. They
-						can reach each other from in there too: an agent that writes <code>@name</code> in its
-						answer wakes that one.
+						Everything said in a channel is said in front of all of them. Naming one with{" "}
+						<code>@</code> is what asks it for something: that one takes a turn, nobody else does,
+						and the same is true of what they say to each other in there.
 					</span>
 				</div>
 				{why !== undefined && <span className="why">{why}</span>}

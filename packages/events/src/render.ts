@@ -26,13 +26,14 @@ export function renderEvent(event: AgentEvent): string {
 		return room === undefined
 			? [`Message from the operator.`, origin, "", event.body].join("\n")
 			: [
-					`Message from the operator, in the room #${room}.`,
+					`Message from the operator, in the room #${room}. You were woken because it names you.`,
 					...(event.metadata?.with === undefined
 						? []
 						: [
-								`${event.metadata.with} are in the room and were told this too, so the work is`,
-								"between you. Decide what is yours, do that part, and say which part you took —",
-								"an answer here is posted in the room, where they and the operator read it.",
+								`${event.metadata.with} are in the room and can read this, and were not woken by`,
+								"it — in here a turn is taken by whoever is named and by nobody else. So the part",
+								"that is yours is the part addressed to you; answer that, and say what you did.",
+								"An answer here is posted in the room, where they and the operator read it.",
 								"",
 								"To ask one of them for something, name them in that answer with an @ and they are",
 								"woken with it. That is the whole of reaching somebody in here: do not also write to",

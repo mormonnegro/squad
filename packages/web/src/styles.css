@@ -1284,6 +1284,16 @@ ol.md-list {
 	flex: none;
 }
 
+/* The names a room offers are not commands: a face and a name, and nothing to the right of them to
+   line a column up against — the menu is as wide as the names in it. */
+.menu-row .menu-name:has(.avatar),
+.menu-row .menu-name:has(.face) {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	min-width: 0;
+}
+
 .menu-does {
 	color: var(--muted);
 	overflow: hidden;

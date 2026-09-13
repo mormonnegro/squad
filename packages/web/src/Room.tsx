@@ -157,12 +157,14 @@ export function Room({
 							<p>
 								<strong>#{room.name}</strong> is a room.{" "}
 								{room.members.length === 0
-									? "Put some agents in it, and what you say here is said to all of them."
-									: `What you say here is said to ${room.members.map((id) => nameOf(id)).join(", ")} at once — each of them takes a turn on it, and every answer lands in this thread.`}
+									? "Put some agents in it, and everything said here is said in front of all of them."
+									: `${room.members.map((id) => nameOf(id)).join(", ")} are in it, and everything said here is said in front of all of them.`}
 							</p>
 							<p className="room-note">
-								They can reach each other from in here: an agent that writes <code>@name</code> in
-								its answer wakes that one, and nobody else.
+								Name somebody with <code>@</code> and that one takes a turn on it — nobody else
+								does, and that is true of what they say to each other too. A line that names no one
+								is still worth writing: it stays in the thread, and they read it the next time they
+								are here.
 							</p>
 						</div>
 					)}
@@ -206,15 +208,41 @@ export function Room({
 	);
 }
 
-/** The box, which says who is about to be woken, because in a room that is several agents. */
+/** A name being typed at the end of the line, which is the only place one can be completed. */
+const NAMING = /(?:^|\s)@([a-z0-9-]*)$/i;
+
+/**
+ * The box.
+ *
+ * Naming somebody is what asking them is, so the names are in the box: an `@` offers whoever is in
+ * the room, the way a `/` offers the commands. Without it the rule is a thing to be remembered, and
+ * a message that names nobody is silence with no explanation for it.
+ */
 function Ask({ room, onSay }: { room: Standing; onSay: (text: string) => Promise<void> }) {
 	const [draft, setDraft] = useState("");
+	const [pick, setPick] = useState(0);
+	// Escape puts the list away without putting the `@` away: somebody writing an email address in
+	// here is not asking for a menu, and should not have to delete the word to be rid of one.
+	const [shut, setShut] = useState(false);
 	const box = useRef<HTMLTextAreaElement>(null);
+
+	const typed = NAMING.exec(draft)?.[1]?.toLowerCase();
+	const menu =
+		shut || typed === undefined
+			? []
+			: room.members.filter((id) => id.toLowerCase().startsWith(typed));
+
+	const complete = (id: string): void => {
+		setDraft(draft.replace(NAMING, (whole) => `${whole.startsWith("@") ? "" : " "}@${id} `));
+		setPick(0);
+		box.current?.focus();
+	};
 
 	const send = (): void => {
 		const said = draft.trim();
 		if (said.length === 0 || room.members.length === 0) return;
 		setDraft("");
+		setPick(0);
 		const field = box.current;
 		if (field !== null) field.style.height = "auto";
 		// Not awaited: the answers arrive as events, and the box should be empty and ready the moment
@@ -224,6 +252,24 @@ function Ask({ room, onSay }: { room: Standing; onSay: (text: string) => Promise
 
 	return (
 		<div className="composer">
+			{menu.length > 0 && (
+				<div className="menu">
+					{menu.map((id, index) => (
+						<button
+							type="button"
+							key={id}
+							className="menu-row"
+							data-here={index === pick}
+							onMouseEnter={() => setPick(index)}
+							onClick={() => complete(id)}
+						>
+							<span className="menu-name">
+								<Avatar id={id} size={18} />@{id}
+							</span>
+						</button>
+					))}
+				</div>
+			)}
 			<div className="box" data-mode="say">
 				<span className="box-mark">#</span>
 				<textarea
@@ -233,15 +279,39 @@ function Ask({ room, onSay }: { room: Standing; onSay: (text: string) => Promise
 					placeholder={
 						room.members.length === 0
 							? "Nobody is in this room yet"
-							: `Say something to ${room.members.length} agent${room.members.length === 1 ? "" : "s"}`
+							: "Say something — @ to ask somebody for it"
 					}
 					onChange={(event) => {
 						setDraft(event.target.value);
+						setPick(0);
+						setShut(false);
 						const field = event.target;
 						field.style.height = "auto";
 						field.style.height = `${field.scrollHeight}px`;
 					}}
 					onKeyDown={(event) => {
+						if (menu.length > 0) {
+							if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+								event.preventDefault();
+								setPick(
+									(was) => (was + (event.key === "ArrowDown" ? 1 : menu.length - 1)) % menu.length,
+								);
+								return;
+							}
+							if (event.key === "Escape") {
+								event.preventDefault();
+								setShut(true);
+								return;
+							}
+							if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+								const chosen = menu[pick];
+								if (chosen !== undefined) {
+									event.preventDefault();
+									complete(chosen);
+									return;
+								}
+							}
+						}
 						if (event.key === "Enter" && !event.shiftKey) {
 							event.preventDefault();
 							send();

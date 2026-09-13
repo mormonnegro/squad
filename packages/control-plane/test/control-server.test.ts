@@ -125,16 +125,19 @@ describe("the control socket", () => {
 	 * that a console can hold one — a roster, a conversation, and a way to say something to all of it.
 	 */
 	describe("a room", () => {
-		it("wakes everybody in it, and keeps what they answer in its own thread", async () => {
+		it("wakes the ones it names, and keeps what they answer in its own thread", async () => {
 			await answerWith("scout", () => "scout looked");
 			await answerWith("scribe", () => "scribe looked");
 			await client.makeRoom("standup", ["scout", "scribe"]);
 
-			await client.sayInRoom("standup", "¿Cómo venimos con el deploy?");
+			await client.sayInRoom("standup", "@scout @scribe ¿cómo venimos con el deploy?");
 			await plane.bus.drain();
 
 			const said = (await client.transcripts())["room:standup"] ?? [];
-			expect(said[0]).toMatchObject({ from: "operator", text: "¿Cómo venimos con el deploy?" });
+			expect(said[0]).toMatchObject({
+				from: "operator",
+				text: "@scout @scribe ¿cómo venimos con el deploy?",
+			});
 			// Both answers, in whichever order two agents woken at once happen to finish.
 			expect(
 				said
@@ -154,10 +157,66 @@ describe("the control socket", () => {
 				return "";
 			});
 			await client.makeRoom("standup", ["scout", "scribe"]);
-			await client.sayInRoom("standup", "empecemos");
+			await client.sayInRoom("standup", "@scout empecemos");
 			await plane.bus.drain();
 			expect(heard.join("\n")).toContain("#standup");
 			expect(heard.join("\n")).toContain("scribe");
+		});
+
+		/**
+		 * The whole of the rule, and the same one for everybody who speaks in here: a turn is taken
+		 * by whoever was named. Three agents in a room is three turns for every sentence otherwise,
+		 * and two of them are being asked nothing.
+		 */
+		it("wakes nobody when nobody was named, and still keeps the line", async () => {
+			let turns = 0;
+			await answerWith("scout", () => {
+				turns += 1;
+				return "scout looked";
+			});
+			await answerWith("scribe", () => {
+				turns += 1;
+				return "scribe looked";
+			});
+			await client.makeRoom("standup", ["scout", "scribe"]);
+
+			await client.sayInRoom("standup", "dejo esto acá para cuando lo miren");
+			await plane.bus.drain();
+
+			expect(turns).toBe(0);
+			const said = (await client.transcripts())["room:standup"] ?? [];
+			expect(said).toHaveLength(1);
+			expect(said[0]).toMatchObject({ from: "operator" });
+		});
+
+		it("wakes only the one that was named", async () => {
+			const woke: string[] = [];
+			await answerWith("scout", () => {
+				woke.push("scout");
+				return "";
+			});
+			await answerWith("scribe", () => {
+				woke.push("scribe");
+				return "";
+			});
+			await client.makeRoom("standup", ["scout", "scribe"]);
+
+			await client.sayInRoom("standup", "@scribe esto es tuyo");
+			await plane.bus.drain();
+
+			expect(woke).toEqual(["scribe"]);
+		});
+
+		// Naming somebody who is not in here looks exactly like naming somebody who is, right up
+		// until nothing happens. The room says so, where it was said.
+		it("says when the agent that was named is not in the room", async () => {
+			await client.makeRoom("standup", ["scout"]);
+			await client.sayInRoom("standup", "@scribe mirá esto");
+			await plane.bus.drain();
+
+			const said = (await client.transcripts())["room:standup"] ?? [];
+			expect(said[1]).toMatchObject({ from: "plane", tone: "bad" });
+			expect(said[1]?.text).toContain("scribe");
 		});
 
 		// Being put in a room together is the operator saying these two work on this. An agent that
@@ -183,7 +242,7 @@ describe("the control socket", () => {
 		it("takes the room and its thread away together", async () => {
 			await answerWith("scout", () => "listo");
 			await client.makeRoom("standup", ["scout"]);
-			await client.sayInRoom("standup", "hola");
+			await client.sayInRoom("standup", "@scout hola");
 			await plane.bus.drain();
 			expect((await client.transcripts())["room:standup"]).toBeDefined();
 			await client.dropRoom("standup");
