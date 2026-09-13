@@ -533,6 +533,30 @@ describe("the control socket", () => {
 			});
 		});
 
+		/**
+		 * The one that is a process, and the grant it earns.
+		 *
+		 * Connecting it puts a command on the shelf rather than an address, because Gmail has no MCP
+		 * server — and what the agent gets is not that command, it is the host the command may reach,
+		 * granted only while this agent holds the plugin.
+		 */
+		it("connects the one that runs in the sandbox as a command, not an address", async () => {
+			expect(await client.connectPlugin("gmail")).toEqual({ name: "gmail", wants: "login" });
+
+			const [only] = (await client.plugins()).instances;
+			expect(only?.server).toEqual({ transport: "stdio", command: "squad-gmail", args: [] });
+			expect(only?.from).toBe("gmail");
+		});
+
+		it("asks for an app of your own before it opens a Google login", async () => {
+			await client.connectPlugin("gmail");
+
+			// The wording is what the screen reads to know it should offer the field for the id, and
+			// the redirect is the one thing the app being made has to be told.
+			await expect(client.loginPlugin("gmail")).rejects.toThrow(/does not register clients/);
+			await expect(client.loginPlugin("gmail")).rejects.toThrow(/callback/);
+		});
+
 		it("refuses a plugin nobody shelved", async () => {
 			await expect(client.connectPlugin("not-a-plugin")).rejects.toThrow("no plugin");
 		});

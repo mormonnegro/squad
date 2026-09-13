@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readName } from "../src/mcp.ts";
-import { nameFor, PLUGINS, pluginOf, serverOf, SHELVES } from "../src/plugins.ts";
+import { nameFor, PLUGINS, pluginAt, pluginOf, SHELVES, serverOf } from "../src/plugins.ts";
 
 describe("the shelf of plugins", () => {
 	it("gives every one a name the plane would accept and the model can spell", () => {
@@ -14,6 +14,42 @@ describe("the shelf of plugins", () => {
 
 	it("names each one once", () => {
 		expect(new Set(PLUGINS.map((one) => one.id)).size).toBe(PLUGINS.length);
+	});
+
+	/**
+	 * The one that is a process rather than a place.
+	 *
+	 * Gmail has no MCP server, so this plugin runs in the sandbox and speaks Google's own API — and
+	 * what makes that safe is everything it does not carry: no credential, one host, one path, and
+	 * `GET` only. The grant is written here and enforced at the proxy, so a tool that tried to send
+	 * a message would be refused by the same thing that refuses every other host.
+	 */
+	it("keeps the one that runs in the sandbox as narrow as its tools", () => {
+		const gmail = pluginOf("gmail");
+
+		expect(gmail?.runs).toEqual(["squad-gmail"]);
+		expect(serverOf(gmail as never)).toEqual({
+			transport: "stdio",
+			command: "squad-gmail",
+			args: [],
+		});
+		expect(gmail?.reaches).toEqual({
+			host: "gmail.googleapis.com",
+			pathPrefix: "/gmail/v1/users/me/",
+			methods: ["GET"],
+		});
+		// Without the first there is no refresh token at all, and without the second there is one only
+		// on the very first consent — which is a login that stops working within the hour.
+		expect(gmail?.oauth?.extra).toEqual({ access_type: "offline", prompt: "consent" });
+		expect(gmail?.oauth?.scopes).toEqual(["https://www.googleapis.com/auth/gmail.readonly"]);
+	});
+
+	it("does not name a plugin that runs by the address its tools call", () => {
+		// `gmail.googleapis.com` is an API, not a server somebody could have shelved by hand — and a
+		// connection typed at that address is not a copy of this plugin.
+		expect(
+			pluginAt({ transport: "http", url: "https://gmail.googleapis.com/gmail/v1/users/me/" }),
+		).toBeUndefined();
 	});
 
 	it("reaches each one over https, since the proxy carries nothing else worth carrying", () => {

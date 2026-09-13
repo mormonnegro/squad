@@ -45,6 +45,11 @@ const CALLBACK_PORT = Number(process.env.SQUAD_OAUTH_PORT ?? "") || 8788;
 
 const CALLBACK_PATH = "/callback";
 
+/** Where a login comes back to, which is a thing to be told before there is a login to come back. */
+export function loginRedirect(): string {
+	return `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
+}
+
 /** What the browser is left looking at, since it is a real page a real person ends up on. */
 function page(title: string, detail: string): string {
 	return `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font:16px system-ui;padding:3rem;max-width:32rem"><h1 style="font-size:1.2rem">${title}</h1><p>${detail}</p></body>`;
@@ -117,7 +122,28 @@ export interface BeginLogin {
 	readonly host: string;
 	/** For a server that will not register a client, the id of one the operator made themselves. */
 	readonly clientId?: string;
+	/**
+	 * The other half of an app somebody made, for the providers that want one.
+	 *
+	 * Google asks an installed application for a client secret and says in the same page of its own
+	 * documentation that it is not a secret — it ships inside the application. It is carried because
+	 * the token endpoint refuses without it, not because it protects anything.
+	 */
+	readonly clientSecret?: string;
 	readonly resourceMetadataUrl?: string;
+	/**
+	 * Where to authorize and where to redeem, for a provider that does not advertise them.
+	 *
+	 * MCP servers say where their authorization lives and that is the whole of discovery. Google
+	 * does not: it is not an MCP server, it is an API this plane reaches on an agent's behalf, and
+	 * the two addresses have been the same for a decade. Written down beats discovered when there is
+	 * nothing to discover.
+	 */
+	readonly endpoints?: OAuthEndpoints;
+	/** What the token is asked to be good for, when the provider does not say what it offers. */
+	readonly scopes?: readonly string[];
+	/** What this provider wants on the authorization on top of the standard. */
+	readonly extra?: Readonly<Record<string, string>>;
 	/**
 	 * Whether the consent screen is somebody else's to open.
 	 *
@@ -237,17 +263,31 @@ export class LoginDesk {
 		let endpoints: OAuthEndpoints;
 		let client: OAuthClient;
 		try {
-			endpoints = await discover(options.url, options.resourceMetadataUrl);
+			// Discovered where there is something to discover, and taken as given where the provider is
+			// not an MCP server at all — which is the difference between a plugin that is a place and
+			// one that is a process reaching an API on the agent's behalf.
+			endpoints = options.endpoints ?? (await discover(options.url, options.resourceMetadataUrl));
 			client =
 				options.clientId === undefined
 					? await this.#register(endpoints, redirectUri)
-					: { clientId: options.clientId, redirectUri };
+					: {
+							clientId: options.clientId,
+							redirectUri,
+							...(options.clientSecret === undefined ? {} : { clientSecret: options.clientSecret }),
+						};
 		} catch (error) {
 			await close();
 			throw error;
 		}
 
-		const started = beginAuthorization(endpoints, client);
+		const started = beginAuthorization(
+			endpoints,
+			client,
+			options.scopes === undefined || options.scopes.length === 0
+				? undefined
+				: options.scopes.join(" "),
+			options.extra,
+		);
 		this.#pending.set(options.name, {
 			name: options.name,
 			host: options.host,

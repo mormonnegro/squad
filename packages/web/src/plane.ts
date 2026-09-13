@@ -488,11 +488,13 @@ export class Plane {
 	async loginPlugin(
 		name: string,
 		clientId?: string,
+		clientSecret?: string,
 	): Promise<{ url: string; redirectUri: string }> {
 		const answer = await this.#ask({
 			op: "login-plugin",
 			name,
 			...(clientId === undefined || clientId === "" ? {} : { clientId }),
+			...(clientSecret === undefined || clientSecret === "" ? {} : { clientSecret }),
 		});
 		const page = answer.page as { url?: string; redirectUri?: string } | undefined;
 		return { url: page?.url ?? "", redirectUri: page?.redirectUri ?? "" };

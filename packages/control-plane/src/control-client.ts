@@ -314,11 +314,12 @@ export class ControlClient {
 	}
 
 	/** Opens the consent screen for one connection, and says where it and its landing are. */
-	async loginPlugin(name: string, clientId?: string): Promise<LoginPage> {
+	async loginPlugin(name: string, clientId?: string, clientSecret?: string): Promise<LoginPage> {
 		const response = await this.#once({
 			op: "login-plugin",
 			name,
 			...(clientId === undefined ? {} : { clientId }),
+			...(clientSecret === undefined ? {} : { clientSecret }),
 		});
 		if ("page" in response) return response.page;
 		throw new ControlError("unexpected answer to login-plugin");

@@ -27,6 +27,47 @@ export interface Plugin {
 	readonly url: string;
 	/** What it wants before it answers: a browser trip, or nothing at all. */
 	readonly account: "oauth" | "open";
+	/**
+	 * A plugin that is a process rather than a place, started inside the sandbox.
+	 *
+	 * The shelf has always taken these — `/plugins add files mcp-files /tmp` — and they have always
+	 * been somebody else's program. These are ours, and they exist for the one thing a remote server
+	 * cannot do: reach an API that has no MCP of its own, with a credential the agent never sees,
+	 * because what goes out is bare and the proxy writes the token onto it.
+	 */
+	readonly runs?: readonly string[];
+	/**
+	 * The host such a plugin reaches, and how far into it.
+	 *
+	 * This is the grant it earns, and it is earned only while an agent holds the plugin and the
+	 * account behind it is open. Written as narrow as the tools are: Gmail's is `GET` and one path,
+	 * so the token that reaches it cannot send, delete, or read anything else in that account.
+	 */
+	readonly reaches?: {
+		readonly host: string;
+		readonly pathPrefix?: string;
+		readonly methods?: readonly ("GET" | "POST" | "PUT" | "PATCH" | "DELETE")[];
+	};
+	/**
+	 * Where to authorize, for a provider that is not an MCP server and advertises nothing.
+	 *
+	 * `makeAt` is the page where the operator makes the app this uses. It is theirs and not ours on
+	 * purpose: reading a mailbox is a restricted scope at Google, an application asking for one is
+	 * audited before it may ask anybody, and an unaudited one is limited to users it names one by
+	 * one. A client id shipped here would be an application only its author could use.
+	 */
+	readonly oauth?: {
+		readonly authorizationUrl: string;
+		readonly tokenUrl: string;
+		readonly scopes: readonly string[];
+		/** What the authorization needs beyond the standard for a refresh token to come back. */
+		readonly extra?: Readonly<Record<string, string>>;
+		/** Whether the token endpoint refuses without the other half of the app. */
+		readonly wantsSecret: boolean;
+		readonly makeAt: string;
+		/** Said on the screen, because the clicking is somebody else's and it has an order. */
+		readonly steps: readonly string[];
+	};
 }
 
 export type Shelf = "money" | "work" | "code" | "runs" | "data" | "read";
@@ -265,6 +306,40 @@ export const PLUGINS: readonly Plugin[] = [
 		account: "oauth",
 	},
 	{
+		id: "gmail",
+		title: "Gmail",
+		does: "Reads your mail: search it, and read a message it found.",
+		shelf: "work",
+		mark: "google.com",
+		// Not a place: Google has no MCP server. This one runs in the sandbox and speaks Gmail's own
+		// API, and what makes that safe is that it speaks it with no credential at all — the proxy
+		// writes the token on the way out, for as long as the agent holds this and no longer.
+		transport: "http",
+		url: "https://gmail.googleapis.com/gmail/v1/users/me/",
+		runs: ["squad-gmail"],
+		reaches: {
+			host: "gmail.googleapis.com",
+			pathPrefix: "/gmail/v1/users/me/",
+			methods: ["GET"],
+		},
+		account: "oauth",
+		oauth: {
+			authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+			tokenUrl: "https://oauth2.googleapis.com/token",
+			scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+			// Without the first there is no refresh token at all, and without the second there is one
+			// only on the very first consent — which is a login that works until the hour is out.
+			extra: { access_type: "offline", prompt: "consent" },
+			wantsSecret: true,
+			makeAt: "https://console.cloud.google.com/apis/credentials",
+			steps: [
+				"Make a project at console.cloud.google.com, and enable the Gmail API in it.",
+				"On the OAuth consent screen, add the scope gmail.readonly and publish the app — in Testing, Google expires the refresh token every seven days.",
+				"Make an OAuth client of type Desktop app, and paste its id and secret here.",
+			],
+		},
+	},
+	{
 		id: "context7",
 		title: "Context7",
 		does: "Up-to-date documentation for a library, by version.",
@@ -314,11 +389,21 @@ export function pluginOf(id: string): Plugin | undefined {
 export function pluginAt(server: McpServer): string | undefined {
 	const host = hostOf(server);
 	if (host === undefined) return undefined;
-	return PLUGINS.find((one) => hostOf(serverOf(one)) === host)?.id;
+	return PLUGINS.find((one) => one.runs === undefined && hostOf(serverOf(one)) === host)?.id;
 }
 
-/** The plugin as the shelf underneath stores one: an address and how to speak to it. */
+/**
+ * The plugin as the shelf underneath stores one.
+ *
+ * A place for the ones that are a place, and a process for the ones that run in the sandbox — the
+ * shelf has taken both since before any of this, which is why a plugin of ours can be either
+ * without the shelf learning a new shape.
+ */
 export function serverOf(plugin: Plugin): McpServer {
+	if (plugin.runs !== undefined) {
+		const [command = "", ...args] = plugin.runs;
+		return { transport: "stdio", command, args };
+	}
 	return { transport: plugin.transport, url: plugin.url };
 }
 

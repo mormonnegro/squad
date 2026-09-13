@@ -210,6 +210,8 @@ export type ControlRequest =
 			readonly op: "login-plugin";
 			readonly name: string;
 			readonly clientId?: string;
+			/** The other half of that app, for the providers whose token endpoint refuses without it. */
+			readonly clientSecret?: string;
 	  }
 	| { readonly id: string; readonly op: "logout-plugin"; readonly name: string }
 	/**
@@ -677,7 +679,11 @@ export class ControlServer {
 				await this.#plane.labelPlugin(request.name, request.label);
 				this.#write(socket, { id: request.id, ok: true, text: request.name });
 			} else if (request.op === "login-plugin") {
-				const page = await this.#plane.loginPlugin(request.name, request.clientId);
+				const page = await this.#plane.loginPlugin(
+					request.name,
+					request.clientId,
+					request.clientSecret,
+				);
 				this.#write(socket, { id: request.id, ok: true, page });
 			} else if (request.op === "logout-plugin") {
 				const had = await this.#plane.logoutPlugin(request.name);

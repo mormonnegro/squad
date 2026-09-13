@@ -96,20 +96,20 @@ import {
 	providersOf,
 	resolveModel,
 } from "./models.ts";
-import { LoginDesk } from "./oauth-login.ts";
+import { LoginDesk, loginRedirect } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./plugins.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import {
 	checkRepo,
-	listRepos,
 	GITHUB_TOKEN_ENV,
 	HeldRepos,
+	listRepos,
 	type RepoHold,
-	type RepoSpec,
 	type RepoOffer,
 	type RepoOrigin,
+	type RepoSpec,
 	type RepoStanding,
 	repoGrants,
 	standingOf as repoStanding,
@@ -1550,10 +1550,32 @@ export class ControlPlane {
 	async #grantsFor(agentId: string): Promise<readonly Grant[]> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.grants ?? [];
 		const earned: Grant[] = [];
-		for (const { name, server } of await this.#mcp.attached(agentId)) {
+		for (const { name, server, from } of await this.#mcp.attached(agentId)) {
+			if ((await this.#logins.get(name)) === undefined) continue;
+
+			/*
+			 * A plugin of ours that runs in the sandbox reaches an API rather than a server, and the
+			 * grant is that API: one host, the path its tools use, and the methods they use it with.
+			 *
+			 * This is the whole of why reading a mailbox this way is safe to hand over on a screen.
+			 * What leaves the sandbox carries nothing, the token is written onto it at the proxy, and
+			 * the grant exists only while this agent holds this plugin — take it off and the next
+			 * request out is a bare one against a host nothing grants.
+			 */
+			const reaches = from === undefined ? undefined : pluginOf(from)?.reaches;
+			if (reaches !== undefined) {
+				earned.push({
+					id: `mcp:${name}`,
+					host: reaches.host,
+					...(reaches.pathPrefix !== undefined ? { pathPrefix: reaches.pathPrefix } : {}),
+					...(reaches.methods !== undefined ? { methods: [...reaches.methods] } : {}),
+					injection: { kind: "bearer", token: oauthRef(name) },
+				});
+				continue;
+			}
+
 			const host = hostOf(server);
 			if (host === undefined) continue;
-			if ((await this.#logins.get(name)) === undefined) continue;
 			const at = endpointPath(server);
 			earned.push({
 				id: `mcp:${name}`,
@@ -1925,10 +1947,10 @@ export class ControlPlane {
 	 * reading a conversation. Here they are reading a list, and the list says so by the row going
 	 * green on the next poll.
 	 */
-	async loginPlugin(name: string, clientId?: string): Promise<LoginPage> {
+	async loginPlugin(name: string, clientId?: string, clientSecret?: string): Promise<LoginPage> {
 		// Opened by whoever asked, which for this method is always a browser: it is the screen the
 		// button is on, and it is holding this answer. Nothing else is told to open anything.
-		const started = await this.#beginLogin(name, clientId, true);
+		const started = await this.#beginLogin(name, clientId, true, clientSecret);
 		void started.done.then(
 			() => this.#reregisterAll(),
 			() => {},
@@ -1962,9 +1984,46 @@ export class ControlPlane {
 	 * list redraw. Everything before the landing — finding the server, refusing a process that has no
 	 * account, asking it where its metadata lives — is the same work and is done once, here.
 	 */
-	async #beginLogin(name: string, clientId?: string, opened?: boolean) {
+	async #beginLogin(name: string, clientId?: string, opened?: boolean, clientSecret?: string) {
 		const found = (await this.#mcp.servers()).find((one) => one.name === name);
 		if (found === undefined) throw new Error(`There is no server called "${name}".`);
+
+		/*
+		 * A plugin of ours, whose account is at a provider that advertises nothing.
+		 *
+		 * Everything else here is an MCP server: it says where its authorization lives, a client is
+		 * registered on the spot, and a person consents. Google is not one — it is an API, its two
+		 * addresses have been the same for a decade, and the app is the operator's because the scope
+		 * that reads a mailbox is one Google audits before an application may ask anybody for it.
+		 */
+		const plugin = found.from === undefined ? undefined : pluginOf(found.from);
+		if (plugin?.oauth !== undefined) {
+			const said = plugin.oauth;
+			if (clientId === undefined) {
+				throw new Error(
+					`${plugin.title} does not register clients. Make an OAuth app of your own with ${loginRedirect()} as its redirect, and connect it with that app's client id.`,
+				);
+			}
+			return {
+				...(await this.#desk.begin({
+					name,
+					url: plugin.url,
+					host: said.tokenUrl,
+					clientId,
+					...(clientSecret !== undefined ? { clientSecret } : {}),
+					endpoints: {
+						authorizationUrl: said.authorizationUrl,
+						tokenUrl: said.tokenUrl,
+						resource: plugin.url,
+					},
+					scopes: said.scopes,
+					...(said.extra !== undefined ? { extra: said.extra } : {}),
+					...(opened === true ? { opened } : {}),
+				})),
+				host: new URL(plugin.url).hostname,
+			};
+		}
+
 		const host = hostOf(found.server);
 		if (found.server.transport === "stdio" || host === undefined) {
 			throw new Error(`"${name}" is a command this agent runs, not a place with an account.`);

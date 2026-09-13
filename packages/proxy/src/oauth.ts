@@ -289,6 +289,15 @@ export function beginAuthorization(
 	endpoints: OAuthEndpoints,
 	client: OAuthClient,
 	scope?: string,
+	/**
+	 * What a particular provider wants on top of the standard, written down by whoever knew.
+	 *
+	 * OAuth says what a request looks like and every large provider adds a word to it: Google issues
+	 * no refresh token at all unless `access_type=offline` is on the authorization, and returns one
+	 * only on the first consent unless `prompt=consent` is too. A login that quietly cannot be
+	 * renewed is a login that works for an hour, which is worse than one that fails.
+	 */
+	extra?: Readonly<Record<string, string>>,
 ): Authorization {
 	const verifier = randomBytes(32).toString("base64url");
 	const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -304,6 +313,7 @@ export function beginAuthorization(
 	url.searchParams.set("resource", endpoints.resource);
 	const wanted = scope ?? endpoints.scopesSupported?.join(" ");
 	if (wanted !== undefined && wanted.length > 0) url.searchParams.set("scope", wanted);
+	for (const [name, value] of Object.entries(extra ?? {})) url.searchParams.set(name, value);
 
 	return { url: url.toString(), verifier, state };
 }

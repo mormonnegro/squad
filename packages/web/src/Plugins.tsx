@@ -38,7 +38,9 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 	 * does not: an OAuth app is a thing somebody creates in their settings. The plane says so, and
 	 * said only that — a red line, naming a command, on a screen with nowhere to type the answer.
 	 */
-	const [needsApp, setNeedsApp] = useState<{ name: string; redirect: string } | undefined>();
+	const [needsApp, setNeedsApp] = useState<
+		{ name: string; redirect: string; plugin?: Plugin } | undefined
+	>();
 
 	const load = useCallback(async (): Promise<void> => {
 		try {
@@ -105,7 +107,7 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 	const connect = async (plugin: Plugin): Promise<void> => {
 		await run(`add:${plugin.id}`, async () => {
 			const made = await plane.connectPlugin(plugin.id);
-			if (made.wants === "login") await open(made.name);
+			if (made.wants === "login") await open(made.name, undefined, undefined, plugin);
 		});
 	};
 
@@ -123,16 +125,36 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 	 * The address is kept either way. A blocked popup is silent, and a screen that answered a press
 	 * with nothing at all would be indistinguishable from one that failed.
 	 */
-	const open = async (name: string, clientId?: string): Promise<void> => {
+	const open = async (
+		name: string,
+		clientId?: string,
+		clientSecret?: string,
+		plugin?: Plugin,
+	): Promise<void> => {
 		let page: { url: string; redirectUri: string };
 		try {
-			page = await plane.loginPlugin(name, clientId);
+			page = await plane.loginPlugin(name, clientId, clientSecret);
 		} catch (error) {
 			// The one refusal that is not a dead end: it is a thing to go and do, and the field to put
 			// the answer in belongs on this screen. Swallowed rather than rethrown, so the panel that
 			// says what to do is the whole message instead of a second copy of it in red.
 			if ((error as Error).message.includes("does not register clients")) {
-				setNeedsApp({ name, redirect: redirectIn((error as Error).message) });
+				/*
+				 * What that app takes and where it is made, for the ones this plane ships: a list of
+				 * steps beats one sentence naming a console somebody has never opened.
+				 *
+				 * From the caller first, because the caller is often the press that just made this
+				 * connection — the list it will be in has not been read back yet, and waiting for that
+				 * would mean a panel with no steps on it exactly once: the first time anybody sees it.
+				 */
+				const from = made?.find((one) => one.name === name)?.from;
+				const which =
+					plugin ?? (from === undefined ? undefined : catalog.find((one) => one.id === from));
+				setNeedsApp({
+					name,
+					redirect: redirectIn((error as Error).message),
+					...(which === undefined ? {} : { plugin: which }),
+				});
 				return;
 			}
 			throw error;
@@ -179,8 +201,10 @@ export function Plugins({ plane, agents }: { plane: Plane; agents: readonly Agen
 						<NeedsApp
 							one={needsApp}
 							busy={busy === `login:${needsApp.name}`}
-							onUse={(clientId) =>
-								void run(`login:${needsApp.name}`, () => open(needsApp.name, clientId))
+							onUse={(clientId, clientSecret) =>
+								void run(`login:${needsApp.name}`, () =>
+									open(needsApp.name, clientId, clientSecret, needsApp.plugin),
+								)
 							}
 							onClose={() => setNeedsApp(undefined)}
 						/>
@@ -358,7 +382,10 @@ function Row({
 	const [typed, setTyped] = useState(one.label ?? "");
 	const field = useRef<HTMLInputElement>(null);
 	const where = one.server.transport === "stdio" ? undefined : hostOf(one.server.url);
-	const account = where !== undefined && plugin?.account !== "open";
+	// A process rather than a place, and still an account: what it reaches is an API, and the token
+	// that reaches it is this login's. The two used to be the same question.
+	const account =
+		plugin?.oauth !== undefined || (where !== undefined && plugin?.account !== "open");
 	const working = busy === `login:${one.name}`;
 
 	useEffect(() => {
@@ -380,13 +407,17 @@ function Row({
 						)}
 					</div>
 					<span className="conn-where">
-						{one.server.transport === "stdio"
-							? [one.server.command, ...one.server.args].join(" ")
-							: one.server.url}
+						{/* What it reaches, for the ones that run here: the command is ours and says nothing
+						    anybody wants, and the host is the whole of what this plugin can touch. */}
+						{plugin?.reaches !== undefined
+							? `${plugin.reaches.host}${plugin.reaches.pathPrefix ?? ""}`
+							: one.server.transport === "stdio"
+								? [one.server.command, ...one.server.args].join(" ")
+								: one.server.url}
 					</span>
 				</div>
 
-				<Standing loggedIn={one.loggedIn} needs={where !== undefined} open={!account} />
+				<Standing loggedIn={one.loggedIn} needs={account || where !== undefined} open={!account} />
 				{account &&
 					(one.loggedIn ? (
 						<button type="button" className="pill" disabled={working} onClick={onLogout}>
@@ -671,13 +702,15 @@ function NeedsApp({
 	onUse,
 	onClose,
 }: {
-	one: { name: string; redirect: string };
+	one: { name: string; redirect: string; plugin?: Plugin };
 	busy: boolean;
-	onUse: (clientId: string) => void;
+	onUse: (clientId: string, clientSecret?: string) => void;
 	onClose: () => void;
 }) {
 	const [typed, setTyped] = useState("");
+	const [secret, setSecret] = useState("");
 	const [copied, setCopied] = useState(false);
+	const oauth = one.plugin?.oauth;
 
 	return (
 		<div className="rounded-[10px] border border-working/40 bg-working/5 p-3.5">
@@ -685,6 +718,23 @@ function NeedsApp({
 				<strong>{one.name}</strong> will not hand out a client of its own. Make an OAuth app in that
 				company's settings with this as its redirect, then paste the app's client id here.
 			</div>
+
+			{/* The clicking is somebody else's and it has an order, so it is written out rather than
+			    left as one sentence about a console they have never opened. */}
+			{oauth !== undefined && (
+				<div className="mb-3 flex flex-col gap-2">
+					<ol className="flex list-decimal flex-col gap-1 pl-5 text-[0.8rem]/[1.55] text-muted">
+						{oauth.steps.map((step) => (
+							<li key={step}>{step}</li>
+						))}
+					</ol>
+					{/* Under the steps rather than as one of them: it is where they all happen, not a
+					    fourth thing to do. */}
+					<a className="pill self-start" href={oauth.makeAt} target="_blank" rel="noreferrer">
+						open that page
+					</a>
+				</div>
+			)}
 			{one.redirect !== "" && (
 				<div className="mb-2 flex gap-2">
 					<input
@@ -708,23 +758,38 @@ function NeedsApp({
 				</div>
 			)}
 			<form
-				className="flex gap-2"
+				className="flex flex-wrap gap-2"
 				onSubmit={(event) => {
 					event.preventDefault();
-					if (!busy && typed.trim() !== "") onUse(typed.trim());
+					if (busy || typed.trim() === "") return;
+					onUse(typed.trim(), secret.trim() === "" ? undefined : secret.trim());
 				}}
 			>
 				<input
-					className="field min-w-0 flex-1 font-mono"
+					className="field min-w-[14rem] flex-1 font-mono"
 					value={typed}
 					placeholder="the client id of that app"
 					onChange={(event) => setTyped(event.target.value)}
 				/>
+				{/* Google's own documentation says this one is not a secret — it ships inside the
+				    application — and its token endpoint refuses without it anyway. A password field
+				    regardless: what somebody's screen is being recorded by is not ours to assume. */}
+				{oauth?.wantsSecret === true && (
+					<input
+						type="password"
+						autoComplete="off"
+						spellCheck={false}
+						className="field min-w-[14rem] flex-1 font-mono"
+						value={secret}
+						placeholder="and its client secret"
+						onChange={(event) => setSecret(event.target.value)}
+					/>
+				)}
 				<button
 					type="submit"
 					className="pill"
 					data-yes="true"
-					disabled={busy || typed.trim() === ""}
+					disabled={busy || typed.trim() === "" || (oauth?.wantsSecret === true && secret === "")}
 				>
 					{busy && <Spin />}
 					{busy ? "opening…" : "log in with it"}
