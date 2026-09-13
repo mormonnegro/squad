@@ -226,22 +226,23 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 			<div>
 				<div className="said-who">
 					<span className="said-name">{nameOf(agentId)}</span>
-					{/* Turning, because a turn takes minutes and a still line through all of them reads
-					    like a line something left behind. It goes when the answer starts arriving: text
-					    appearing a piece at a time is the same fact, said better.
-					    
-					    And it goes as soon as there is a step, because the step below is turning and one
-					    thing moving is a screen saying something. Two is a screen fidgeting. */}
-					{live.thinking && live.text.length === 0 && live.steps.length === 0 && (
-						<span className="said-when inline-flex items-center gap-1.5">
-							<Spin />
-							working…
-						</span>
-					)}
-					{live.thinking && live.text.length === 0 && live.steps.length > 0 && (
-						<span className="said-when">working…</span>
-					)}
 				</div>
+
+				{/*
+				 * Under the name, where the answer is going to be.
+				 *
+				 * It is what this turn has so far, which is the same thing the steps are and the same
+				 * thing the text is — so it stands where they will stand and is replaced by them, rather
+				 * than sitting up in the name row as a label on the agent. A turn takes minutes and a
+				 * still line through all of them reads like a line something left behind, so it turns;
+				 * it stops the moment there is anything truer to show.
+				 */}
+				{live.text.length === 0 && live.steps.length === 0 && (
+					<div className="working">
+						<Spin />
+						working…
+					</div>
+				)}
 				{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two
 				    asterisks on screen that no later delta can take away, so the answer arrives a
 				    settled piece at a time rather than a character at a time. */}
