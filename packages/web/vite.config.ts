@@ -149,6 +149,10 @@ export default defineConfig({
 			"/events": { target: PLANE, changeOrigin: false, ...carried },
 			"/devices": { target: PLANE, changeOrigin: false, ...carried },
 			"/invites": { target: PLANE, changeOrigin: false, ...carried },
+			// The triggers, so the address this screen shows is an address that works while it is
+			// being read off this screen. The page prints `location.origin` — which in development is
+			// this server — and without this, pasting what it said into Stripe posts into a 404.
+			"/hooks": { target: PLANE, changeOrigin: false, ...carried },
 			// A port an agent opened, which is the plane's too — and the one that has to carry an
 			// upgrade, because a dev server in a sandbox talks over a websocket.
 			"/at": { target: PLANE, changeOrigin: false, ws: true, ...carried },
