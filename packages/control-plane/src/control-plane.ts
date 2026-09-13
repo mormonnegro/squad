@@ -1550,32 +1550,10 @@ export class ControlPlane {
 	async #grantsFor(agentId: string): Promise<readonly Grant[]> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.grants ?? [];
 		const earned: Grant[] = [];
-		for (const { name, server, from } of await this.#mcp.attached(agentId)) {
-			if ((await this.#logins.get(name)) === undefined) continue;
-
-			/*
-			 * A plugin of ours that runs in the sandbox reaches an API rather than a server, and the
-			 * grant is that API: one host, the path its tools use, and the methods they use it with.
-			 *
-			 * This is the whole of why reading a mailbox this way is safe to hand over on a screen.
-			 * What leaves the sandbox carries nothing, the token is written onto it at the proxy, and
-			 * the grant exists only while this agent holds this plugin — take it off and the next
-			 * request out is a bare one against a host nothing grants.
-			 */
-			const reaches = from === undefined ? undefined : pluginOf(from)?.reaches;
-			if (reaches !== undefined) {
-				earned.push({
-					id: `mcp:${name}`,
-					host: reaches.host,
-					...(reaches.pathPrefix !== undefined ? { pathPrefix: reaches.pathPrefix } : {}),
-					...(reaches.methods !== undefined ? { methods: [...reaches.methods] } : {}),
-					injection: { kind: "bearer", token: oauthRef(name) },
-				});
-				continue;
-			}
-
+		for (const { name, server } of await this.#mcp.attached(agentId)) {
 			const host = hostOf(server);
 			if (host === undefined) continue;
+			if ((await this.#logins.get(name)) === undefined) continue;
 			const at = endpointPath(server);
 			earned.push({
 				id: `mcp:${name}`,
@@ -1584,6 +1562,7 @@ export class ControlPlane {
 				injection: { kind: "bearer", token: oauthRef(name) },
 			});
 		}
+
 		// The hosts opened at the console go last, behind everything carrying a credential. They are the
 		// only grants here with no key on them, so a tie they won would be a request going out bare to a
 		// host something of the operator's was meant to be attached for.

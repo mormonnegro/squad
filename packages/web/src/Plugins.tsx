@@ -407,13 +407,9 @@ function Row({
 						)}
 					</div>
 					<span className="conn-where">
-						{/* What it reaches, for the ones that run here: the command is ours and says nothing
-						    anybody wants, and the host is the whole of what this plugin can touch. */}
-						{plugin?.reaches !== undefined
-							? `${plugin.reaches.host}${plugin.reaches.pathPrefix ?? ""}`
-							: one.server.transport === "stdio"
-								? [one.server.command, ...one.server.args].join(" ")
-								: one.server.url}
+						{one.server.transport === "stdio"
+							? [one.server.command, ...one.server.args].join(" ")
+							: one.server.url}
 					</span>
 				</div>
 

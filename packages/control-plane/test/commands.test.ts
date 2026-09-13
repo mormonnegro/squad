@@ -1321,7 +1321,9 @@ describe("/plugins", () => {
 	it("says nothing about grants for a server the operator did grant", async () => {
 		const { context: ctx } = context({ grants: ["mcp.linear.app"] });
 
-		expect(await runCommand(`/plugins add linear ${linear}`, ctx)).not.toContain("cannot be reached");
+		expect(await runCommand(`/plugins add linear ${linear}`, ctx)).not.toContain(
+			"cannot be reached",
+		);
 	});
 
 	// It has nowhere to go on its own account: what it reaches for is the sandbox's own road out.
@@ -1475,7 +1477,9 @@ describe("/plugins login", () => {
 			},
 		};
 
-		expect(await runCommand("/plugins login linear", refuses)).toContain("does not register clients");
+		expect(await runCommand("/plugins login linear", refuses)).toContain(
+			"does not register clients",
+		);
 	});
 
 	it("has no account to offer for a server that is a process", async () => {
@@ -1512,7 +1516,9 @@ describe("/plugins login", () => {
 	it("refuses to name a server after either of its own words", async () => {
 		const { context: ctx, shelf: added } = context();
 
-		expect(await runCommand(`/plugins add login ${linear}`, ctx)).toContain("is a word /plugins uses");
+		expect(await runCommand(`/plugins add login ${linear}`, ctx)).toContain(
+			"is a word /plugins uses",
+		);
 		expect(await runCommand(`/plugins add logout ${linear}`, ctx)).toContain(
 			"is a word /plugins uses",
 		);

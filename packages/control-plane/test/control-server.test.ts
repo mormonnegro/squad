@@ -534,22 +534,15 @@ describe("the control socket", () => {
 		});
 
 		/**
-		 * The one that is a process, and the grant it earns.
+		 * The one whose account is at a provider that advertises nothing.
 		 *
-		 * Connecting it puts a command on the shelf rather than an address, because Gmail has no MCP
-		 * server — and what the agent gets is not that command, it is the host the command may reach,
-		 * granted only while this agent holds the plugin.
+		 * Every other login here discovers where to go by asking the server. Google's does not answer
+		 * that question — its MCP server is a Google API wearing the protocol — so the addresses are
+		 * written down, and the app is the operator's because reading a mailbox is a scope Google
+		 * audits before an application may ask anybody for it.
 		 */
-		it("connects the one that runs in the sandbox as a command, not an address", async () => {
-			expect(await client.connectPlugin("gmail")).toEqual({ name: "gmail", wants: "login" });
-
-			const [only] = (await client.plugins()).instances;
-			expect(only?.server).toEqual({ transport: "stdio", command: "squad-gmail", args: [] });
-			expect(only?.from).toBe("gmail");
-		});
-
 		it("asks for an app of your own before it opens a Google login", async () => {
-			await client.connectPlugin("gmail");
+			expect(await client.connectPlugin("gmail")).toEqual({ name: "gmail", wants: "login" });
 
 			// The wording is what the screen reads to know it should offer the field for the id, and
 			// the redirect is the one thing the app being made has to be told.
