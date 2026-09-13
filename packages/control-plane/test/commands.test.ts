@@ -18,10 +18,12 @@ import {
 	type TelegramStanding,
 	withoutSecrets,
 } from "../src/commands.ts";
+import type { Gate } from "../src/gates.ts";
 import type { McpServer } from "../src/mcp.ts";
 import type { Model } from "../src/models.ts";
 import type { Served } from "../src/ports.ts";
 import type { RepoSpec, RepoStanding } from "../src/repos.ts";
+import type { Skill } from "../src/skills.ts";
 import type { Teammate } from "../src/team.ts";
 
 /** Where a started login says it is listening, which is the address a paste has to come back to. */
@@ -46,6 +48,8 @@ function context(
 		created?: boolean;
 		/** The other agents in this plane, and which of them this one may already write to. */
 		mates?: readonly Teammate[];
+		gates?: readonly Gate[];
+		skills?: readonly Skill[];
 		/** The models the operator configured, which is the whole of what `/model` may choose from. */
 		models?: readonly Model[];
 		/** The one this agent is on, by whatever name the plane knows it under. */
@@ -113,6 +117,10 @@ function context(
 	const here = start.agentId ?? "scout";
 	const repos = [...(start.repos ?? [])];
 	const mates = [...(start.mates ?? [])];
+	const gates = new Set<Gate>(start.gates ?? []);
+	const skills = [...(start.skills ?? [])];
+	const wrote: { name: string; about: string }[] = [];
+	const passed: { name: string; to: string }[] = [];
 	const github: { tokenHeld: boolean; offered: RepoSpec | undefined } = {
 		tokenHeld: start.tokenHeld ?? false,
 		offered: undefined,
@@ -223,6 +231,23 @@ function context(
 			repos: async () => repos,
 			holdRepo,
 			team: async () => mates,
+			skills: async () => skills,
+			keepSkill: async (name, about) => {
+				wrote.push({ name, about });
+			},
+			giveSkill: async (name, to) => {
+				if (!skills.some((one) => one.name === name)) {
+					throw new Error(`${here} has no skill called "${name}".`);
+				}
+				passed.push({ name, to });
+			},
+			gates: async () => [...gates],
+			setGate: async (gate, hold) => {
+				const had = gates.has(gate);
+				if (hold) gates.add(gate);
+				else gates.delete(gate);
+				return had !== hold;
+			},
 			holdTeam: async (to: string) => {
 				if (to === here) throw new Error("An agent does not write to itself");
 				const at = mates.findIndex((mate) => mate.id === to);
@@ -382,6 +407,8 @@ function context(
 		admitted,
 		denied,
 		asked,
+		wrote,
+		passed,
 	};
 }
 
@@ -2422,5 +2449,64 @@ describe("agentMayNot", () => {
 		expect(refusal).toContain("/team ledger, if you meant it");
 		expect(refusal).toContain("spend what ledger may spend");
 		expect(agentMayNot("/team drop ledger", scout)).toContain("/team drop ledger");
+	});
+});
+
+describe("/skills", () => {
+	const learned = [
+		{ name: "weekly-report", does: "asked for the numbers for a week", lines: 40 },
+		{ name: "triage-mail", does: "", lines: 12 },
+	];
+
+	it("says there is nothing yet, and what would put something there", async () => {
+		const plane = context({});
+		const said = await runCommand("/skills", plane.context);
+		expect(said).toContain("has not written down");
+		expect(said).toContain("/skills save");
+	});
+
+	it("lists what it knows, with the line that says when each applies", async () => {
+		const plane = context({ skills: learned });
+		const said = await runCommand("/skills", plane.context);
+		expect(said).toContain("weekly-report — asked for the numbers for a week");
+		expect(said).toContain("triage-mail");
+		expect(said).toContain("40 lines");
+	});
+
+	// Nothing here writes the file. The only thing that knows what just happened is the agent that
+	// did it, so `save` is a turn asked for and not a file the plane puts in the box.
+	it("asks the agent to write one, with what it is for", async () => {
+		const plane = context({});
+		const said = await runCommand(
+			"/skills save weekly-report the numbers I ask for on Fridays",
+			plane.context,
+		);
+		expect(plane.wrote).toEqual([
+			{ name: "weekly-report", about: "the numbers I ask for on Fridays" },
+		]);
+		expect(said).toContain("weekly-report");
+	});
+
+	it("needs a name to save one under", async () => {
+		const plane = context({});
+		expect(await runCommand("/skills save", plane.context)).toContain("takes a name");
+		expect(plane.wrote).toEqual([]);
+	});
+
+	it("passes one to another agent, and says it is a copy", async () => {
+		const plane = context({ skills: learned });
+		const said = await runCommand("/skills give weekly-report scribe", plane.context);
+		expect(plane.passed).toEqual([{ name: "weekly-report", to: "scribe" }]);
+		expect(said).toContain("copy");
+	});
+
+	it("says so when there is no such skill to pass on", async () => {
+		const plane = context({ skills: learned });
+		expect(await runCommand("/skills give nothing scribe", plane.context)).toContain("no skill");
+	});
+
+	it("says what it takes when it was given something else", async () => {
+		const plane = context({});
+		expect(await runCommand("/skills sharpen", plane.context)).toContain("save");
 	});
 });

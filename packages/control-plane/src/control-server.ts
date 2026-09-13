@@ -7,6 +7,7 @@ import type { CarrierSpec, Channel, Reply } from "@squad/channels";
 import type { Schedule } from "@squad/scheduler";
 import type { EmailOffer, LoginPage } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { Gate } from "./gates.ts";
 import type { GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
@@ -15,6 +16,7 @@ import type { Plugin } from "./plugins.ts";
 import type { RepoOffer } from "./repos.ts";
 import type { Room } from "./rooms.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
+import type { Skill } from "./skills.ts";
 import type { Utterance } from "./transcript.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
@@ -67,6 +69,45 @@ export type ControlRequest =
 	 * five ops are the whole of it — what a room has beyond a name and a roster is what was said in
 	 * it, which arrives as a conversation like any other.
 	 */
+	/**
+	 * An answer to one of the messages an agent has written and is not allowed to send unasked.
+	 *
+	 * By its place in the list rather than by its words: two answers held on the same channel can be
+	 * the same sentence, and the person answering the second means the second.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "send";
+			readonly agentId: string;
+			readonly at: number;
+			readonly send: boolean;
+	  }
+	/** What an agent has written down that it knows how to do, read out of its own repository. */
+	| { readonly id: string; readonly op: "skills"; readonly agentId: string }
+	/** Asks it to write what it has just been doing down as one. It answers by taking a turn. */
+	| {
+			readonly id: string;
+			readonly op: "keep-skill";
+			readonly agentId: string;
+			readonly name: string;
+			readonly about?: string;
+	  }
+	/** Copies one of its skills into another agent on this plane. */
+	| {
+			readonly id: string;
+			readonly op: "give-skill";
+			readonly agentId: string;
+			readonly name: string;
+			readonly to: string;
+	  }
+	/** What an agent must be shown for before it goes out in the operator's name. */
+	| {
+			readonly id: string;
+			readonly op: "gate";
+			readonly agentId: string;
+			readonly gate: Gate;
+			readonly hold: boolean;
+	  }
 	| { readonly id: string; readonly op: "rooms" }
 	| {
 			readonly id: string;
@@ -376,6 +417,7 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly grants: readonly GrantStanding[] }
 	| { readonly id: string; readonly ok: true; readonly schedules: readonly Schedule[] }
 	| { readonly id: string; readonly ok: true; readonly rooms: readonly Room[] }
+	| { readonly id: string; readonly ok: true; readonly skills: readonly Skill[] }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
@@ -736,6 +778,24 @@ export class ControlServer {
 			} else if (request.op === "reach") {
 				await this.#plane.answerReach(request.agentId, request.host, request.open);
 				this.#write(socket, { id: request.id, ok: true, text: request.host });
+			} else if (request.op === "skills") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					skills: await this.#plane.skills(request.agentId),
+				});
+			} else if (request.op === "keep-skill") {
+				await this.#plane.keepSkill(request.agentId, request.name, request.about);
+				this.#write(socket, { id: request.id, ok: true, text: "" });
+			} else if (request.op === "give-skill") {
+				await this.#plane.giveSkill(request.agentId, request.to, request.name);
+				this.#write(socket, { id: request.id, ok: true, text: "" });
+			} else if (request.op === "send") {
+				await this.#plane.answerSend(request.agentId, request.at, request.send);
+				this.#write(socket, { id: request.id, ok: true, text: "" });
+			} else if (request.op === "gate") {
+				await this.#plane.setGate(request.agentId, request.gate, request.hold);
+				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else if (request.op === "talk") {
 				await this.#plane.answerTalk(request.agentId, request.to, request.open);
 				this.#write(socket, { id: request.id, ok: true, text: request.to });

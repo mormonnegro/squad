@@ -522,6 +522,11 @@ export class ControlClient {
 		await this.#once({ op: "unschedule", agentId, scheduleId });
 	}
 
+	/** Lets out one of the answers an agent wrote and is not allowed to send unasked, or drops it. */
+	async answerSend(agentId: string, at: number, send: boolean): Promise<void> {
+		await this.#once({ op: "send", agentId, at, send });
+	}
+
 	/** The rooms this plane has, and who is in each. */
 	async rooms(): Promise<readonly Room[]> {
 		const answer = await this.#once({ op: "rooms" });

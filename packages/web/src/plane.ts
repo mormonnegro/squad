@@ -72,6 +72,18 @@ export function roomChannel(name: string): string {
 	return `room:${name}`;
 }
 
+/**
+ * One thing an agent has written down that it knows how to do.
+ *
+ * Written out here like everything else on this wire. It lives in the agent's own repository and is
+ * read out of it every time: what a console shows is what is in the box, not what it was told once.
+ */
+export interface Skill {
+	readonly name: string;
+	readonly does: string;
+	readonly lines: number;
+}
+
 export class PlaneError extends Error {}
 
 /** One browser that has been let in, as a screen shows it. */
@@ -391,6 +403,32 @@ export class Plane {
 
 	async answerTalk(agentId: string, to: string, open: boolean): Promise<void> {
 		await this.#ask({ op: "talk", agentId, to, open });
+	}
+
+	/** What this agent has written down that it knows how to do. */
+	async skills(agentId: string): Promise<readonly Skill[]> {
+		const answer = await this.#ask({ op: "skills", agentId });
+		return (answer.skills as Skill[] | undefined) ?? [];
+	}
+
+	/** Asks it to write what it has just been doing down as a skill. It answers by taking a turn. */
+	async keepSkill(agentId: string, name: string, about?: string): Promise<void> {
+		await this.#ask({ op: "keep-skill", agentId, name, ...(about === undefined ? {} : { about }) });
+	}
+
+	/** Copies one of its skills into another agent. */
+	async giveSkill(agentId: string, name: string, to: string): Promise<void> {
+		await this.#ask({ op: "give-skill", agentId, name, to });
+	}
+
+	/** Lets out one of the answers an agent has written and is not allowed to send unasked. */
+	async answerSend(agentId: string, at: number, send: boolean): Promise<void> {
+		await this.#ask({ op: "send", agentId, at, send });
+	}
+
+	/** Holds what this agent would send on one channel until somebody says so, or lets it go again. */
+	async setGate(agentId: string, gate: string, hold: boolean): Promise<void> {
+		await this.#ask({ op: "gate", agentId, gate, hold });
 	}
 
 	/**

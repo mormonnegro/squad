@@ -597,6 +597,7 @@ export function App() {
 				<Setup
 					plane={plane}
 					agent={agent}
+					agents={agents}
 					onChanged={() => void look()}
 					onClose={() => setSetting(false)}
 				/>

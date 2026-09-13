@@ -119,6 +119,91 @@ describe("the control socket", () => {
 	});
 
 	/**
+	 * The one question asked after the words exist rather than before.
+	 *
+	 * Reaching a host and writing to a peer are both "may it", asked of a thing that has not happened.
+	 * This is "should this go", and what makes it worth a different shape is that the answer is about
+	 * a message already written: it is held whole, shown, and sent exactly as it stands.
+	 */
+	describe("what leaves in the operator's name", () => {
+		/** A mail arriving, so that the turn it causes has a mail channel to answer on. */
+		const wroteIn = async (body: string) => {
+			await plane.bus.publish({
+				agentId: "scout",
+				source: "channel",
+				channel: "email:someone@example.com",
+				trust: "participant",
+				body,
+				replyTo: "someone@example.com",
+			});
+			await plane.bus.drain();
+		};
+
+		let sent: string[];
+
+		beforeEach(() => {
+			sent = [];
+			plane.router.register({
+				name: "email",
+				send: async (reply) => {
+					sent.push(reply.body);
+				},
+			});
+		});
+
+		it("sends without asking until it is asked to ask", async () => {
+			await answerWith("scout", () => "on its way");
+			await wroteIn("¿me ayudás?");
+			expect(sent).toEqual(["on its way"]);
+		});
+
+		it("holds the answer, and sends exactly what was written when told to", async () => {
+			await client.command("scout", "/ask mail");
+			await answerWith("scout", () => "querido cliente, sí");
+			await wroteIn("¿me ayudás?");
+
+			expect(sent).toEqual([]);
+			const [held] = (await client.agents()).filter((one) => one.id === "scout");
+			expect(held?.sending).toEqual([
+				{ channel: "email:someone@example.com", body: "querido cliente, sí" },
+			]);
+
+			await client.answerSend("scout", 0, true);
+			expect(sent).toEqual(["querido cliente, sí"]);
+			const [after] = (await client.agents()).filter((one) => one.id === "scout");
+			expect(after?.sending).toEqual([]);
+		});
+
+		it("drops it on a no, and nothing goes", async () => {
+			await client.command("scout", "/ask mail");
+			await answerWith("scout", () => "no debería salir");
+			await wroteIn("¿me ayudás?");
+
+			await client.answerSend("scout", 0, false);
+			expect(sent).toEqual([]);
+			const [after] = (await client.agents()).filter((one) => one.id === "scout");
+			expect(after?.sending).toEqual([]);
+		});
+
+		// The hold is the operator's and the plane's to forget, like every other thing a console
+		// decides — and letting it go has to be as easy as asking for it.
+		it("lets it go again", async () => {
+			await client.command("scout", "/ask mail");
+			expect((await client.agents()).find((one) => one.id === "scout")?.gates).toEqual(["mail"]);
+			await client.command("scout", "/ask mail off");
+			expect((await client.agents()).find((one) => one.id === "scout")?.gates).toEqual([]);
+
+			await answerWith("scout", () => "ya sale");
+			await wroteIn("¿y ahora?");
+			expect(sent).toEqual(["ya sale"]);
+		});
+
+		it("says what it takes when it was given something else", async () => {
+			expect(await client.command("scout", "/ask carta")).toContain("mail");
+		});
+	});
+
+	/**
 	 * The unit above an agent: several of them given one brief, with the answers in one thread.
 	 *
 	 * Taken through the socket rather than against the plane directly, because the point of a room is

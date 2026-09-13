@@ -45,6 +45,16 @@ export const COMMANDS: readonly Command[] = [
 		does: "the GitHub repositories it holds, and which branches it may push",
 	},
 	{
+		name: "/skills",
+		takes: "[save <name> [<what for>]|give <name> <agent>]",
+		does: "what it has learned how to do, and how to keep or pass one on",
+	},
+	{
+		name: "/ask",
+		takes: "[mail|telegram [off]]",
+		does: "what it has to show you before it sends it in your name",
+	},
+	{
 		name: "/team",
 		takes: "[<name>|drop <name>]",
 		does: "the agents it may write to, and what it has asked to write to",

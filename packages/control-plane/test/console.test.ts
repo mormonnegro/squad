@@ -816,6 +816,8 @@ describe("Column", () => {
 		served: [],
 		asking: [],
 		wants: [],
+		sending: [],
+		gates: [],
 		bot: undefined,
 		mail: undefined,
 	});
@@ -1133,6 +1135,8 @@ describe("reached", () => {
 		served: [],
 		asking: [],
 		wants: [],
+		sending: [],
+		gates: [],
 		bot: { username: "demo_bot", paired: true },
 		mail: { address: "agents+demo@squad.dev", writes: true },
 	};
@@ -1188,6 +1192,8 @@ describe("standing", () => {
 		served: [],
 		asking: [],
 		wants: [],
+		sending: [],
+		gates: [],
 		bot: { username: "demo_bot", paired: true },
 		mail: { address: "agents+demo@squad.dev", writes: true },
 	};

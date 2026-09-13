@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { LoginStatus, Reachability } from "@squad/proxy";
+import { GATES, type Gate, gateSaid, isGate } from "./gates.ts";
 import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
@@ -12,6 +13,7 @@ import {
 	readPush,
 	readRepo,
 } from "./repos.ts";
+import type { Skill } from "./skills.ts";
 import type { Teammate } from "./team.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
@@ -166,6 +168,16 @@ export interface CommandContext {
 	repos(): Promise<readonly RepoStanding[]>;
 	/** The other agents on this plane, and which of them this one may write to. */
 	team(): Promise<readonly Teammate[]>;
+	/** What this agent has written down that it knows how to do. */
+	skills(): Promise<readonly Skill[]>;
+	/** Asks it to write what it has just been doing down as a skill, under this name. */
+	keepSkill(name: string, about: string): Promise<void>;
+	/** Copies one of its skills into another agent on this plane. */
+	giveSkill(name: string, to: string): Promise<void>;
+	/** What this agent must be shown for before it goes out in the operator's name. */
+	gates(): Promise<readonly Gate[]>;
+	/** Holds one of those, or lets it go again. Answers whether anything changed. */
+	setGate(gate: Gate, hold: boolean): Promise<boolean>;
 	/**
 	 * Lets this agent write to another one. One-way: what is typed at planner is planner's to send.
 	 *
@@ -318,6 +330,16 @@ export const COMMANDS: readonly Command[] = [
 		name: "/repo",
 		takes: "[<owner/name> [<branch>…]|drop …]",
 		does: "the GitHub repositories it holds, and which branches it may push",
+	},
+	{
+		name: "/skills",
+		takes: "[save <name> [<what for>]|give <name> <agent>]",
+		does: "what it has learned how to do, and how to keep or pass one on",
+	},
+	{
+		name: "/ask",
+		takes: "[mail|telegram [off]]",
+		does: "what it has to show you before it sends it in your name",
 	},
 	{
 		name: "/team",
@@ -1575,6 +1597,114 @@ async function repo(words: readonly string[], context: CommandContext): Promise<
 }
 
 /**
+ * What an agent has learned how to do, and the two lines that change it.
+ *
+ * A skill is the agent's own file in the agent's own repository, which is why nothing here writes
+ * one: `save` asks the agent to write down what it just did, because the only thing that knows what
+ * that was is the thing that did it. What this command owns is the list and the copying.
+ */
+async function skills(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", second = "", ...rest] = words;
+
+	if (first === "") {
+		const held = await context.skills();
+		if (held.length === 0) {
+			return [
+				`${id} has not written down how to do anything yet.`,
+				"",
+				"After it does something worth doing the same way twice, /skills save <name> asks it to",
+				"write the procedure into its own repository, where it reads it back the next time.",
+			].join("\n");
+		}
+		return [
+			`${id} knows how to do ${held.length === 1 ? "one thing" : `${held.length} things`}:`,
+			"",
+			...held.map(
+				(skill) =>
+					`  ${skill.name}${skill.does === "" ? "" : ` — ${skill.does}`} (${skill.lines} lines)`,
+			),
+			"",
+			"/skills give <name> <agent> copies one to another agent.",
+		].join("\n");
+	}
+
+	if (first === "save" || first === "keep") {
+		const name = second.trim();
+		if (name === "") return "/skills save takes a name for it: /skills save weekly-report";
+		try {
+			await context.keepSkill(name, rest.join(" "));
+		} catch (error) {
+			return (error as Error).message;
+		}
+		return `Asked ${id} to write down how it did this, as "${name}". It takes a turn on it and commits the file; /skills lists it once it has.`;
+	}
+
+	if (first === "give" || first === "copy") {
+		const name = second.trim();
+		const to = rest.join(" ").trim().replace(/^@/, "");
+		if (name === "" || to === "") {
+			return "/skills give takes the skill and who gets it: /skills give weekly-report scribe";
+		}
+		try {
+			await context.giveSkill(name, to);
+		} catch (error) {
+			return (error as Error).message;
+		}
+		return `${to} has a copy of "${name}" now. It is a copy: ${to} may edit it into something else, and ${id} keeps its own.`;
+	}
+
+	return `/skills takes nothing at all, "save <name>", or "give <name> <agent>".`;
+}
+
+/**
+ * What this agent has to show you before it sends it.
+ *
+ * Only the things that leave in the operator's name and cannot be taken back by deciding afterwards
+ * that they should not have gone. What an agent may reach is a different question with a different
+ * answer — `/reach` and the grants — and what it does to its own files is bounded by the box it
+ * lives in. This is about the two doors that open onto somebody else's inbox.
+ */
+async function ask(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", second = ""] = words;
+
+	if (first === "") {
+		const held = await context.gates();
+		return [
+			held.length === 0
+				? `${id} sends what it writes, without asking.`
+				: `${id} shows you what it would send ${held.map(gateSaid).join(" and ")}, and waits.`,
+			"",
+			...GATES.map(
+				(gate) =>
+					`  ${gate.padEnd(9)} ${held.includes(gate) ? "held — you answer each one" : "goes out as written"}`,
+			),
+			"",
+			`/ask mail holds one. /ask mail off lets it go again.`,
+		].join("\n");
+	}
+
+	if (!isGate(first)) {
+		return `/ask takes ${GATES.join(" or ")}, and "off" after it to let one go again.`;
+	}
+	const hold = second !== "off";
+	try {
+		const changed = await context.setGate(first, hold);
+		if (!changed) {
+			return hold
+				? `${id} already shows you what it sends ${gateSaid(first)}.`
+				: `${id} was not being held on that.`;
+		}
+	} catch (error) {
+		return (error as Error).message;
+	}
+	return hold
+		? `${id} will show you every answer it would send ${gateSaid(first)} before it goes. The message is held whole, and a yes sends exactly what is on the screen.`
+		: `${id} sends ${gateSaid(first)} without asking again.`;
+}
+
+/**
  * Who this agent may write to, and the two lines that change it.
  *
  * Written from the agent the line was typed at, in both directions of the sentence: `/team scout`
@@ -1655,6 +1785,8 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "email") return email(rest, context);
 	if (name === "repo") return repo(rest, context);
 	if (name === "team") return team(rest, context);
+	if (name === "ask") return ask(rest, context);
+	if (name === "skills" || name === "skill") return skills(rest, context);
 	if (name === "delete") return remove(rest, context);
 	if (name === "clear") return clear(rest, context);
 

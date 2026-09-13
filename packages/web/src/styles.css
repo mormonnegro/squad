@@ -1160,6 +1160,23 @@ ol.md-list {
 	color: var(--cyan);
 }
 
+/* The words themselves, set apart from the sentence about them: what is being approved is this text
+   and not a description of it, so it is shown the way the person who receives it will see it. */
+.ask-said {
+	display: block;
+	margin-top: 0.6rem;
+	padding: 0.6rem 0.75rem;
+	border-left: 2px solid var(--line);
+	background: var(--bg-code);
+	border-radius: 0 5px 5px 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 18rem;
+	overflow-y: auto;
+	font: 0.85rem / 1.6 var(--sans);
+	color: var(--text);
+}
+
 .ask-keys {
 	display: flex;
 	gap: 0.5rem;

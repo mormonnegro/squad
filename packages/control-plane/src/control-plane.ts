@@ -20,6 +20,7 @@ import {
 	type Hook,
 	needsBridge,
 	pairingPhrase,
+	type Reply,
 	resolveCarrier,
 	startLink,
 	TelegramChannel,
@@ -68,6 +69,7 @@ import {
 	withoutSecrets,
 } from "./commands.ts";
 import { ExecStream } from "./exec-stream.ts";
+import { type Gate, Gates, gateOf, gateSaid } from "./gates.ts";
 import {
 	AddedGrants,
 	carriedBy,
@@ -133,6 +135,13 @@ import {
 	searchGrant,
 } from "./search.ts";
 import { ensureSelfRepo } from "./self.ts";
+import {
+	copySkill,
+	type Skill,
+	skillPath,
+	nameRefused as skillRefused,
+	skillsOf,
+} from "./skills.ts";
 import { SpendLedger } from "./spend.ts";
 import {
 	AgentChannel,
@@ -389,6 +398,16 @@ export interface AgentSummary {
 	 */
 	readonly wants: readonly string[];
 	/**
+	 * The answers it has written that are waiting to be let out, oldest first.
+	 *
+	 * The words themselves, because that is what is being decided: the other two questions are "may
+	 * it", asked before anything exists, and this one is about a message already written. Whoever
+	 * says yes is saying yes to what is on the screen.
+	 */
+	readonly sending: readonly { readonly channel: string; readonly body: string }[];
+	/** What it must be asked about before it goes out in the operator's name. */
+	readonly gates: readonly Gate[];
+	/**
 	 * The Telegram bot it answers on, if one is connected, and whether anybody has paired with it.
 	 *
 	 * Here rather than asked for per agent because the column draws the whole fleet at once, and a
@@ -521,6 +540,9 @@ export class ControlPlane {
 	/** The hosts opened at the console, on top of the ones the file grants every agent. */
 	readonly #addedGrants: AddedGrants;
 	readonly #addedTeam: TeamEdges;
+	/** What an agent must be asked about before it goes out, and the messages waiting on an answer. */
+	readonly #gates: Gates;
+	readonly #sending = new Map<string, Reply[]>();
 	/** The rooms made at a console, and what each one has said, which is a conversation of its own. */
 	readonly #rooms: Rooms;
 	readonly #roomTalk: Transcript;
@@ -637,6 +659,7 @@ export class ControlPlane {
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
 		this.#addedTeam = new TeamEdges(join(this.#stateDir, "added-team.json"));
+		this.#gates = new Gates(join(this.#stateDir, "gates.json"));
 		this.#rooms = new Rooms(join(this.#stateDir, "rooms.json"));
 		// Its own, beside the agents': a room's thread is not any one agent's conversation, and the
 		// agent that answered in it has the same line in its own pane for its own reasons.
@@ -826,6 +849,8 @@ export class ControlPlane {
 			served: await this.#served.of(agent.id),
 			asking: this.asking(agent.id),
 			wants: this.wants(agent.id),
+			sending: this.sending(agent.id),
+			gates: await this.#gates.of(agent.id).catch(() => []),
 			bot: bot === undefined ? undefined : { username: bot.username, paired: bot.paired },
 			// Cut down to the two facts a row can draw. The rest of a standing is a pairing link and a
 			// host and a port, which are answers to `/telegram` and `/email` and belong in a sentence.
@@ -922,6 +947,9 @@ export class ControlPlane {
 			// what was said in it is still there to read, and nobody is quietly re-admitted to it.
 			await this.#rooms.forget(agentId);
 			this.#emit({ kind: "rooms" });
+			// What it had to be asked about goes with the name, like every other thing decided here.
+			await this.#gates.forget(agentId);
+			this.#sending.delete(agentId);
 			// The bot is this agent as far as anyone writing to it is concerned, so it goes with the name.
 			// The token stays good at BotFather's end; what stops is this plane answering with it.
 			await this.disconnectTelegram(agentId);
@@ -939,7 +967,9 @@ export class ControlPlane {
 		this.#runners.set(agentId, runner);
 		const handler = createTurnHandler({
 			runner,
-			router: this.router,
+			// The router, with a door in front of it. An answer that would leave in the operator's name
+			// stops here when they have said it should, and waits where they will see it.
+			router: { send: (reply) => this.#sendOut(reply) },
 			onStart: (id) => this.#emit({ kind: "thinking", agentId: id }),
 			onTurn: (id, result, to) => {
 				this.#onTurn?.(id, result);
@@ -1298,6 +1328,72 @@ export class ControlPlane {
 		return await this.#addedTeam.drop(agentId, to);
 	}
 
+	// ── what an agent knows how to do ──────────────────────────────────
+
+	/**
+	 * The skills in an agent's own repository.
+	 *
+	 * Read out of the box every time rather than kept here, because the agent writes them: a list
+	 * this plane cached would be a list that is right until the next turn.
+	 */
+	async skills(agentId: string): Promise<readonly Skill[]> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		return await skillsOf(this.sandboxes, agentId);
+	}
+
+	/**
+	 * Asks an agent to write down what it has just been doing, as a skill.
+	 *
+	 * A turn rather than a file the plane writes, because the only thing that knows what just
+	 * happened is the agent that did it — and because a procedure written by whoever will read it
+	 * next is the only kind that survives being read again.
+	 */
+	async keepSkill(agentId: string, name: string, about?: string): Promise<void> {
+		const refused = skillRefused(name);
+		if (refused !== undefined) throw new Error(refused);
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		await this.bus.publish({
+			agentId,
+			source: "channel",
+			// Its own channel rather than the console's: a console channel names one request that is
+			// answered and gone, and what this asks for is a commit rather than a reply.
+			channel: WAKE_CHANNEL,
+			// The operator asked for this, at the console, which is the one place that trust is minted.
+			trust: "operator",
+			body: [
+				`Write down how you did this, as a skill called "${name}".`,
+				"",
+				about === undefined || about.trim().length === 0
+					? "It is the work from this conversation that is worth keeping."
+					: `What it is for: ${about.trim()}`,
+				"",
+				`Put it in ${skillPath(name)}/SKILL.md, with front matter naming it and one line of`,
+				"`description:` saying when it applies — that line is what decides whether you find it",
+				"again, so write it as the situation rather than as the title. Then the steps as you",
+				"actually took them: what to check first, what the decisions were, what the output should",
+				"look like, and what to do when it goes wrong. Scripts and reference files go in the same",
+				"folder. Commit it.",
+				"",
+				"Keep it short enough to read. If it is only true of today, it is not a skill.",
+			].join("\n"),
+		});
+	}
+
+	/** Copies one skill from one agent to another. Both must be running to have a volume to read. */
+	async giveSkill(from: string, to: string, name: string): Promise<void> {
+		for (const id of [from, to]) {
+			if (!this.#agents.some((agent) => agent.id === id)) {
+				throw new Error(`There is no agent called "${id}"`);
+			}
+		}
+		if (from === to) throw new Error("An agent already has its own skills.");
+		await copySkill(this.sandboxes, from, to, name);
+	}
+
 	// ── rooms ──────────────────────────────────────────────────────────
 
 	/** Every room, and who is in it. */
@@ -1501,6 +1597,101 @@ export class ControlPlane {
 				error instanceof Error ? error : new Error(String(error)),
 			);
 		}
+	}
+
+	// ── what leaves in the operator's name ─────────────────────────────
+
+	/**
+	 * Sends a turn's answer, or holds it in front of the person whose name it would go out under.
+	 *
+	 * The reach question and the one about writing to a peer are both "may it", asked before anything
+	 * happens. This one is "should this": the words are already written, and what is being decided is
+	 * whether they leave. So the message is held whole and shown — a yes sends exactly what is on the
+	 * screen, which is the only version of this that is worth anything.
+	 */
+	async #sendOut(reply: Reply): Promise<void> {
+		const gate = gateOf(reply.channel);
+		if (gate === undefined || !(await this.#gates.of(reply.agentId)).includes(gate)) {
+			await this.router.send(reply);
+			return;
+		}
+		const waiting = this.#sending.get(reply.agentId) ?? [];
+		this.#sending.set(reply.agentId, [...waiting, reply]);
+		await this.#record(reply.agentId, {
+			from: "plane",
+			text: `Nothing was sent. ${reply.agentId} would answer ${gateSaid(gate)}, and you asked to be shown that first — a yes below sends exactly what it wrote.`,
+		});
+	}
+
+	/** The answers this agent has written that are waiting to be let out. */
+	sending(agentId: string): readonly { channel: string; body: string }[] {
+		return (this.#sending.get(agentId) ?? []).map((one) => ({
+			channel: one.channel,
+			body: one.body,
+		}));
+	}
+
+	/**
+	 * Lets one of those out, or drops it.
+	 *
+	 * By its place in the list rather than by its words: two answers held on the same channel can be
+	 * the same sentence, and a person answering the second of them means the second of them.
+	 */
+	async answerSend(agentId: string, at: number, send: boolean): Promise<void> {
+		const waiting = this.#sending.get(agentId) ?? [];
+		const held = waiting[at];
+		if (held === undefined) return;
+		this.#sending.set(
+			agentId,
+			waiting.filter((_one, index) => index !== at),
+		);
+		const gate = gateOf(held.channel);
+		if (!send) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `Dropped. Nothing went out, and ${agentId} is not told to write it again.`,
+			});
+			return;
+		}
+		try {
+			await this.router.send(held);
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "good",
+				text: `Sent ${gate === undefined ? "" : `${gateSaid(gate)} `}as written.`,
+			});
+		} catch (error) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `It did not go: ${(error as Error).message}`,
+			});
+		}
+	}
+
+	/** What this agent must be asked about before it goes out. */
+	async gates(agentId: string): Promise<readonly Gate[]> {
+		return await this.#gates.of(agentId);
+	}
+
+	/** Holds one kind of outbound thing, or lets it go again. Says whether anything changed. */
+	async setGate(agentId: string, gate: Gate, hold: boolean): Promise<boolean> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		const changed = hold
+			? await this.#gates.hold(agentId, gate)
+			: await this.#gates.free(agentId, gate);
+		if (changed) {
+			this.#emit({
+				kind: "note",
+				who: agentId,
+				action: hold ? "holds" : "frees",
+				detail: `what it sends ${gateSaid(gate)}`,
+			});
+		}
+		return changed;
 	}
 
 	/** Holds a message for an agent this one may not write to, once, however often it is written. */
@@ -2611,6 +2802,11 @@ export class ControlPlane {
 			granted: async (host) => new GrantSet(await this.#grantsFor(agentId)).allowsHost(host),
 			askReach: async (host) => this.#askReach(agentId, host),
 			team: () => this.team(agentId),
+			skills: () => this.skills(agentId),
+			keepSkill: (name, about) => this.keepSkill(agentId, name, about),
+			giveSkill: (name, to) => this.giveSkill(agentId, to, name),
+			gates: () => this.gates(agentId),
+			setGate: (gate, hold) => this.setGate(agentId, gate, hold),
 			holdTeam: (to) => this.holdTeam(agentId, to),
 			dropTeam: (to) => this.dropTeam(agentId, to),
 			repos: () => this.repos(agentId),

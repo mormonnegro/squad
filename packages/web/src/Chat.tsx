@@ -120,6 +120,25 @@ export function Chat({
 							onAnswer={(open) => void plane.answerTalk(agent.id, to, open)}
 						/>
 					))}
+					{/* Written, and waiting. Unlike the two above it, what is being decided here is not
+					    whether a door opens but whether these exact words leave — so they are on the
+					    screen, whole, above the keys. */}
+					{agent.sending.map((held, index) => (
+						<Ask
+							// The place in the list is the identity: the same sentence can be held twice.
+							// biome-ignore lint/suspicious/noArrayIndexKey: the list is what is being answered
+							key={`send:${index}`}
+							keys={["y send it", "n drop it"]}
+							what={
+								<>
+									<strong>{nameOf(agent.id)}</strong> would send this {outOf(held.channel)}, in your
+									name. Nothing has gone.
+									<span className="ask-said">{held.body}</span>
+								</>
+							}
+							onAnswer={(send) => void plane.answerSend(agent.id, index, send)}
+						/>
+					))}
 				</div>
 				{!following && (
 					<button
@@ -354,20 +373,37 @@ function hostOf(url: string): string {
  * The agent writes the question and never the answer: this draws what it asked for and the two keys
  * that answer it, and neither of them is something the agent can press.
  */
-function Ask({ what, onAnswer }: { what: React.ReactNode; onAnswer: (open: boolean) => void }) {
+function Ask({
+	what,
+	keys = ["y open", "n keep it shut"],
+	onAnswer,
+}: {
+	what: React.ReactNode;
+	/** What the two answers are called, because opening a host and sending a mail are not the same. */
+	keys?: readonly [string, string];
+	onAnswer: (open: boolean) => void;
+}) {
 	return (
 		<div className="ask">
 			<div className="ask-what">{what}</div>
 			<div className="ask-keys">
 				<button type="button" className="key" data-yes="true" onClick={() => onAnswer(true)}>
-					y open
+					{keys[0]}
 				</button>
 				<button type="button" className="key" onClick={() => onAnswer(false)}>
-					n keep it shut
+					{keys[1]}
 				</button>
 			</div>
 		</div>
 	);
+}
+
+/** Which door this would go out of, in the words somebody would use for it. */
+function outOf(channel: string): string {
+	const prefix = channel.split(":")[0];
+	if (prefix === "email") return "by mail";
+	if (prefix === "telegram") return "on Telegram";
+	return `on ${prefix}`;
 }
 
 function Composer({
