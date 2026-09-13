@@ -3,10 +3,12 @@ export {
 	advance,
 	createSchedule,
 	type NewSchedule,
+	readWhen,
 	type Schedule,
 	type ScheduleAuthor,
 	ScheduleError,
 	type ScheduleKind,
+	type When,
 } from "./schedule.ts";
 export {
 	Scheduler,

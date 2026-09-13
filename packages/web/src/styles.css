@@ -297,105 +297,126 @@
  */
 .when {
 	color: var(--amber);
-	cursor: help;
-	padding: 0;
-	/* Somewhere for the panel to be measured against, and nothing else: the panel itself is fixed. */
-	position: relative;
 }
 
 /*
- * What the countdown is counting to, and why.
+ * The way into what an agent is going to do.
  *
- * Fixed rather than placed inside the row, because the column the row lives in scrolls and clips —
- * a panel positioned within it would be cut off by the list it belongs to.
+ * Faint until the row is under a mouse or already open, because a column of twelve chevrons is a
+ * column of twelve things to decide about, and the name is what this list is read for.
  */
-.wake-panel {
-	position: fixed;
-	z-index: 20;
-	display: flex;
-	flex-direction: column;
-	gap: 0.7rem;
-	width: 22rem;
-	/* A peek, not the thing. What does not fit here is one click away, and a panel that has to be
-	   scrolled while a mouse is held still is one nobody reads to the end of anyway. */
-	max-height: 18rem;
-	overflow: hidden;
-	padding: 0.8rem 0.9rem;
-	background: var(--bg-raised);
-	border: 1px solid var(--line);
-	border-radius: 7px;
-	box-shadow: 0 6px 24px #000a;
+.row-open {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 1.1rem;
+	height: 1.1rem;
+	color: var(--muted);
+	opacity: 0;
+	transition: opacity 120ms ease, transform 150ms ease;
+}
+
+.row:hover .row-open,
+.row:focus-within .row-open,
+.row[data-open="true"] .row-open {
+	opacity: 1;
+}
+
+.row[data-open="true"] .row-open {
+	transform: rotate(90deg);
 	color: var(--text);
-	font: 0.8rem / 1.55 var(--sans);
-	cursor: auto;
-	/* The panel hangs inside a button, and a button centres what is in it. This is prose. */
-	text-align: left;
 }
 
-.wake {
+/*
+ * An agent's week, under the agent.
+ *
+ * Indented to the name above it and hung off a rule down the left, which is the whole of saying
+ * whose these are: they belong to that row, and the list they interrupt goes on underneath.
+ */
+.tasks {
 	display: flex;
 	flex-direction: column;
-	gap: 0.25rem;
+	gap: 0.55rem;
+	margin: 0.15rem 0.9rem 0.5rem 2.1rem;
+	padding-left: 0.7rem;
+	border-left: 1px solid var(--line);
+	font: 0.78rem / 1.5 var(--sans);
 }
 
-.wake + .wake {
-	border-top: 1px solid var(--line-soft);
-	padding-top: 0.7rem;
+.task {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	min-width: 0;
 }
 
-.wake-head {
+.task-head {
 	display: flex;
 	align-items: baseline;
 	justify-content: space-between;
-	gap: 0.6rem;
-	font: 0.75rem var(--mono);
+	gap: 0.4rem;
+	font: 0.72rem var(--mono);
 	color: var(--amber);
 }
 
-.wake-kind {
+/* Whose it is, where taking it away would have been. Not a button, because it is not one. */
+.task-whose {
 	color: var(--muted);
-	text-align: right;
+	font-size: 0.68rem;
 }
 
-/* The agent's own words, as words: what it will be told, wrapped the way it wrote it. */
-.wake-body {
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+/* Calling one off. Red on the way in and quiet until then: it is the only thing on this list that
+   takes something away, and a row of red crosses would read as an alarm. */
+.task-off {
+	flex: none;
+	padding: 0 0.2rem;
+	color: var(--muted);
+	font-size: 0.85rem;
+	line-height: 1;
+}
+
+.task-off:hover {
+	color: var(--red);
+}
+
+/* What it will be told, in its own words. Two lines of it, and the whole of it on a click — there
+   is no other place for it to go, and sending somebody elsewhere to read four lines is worse. */
+.task-body {
+	text-align: left;
 	color: var(--text);
-}
-
-/* Cut to a paragraph or two on the way past. The whole of it is in the modal. */
-.wake-body[data-peek="true"] {
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 7;
-	line-clamp: 7;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
 	overflow: hidden;
 }
 
-.wake-more {
+.task-body[data-whole="true"] {
+	display: block;
+}
+
+.task-foot {
+	color: var(--muted);
+	font: 0.68rem var(--mono);
+}
+
+/* One more, at the end of them, which is where a new one goes. */
+.task-add {
+	align-self: flex-start;
 	color: var(--muted);
 	font: 0.72rem var(--mono);
-	border-top: 1px solid var(--line-soft);
-	padding-top: 0.55rem;
+	padding: 0.1rem 0;
 }
 
-.wake-why {
+.task-add:hover {
+	color: var(--text-strong);
+}
+
+/* What there is to say when there is nothing to list, and what went wrong when something did. */
+.task-says {
 	color: var(--muted);
-}
-
-/* Calling it off. Red, because among the things on this panel it is the only one that takes
-   something away — and it is the agent's own plan, which is why it is not offered for yours. */
-.key.stop {
-	align-self: flex-start;
-	margin-top: 0.15rem;
-	color: var(--red);
-	border-color: #4a2a28;
-}
-
-.key.stop:hover {
-	border-color: var(--red);
-	background: #2a1a18;
 }
 
 /* ── held open ───────────────────────────────────────────────────────── */

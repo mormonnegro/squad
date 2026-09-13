@@ -521,6 +521,23 @@ export class ControlClient {
 		await this.#once({ op: "unschedule", agentId, scheduleId });
 	}
 
+	/** Books one more turn for an agent. `when` is read by the plane, not here. */
+	async schedule(
+		agentId: string,
+		when: string,
+		body: string,
+		timeZone?: string,
+	): Promise<Schedule | undefined> {
+		const answer = await this.#once({
+			op: "schedule",
+			agentId,
+			when,
+			body,
+			...(timeZone === undefined ? {} : { timeZone }),
+		});
+		return "schedules" in answer ? answer.schedules[0] : undefined;
+	}
+
 	/** The schedules an agent is waiting on, and what each will say to it when it fires. */
 	async schedules(agentId: string): Promise<readonly Schedule[]> {
 		const answer = await this.#once({ op: "schedules", agentId });

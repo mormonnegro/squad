@@ -5,7 +5,15 @@ import { nextRun } from "./cron.ts";
 export type ScheduleKind = "cron" | "once";
 
 /** Who asked for the schedule. Bounds how much authority its wakeups may carry. */
-export type ScheduleAuthor = "operator" | "agent";
+/**
+ * Who booked a wakeup, which decides both what it may say and whether it can be called off here.
+ *
+ * `operator` is the configuration file — the operator's, and not this plane's to rewrite: taking one
+ * out here would put it back on the next restart. `console` is the same person saying the same thing
+ * where the plane can also forget it. `agent` is the agent's own note to itself, which is why it can
+ * never carry operator trust however it is asked for.
+ */
+export type ScheduleAuthor = "operator" | "console" | "agent";
 
 export interface Schedule {
 	readonly id: string;
@@ -58,8 +66,12 @@ export function createSchedule(input: NewSchedule, from: Date = new Date()): Sch
 	}
 	if (typeof input.body !== "string") issues.push("body must be a string");
 	if (!isTrustLevel(input.trust)) issues.push("trust must be operator, participant or public");
-	if (input.createdBy !== "operator" && input.createdBy !== "agent") {
-		issues.push("createdBy must be operator or agent");
+	if (
+		input.createdBy !== "operator" &&
+		input.createdBy !== "console" &&
+		input.createdBy !== "agent"
+	) {
+		issues.push("createdBy must be operator, console or agent");
 	}
 	if (input.createdBy === "agent" && input.trust === "operator") {
 		issues.push("an agent cannot schedule a wakeup with operator trust");
@@ -112,4 +124,69 @@ export function advance(schedule: Schedule, after: Date): Schedule | undefined {
 		lastRunAt: after.toISOString(),
 		nextRunAt: nextRun(schedule.expression, after, schedule.timeZone).toISOString(),
 	};
+}
+
+/** What a wakeup typed at a console can be: a cron line, a time of day, or a wait. */
+export type When =
+	| { readonly kind: "cron"; readonly expression: string }
+	| { readonly kind: "once"; readonly runAt: string };
+
+const EVERY = /^every\s+(\d{1,3})\s*(m|min|mins|minutes?|h|hours?)$/i;
+const IN = /^in\s+(\d{1,4})\s*(m|min|mins|minutes?|h|hours?|d|days?)$/i;
+const CLOCK = /^(\d{1,2}):(\d{2})$/;
+
+/**
+ * When somebody means, out of what they would type.
+ *
+ * Cron is the thing underneath and it is not the thing anybody wants to write at eight in the
+ * morning to say "at eight in the morning". So three shapes are read, and the raw five fields are
+ * still one of them — a person who knows cron is not made to translate their own knowledge into a
+ * worse language.
+ *
+ * `08:00` is every day at eight, because a time of day with no day on it is a habit. `in 2h` is
+ * once, because a wait is a thing that happens and then is over. `every 10m` is the third, which is
+ * the shape a person reaches for when they mean often rather than at.
+ */
+export function readWhen(
+	said: string,
+	now: Date = new Date(),
+): When | { readonly refused: string } {
+	const text = said.trim();
+	if (text.length === 0) return { refused: "a time: 08:00, every 10m, in 2h, or five cron fields" };
+
+	const clock = CLOCK.exec(text);
+	if (clock !== null) {
+		const hour = Number(clock[1]);
+		const minute = Number(clock[2]);
+		if (hour > 23 || minute > 59) return { refused: `"${text}" is not a time of day` };
+		return { kind: "cron", expression: `${minute} ${hour} * * *` };
+	}
+
+	const often = EVERY.exec(text);
+	if (often !== null) {
+		const count = Number(often[1]);
+		const unit = (often[2] ?? "").toLowerCase();
+		if (count < 1) return { refused: `"${text}" is not an interval` };
+		if (unit.startsWith("m")) {
+			if (count > 59) return { refused: "every so many minutes stops at 59 — say hours instead" };
+			return { kind: "cron", expression: `*/${count} * * * *` };
+		}
+		if (count > 23) return { refused: "every so many hours stops at 23 — say a time of day" };
+		return { kind: "cron", expression: `0 */${count} * * *` };
+	}
+
+	const wait = IN.exec(text);
+	if (wait !== null) {
+		const count = Number(wait[1]);
+		const unit = (wait[2] ?? "").toLowerCase();
+		const minutes = unit.startsWith("m") ? count : unit.startsWith("h") ? count * 60 : count * 1440;
+		if (minutes < 1) return { refused: `"${text}" is no time at all` };
+		return { kind: "once", runAt: new Date(now.getTime() + minutes * 60_000).toISOString() };
+	}
+
+	// Five fields, which is what cron is. Whether they are five valid ones is the scheduler's to say,
+	// and it says it in its own words when the wakeup is made.
+	if (text.split(/\s+/).length === 5) return { kind: "cron", expression: text };
+
+	return { refused: `"${text}" is not a time: 08:00, every 10m, in 2h, or five cron fields` };
 }

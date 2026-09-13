@@ -277,6 +277,24 @@ export class Plane {
 		return (answer.schedules as Wake[] | undefined) ?? [];
 	}
 
+	/**
+	 * Books one more turn for an agent: when, and what to tell it when the moment comes.
+	 *
+	 * `when` goes to the plane as it was typed. The plane reads a time of day, an interval, a wait or
+	 * five cron fields — one reader, so that `08:00` cannot come to mean two things depending on which
+	 * console was open. The time zone is this browser's, because eight in the morning is the reader's
+	 * and the plane's own is a container's, which is nobody's.
+	 */
+	async schedule(agentId: string, when: string, body: string): Promise<void> {
+		await this.#ask({
+			op: "schedule",
+			agentId,
+			when,
+			body,
+			timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+		});
+	}
+
 	/** Stops one of an agent's own wakeups. The plane refuses the ones its configuration declares. */
 	async unschedule(agentId: string, scheduleId: string): Promise<void> {
 		await this.#ask({ op: "unschedule", agentId, scheduleId });

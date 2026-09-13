@@ -43,7 +43,13 @@ import {
 	StaticAgentDirectory,
 } from "@squad/proxy";
 import { DEFAULT_DEPLOYMENT, DockerEngine, DockerSandboxManager } from "@squad/sandbox";
-import { FileScheduleStore, type NewSchedule, Scheduler } from "@squad/scheduler";
+import {
+	FileScheduleStore,
+	type NewSchedule,
+	readWhen,
+	type Schedule,
+	Scheduler,
+} from "@squad/scheduler";
 import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
@@ -332,7 +338,7 @@ export interface AgentSummary {
 	readonly startedAt: string | undefined;
 	readonly grants: number;
 	readonly schedules: number;
-	/** When the agent asked to be woken next, if it did. ISO instant. */
+	/** When this agent next wakes, whoever booked it — its own, yours, or the file's. ISO instant. */
 	readonly wakeAt: string | undefined;
 	/** Made here rather than declared in the config, which is the only kind the plane may forget. */
 	readonly created: boolean;
@@ -776,7 +782,13 @@ export class ControlPlane {
 			startedAt: status?.startedAt,
 			grants: (await this.#grantsFor(agent.id)).length,
 			schedules: schedules.length,
-			wakeAt: schedules.find((schedule) => schedule.createdBy === "agent")?.nextRunAt,
+			// The soonest of all of them, whoever booked it. A row asks when this agent next does
+			// something, and a task typed at a console answers that as truly as one the agent set for
+			// itself — and the store's order is the store's, not the clock's.
+			wakeAt: schedules
+				.map((schedule) => schedule.nextRunAt)
+				.sort()
+				.at(0),
 			created: this.#createdIds.has(agent.id),
 			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
 			served: await this.#served.of(agent.id),
@@ -2636,6 +2648,42 @@ export class ControlPlane {
 			String(FORWARD_CONNECT_MS),
 		]);
 		return new ExecStream(stream);
+	}
+
+	/**
+	 * Books a wakeup on the operator's say-so, from a console rather than from their file.
+	 *
+	 * Operator trust, because that is who typed it: the same sentence in the configuration file
+	 * carries it, and a console is the same person saying the same thing somewhere the plane can
+	 * also forget it again. Which is the whole of the difference and why it is written down as a
+	 * third author — what the file declares is not this plane's to take away, and this is.
+	 */
+	async schedule(
+		agentId: string,
+		when: string,
+		body: string,
+		timeZone?: string,
+	): Promise<Schedule> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		const said = body.trim();
+		if (said.length === 0) throw new Error("A wakeup is a thing to be told. Say what to do.");
+		const read = readWhen(when);
+		if ("refused" in read) throw new Error(read.refused);
+		return this.scheduler.add({
+			agentId,
+			...(read.kind === "cron"
+				? { kind: "cron" as const, expression: read.expression }
+				: { kind: "once" as const, runAt: read.runAt }),
+			...(timeZone !== undefined && timeZone.length > 0 ? { timeZone } : {}),
+			// Its own channel: a wakeup booked here belongs to no conversation in particular, and what
+			// the agent says on waking goes where it says everything else.
+			channel: WAKE_CHANNEL,
+			body: said,
+			trust: "operator",
+			createdBy: "console",
+		});
 	}
 
 	/**

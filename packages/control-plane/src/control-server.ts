@@ -60,6 +60,22 @@ export type ControlRequest =
 	 */
 	| { readonly id: string; readonly op: "schedules"; readonly agentId: string }
 	/**
+	 * One more wakeup for an agent, on the operator's say-so.
+	 *
+	 * `when` is what a person types — a time of day, an interval, a wait, or five cron fields — and
+	 * the plane reads it, because a second reader of the same three shapes in a browser would be a
+	 * second answer to what `08:00` means. `timeZone` is the browser's: somebody typing eight in the
+	 * morning means theirs, and the plane's is a container's, which is nobody's.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "schedule";
+			readonly agentId: string;
+			readonly when: string;
+			readonly body: string;
+			readonly timeZone?: string;
+	  }
+	/**
 	 * Cancels one of an agent's own wakeups.
 	 *
 	 * Its own, and not one the operator's file declares: that file is the operator's and no plane may
@@ -552,12 +568,21 @@ export class ControlServer {
 					ok: true,
 					schedules: await this.#plane.scheduler.list(request.agentId),
 				});
+			} else if (request.op === "schedule") {
+				const made = await this.#plane.schedule(
+					request.agentId,
+					request.when,
+					request.body,
+					request.timeZone,
+				);
+				this.#write(socket, { id: request.id, ok: true, schedules: [made] });
 			} else if (request.op === "unschedule") {
 				const schedules = await this.#plane.scheduler.list(request.agentId);
 				const wake = schedules.find((one) => one.id === request.scheduleId);
 				if (wake === undefined) {
 					this.#write(socket, { id: request.id, ok: false, error: "That wakeup is already gone." });
-				} else if (wake.createdBy !== "agent") {
+					// The file's are not this plane's to take away; a console's own are.
+				} else if (wake.createdBy === "operator") {
 					this.#write(socket, {
 						id: request.id,
 						ok: false,

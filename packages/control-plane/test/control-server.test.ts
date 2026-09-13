@@ -83,6 +83,33 @@ describe("the control socket", () => {
 			await expect(client.unschedule("scout", "nothing")).rejects.toThrow(/already gone/);
 		});
 
+		it("books one on the operator's say-so, and lets it be taken back", async () => {
+			const made = await client.schedule(
+				"scout",
+				"08:00",
+				"read the overnight mail",
+				"Europe/Madrid",
+			);
+			expect(made?.kind).toBe("cron");
+			expect(made?.expression).toBe("0 8 * * *");
+			expect(made?.timeZone).toBe("Europe/Madrid");
+			// Operator trust, because that is who typed it — and the plane's own to forget again,
+			// which is the whole of the difference between this and a line in the file.
+			expect(made?.trust).toBe("operator");
+			expect(made?.createdBy).toBe("console");
+			await client.unschedule("scout", made?.id ?? "");
+			expect(await plane.scheduler.list("scout")).toHaveLength(0);
+		});
+
+		it("says what it takes when the time was not one it reads", async () => {
+			await expect(client.schedule("scout", "mañana", "something")).rejects.toThrow(ControlError);
+			expect(await plane.scheduler.list("scout")).toHaveLength(0);
+		});
+
+		it("refuses a wakeup for an agent that is not here", async () => {
+			await expect(client.schedule("nobody", "08:00", "something")).rejects.toThrow(/nobody/);
+		});
+
 		it("answers with what each wakeup will say when it fires", async () => {
 			await book("agent");
 			const [only] = await client.schedules("scout");
