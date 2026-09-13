@@ -402,17 +402,23 @@ function Composer({
 		// and the plane records only the asking. So the answer is put into the conversation here —
 		// without it a `/limit` that worked looks exactly like one that did nothing.
 		try {
+			/*
+			 * Both halves of a command come back on the feed, so neither is said here.
+			 *
+			 * The plane writes down what was typed and what it answered, and announces both — which is
+			 * how a command typed in a terminal console shows up in this one. Saying it here as well
+			 * put every answer on screen twice: once from the feed, without a time on it, and once
+			 * from this, with one. It survived being unnoticed because a reload showed the transcript,
+			 * which has one of them, and `/clear` is the command that empties the screen first and
+			 * leaves the two side by side with nothing above them.
+			 *
+			 * What comes back is used for the one thing the feed does not carry: which directory the
+			 * next `!` line starts in.
+			 */
 			if (isShell(line)) {
-				const answered = await plane.shell(agent.id, line.slice(1));
-				setCwd(answered.cwd);
-				if (answered.text.length > 0) {
-					onLocal(agent.id, { from: "shell", text: answered.text, at: new Date().toISOString() });
-				}
+				setCwd((await plane.shell(agent.id, line.slice(1))).cwd);
 			} else if (isCommand(line)) {
-				const text = await plane.command(agent.id, line);
-				if (text.length > 0) {
-					onLocal(agent.id, { from: "plane", text, at: new Date().toISOString() });
-				}
+				await plane.command(agent.id, line);
 			} else {
 				// Not awaited for its text: the answer arrives as events, and the turn is longer than
 				// anybody wants a prompt to be locked for. A turn that fails fails this too, and it is
@@ -421,8 +427,9 @@ function Composer({
 				plane.wake(agent.id, line).catch(() => {});
 			}
 		} catch (error) {
-			// Refusals come back as the failed answer to the request rather than down the feed, so this
-			// is the only place they can be said. `tone` is what draws it as bad news.
+			// A refusal is the one thing that is not on the feed: it comes back as the failed answer to
+			// the request and is never written down, so this is the only place it can be said. `tone`
+			// is what draws it as bad news.
 			onLocal(agent.id, {
 				from: "plane",
 				text: (error as Error).message,

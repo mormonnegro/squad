@@ -2750,12 +2750,17 @@ export class ControlPlane {
 	 * courtesy to the reader, and a disk that cannot take it is not a reason to hold up the turn.
 	 */
 	async #record(agentId: string, said: Utterance, queued = false): Promise<void> {
-		this.#emit({ kind: "said", agentId, said, ...(queued ? { queued: true } : {}) });
+		// Stamped here rather than by the transcript, so the copy that goes out on the wire and the
+		// copy that is written down are the same message. They were not: a line arrived live with no
+		// time on it and grew one on the next reload, which is a conversation that quietly rewrites
+		// itself behind whoever is reading it.
+		const one: Utterance = { at: new Date().toISOString(), ...said };
+		this.#emit({ kind: "said", agentId, said: one, ...(queued ? { queued: true } : {}) });
 		// Said to whoever is watching, but not written down for an agent the plane no longer has: the
 		// last thing anyone says about an agent is that it is gone, and writing that line would put
 		// back the file the removal just took away.
 		if (!this.#agents.some((agent) => agent.id === agentId)) return;
-		await this.#transcript.append(agentId, said).catch((error: Error) => {
+		await this.#transcript.append(agentId, one).catch((error: Error) => {
 			this.#onError?.(`${agentId} transcript`, error);
 		});
 	}

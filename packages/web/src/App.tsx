@@ -274,8 +274,9 @@ export function App() {
 
 	const agent = useMemo(() => agents.find((one) => one.id === chosen), [agents, chosen]);
 
-	// What the plane answered a command or a shell line with. It is said to whoever asked, on the
-	// connection they asked over, so no event carries it and no other console would show it.
+	// A refusal, which is the one thing the plane does not write down: it comes back as the failed
+	// answer to the request that asked, on the connection that asked, so no event carries it and no
+	// other console would show it. Everything that succeeded is on the feed already.
 	const local = useCallback((agentId: string, one: Utterance) => {
 		setTalk((was) => ({ ...was, [agentId]: [...(was[agentId] ?? []), one] }));
 	}, []);
