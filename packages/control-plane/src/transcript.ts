@@ -81,8 +81,9 @@ function carriedBy(channel: string): string | undefined {
 	const name = colon === -1 ? channel : channel.slice(0, colon);
 	if (name === CLI_CHANNEL) return undefined;
 	// The same, read the other way: an answer that went to another agent went to that agent, and
-	// "agent" on its own is a category the operator would have to decode into a name.
-	return name === AGENT_CHANNEL ? channel.slice(colon + 1) : name;
+	// "agent" on its own is a category the operator would have to decode into a name. A trigger is
+	// named for the same reason — "webhook" says how it arrived, and the operator named the thing.
+	return name === AGENT_CHANNEL || name === "webhook" ? channel.slice(colon + 1) : name;
 }
 
 /**

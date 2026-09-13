@@ -3,7 +3,7 @@ import { chmod, unlink } from "node:fs/promises";
 import net from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import type { CarrierSpec, Channel, Reply } from "@squad/channels";
+import type { CarrierSpec, Channel, Reply, Signer } from "@squad/channels";
 import type { Schedule } from "@squad/scheduler";
 import type { EmailOffer, LoginPage } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
@@ -18,6 +18,7 @@ import type { Room } from "./rooms.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Skill } from "./skills.ts";
 import type { Utterance } from "./transcript.ts";
+import type { Trigger } from "./triggers.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
 
@@ -82,6 +83,17 @@ export type ControlRequest =
 			readonly at: number;
 			readonly send: boolean;
 	  }
+	/** What outside this plane gives an agent a turn. */
+	| { readonly id: string; readonly op: "triggers" }
+	| {
+			readonly id: string;
+			readonly op: "add-trigger";
+			readonly agentId: string;
+			readonly name: string;
+			readonly from: Signer;
+			readonly only: readonly string[];
+	  }
+	| { readonly id: string; readonly op: "drop-trigger"; readonly name: string }
 	/** What an agent has written down that it knows how to do, read out of its own repository. */
 	| { readonly id: string; readonly op: "skills"; readonly agentId: string }
 	/** Asks it to write what it has just been doing down as one. It answers by taking a turn. */
@@ -418,6 +430,12 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly schedules: readonly Schedule[] }
 	| { readonly id: string; readonly ok: true; readonly rooms: readonly Room[] }
 	| { readonly id: string; readonly ok: true; readonly skills: readonly Skill[] }
+	/** Made, with its secret; or listed, without it — which is why the secret is optional here. */
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly triggers: readonly (Omit<Trigger, "secret"> & { readonly secret?: string })[];
+	  }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
@@ -778,6 +796,32 @@ export class ControlServer {
 			} else if (request.op === "reach") {
 				await this.#plane.answerReach(request.agentId, request.host, request.open);
 				this.#write(socket, { id: request.id, ok: true, text: request.host });
+			} else if (request.op === "triggers") {
+				// Without the secret. It went out once, to whoever made it, and a list is a thing read
+				// over a shoulder — there is nothing to do with it a second time but lose it.
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					triggers: (await this.#plane.triggers()).map(({ secret: _kept, ...rest }) => rest),
+				});
+			} else if (request.op === "add-trigger") {
+				const made = await this.#plane.addTrigger(
+					request.agentId,
+					request.name,
+					request.from,
+					request.only,
+				);
+				// The secret goes back to whoever asked and is never asked for again: it is pasted into
+				// a form on the sender's own site once, and a console that could read it later would be
+				// a console from which it could be taken.
+				this.#write(socket, { id: request.id, ok: true, triggers: [made] });
+			} else if (request.op === "drop-trigger") {
+				const gone = await this.#plane.dropTrigger(request.name);
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: gone ? `${request.name} is gone.` : `There is no trigger called "${request.name}".`,
+				});
 			} else if (request.op === "skills") {
 				this.#write(socket, {
 					id: request.id,

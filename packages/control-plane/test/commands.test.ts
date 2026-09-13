@@ -25,6 +25,7 @@ import type { Served } from "../src/ports.ts";
 import type { RepoSpec, RepoStanding } from "../src/repos.ts";
 import type { Skill } from "../src/skills.ts";
 import type { Teammate } from "../src/team.ts";
+import type { Trigger } from "../src/triggers.ts";
 
 /** Where a started login says it is listening, which is the address a paste has to come back to. */
 const WAITING_AT = "http://localhost:54321/callback";
@@ -50,6 +51,7 @@ function context(
 		mates?: readonly Teammate[];
 		gates?: readonly Gate[];
 		skills?: readonly Skill[];
+		triggers?: readonly Trigger[];
 		/** The models the operator configured, which is the whole of what `/model` may choose from. */
 		models?: readonly Model[];
 		/** The one this agent is on, by whatever name the plane knows it under. */
@@ -119,6 +121,7 @@ function context(
 	const mates = [...(start.mates ?? [])];
 	const gates = new Set<Gate>(start.gates ?? []);
 	const skills = [...(start.skills ?? [])];
+	const triggers: Trigger[] = [...(start.triggers ?? [])];
 	const wrote: { name: string; about: string }[] = [];
 	const passed: { name: string; to: string }[] = [];
 	const github: { tokenHeld: boolean; offered: RepoSpec | undefined } = {
@@ -231,6 +234,29 @@ function context(
 			repos: async () => repos,
 			holdRepo,
 			team: async () => mates,
+			triggers: async () => triggers,
+			addTrigger: async (name, from, only) => {
+				if (triggers.some((one) => one.name === name)) {
+					throw new Error(`There is already a trigger called "${name}".`);
+				}
+				const made = {
+					name,
+					agentId: here,
+					from,
+					secret: "whsec_made-up",
+					only,
+					madeAt: "2026-09-13T10:00:00.000Z",
+					fired: 0,
+				};
+				triggers.push(made);
+				return made;
+			},
+			dropTrigger: async (name) => {
+				const at = triggers.findIndex((one) => one.name === name);
+				if (at === -1) return false;
+				triggers.splice(at, 1);
+				return true;
+			},
 			skills: async () => skills,
 			keepSkill: async (name, about) => {
 				wrote.push({ name, about });
@@ -2508,5 +2534,76 @@ describe("/skills", () => {
 	it("says what it takes when it was given something else", async () => {
 		const plane = context({});
 		expect(await runCommand("/skills sharpen", plane.context)).toContain("save");
+	});
+});
+
+describe("/trigger", () => {
+	it("says what would make one, when nothing does", async () => {
+		const plane = context({});
+		const said = await runCommand("/trigger", plane.context);
+		expect(said).toContain("Nothing outside this plane wakes");
+		expect(said).toContain("from stripe on customer.subscription.deleted");
+	});
+
+	it("makes one, and shows the address and the secret once", async () => {
+		const plane = context({});
+		const said = await runCommand(
+			"/trigger stripe-cancels from stripe on customer.subscription.deleted",
+			plane.context,
+		);
+		expect(said).toContain("/hooks/stripe-cancels");
+		expect(said).toContain("whsec_made-up");
+		expect(said).toContain("customer.subscription.deleted");
+		expect(plane.context.triggers).toBeDefined();
+	});
+
+	// Every event on the account, to every endpoint that will take one, is what Stripe does by
+	// default — so a trigger with nothing said about it is the one worth warning about.
+	it("says so when it will take everything the sender sends", async () => {
+		const plane = context({});
+		const said = await runCommand("/trigger everything from stripe", plane.context);
+		expect(said).toContain("Every event it sends is a turn");
+	});
+
+	it("lists what it has, with what each one takes and whether it has ever fired", async () => {
+		const plane = context({
+			triggers: [
+				{
+					name: "stripe-cancels",
+					agentId: "scout",
+					from: "stripe",
+					secret: "whsec_kept",
+					only: ["customer.subscription.deleted"],
+					madeAt: "2026-09-13T10:00:00.000Z",
+					fired: 0,
+				},
+			],
+		});
+		const said = await runCommand("/trigger", plane.context);
+		expect(said).toContain("stripe-cancels — stripe, at /hooks/stripe-cancels");
+		expect(said).toContain("customer.subscription.deleted");
+		expect(said).toContain("never fired yet");
+		// Never the secret. It went out once, to whoever made it, and a list is read over a shoulder.
+		expect(said).not.toContain("whsec_kept");
+	});
+
+	it("names who can be at the other end when it was given somebody else", async () => {
+		const plane = context({});
+		const said = await runCommand("/trigger mine from paypal", plane.context);
+		expect(said).toContain("stripe");
+		expect(said).toContain("github");
+	});
+
+	it("refuses a second one of the same name", async () => {
+		const plane = context({});
+		await runCommand("/trigger mine from stripe", plane.context);
+		expect(await runCommand("/trigger mine from stripe", plane.context)).toContain("already");
+	});
+
+	it("takes one down, and says when there was none", async () => {
+		const plane = context({});
+		await runCommand("/trigger mine from stripe", plane.context);
+		expect(await runCommand("/trigger drop mine", plane.context)).toContain("gone");
+		expect(await runCommand("/trigger drop mine", plane.context)).toContain("no trigger");
 	});
 });

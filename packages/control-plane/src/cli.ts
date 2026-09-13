@@ -153,6 +153,10 @@ async function run(path: string): Promise<number> {
 		dial: dialLocal(plane.stateDir),
 		stateDir: plane.stateDir,
 		root: bundlePath(),
+		// The triggers, on the console's own door as well as on the hook port: a plane published at a
+		// domain is published once, and asking somebody to open a second port to be told that a
+		// subscription was cancelled is asking for the thing that does not get done.
+		hooks: (request, response) => plane.webhooks.handle(request, response),
 		// Named by the operator, because letting a page on another domain drive this plane is their
 		// decision. Empty, and the only console that can reach it is the one this plane serves.
 		origins: (process.env.SQUAD_WEB_ORIGINS ?? "")

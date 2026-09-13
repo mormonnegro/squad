@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { nameOf } from "./face.ts";
 import { Modal } from "./Modal.tsx";
 import { Mark } from "./Plugins.tsx";
-import type { Connected, Plane, Skill } from "./plane.ts";
+import type { Connected, Plane, Skill, Trigger } from "./plane.ts";
 import { Spin } from "./spin.tsx";
 
 /**
@@ -36,6 +36,10 @@ export function Setup({
 	const [limit, setLimit] = useState(agent.limitUsd === undefined ? "" : String(agent.limitUsd));
 	const [skills, setSkills] = useState<readonly Skill[] | undefined>();
 	const [keeping, setKeeping] = useState("");
+	const [triggers, setTriggers] = useState<readonly Trigger[]>([]);
+	const [making, setMaking] = useState({ name: "", from: "stripe", only: "" });
+	/** The one just made, kept on screen until this dialog closes: its secret is shown once. */
+	const [fresh, setFresh] = useState<Trigger | undefined>();
 	const [why, setWhy] = useState<string | undefined>();
 	const [busy, setBusy] = useState<string | undefined>();
 
@@ -51,6 +55,10 @@ export function Setup({
 			await plane.skills(agent.id).then(
 				(learned) => setSkills(learned),
 				() => setSkills([]),
+			);
+			await plane.triggers().then(
+				(all) => setTriggers(all.filter((one) => one.agentId === agent.id)),
+				() => setTriggers([]),
 			);
 		} catch (error) {
 			setWhy((error as Error).message);
@@ -212,6 +220,113 @@ export function Setup({
 
 			<section className="flex flex-col gap-2">
 				<Head
+					title="Triggers"
+					says="What outside this plane gives it a turn. A wakeup answers when; this answers when something happens — Stripe cancels a subscription, GitHub merges a branch. Say which events are worth a turn, or every one the sender has will be one."
+				/>
+				<div className="flex flex-col gap-2 rounded-lg border border-line bg-raised p-3">
+					{triggers.length === 0 && fresh === undefined && (
+						<span className="text-[0.8rem] text-muted">Nothing outside wakes this agent.</span>
+					)}
+					{triggers.map((one) => (
+						<div key={one.name} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+							<code className="md-code">{one.name}</code>
+							<span className="text-[0.78rem] text-muted">{one.from}</span>
+							<span className="min-w-[8rem] flex-1 text-[0.78rem] text-muted">
+								{one.only.length === 0 ? "every event it sends" : one.only.join(", ")} ·{" "}
+								{one.fired === 0 ? "never fired" : `fired ${one.fired}×`}
+							</span>
+							<code className="md-code">{`${window.location.origin}/hooks/${one.name}`}</code>
+							<button
+								type="button"
+								className="pill"
+								data-no="true"
+								disabled={busy === `trigger:${one.name}`}
+								onClick={() =>
+									void run(`trigger:${one.name}`, async () => {
+										await plane.dropTrigger(one.name);
+										setFresh(undefined);
+									})
+								}
+							>
+								{busy === `trigger:${one.name}` && <Spin />}
+								drop
+							</button>
+						</div>
+					))}
+
+					{/* Once, here, and never again: it is pasted into a form on the sender's own site the
+					    moment it exists, and a console that could show it later would be one it could be
+					    taken from. */}
+					{fresh?.secret !== undefined && (
+						<div className="flex flex-col gap-1 border-line-soft border-t pt-2">
+							<span className="text-[0.78rem] text-said">
+								Paste this into {fresh.from}, with the address above. It is not shown again:
+							</span>
+							<code className="md-code break-all">{fresh.secret}</code>
+						</div>
+					)}
+
+					<form
+						className="flex flex-wrap items-center gap-2 border-line-soft border-t pt-2"
+						onSubmit={(event) => {
+							event.preventDefault();
+							const name = making.name.trim();
+							if (name === "") return;
+							void run("trigger", async () => {
+								const one = await plane.addTrigger(
+									agent.id,
+									name,
+									making.from,
+									making.only
+										.split(/[\s,]+/)
+										.map((word) => word.trim())
+										.filter((word) => word.length > 0),
+								);
+								setFresh(one);
+								setMaking({ name: "", from: making.from, only: "" });
+							});
+						}}
+					>
+						<input
+							className="field w-36 font-mono"
+							value={making.name}
+							placeholder="stripe-cancels"
+							spellCheck={false}
+							onChange={(event) => setMaking({ ...making, name: event.target.value })}
+						/>
+						{SIGNERS.map((one) => (
+							<button
+								key={one}
+								type="button"
+								className="pill"
+								data-yes={making.from === one}
+								onClick={() => setMaking({ ...making, from: one })}
+							>
+								{one}
+							</button>
+						))}
+						<input
+							className="field min-w-[12rem] flex-1 font-mono"
+							value={making.only}
+							placeholder="customer.subscription.deleted"
+							spellCheck={false}
+							onChange={(event) => setMaking({ ...making, only: event.target.value })}
+						/>
+						<button
+							type="submit"
+							className="pill"
+							data-yes="true"
+							disabled={busy === "trigger" || making.name.trim() === ""}
+						>
+							{busy === "trigger" && <Spin />}
+							make it
+						</button>
+					</form>
+				</div>
+			</section>
+
+			<section className="flex flex-col gap-2">
+				<Head
 					title="Skills"
 					says="What it has written down about how to do something, in its own repository, where it reads them back. It writes them; this asks it to, and passes one to another agent."
 				/>
@@ -367,6 +482,9 @@ export function Setup({
  * or not a plane answers, and because each of them wants a sentence a person would say. The plane
  * refuses anything it does not know, which is what keeps the two lists from drifting.
  */
+/** Who can be at the other end of a trigger. The plane refuses anything it does not know. */
+const SIGNERS = ["stripe", "github", "squad"] as const;
+
 const GATES = [
 	{ id: "mail", name: "Mail", said: "by mail" },
 	{ id: "telegram", name: "Telegram", said: "on Telegram" },

@@ -84,6 +84,23 @@ export interface Skill {
 	readonly lines: number;
 }
 
+/**
+ * Something outside this plane that gives an agent a turn.
+ *
+ * The secret is only ever on the one that comes back from making it. Everything read afterwards has
+ * it left out, because a list is read over a shoulder and there is nothing to do with it twice.
+ */
+export interface Trigger {
+	readonly name: string;
+	readonly agentId: string;
+	readonly from: string;
+	readonly secret?: string;
+	readonly only: readonly string[];
+	readonly madeAt: string;
+	readonly firedAt?: string;
+	readonly fired: number;
+}
+
 export class PlaneError extends Error {}
 
 /** One browser that has been let in, as a screen shows it. */
@@ -403,6 +420,27 @@ export class Plane {
 
 	async answerTalk(agentId: string, to: string, open: boolean): Promise<void> {
 		await this.#ask({ op: "talk", agentId, to, open });
+	}
+
+	/** What outside this plane gives an agent a turn. */
+	async triggers(): Promise<readonly Trigger[]> {
+		const answer = await this.#ask({ op: "triggers" });
+		return (answer.triggers as Trigger[] | undefined) ?? [];
+	}
+
+	/** Makes one. The secret comes back with it, this once, and is never readable again. */
+	async addTrigger(
+		agentId: string,
+		name: string,
+		from: string,
+		only: readonly string[],
+	): Promise<Trigger | undefined> {
+		const answer = await this.#ask({ op: "add-trigger", agentId, name, from, only });
+		return (answer.triggers as Trigger[] | undefined)?.[0];
+	}
+
+	async dropTrigger(name: string): Promise<void> {
+		await this.#ask({ op: "drop-trigger", name });
 	}
 
 	/** What this agent has written down that it knows how to do. */

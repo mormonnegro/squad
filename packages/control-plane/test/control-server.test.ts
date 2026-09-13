@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
@@ -115,6 +116,119 @@ describe("the control socket", () => {
 			const [only] = await client.schedules("scout");
 			expect(only?.body).toBe("one more joke");
 			expect(only?.createdBy).toBe("agent");
+		});
+	});
+
+	/**
+	 * What outside this plane gives an agent a turn.
+	 *
+	 * Taken through the hook port with a real signature, because every part of this that matters is
+	 * the part where a stranger's POST is refused and Stripe's is not.
+	 */
+	describe("a trigger", () => {
+		const stripe = (body: string, secret: string, at: Date = new Date()) => {
+			const seconds = Math.floor(at.getTime() / 1000).toString();
+			const v1 = createHmac("sha256", secret).update(`${seconds}.${body}`).digest("hex");
+			return { "stripe-signature": `t=${seconds},v1=${v1}`, "content-type": "application/json" };
+		};
+
+		let at: number;
+
+		const post = async (
+			name: string,
+			body: string,
+			headers: Record<string, string>,
+		): Promise<number> => {
+			const answer = await fetch(`http://127.0.0.1:${at}/hooks/${name}`, {
+				method: "POST",
+				headers,
+				body,
+			});
+			return answer.status;
+		};
+
+		beforeEach(async () => {
+			at = await plane.webhooks.listen(0, "127.0.0.1");
+		});
+
+		it("wakes the agent when Stripe posts the event it was asked about", async () => {
+			const heard: string[] = [];
+			await answerWith("scout", (prompt) => {
+				heard.push(prompt);
+				return "";
+			});
+			const made = await plane.addTrigger("scout", "cancels", "stripe", [
+				"customer.subscription.deleted",
+			]);
+
+			const body = JSON.stringify({ id: "evt_1", type: "customer.subscription.deleted" });
+			expect(await post("cancels", body, stripe(body, made.secret))).toBe(202);
+			await plane.bus.drain();
+
+			expect(heard).toHaveLength(1);
+			expect(heard[0]).toContain("customer.subscription.deleted");
+			// Data, never an instruction: a genuine delivery carries a customer's own words in half
+			// its fields, and the signature says which system sent it and nothing about who meant it.
+			expect(heard[0]).toContain("UNTRUSTED");
+		});
+
+		it("refuses one signed with the wrong secret", async () => {
+			await answerWith("scout", () => "");
+			await plane.addTrigger("scout", "cancels", "stripe", []);
+			const body = JSON.stringify({ id: "evt_2", type: "customer.subscription.deleted" });
+			expect(await post("cancels", body, stripe(body, "whsec_not_it"))).toBe(401);
+		});
+
+		/**
+		 * The difference between a trigger and a firehose. Stripe sends every event on the account to
+		 * every endpoint that will take one, and an agent woken by `invoice.paid` to decide it is not
+		 * interested is an agent spending its ceiling on deciding that.
+		 */
+		it("takes an event it was not asked about without spending a turn on it", async () => {
+			let turns = 0;
+			await answerWith("scout", () => {
+				turns += 1;
+				return "";
+			});
+			const made = await plane.addTrigger("scout", "cancels", "stripe", [
+				"customer.subscription.deleted",
+			]);
+
+			const body = JSON.stringify({ id: "evt_3", type: "invoice.paid" });
+			// 200 rather than a refusal: a sender told anything else retries, and retrying is exactly
+			// what should not happen to a delivery this plane has decided it does not want.
+			expect(await post("cancels", body, stripe(body, made.secret))).toBe(200);
+			await plane.bus.drain();
+			expect(turns).toBe(0);
+		});
+
+		// Stripe re-sends until it is told 2xx and keeps trying for days. A retry is not a second
+		// event, and an agent that wrote a report on a cancellation must not write it again.
+		it("takes the same delivery twice and answers only once", async () => {
+			let turns = 0;
+			await answerWith("scout", () => {
+				turns += 1;
+				return "";
+			});
+			const made = await plane.addTrigger("scout", "cancels", "stripe", []);
+			const body = JSON.stringify({ id: "evt_4", type: "customer.subscription.deleted" });
+
+			expect(await post("cancels", body, stripe(body, made.secret))).toBe(202);
+			expect(await post("cancels", body, stripe(body, made.secret))).toBe(200);
+			await plane.bus.drain();
+			expect(turns).toBe(1);
+		});
+
+		it("is gone when it is taken down, and so is its address", async () => {
+			await answerWith("scout", () => "");
+			const made = await plane.addTrigger("scout", "cancels", "stripe", []);
+			expect(await plane.dropTrigger("cancels")).toBe(true);
+			const body = JSON.stringify({ id: "evt_5", type: "customer.subscription.deleted" });
+			expect(await post("cancels", body, stripe(body, made.secret))).toBe(401);
+		});
+
+		it("refuses one for an agent that is not here", async () => {
+			await expect(plane.addTrigger("nobody", "cancels", "stripe", [])).rejects.toThrow(/nobody/);
 		});
 	});
 

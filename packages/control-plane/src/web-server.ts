@@ -44,6 +44,14 @@ export const INVITES_FILE = "invites.json";
  */
 export const SERVED_PREFIX = "/at/";
 
+/**
+ * Where a trigger is posted to, under the same origin as the console.
+ *
+ * The same path the channel's own server answers on, so a plane reachable both ways answers the
+ * same URL either way and nobody has to be told which port they were given.
+ */
+export const HOOKS_PREFIX = "/hooks/";
+
 /** The cookie the browser carries once it has spent its token. */
 const SESSION_COOKIE = "squad_web";
 
@@ -188,6 +196,15 @@ export interface WebServerOptions {
 	 * rather than assumed, and a plane nobody configured stays a plane only its own page can drive.
 	 */
 	readonly origins?: readonly string[];
+	/**
+	 * Where a trigger's delivery goes, when this server is running beside the plane that owns them.
+	 *
+	 * Passed in rather than reached for, because this server is a client of the control socket like
+	 * any other console and may be running somewhere else entirely. Given one, a plane published at
+	 * a domain has its triggers published at that same domain; without one, they are still answered
+	 * on the hook port, which is where they were before this existed.
+	 */
+	readonly hooks?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 }
 
 /**
@@ -327,6 +344,19 @@ export class WebServer {
 					"access-control-max-age": "600",
 				})
 				.end();
+			return;
+		}
+
+		/*
+		 * The triggers, before the door rather than behind it.
+		 *
+		 * A trigger is answered to a signature and not to this plane's key: the sender is Stripe or
+		 * GitHub, it has never heard of the token, and it never will. Carried here so that a plane
+		 * whose console is already published at a domain has its triggers published at that same
+		 * domain — one address to expose, one certificate, one thing to remember.
+		 */
+		if (this.#options.hooks !== undefined && asked.pathname.startsWith(HOOKS_PREFIX)) {
+			await this.#options.hooks(request, response);
 			return;
 		}
 

@@ -65,6 +65,8 @@ export class LogFeed {
 		// A roster is a thing a console holds, not a thing that happened: the note beside it says who
 		// joined what, in the words the person who did it would use.
 		if (event.kind === "rooms") return;
+		// Same: a list a console holds, with the note beside it saying what was made or taken down.
+		if (event.kind === "triggers") return;
 		if (event.kind === "step") this.#step(event.agentId, event.step);
 		else if (event.kind === "audit") this.#egress(event.entry);
 		else if (event.kind === "error") this.#error(event.context, event.message);

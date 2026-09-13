@@ -22,6 +22,7 @@ import {
 	pairingPhrase,
 	type Reply,
 	resolveCarrier,
+	type Signer,
 	startLink,
 	TelegramChannel,
 	tooWide,
@@ -156,6 +157,13 @@ import {
 } from "./team.ts";
 import { TelegramBots } from "./telegram.ts";
 import { overheard, sentTo, Transcript, type Utterance } from "./transcript.ts";
+import {
+	hookOf,
+	newSecret,
+	type Trigger,
+	Triggers,
+	nameRefused as triggerRefused,
+} from "./triggers.ts";
 import {
 	createTurnHandler,
 	PiTurnRunner,
@@ -316,6 +324,8 @@ export type PlaneEvent =
 	 * cheaper than describing an edit — and every console watching wants the same answer anyway.
 	 */
 	| { readonly kind: "rooms" }
+	/** A trigger made or taken down. Asked for again rather than described, like the rosters. */
+	| { readonly kind: "triggers" }
 	/**
 	 * A turn starting, which is a different moment from the message that caused it: a burst is one
 	 * turn, and a message arriving at a busy agent waits for the one in front of it to finish.
@@ -542,6 +552,8 @@ export class ControlPlane {
 	readonly #addedTeam: TeamEdges;
 	/** What an agent must be asked about before it goes out, and the messages waiting on an answer. */
 	readonly #gates: Gates;
+	/** What outside this plane may give an agent a turn, and which deliveries were already taken. */
+	readonly #triggers: Triggers;
 	readonly #sending = new Map<string, Reply[]>();
 	/** The rooms made at a console, and what each one has said, which is a conversation of its own. */
 	readonly #rooms: Rooms;
@@ -660,6 +672,7 @@ export class ControlPlane {
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
 		this.#addedTeam = new TeamEdges(join(this.#stateDir, "added-team.json"));
 		this.#gates = new Gates(join(this.#stateDir, "gates.json"));
+		this.#triggers = new Triggers(join(this.#stateDir, "triggers.json"));
 		this.#rooms = new Rooms(join(this.#stateDir, "rooms.json"));
 		// Its own, beside the agents': a room's thread is not any one agent's conversation, and the
 		// agent that answered in it has the same line in its own pane for its own reasons.
@@ -713,7 +726,26 @@ export class ControlPlane {
 				this.#emit({ kind: "audit", entry });
 			},
 		});
-		this.webhooks = new WebhookChannel({ hooks: options.hooks ?? [], publisher: this.bus });
+		this.webhooks = new WebhookChannel({
+			hooks: options.hooks ?? [],
+			// Counted where a delivery becomes a turn rather than where it arrives, so a trigger that
+			// says it fired twice woke somebody twice: the ones filtered out, repeated or refused are
+			// not firings, and a number that counted them could not answer "is this thing working".
+			publisher: {
+				publish: async (event) => {
+					void this.#triggers
+						.fired(event.channel.slice("webhook:".length), new Date().toISOString())
+						.catch(() => undefined);
+					return await this.bus.publish(event);
+				},
+			},
+			// A retry is not a second event. Every sender worth reacting to keeps re-delivering until
+			// it is told 2xx — Stripe for days — and without this an agent writes the same report
+			// three times and the operator learns about the duplicate before the plane does.
+			seen: (name, delivery) => this.#triggers.handled(name, delivery),
+			onDropped: (name, why) =>
+				this.#emit({ kind: "note", who: `#${name}`, action: "dropped", detail: why }),
+		});
 		this.telegram = new TelegramChannel({
 			publisher: this.bus,
 			// The channel learns things a message at a time — who the operator is, which chats to answer
@@ -950,6 +982,10 @@ export class ControlPlane {
 			// What it had to be asked about goes with the name, like every other thing decided here.
 			await this.#gates.forget(agentId);
 			this.#sending.delete(agentId);
+			// The doors into it go with it. A trigger left standing would be an address on somebody
+			// else's dashboard pointing at an agent this plane no longer has.
+			for (const name of await this.#triggers.forget(agentId)) this.webhooks.drop(name);
+			this.#emit({ kind: "triggers" });
 			// The bot is this agent as far as anyone writing to it is concerned, so it goes with the name.
 			// The token stays good at BotFather's end; what stops is this plane answering with it.
 			await this.disconnectTelegram(agentId);
@@ -1326,6 +1362,73 @@ export class ControlPlane {
 			throw new Error(`${to} is in the config file, so it is not ours to change`);
 		}
 		return await this.#addedTeam.drop(agentId, to);
+	}
+
+	// ── what outside this plane may give an agent a turn ───────────────
+
+	/** Every trigger, and which agent each one wakes. */
+	async triggers(): Promise<readonly Trigger[]> {
+		return await this.#triggers.all();
+	}
+
+	/**
+	 * Makes one, and puts it up.
+	 *
+	 * The secret comes back and is never shown again — it goes into a form on the sender's own site
+	 * once. The plane keeps it because it has to check what arrives signed with it, and a console
+	 * from which it could be read later would be a console from which it could be taken.
+	 */
+	async addTrigger(
+		agentId: string,
+		name: string,
+		from: Signer,
+		only: readonly string[],
+	): Promise<Trigger> {
+		const refused = triggerRefused(name);
+		if (refused !== undefined) throw new Error(refused);
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`There is no agent called "${agentId}"`);
+		}
+		const trigger: Trigger = {
+			name,
+			agentId,
+			from,
+			secret: newSecret(),
+			only: only.map((one) => one.trim()).filter((one) => one.length > 0),
+			madeAt: new Date().toISOString(),
+			fired: 0,
+		};
+		await this.#triggers.add(trigger);
+		this.webhooks.hold(hookOf(trigger));
+		this.#emit({ kind: "triggers" });
+		this.#emit({
+			kind: "note",
+			who: agentId,
+			action: "woken by",
+			detail: `${from} at /hooks/${name}`,
+		});
+		return trigger;
+	}
+
+	/** Takes one down. Anything arriving at it afterwards is answered the way an unknown one is. */
+	async dropTrigger(name: string): Promise<boolean> {
+		const gone = await this.#triggers.drop(name);
+		if (!gone) return false;
+		this.webhooks.drop(name);
+		this.#emit({ kind: "triggers" });
+		this.#emit({ kind: "note", who: `#${name}`, action: "gone", detail: "the trigger" });
+		return true;
+	}
+
+	/** Puts up everything the store holds. Called once, as the plane comes up. */
+	async #raiseTriggers(): Promise<void> {
+		for (const trigger of await this.#triggers.all()) {
+			try {
+				this.webhooks.hold(hookOf(trigger));
+			} catch (error) {
+				this.#reportError(`trigger ${trigger.name}`, error as Error);
+			}
+		}
 	}
 
 	// ── what an agent knows how to do ──────────────────────────────────
@@ -2802,6 +2905,9 @@ export class ControlPlane {
 			granted: async (host) => new GrantSet(await this.#grantsFor(agentId)).allowsHost(host),
 			askReach: async (host) => this.#askReach(agentId, host),
 			team: () => this.team(agentId),
+			triggers: () => this.triggers(),
+			addTrigger: (name, from, only) => this.addTrigger(agentId, name, from, only),
+			dropTrigger: (name) => this.dropTrigger(name),
 			skills: () => this.skills(agentId),
 			keepSkill: (name, about) => this.keepSkill(agentId, name, about),
 			giveSkill: (name, to) => this.giveSkill(agentId, to, name),
@@ -3211,6 +3317,9 @@ export class ControlPlane {
 
 		await mkdir(join(this.#stateDir, "events"), { recursive: true });
 		await this.broker.listen(this.#proxyPort, "0.0.0.0");
+		// Before the port opens, so the first delivery to arrive finds the hooks already up rather
+		// than being told that a trigger somebody has been using for a month does not exist.
+		await this.#raiseTriggers();
 		await this.webhooks.listen(this.#webhookPort, "0.0.0.0");
 		await this.sandboxes.ensureNetwork();
 

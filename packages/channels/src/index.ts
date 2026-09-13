@@ -47,6 +47,18 @@ export {
 export { pairingPhrase } from "./phrase.ts";
 export { isFresh, SIGNATURE_HEADER, sign, TIMESTAMP_HEADER, verify } from "./signature.ts";
 export {
+	asked,
+	authentic,
+	type Delivery,
+	deliveryIn,
+	isSigner,
+	type Presented,
+	SIGNER_SAID,
+	SIGNERS,
+	type Signer,
+	signedHeaders,
+} from "./signer.ts";
+export {
 	type Bot,
 	type BotIdentity,
 	intoMessages,
@@ -56,7 +68,9 @@ export {
 	type TelegramPublisher,
 } from "./telegram.ts";
 export {
+	DEFAULT_MOST_A_MINUTE,
 	type Hook,
+	type Seen,
 	WebhookChannel,
 	type WebhookChannelOptions,
 	type WebhookPublisher,

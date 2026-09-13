@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { isSigner, SIGNER_SAID, SIGNERS, type Signer } from "@squad/channels";
 import type { LoginStatus, Reachability } from "@squad/proxy";
 import { GATES, type Gate, gateSaid, isGate } from "./gates.ts";
 import { readHost } from "./grants.ts";
@@ -15,6 +16,7 @@ import {
 } from "./repos.ts";
 import type { Skill } from "./skills.ts";
 import type { Teammate } from "./team.ts";
+import type { Trigger } from "./triggers.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -168,6 +170,12 @@ export interface CommandContext {
 	repos(): Promise<readonly RepoStanding[]>;
 	/** The other agents on this plane, and which of them this one may write to. */
 	team(): Promise<readonly Teammate[]>;
+	/** What outside this plane gives this agent a turn. */
+	triggers(): Promise<readonly Trigger[]>;
+	/** Makes one, and answers with it — including the secret, which is shown this once. */
+	addTrigger(name: string, from: Signer, only: readonly string[]): Promise<Trigger>;
+	/** Takes one down. False when there was none of that name. */
+	dropTrigger(name: string): Promise<boolean>;
 	/** What this agent has written down that it knows how to do. */
 	skills(): Promise<readonly Skill[]>;
 	/** Asks it to write what it has just been doing down as a skill, under this name. */
@@ -330,6 +338,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/repo",
 		takes: "[<owner/name> [<branch>…]|drop …]",
 		does: "the GitHub repositories it holds, and which branches it may push",
+	},
+	{
+		name: "/trigger",
+		takes: "[<name> from <stripe|github|squad> [on <event>…]|drop <name>]",
+		does: "what outside this plane gives it a turn, and the address each one is posted to",
 	},
 	{
 		name: "/skills",
@@ -1597,6 +1610,89 @@ async function repo(words: readonly string[], context: CommandContext): Promise<
 }
 
 /**
+ * What outside this plane gives this agent a turn.
+ *
+ * A wakeup answers "when", and this answers "when something happens" — which is the half an agent
+ * cannot arrange for itself, because the thing that happened happened somewhere else. Underneath it
+ * is a webhook and deliberately nothing cleverer: the senders worth reacting to all speak it, sign
+ * it and retry it, and what is added on top is knowing who signed, which events are worth a turn,
+ * and not taking the same delivery twice.
+ */
+async function trigger(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [first = "", ...rest] = words;
+
+	if (first === "") {
+		const held = (await context.triggers()).filter((one) => one.agentId === id);
+		if (held.length === 0) {
+			return [
+				`Nothing outside this plane wakes ${id}.`,
+				"",
+				"  /trigger stripe-cancels from stripe on customer.subscription.deleted",
+				"",
+				"makes one: an address to paste into Stripe, a secret to sign with, and a turn for",
+				`${id} every time that event lands — and no turn at all for any of the others.`,
+			].join("\n");
+		}
+		return [
+			`${held.length === 1 ? "One thing wakes" : `${held.length} things wake`} ${id}:`,
+			"",
+			...held.flatMap((one) => [
+				`  ${one.name} — ${one.from}, at /hooks/${one.name}`,
+				`    ${one.only.length === 0 ? "every event it sends" : one.only.join(", ")}`,
+				`    ${one.fired === 0 ? "never fired yet" : `${one.fired} so far, last ${one.firedAt ?? "—"}`}`,
+			]),
+			"",
+			"/trigger drop <name> takes one down.",
+		].join("\n");
+	}
+
+	if (first === "drop" || first === "off") {
+		const name = rest.join(" ").trim();
+		if (name === "") return "/trigger drop takes the name of one.";
+		return (await context.dropTrigger(name))
+			? `${name} is gone. Anything posted to it from now on is refused, so take the address out of wherever it is written down.`
+			: `There is no trigger called "${name}".`;
+	}
+
+	// `<name> from <signer> on <event> <event>` — read as words rather than as flags, because this
+	// is a sentence somebody says out loud and every flag in it would be a thing to look up.
+	const name = first;
+	const at = rest.findIndex((word) => word === "from");
+	const on = rest.findIndex((word) => word === "on");
+	const said = at === -1 ? "" : (rest[at + 1] ?? "");
+	if (!isSigner(said)) {
+		return [
+			`/trigger ${name} from <${SIGNERS.join("|")}> — who is at the other end, which is how`,
+			"the signature on what arrives gets read.",
+			"",
+			...SIGNERS.map((one) => `  ${one.padEnd(7)} ${SIGNER_SAID[one]}`),
+		].join("\n");
+	}
+	const only = on === -1 ? [] : rest.slice(on + 1).filter((word) => word !== "");
+
+	try {
+		const made = await context.addTrigger(name, said, only);
+		return [
+			`${id} takes a turn whenever ${said} posts to:`,
+			"",
+			`  /hooks/${made.name}`,
+			"",
+			"on whatever address this plane is reachable at — the console's own, if you have published",
+			"it, or the hook port. The secret to sign with, which is not shown again:",
+			"",
+			`  ${made.secret}`,
+			"",
+			only.length === 0
+				? "Every event it sends is a turn. Say `on <event>` to narrow that, or it will be a lot."
+				: `Only ${only.join(", ")}. Everything else is taken, answered and dropped without a turn.`,
+		].join("\n");
+	} catch (error) {
+		return (error as Error).message;
+	}
+}
+
+/**
  * What an agent has learned how to do, and the two lines that change it.
  *
  * A skill is the agent's own file in the agent's own repository, which is why nothing here writes
@@ -1787,6 +1883,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "team") return team(rest, context);
 	if (name === "ask") return ask(rest, context);
 	if (name === "skills" || name === "skill") return skills(rest, context);
+	if (name === "trigger" || name === "triggers") return trigger(rest, context);
 	if (name === "delete") return remove(rest, context);
 	if (name === "clear") return clear(rest, context);
 
