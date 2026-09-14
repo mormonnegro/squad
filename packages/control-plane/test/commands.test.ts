@@ -235,6 +235,13 @@ function context(
 			holdRepo,
 			team: async () => mates,
 			triggers: async () => triggers,
+			describeTrigger: async (name, says) => {
+				const at = triggers.findIndex((one) => one.name === name);
+				if (at === -1) return false;
+				const { says: _was, ...rest } = triggers[at] as Trigger;
+				triggers[at] = says.trim() === "" ? rest : { ...rest, says };
+				return true;
+			},
 			addTrigger: async (name, from, only) => {
 				if (triggers.some((one) => one.name === name)) {
 					throw new Error(`There is already a trigger called "${name}".`);
@@ -2598,6 +2605,31 @@ describe("/trigger", () => {
 		const plane = context({});
 		await runCommand("/trigger mine from stripe", plane.context);
 		expect(await runCommand("/trigger mine from stripe", plane.context)).toContain("already");
+	});
+
+	it("says what arrives there, and lists it", async () => {
+		const plane = context({});
+		await runCommand("/trigger cancels from stripe", plane.context);
+		const said = await runCommand(
+			"/trigger cancels says a subscription went, write up why",
+			plane.context,
+		);
+		expect(said).toContain("a subscription went, write up why");
+		expect(await runCommand("/trigger", plane.context)).toContain(
+			"a subscription went, write up why",
+		);
+	});
+
+	it("takes the sentence away again when it is given none", async () => {
+		const plane = context({});
+		await runCommand("/trigger cancels from stripe", plane.context);
+		await runCommand("/trigger cancels says something", plane.context);
+		expect(await runCommand("/trigger cancels says", plane.context)).toContain("says nothing now");
+	});
+
+	it("says so when there is no trigger of that name to describe", async () => {
+		const plane = context({});
+		expect(await runCommand("/trigger nothing says hola", plane.context)).toContain("no trigger");
 	});
 
 	it("takes one down, and says when there was none", async () => {

@@ -44,7 +44,7 @@ export function Setup({
 	const [skills, setSkills] = useState<readonly Skill[] | undefined>();
 	const [keeping, setKeeping] = useState("");
 	const [triggers, setTriggers] = useState<readonly Trigger[]>([]);
-	const [making, setMaking] = useState({ name: "", from: "stripe", only: "" });
+	const [making, setMaking] = useState({ name: "", from: "stripe", only: "", says: "" });
 	/** Whether the signed kind is on screen. Shut, because the one-click kind is what is wanted. */
 	const [signing, setSigning] = useState(false);
 	/** The secret of the one just made. Shown once, here, and never readable again. */
@@ -248,6 +248,19 @@ export function Setup({
 										<div key={one.name} className="card-row">
 											<div className="card-row-main">
 												<Address url={`${window.location.origin}/hooks/${one.name}`} />
+												{/* What the operator says arrives here. It reaches the turn as their
+												    instruction, apart from the payload, so the agent is not left
+												    inferring from the JSON what it is looking at — and inferring it
+												    differently each time. */}
+												<Says
+													said={one.says ?? ""}
+													busy={busy === `says:${one.name}`}
+													onSay={(says) =>
+														void run(`says:${one.name}`, () =>
+															plane.describeTrigger(one.name, says),
+														)
+													}
+												/>
 												<span className="card-row-meta">
 													<span className="badge">{one.from}</span>
 													<span>{one.only.length === 0 ? "every event" : one.only.join(", ")}</span>
@@ -306,11 +319,12 @@ export function Setup({
 													.split(/[\s,]+/)
 													.map((word) => word.trim())
 													.filter((word) => word.length > 0),
+												making.says,
 											);
 											if (one?.secret !== undefined) {
 												setSecret({ name: one.name, from: one.from, secret: one.secret });
 											}
-											setMaking({ name: "", from: making.from, only: "" });
+											setMaking({ name: "", from: making.from, only: "", says: "" });
 										});
 									}}
 								>
@@ -348,6 +362,15 @@ export function Setup({
 											placeholder="customer.subscription.deleted"
 											spellCheck={false}
 											onChange={(event) => setMaking({ ...making, only: event.target.value })}
+										/>
+									</label>
+									<label className="ask-line">
+										<span className="ask-name">Arrives</span>
+										<input
+											className="field"
+											value={making.says}
+											placeholder="A subscription was cancelled. Find out why and write it up."
+											onChange={(event) => setMaking({ ...making, says: event.target.value })}
 										/>
 									</label>
 									<div className="ask-line">
@@ -669,6 +692,50 @@ function Address({ url }: { url: string }) {
 				{took ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
 				{took ? "copied" : "copy"}
 			</button>
+		</span>
+	);
+}
+
+/**
+ * What the operator says arrives at a trigger, written in place.
+ *
+ * Kept until it is left rather than saved with a button: it is one sentence on a row in a list, and
+ * a row with a Save on it is a row with two things to press. Nothing is written unless it changed.
+ */
+function Says({
+	said,
+	busy,
+	onSay,
+}: {
+	said: string;
+	busy: boolean;
+	onSay: (says: string) => void;
+}) {
+	const [draft, setDraft] = useState(said);
+
+	// What the plane holds wins whenever it changes underneath — another console, or the answer to
+	// the save this row just made — but never while somebody is part-way through a sentence.
+	useEffect(() => {
+		setDraft(said);
+	}, [said]);
+
+	return (
+		<span className="says">
+			<input
+				className="field"
+				value={draft}
+				placeholder="Say what arrives here, and what to do about it…"
+				disabled={busy}
+				onChange={(event) => setDraft(event.target.value)}
+				onBlur={() => {
+					if (draft.trim() !== said.trim()) onSay(draft);
+				}}
+				onKeyDown={(event) => {
+					if (event.key === "Enter") event.currentTarget.blur();
+					if (event.key === "Escape") setDraft(said);
+				}}
+			/>
+			{busy && <Spin />}
 		</span>
 	);
 }

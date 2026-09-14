@@ -92,6 +92,14 @@ export type ControlRequest =
 			readonly name: string;
 			readonly from: Signer;
 			readonly only: readonly string[];
+			readonly says?: string;
+	  }
+	/** What the operator says arrives at one, which reaches the turn as their instruction. */
+	| {
+			readonly id: string;
+			readonly op: "describe-trigger";
+			readonly name: string;
+			readonly says: string;
 	  }
 	| { readonly id: string; readonly op: "drop-trigger"; readonly name: string }
 	/** What an agent has written down that it knows how to do, read out of its own repository. */
@@ -810,11 +818,19 @@ export class ControlServer {
 					request.name,
 					request.from,
 					request.only,
+					request.says,
 				);
 				// The secret goes back to whoever asked and is never asked for again: it is pasted into
 				// a form on the sender's own site once, and a console that could read it later would be
 				// a console from which it could be taken.
 				this.#write(socket, { id: request.id, ok: true, triggers: [made] });
+			} else if (request.op === "describe-trigger") {
+				const said = await this.#plane.describeTrigger(request.name, request.says);
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					text: said ? "" : `There is no trigger called "${request.name}".`,
+				});
 			} else if (request.op === "drop-trigger") {
 				const gone = await this.#plane.dropTrigger(request.name);
 				this.#write(socket, {

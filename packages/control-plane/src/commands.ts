@@ -173,7 +173,9 @@ export interface CommandContext {
 	/** What outside this plane gives this agent a turn. */
 	triggers(): Promise<readonly Trigger[]>;
 	/** Makes one, and answers with it — including the secret, which is shown this once. */
-	addTrigger(name: string, from: Signer, only: readonly string[]): Promise<Trigger>;
+	addTrigger(name: string, from: Signer, only: readonly string[], says?: string): Promise<Trigger>;
+	/** Says what arrives at one. False when there is no trigger of that name. */
+	describeTrigger(name: string, says: string): Promise<boolean>;
 	/** Takes one down. False when there was none of that name. */
 	dropTrigger(name: string): Promise<boolean>;
 	/** What this agent has written down that it knows how to do. */
@@ -341,7 +343,7 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/trigger",
-		takes: "[new|<name> from <stripe|github> [on <event>…]|drop <name>]",
+		takes: "[new|<name> says …|drop <name>]",
 		does: "what outside this plane gives it a turn, and the address each one is posted to",
 	},
 	{
@@ -1642,8 +1644,10 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 				`  ${one.name} — ${one.from}, at /hooks/${one.name}`,
 				`    ${one.only.length === 0 ? "every event it sends" : one.only.join(", ")}`,
 				`    ${one.fired === 0 ? "never fired yet" : `${one.fired} so far, last ${one.firedAt ?? "—"}`}`,
+				...(one.says === undefined ? [] : [`    “${one.says}”`]),
 			]),
 			"",
+			`/trigger <name> says <what arrives> tells ${id} what it is looking at when one fires.`,
 			"/trigger drop <name> takes one down.",
 		].join("\n");
 	}
@@ -1682,13 +1686,35 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 		}
 	}
 
+	/*
+	 * What arrives here, in the operator's own words.
+	 *
+	 * The half of a trigger a payload cannot supply: `customer.subscription.deleted` says a
+	 * subscription was cancelled and nothing about whether anybody wants a report, who it is for, or
+	 * where to look first. It reaches the turn as an instruction and apart from the body, because it
+	 * is the operator's sentence and the body is a stranger's.
+	 */
+	const says = rest.indexOf("says");
+	if (says !== -1) {
+		const about = rest
+			.slice(says + 1)
+			.join(" ")
+			.trim();
+		if (!(await context.describeTrigger(first, about))) {
+			return `There is no trigger called "${first}".`;
+		}
+		return about === ""
+			? `${first} says nothing now. What arrives there reaches ${id} as a payload and nothing else.`
+			: `Noted. Every time ${first} fires, ${id} is told: “${about}”`;
+	}
+
 	// `<name> from <signer> on <event> <event>` — read as words rather than as flags, because this
 	// is a sentence somebody says out loud and every flag in it would be a thing to look up.
 	const name = first;
 	const at = rest.findIndex((word) => word === "from");
 	const on = rest.findIndex((word) => word === "on");
-	const said = at === -1 ? "" : (rest[at + 1] ?? "");
-	if (!isSigner(said)) {
+	const signer = at === -1 ? "" : (rest[at + 1] ?? "");
+	if (!isSigner(signer)) {
 		return [
 			`/trigger ${name} from <${SIGNERS.filter((one) => one !== "url").join("|")}> — who is at`,
 			"the other end, which is how the signature on what arrives gets read.",
@@ -1701,9 +1727,9 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 	const only = on === -1 ? [] : rest.slice(on + 1).filter((word) => word !== "");
 
 	try {
-		const made = await context.addTrigger(name, said, only);
+		const made = await context.addTrigger(name, signer, only);
 		return [
-			`${id} takes a turn whenever ${said} posts to:`,
+			`${id} takes a turn whenever ${signer} posts to:`,
 			"",
 			`  /hooks/${made.name}`,
 			"",
@@ -1715,6 +1741,8 @@ async function trigger(words: readonly string[], context: CommandContext): Promi
 			only.length === 0
 				? "Every event it sends is a turn. Say `on <event>` to narrow that, or it will be a lot."
 				: `Only ${only.join(", ")}. Everything else is taken, answered and dropped without a turn.`,
+			"",
+			`Then /trigger ${name} says <what arrives> tells ${id} what it is looking at when it fires.`,
 		].join("\n");
 	} catch (error) {
 		return (error as Error).message;

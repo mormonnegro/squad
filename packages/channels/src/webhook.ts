@@ -20,6 +20,14 @@ export interface Hook {
 	 * to decide it is not interested is an agent spending its ceiling on deciding that.
 	 */
 	readonly only?: readonly string[];
+	/**
+	 * What the operator said arrives here, and what to do about it.
+	 *
+	 * The agent is woken by a stranger's POST and has to work out from the JSON what it is looking
+	 * at. This is the operator saying so in advance — and saying what they want done, which is the
+	 * half no payload can supply. It reaches the turn as an instruction, apart from the body.
+	 */
+	readonly says?: string;
 	/** Defaults to public. Operator is refused; see {@link WebhookChannel}. */
 	readonly trust?: TrustLevel;
 	/** Where replies are posted. Configuration only, never taken from the payload. */
@@ -297,6 +305,7 @@ export class WebhookChannel implements Channel {
 			subject: delivery.kind === undefined ? `Webhook ${hook.id}` : `${hook.id}: ${delivery.kind}`,
 			body,
 			replyTo: hook.id,
+			...(hook.says === undefined || hook.says.trim() === "" ? {} : { standing: hook.says }),
 			...(delivery.id === undefined ? {} : { metadata: { delivery: delivery.id } }),
 		});
 

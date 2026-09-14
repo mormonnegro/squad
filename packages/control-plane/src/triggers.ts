@@ -25,6 +25,15 @@ export interface Trigger {
 	readonly secret: string;
 	/** Which kinds of event are worth a turn. Empty is all of them. */
 	readonly only: readonly string[];
+	/**
+	 * What the operator says arrives here, and what they want done about it.
+	 *
+	 * The half of a trigger that a payload cannot supply. A `customer.subscription.deleted` tells an
+	 * agent that a subscription was cancelled and nothing about whether anybody wants a report, who
+	 * it goes to, or where to look first — and an agent left to infer that from the JSON infers it
+	 * differently every time.
+	 */
+	readonly says?: string;
 	/** Turns a minute this may cause, so a backlog cannot spend a day's ceiling in one. */
 	readonly atMostPerMinute?: number;
 	readonly madeAt: string;
@@ -73,6 +82,7 @@ export function hookOf(trigger: Trigger): Hook {
 		secret: trigger.secret,
 		from: trigger.from,
 		only: trigger.only,
+		...(trigger.says === undefined ? {} : { says: trigger.says }),
 		// Never operator, whoever signed it. A signature proves which system sent the request, not
 		// that a person meant what is inside it: a genuine Stripe delivery carries a customer's own
 		// words in half its fields.
@@ -181,6 +191,25 @@ export class Triggers {
 		});
 	}
 
+	/** Says what arrives here, or takes the sentence away again. */
+	async describe(name: string, says: string): Promise<boolean> {
+		return await this.#serialize(async () => {
+			const held = await this.#read();
+			const trigger = held.triggers[name];
+			if (trigger === undefined) return false;
+			const said = says.trim();
+			const { says: _was, ...rest } = trigger;
+			await this.#write({
+				...held,
+				triggers: {
+					...held.triggers,
+					[name]: said === "" ? rest : { ...trigger, says: said },
+				},
+			});
+			return true;
+		});
+	}
+
 	/** Counts one that woke somebody, so a trigger that has never fired is visibly one. */
 	async fired(name: string, at: string): Promise<void> {
 		await this.#serialize(async () => {
@@ -235,10 +264,8 @@ function readTriggers(raw: unknown): Record<string, Trigger> {
 	const held: Record<string, Trigger> = {};
 	for (const [name, one] of Object.entries(raw as Record<string, unknown>)) {
 		if (typeof one !== "object" || one === null) continue;
-		const { agentId, from, secret, only, atMostPerMinute, madeAt, firedAt, fired } = one as Record<
-			string,
-			unknown
-		>;
+		const { agentId, from, secret, only, says, atMostPerMinute, madeAt, firedAt, fired } =
+			one as Record<string, unknown>;
 		if (typeof agentId !== "string" || typeof secret !== "string") continue;
 		if (typeof from !== "string" || !isSigner(from)) continue;
 		held[name] = {
@@ -247,6 +274,7 @@ function readTriggers(raw: unknown): Record<string, Trigger> {
 			from,
 			secret,
 			only: Array.isArray(only) ? only.filter((it): it is string => typeof it === "string") : [],
+			...(typeof says === "string" && says !== "" ? { says } : {}),
 			...(typeof atMostPerMinute === "number" ? { atMostPerMinute } : {}),
 			madeAt: typeof madeAt === "string" ? madeAt : new Date(0).toISOString(),
 			...(typeof firedAt === "string" ? { firedAt } : {}),

@@ -96,6 +96,8 @@ export interface Trigger {
 	readonly from: string;
 	readonly secret?: string;
 	readonly only: readonly string[];
+	/** What the operator says arrives here, and what they want done about it. */
+	readonly says?: string;
 	readonly madeAt: string;
 	readonly firedAt?: string;
 	readonly fired: number;
@@ -434,9 +436,22 @@ export class Plane {
 		name: string,
 		from: string,
 		only: readonly string[],
+		says?: string,
 	): Promise<Trigger | undefined> {
-		const answer = await this.#ask({ op: "add-trigger", agentId, name, from, only });
+		const answer = await this.#ask({
+			op: "add-trigger",
+			agentId,
+			name,
+			from,
+			only,
+			...(says === undefined || says.trim() === "" ? {} : { says }),
+		});
 		return (answer.triggers as Trigger[] | undefined)?.[0];
+	}
+
+	/** Says what arrives at one, in the operator's words. It reaches the turn as their instruction. */
+	async describeTrigger(name: string, says: string): Promise<void> {
+		await this.#ask({ op: "describe-trigger", name, says });
 	}
 
 	async dropTrigger(name: string): Promise<void> {

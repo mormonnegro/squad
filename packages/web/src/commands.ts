@@ -46,7 +46,7 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/trigger",
-		takes: "[new|<name> from <stripe|github> [on <event>…]|drop <name>]",
+		takes: "[new|<name> says …|drop <name>]",
 		does: "what outside this plane gives it a turn, and the address each one is posted to",
 	},
 	{

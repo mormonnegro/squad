@@ -258,6 +258,40 @@ describe("the control socket", () => {
 			expect(await post("scout-guessed", "{}", { "content-type": "application/json" })).toBe(401);
 		});
 
+		/**
+		 * The half of a trigger a payload cannot supply.
+		 *
+		 * `customer.subscription.deleted` tells an agent a subscription was cancelled and nothing
+		 * about whether anybody wants a report, who it is for, or where to look first — and an agent
+		 * left to infer that from the JSON infers it differently every time. So the operator says it
+		 * once, and it reaches the turn as what it is: their instruction, apart from the body.
+		 */
+		it("tells the agent what arrives, as the operator's instruction and not as payload", async () => {
+			const heard: string[] = [];
+			await answerWith("scout", (prompt) => {
+				heard.push(prompt);
+				return "";
+			});
+			const made = await plane.addTrigger("scout", "cancels", "stripe", [], "Somebody cancelled.");
+			expect(await plane.describeTrigger("cancels", "A subscription went. Write up why.")).toBe(
+				true,
+			);
+
+			const body = JSON.stringify({ id: "evt_9", type: "customer.subscription.deleted" });
+			expect(await post("cancels", body, stripe(body, made.secret))).toBe(202);
+			await plane.bus.drain();
+
+			const said = heard.join("\n");
+			expect(said).toContain("A subscription went. Write up why.");
+			// Outside the fence, and named as the operator's: the body is still a stranger's.
+			expect(said.indexOf("A subscription went")).toBeLessThan(said.indexOf("UNTRUSTED"));
+			expect(said).toContain("Your operator set this door up");
+		});
+
+		it("says there is no such trigger to describe", async () => {
+			expect(await plane.describeTrigger("nothing", "…")).toBe(false);
+		});
+
 		it("refuses one for an agent that is not here", async () => {
 			await expect(plane.addTrigger("nobody", "cancels", "stripe", [])).rejects.toThrow(/nobody/);
 		});

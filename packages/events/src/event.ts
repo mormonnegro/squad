@@ -43,6 +43,19 @@ export interface AgentEvent {
 	readonly receivedAt: string;
 	/** Opaque routing hints. Never rendered as instructions. */
 	readonly metadata?: Readonly<Record<string, string>>;
+	/**
+	 * What the operator left standing about this door, when they left anything.
+	 *
+	 * The one thing on an untrusted event that is not untrusted, and the reason it is a field of its
+	 * own rather than a line the adapter pastes on the front of the body: an agent woken by a
+	 * stranger's POST is reading two things at once — what arrived, which is data, and what the
+	 * operator said would arrive and what to do about it, which is an instruction and is theirs.
+	 * Pasted together they are one paragraph of unknown authorship, and the rule that everything
+	 * inbound is data would have to swallow the operator's half too.
+	 *
+	 * Written only by an adapter, out of what a console stored. Nothing in a payload can reach it.
+	 */
+	readonly standing?: string;
 	/** Set by the channel adapter so a reply can be routed back to where the event came from. */
 	readonly replyTo?: string;
 }
@@ -93,6 +106,7 @@ export function createEvent(input: NewAgentEvent): AgentEvent {
 		...(input.actor !== undefined ? { actor: input.actor } : {}),
 		...(input.subject !== undefined ? { subject: input.subject } : {}),
 		...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+		...(input.standing !== undefined ? { standing: input.standing } : {}),
 		...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
 	};
 }

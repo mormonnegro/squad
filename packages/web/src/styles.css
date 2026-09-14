@@ -1678,6 +1678,36 @@ ol.md-list {
 	white-space: nowrap;
 }
 
+/*
+ * The sentence on a row, which is a field until it is being read.
+ *
+ * Bordered only under a mouse or a cursor: a list of rows each with a boxed input in it reads as a
+ * form to fill in, and what this mostly is is a sentence already written.
+ */
+.says {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.says .field {
+	padding: 0.25rem 0.4rem;
+	border-color: transparent;
+	background: transparent;
+	font: 0.82rem / 1.5 var(--sans);
+	color: var(--text);
+}
+
+.says .field::placeholder {
+	color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.card-row:hover .says .field,
+.says .field:focus {
+	border-color: var(--line);
+	background: var(--bg-code);
+}
+
 .card-row-meta {
 	display: flex;
 	flex-wrap: wrap;

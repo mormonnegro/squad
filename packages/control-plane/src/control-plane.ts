@@ -1384,6 +1384,7 @@ export class ControlPlane {
 		name: string,
 		from: Signer,
 		only: readonly string[],
+		says?: string,
 	): Promise<Trigger> {
 		// No name, and the plane makes one: an unguessable address for a trigger whose address is
 		// what guards it. This is the one-click path — pick an agent, get a URL — and the reason it
@@ -1400,6 +1401,7 @@ export class ControlPlane {
 			from,
 			secret: newSecret(),
 			only: only.map((one) => one.trim()).filter((one) => one.length > 0),
+			...(says === undefined || says.trim() === "" ? {} : { says: says.trim() }),
 			madeAt: new Date().toISOString(),
 			fired: 0,
 		};
@@ -1413,6 +1415,23 @@ export class ControlPlane {
 			detail: `${from} at /hooks/${asked}`,
 		});
 		return trigger;
+	}
+
+	/**
+	 * Says what arrives at one, and what is wanted done about it.
+	 *
+	 * Reaches the agent as an instruction rather than as part of the payload, because it is the
+	 * operator's sentence and the payload is a stranger's. Kept on the trigger rather than asked for
+	 * at the moment it fires, which is three in the morning.
+	 */
+	async describeTrigger(name: string, says: string): Promise<boolean> {
+		const said = await this.#triggers.describe(name, says);
+		if (!said) return false;
+		const trigger = await this.#triggers.of(name);
+		// Put up again, because what the channel holds is a copy made when it was raised.
+		if (trigger !== undefined) this.webhooks.hold(hookOf(trigger));
+		this.#emit({ kind: "triggers" });
+		return true;
 	}
 
 	/** Takes one down. Anything arriving at it afterwards is answered the way an unknown one is. */
@@ -2911,7 +2930,8 @@ export class ControlPlane {
 			askReach: async (host) => this.#askReach(agentId, host),
 			team: () => this.team(agentId),
 			triggers: () => this.triggers(),
-			addTrigger: (name, from, only) => this.addTrigger(agentId, name, from, only),
+			addTrigger: (name, from, only, says) => this.addTrigger(agentId, name, from, only, says),
+			describeTrigger: (name, says) => this.describeTrigger(name, says),
 			dropTrigger: (name) => this.dropTrigger(name),
 			skills: () => this.skills(agentId),
 			keepSkill: (name, about) => this.keepSkill(agentId, name, about),
