@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { faceOf, hash } from "./face.ts";
 
 /**
@@ -174,10 +173,6 @@ export function Avatar({
 	/** What the agent was given, if it was given one. A picture somebody chose beats a derived one. */
 	glyph?: string | undefined;
 }) {
-	// Unique per drawing, because the tile is clipped and an id is a page-wide name: every avatar
-	// sharing one means every avatar is clipped by the first one that was drawn.
-	const tile = useId();
-
 	if (glyph !== undefined && glyph !== "") {
 		return (
 			<span
@@ -202,12 +197,19 @@ export function Avatar({
 			aria-hidden="true"
 		>
 			<title>{id}</title>
-			<defs>
-				<clipPath id={tile}>
-					<rect width="36" height="36" rx="10" />
-				</clipPath>
-			</defs>
-			<g clipPath={`url(#${tile})`}>
+			{/*
+			 * Square, and rounded by the stylesheet.
+			 *
+			 * The corner is decided in one place or it is decided in two that disagree: the rule that
+			 * draws the hairline around this tile rounds it by a fixed eight pixels, and a radius
+			 * written in here is in viewBox units that scale with the drawing — so at thirty-four
+			 * pixels the paint curved tighter than the ring around it and the corners showed daylight.
+			 * It also has to be able to become a circle: a channel's roster crops these to round, with
+			 * a radius this could not know about.
+			 *
+			 * Nothing escapes: an svg clips to its own viewport, which is this square.
+			 */}
+			<g>
 				{/* The ground: the agent's own colour, dulled into the screen it sits on. A face wants
 				    something behind it, and what belongs behind this one is the colour this agent is
 				    everywhere else. */}
