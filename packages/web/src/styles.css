@@ -43,6 +43,14 @@
 	--text: #dedcd7;
 	--text-strong: #f5f3ef;
 	--muted: #9ba1a9;
+	/*
+	 * The grey a sentence is set in, which is not the grey a label is.
+	 *
+	 * `--muted` is for the things beside a thing — a timestamp, a unit, a count — and it is quiet on
+	 * purpose. A sentence explaining a setting is the second thing anybody reads on that screen, and
+	 * at that weight it read as something already dismissed.
+	 */
+	--said: #c3c7cc;
 	--green: #8fd9a8;
 	--amber: #e3b466;
 	--red: #e0796f;
@@ -440,21 +448,21 @@
 	display: flex;
 	align-items: baseline;
 	gap: 0.5rem;
-	font: 0.78rem var(--mono);
+	font: 0.84rem var(--mono);
 	color: var(--amber);
 }
 
 /* Whose it is, where taking it away would have been. Not a button, because it is not one. */
 .task-whose {
 	color: var(--muted);
-	font-size: 0.72rem;
+	font-size: 0.78rem;
 }
 
 /* What it will be told, in its own words. Two lines of it, and the whole of it on a click. */
 .task-body {
 	text-align: left;
 	color: var(--text);
-	font-size: 0.84rem;
+	font-size: 0.9rem;
 	line-height: 1.55;
 	overflow-wrap: anywhere;
 	white-space: pre-wrap;
@@ -471,7 +479,7 @@
 
 .task-foot {
 	color: var(--muted);
-	font: 0.72rem var(--mono);
+	font: 0.78rem var(--mono);
 }
 
 /* What there is to say when there is nothing to list, and what went wrong when something did. */
@@ -1613,11 +1621,11 @@ ol.md-list {
 }
 
 .setup-tab {
-	padding: 0.42rem 0.7rem;
+	padding: 0.45rem 0.7rem;
 	border-radius: 6px;
 	text-align: left;
-	font-size: 0.88rem;
-	color: var(--muted);
+	font-size: 0.94rem;
+	color: var(--said);
 	transition-property: background, color, scale;
 	transition-duration: 0.12s, 0.12s, 150ms;
 	transition-timing-function: ease, ease, ease-out;
@@ -1693,17 +1701,17 @@ ol.md-list {
 
 .setting-title {
 	margin: 0;
-	font-size: 0.98rem;
+	font-size: 1.02rem;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-strong);
 }
 
 .setting-says {
-	margin: 0.4rem 0 0;
-	font-size: 0.84rem;
-	line-height: 1.6;
-	color: var(--muted);
+	margin: 0.35rem 0 0;
+	font-size: 0.9rem;
+	line-height: 1.55;
+	color: var(--said);
 }
 
 .setting-body {
@@ -1763,7 +1771,7 @@ ol.md-list {
 }
 
 .listed-said {
-	font: 0.86rem var(--mono);
+	font: 0.9rem var(--mono);
 	color: var(--text-strong);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1775,7 +1783,7 @@ ol.md-list {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.5rem;
-	font-size: 0.78rem;
+	font-size: 0.84rem;
 	color: var(--muted);
 }
 
@@ -1808,8 +1816,8 @@ ol.md-list {
 .address code {
 	flex: 1;
 	min-width: 0;
-	padding: 0.55rem 0.7rem;
-	font: 0.82rem / 1.6 var(--mono);
+	padding: 0.55rem 0.75rem;
+	font: 0.86rem / 1.6 var(--mono);
 	color: var(--code);
 	overflow-x: auto;
 	white-space: nowrap;
@@ -1828,7 +1836,7 @@ ol.md-list {
 	padding: 0 0.85rem 0 0.72rem;
 	border-left: 1px solid var(--line);
 	background: #ffffff05;
-	font-size: 0.8rem;
+	font-size: 0.85rem;
 	color: var(--muted);
 	transition-property: background, color, scale;
 	transition-duration: 0.12s, 0.12s, 150ms;
@@ -1854,10 +1862,10 @@ ol.md-list {
 }
 
 .says .field {
-	padding: 0.25rem 0.4rem;
+	padding: 0.28rem 0.4rem;
 	border-color: transparent;
 	background: transparent;
-	font: 0.82rem / 1.5 var(--sans);
+	font: 0.88rem / 1.5 var(--sans);
 	color: var(--text);
 }
 
@@ -1883,7 +1891,7 @@ ol.md-list {
 	align-items: center;
 	gap: 0.7rem;
 	padding: 0.55rem 0;
-	font-size: 0.88rem;
+	font-size: 0.95rem;
 	color: var(--text);
 	text-align: left;
 	width: 100%;
@@ -1933,7 +1941,8 @@ ol.md-list {
 
 .switch-says {
 	display: block;
-	font-size: 0.78rem;
+	margin-top: 0.1rem;
+	font-size: 0.85rem;
 	color: var(--muted);
 }
 
@@ -1948,7 +1957,7 @@ ol.md-list {
 	appearance: none;
 	width: 100%;
 	max-width: 22rem;
-	padding: 0.5rem 2rem 0.5rem 0.7rem;
+	padding: 0.52rem 2rem 0.52rem 0.75rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
 	background: var(--bg-code);
@@ -1987,8 +1996,8 @@ ol.md-list {
 .ask-name {
 	flex: none;
 	width: 5.5rem;
-	font-size: 0.8rem;
-	color: var(--muted);
+	font-size: 0.88rem;
+	color: var(--said);
 }
 
 .ask-line > .field {
@@ -2000,8 +2009,8 @@ ol.md-list {
 /* The sentence under a control that says what it means. Never a heading, never a label. */
 .note {
 	margin: 0;
-	font-size: 0.8rem;
-	line-height: 1.55;
+	font-size: 0.85rem;
+	line-height: 1.5;
 	color: var(--muted);
 }
 

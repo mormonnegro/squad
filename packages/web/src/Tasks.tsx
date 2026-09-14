@@ -67,12 +67,7 @@ export function Tasks({
 		<section className="setting" data-wide="true">
 			<div className="setting-head">
 				<h2 className="setting-title">Tasks</h2>
-				<p className="setting-says">
-					When {nameOf(agentId)} comes back on its own. A trigger answers when something happens;
-					this answers when. What you write is what it is told at that moment, in your words — and
-					it answers where it answers everything else. An agent can book its own as well, and those
-					say so.
-				</p>
+				<p className="setting-says">When {nameOf(agentId)} comes back on its own.</p>
 			</div>
 			<div className="setting-body">
 				{why !== undefined && <p className="why">{why}</p>}
@@ -117,14 +112,13 @@ export function Tasks({
 							onChange={(event) => setMaking({ ...making, when: event.target.value })}
 						/>
 					</label>
-					{/* What the plane takes, written where it is typed. The plane is the one that reads it,
-					    so this list describes that reader rather than being a second one. */}
+					{/* What the plane takes, written where it is typed. Four shapes on one line, because a
+					    paragraph explaining a text field is one nobody reads to the end of. */}
 					<p className="ask-line">
 						<span className="ask-name" />
-						<span className="task-says flex-1">
-							A time of day — <code className="md-code">08:00</code>, every day, in this browser's
-							time zone. How often — <code className="md-code">every 10m</code>. Or once, after a
-							wait — <code className="md-code">in 90m</code>. Five cron fields work too.
+						<span className="note flex-1">
+							<code className="md-code">08:00</code> · <code className="md-code">every 10m</code> ·{" "}
+							<code className="md-code">in 90m</code> · or cron
 						</span>
 					</p>
 					<label className="ask-line">

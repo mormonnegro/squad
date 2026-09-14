@@ -11,7 +11,7 @@ import { Tasks } from "./Tasks.tsx";
 /** The screens, in the order somebody works down them. `danger` is last and looks it. */
 const PAGES = [
 	{ id: "general", name: "General" },
-	{ id: "waking", name: "Waking" },
+	{ id: "triggers", name: "Triggers" },
 	{ id: "plugins", name: "Plugins" },
 	{ id: "skills", name: "Skills" },
 	{ id: "sending", name: "Sending" },
@@ -153,10 +153,7 @@ export function Setup({
 
 					{page === "general" && (
 						<>
-							<Setting
-								title="Model"
-								says="What it thinks with. Only the models this plane is configured with and holds a key for. It takes effect on the next turn; one that is running finishes on the model it started with."
-							>
+							<Setting title="Model" says="What it thinks with.">
 								<select
 									className="select"
 									value={agent.model ?? ""}
@@ -176,15 +173,14 @@ export function Setup({
 										</option>
 									))}
 								</select>
-								{models.length === 0 && (
-									<p className="note">No models are configured on this plane.</p>
-								)}
+								<p className="note">
+									{models.length === 0
+										? "No models are configured on this plane."
+										: "Takes effect on the next turn."}
+								</p>
 							</Setting>
 
-							<Setting
-								title="Daily ceiling"
-								says="The most it may spend in a day. It stops taking turns when it gets there and starts again when the day does, at midnight UTC. The agent can ask to be held to less, never to more."
-							>
+							<Setting title="Daily ceiling" says="The most it may spend in a day.">
 								<form
 									className="flex flex-wrap items-center gap-2"
 									onSubmit={(event) => {
@@ -254,14 +250,14 @@ export function Setup({
 						</>
 					)}
 
-					{page === "waking" && (
+					{page === "triggers" && (
 						<>
 							<Tasks plane={plane} agentId={agent.id} onChanged={onChanged} />
 
 							<Setting
 								wide
-								title="Triggers"
-								says={`An address that gives ${nameOf(agent.id)} a turn. Paste it into whatever should wake it — Stripe, GitHub, a script of yours — and anything posted there is a turn, with the payload in its hands. The address is the secret: anyone who has it can wake this agent.`}
+								title="Webhooks"
+								says="An address that wakes it. Paste it into Stripe, GitHub, or a script of yours."
 							>
 								{triggers.length === 0 && (
 									<p className="note">Nothing outside this plane wakes {nameOf(agent.id)}.</p>
@@ -352,8 +348,7 @@ export function Setup({
 										{signing ? "never mind" : "signed…"}
 									</button>
 									<span className="note flex-1">
-										A sender that signs — Stripe, GitHub — can be checked as well, and told which
-										events are worth a turn.
+										The address is the secret: anyone who has it can wake this agent.
 									</span>
 								</div>
 
@@ -441,9 +436,6 @@ export function Setup({
 												{busy === "trigger" && <Spin />}
 												create
 											</button>
-											<span className="note">
-												Leave <em>only</em> empty and every event the sender has is a turn.
-											</span>
 										</div>
 									</form>
 								)}
@@ -455,7 +447,7 @@ export function Setup({
 						<Setting
 							wide
 							title="Plugins"
-							says={`Which connections ${nameOf(agent.id)} holds. One it does not hold is one it cannot reach, however logged in the account is. An agent never holds the credential: its requests leave with none and the proxy writes this plane's onto them on the way out.`}
+							says={`Which connections ${nameOf(agent.id)} holds. One it does not hold is one it cannot reach.`}
 						>
 							{made.length === 0 ? (
 								<p className="note">Nothing is connected on this plane yet.</p>
@@ -513,7 +505,7 @@ export function Setup({
 						<Setting
 							wide
 							title="Skills"
-							says="What it has written down about how to do something, in its own repository, where it reads them back. It writes them; this asks it to, and hands one to another agent."
+							says="What it has written down about how to do something, in its own repository."
 						>
 							{skills === undefined ? (
 								<p className="note flex items-center gap-2">
@@ -590,9 +582,7 @@ export function Setup({
 									{busy === "keep" && <Spin />}
 									keep what it just did
 								</button>
-								<span className="note flex-1">
-									It takes a turn to write the procedure down and commit it.
-								</span>
+								<span className="note flex-1">It takes a turn to write it down.</span>
 							</form>
 						</Setting>
 					)}
@@ -600,7 +590,7 @@ export function Setup({
 					{page === "sending" && (
 						<Setting
 							title="Ask before sending"
-							says="The two doors that open onto somebody else's inbox. Held, an answer is shown to you whole before it goes, and a yes sends exactly what it wrote — an approval decides the message it is shown, it does not take back one already sent."
+							says="Held, an answer is shown to you whole before it goes out."
 						>
 							{GATES.map((gate) => {
 								const held = agent.gates.includes(gate.id);
@@ -634,7 +624,7 @@ export function Setup({
 					{page === "danger" && (
 						<Setting
 							title={`Delete ${nameOf(agent.id)}`}
-							says="The container, its conversation, and everything decided here. What it wrote in its own repository goes with it. Its name is free afterwards, and an agent made again under it is a different agent. This cannot be undone."
+							says="The container, its conversation, its repository. This cannot be undone."
 						>
 							<Sure
 								what={`Delete ${nameOf(agent.id)}`}
