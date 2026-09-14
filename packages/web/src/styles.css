@@ -282,7 +282,6 @@
  */
 .rail {
 	--row-face: 1.375rem;
-	--row-tail: 1.1rem;
 	--row-gap: 0.5rem;
 }
 
@@ -295,9 +294,6 @@
 	text-align: left;
 	color: var(--text);
 	border-left: 2px solid transparent;
-	/* Somewhere for the disclosure to hang, which is the only thing in a row that is not in the flow:
-	   a control that appears on hover must cost nothing when it is not there. */
-	position: relative;
 	/* What this row is painted on, for the things drawn as cut out of it. Kept as a variable so a
 	   row that lights up takes its cut-outs with it instead of leaving them ringed in the old dark. */
 	--row-bg: var(--bg);
@@ -403,125 +399,40 @@
 }
 
 /*
- * The way into what an agent is going to do.
+ * What an agent is going to do, on the agent's own screen.
  *
- * Absent until the row is under a mouse or already open — and absent from the layout, not merely
- * invisible: a column of twelve chevrons is twelve things to decide about, and a slot kept empty
- * for one is a strip of nothing down the right of every row in the list.
- *
- * So it hangs over the end of the row instead, and what was written there steps aside while it is
- * up. Faded rather than hidden, so it is still a thing the keyboard can reach.
+ * This hung under the row in the rail, behind a disclosure that appeared on hover and stood exactly
+ * where the countdown and the spend are written — so reading either of those meant taking the mouse
+ * off the row. It lives beside everything else about the agent now, which is where somebody looking
+ * for what it is going to do was going to look anyway.
  */
-/*
- * An icon that appears because of where the mouse is, rather than because of what it does.
- *
- * Fading one in leaves it arriving from nowhere at full size. Coming out of a quarter with the blur
- * lifting is the same three-hundred milliseconds spent saying it came from the row it belongs to.
- * Rotation is its own property so the open state can turn it without touching the scale.
- */
-.row-open {
-	position: absolute;
-	right: 0.9rem;
-	display: grid;
-	place-items: center;
-	width: var(--row-tail);
-	height: var(--row-tail);
-	color: var(--muted);
-	opacity: 0;
-	scale: 0.25;
-	filter: blur(4px);
-	pointer-events: none;
-	transition-property: opacity, filter, scale, rotate;
-	transition-duration: 300ms;
-	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-}
-
-.row:hover .row-open,
-.row:focus-within .row-open,
-.row[data-open="true"] .row-open {
-	opacity: 1;
-	scale: 1;
-	filter: blur(0px);
-	pointer-events: auto;
-}
-
-/*
- * What the row says about itself, while nothing is being asked of it.
- *
- * The spend and the countdown live where the disclosure appears, and only one of them can be read
- * at a time. The facts win by default and stand down for the control, which is the way round that
- * costs nothing: they are back the moment the mouse leaves.
- */
-.row:hover .row-note,
-.row:focus-within .row-note,
-.row[data-open="true"] .row-note {
-	visibility: hidden;
-}
-
-.row[data-open="true"] .row-open {
-	rotate: 90deg;
-	color: var(--text);
-}
-
-/*
- * An agent's week, under the agent.
- *
- * Indented to the name above it and hung off a rule down the left, which is the whole of saying
- * whose these are: they belong to that row, and the list they interrupt goes on underneath.
- */
-.tasks {
-	display: flex;
-	flex-direction: column;
-	gap: 0.55rem;
-	/* Hung in the column the status dot is in, so the words start where the faces above them do:
-	   the list belongs to that row and lines up with it rather than with the edge of the rail. */
-	margin: 0.15rem 0.9rem 0.5rem 0.95rem;
-	padding-left: 0.7rem;
-	border-left: 1px solid var(--line);
-	font: 0.78rem / 1.5 var(--sans);
-}
-
 .task {
 	display: flex;
 	flex-direction: column;
-	gap: 0.1rem;
+	gap: 0.25rem;
 	min-width: 0;
 }
 
 .task-head {
 	display: flex;
 	align-items: baseline;
-	justify-content: space-between;
-	gap: 0.4rem;
-	font: 0.72rem var(--mono);
+	gap: 0.5rem;
+	font: 0.78rem var(--mono);
 	color: var(--amber);
 }
 
 /* Whose it is, where taking it away would have been. Not a button, because it is not one. */
 .task-whose {
 	color: var(--muted);
-	font-size: 0.68rem;
+	font-size: 0.72rem;
 }
 
-/* Calling one off. Red on the way in and quiet until then: it is the only thing on this list that
-   takes something away, and a row of red crosses would read as an alarm. */
-.task-off {
-	flex: none;
-	padding: 0 0.2rem;
-	color: var(--muted);
-	font-size: 0.85rem;
-	line-height: 1;
-}
-
-.task-off:hover {
-	color: var(--red);
-}
-
-/* What it will be told, in its own words. Two lines of it, and the whole of it on a click — there
-   is no other place for it to go, and sending somebody elsewhere to read four lines is worse. */
+/* What it will be told, in its own words. Two lines of it, and the whole of it on a click. */
 .task-body {
 	text-align: left;
 	color: var(--text);
+	font-size: 0.84rem;
+	line-height: 1.55;
 	overflow-wrap: anywhere;
 	white-space: pre-wrap;
 	display: -webkit-box;
@@ -537,19 +448,7 @@
 
 .task-foot {
 	color: var(--muted);
-	font: 0.68rem var(--mono);
-}
-
-/* One more, at the end of them, which is where a new one goes. */
-.task-add {
-	align-self: flex-start;
-	color: var(--muted);
 	font: 0.72rem var(--mono);
-	padding: 0.1rem 0;
-}
-
-.task-add:hover {
-	color: var(--text-strong);
 }
 
 /* What there is to say when there is nothing to list, and what went wrong when something did. */
@@ -2248,7 +2147,6 @@ ol.md-list {
 .pill:active:not(:disabled),
 .key:active:not(:disabled),
 .menu-row:active,
-.task-add:active,
 .task-off:active,
 .room-one:active,
 .room-add:active,
@@ -2258,7 +2156,6 @@ ol.md-list {
 .switch:active:not(:disabled),
 .address button:active:not(:disabled),
 .pane-back:active,
-.row-open:active,
 .pane-gear:active {
 	scale: 0.96;
 }

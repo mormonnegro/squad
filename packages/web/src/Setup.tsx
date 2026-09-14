@@ -6,6 +6,7 @@ import { nameOf } from "./face.ts";
 import { Mark } from "./Plugins.tsx";
 import type { Connected, Plane, Skill, Trigger } from "./plane.ts";
 import { Spin } from "./spin.tsx";
+import { Tasks } from "./Tasks.tsx";
 
 /**
  * One agent's settings.
@@ -229,6 +230,9 @@ export function Setup({
 							</p>
 						</div>
 					</div>
+
+					{/* ── when it comes back on its own ─────────────────────── */}
+					<Tasks plane={plane} agentId={agent.id} onChanged={onChanged} />
 
 					{/* ── who may wake it ───────────────────────────────────── */}
 					<div className="card">

@@ -1,5 +1,5 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
-import { Blocks, ChevronRight, GitBranch } from "lucide-react";
+import { Blocks, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
@@ -15,7 +15,6 @@ import { Repos } from "./Repos.tsx";
 import { Room } from "./Room.tsx";
 import { Setup } from "./Setup.tsx";
 import { Spin } from "./spin.tsx";
-import { Tasks } from "./Tasks.tsx";
 import { until } from "./until.ts";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
@@ -454,10 +453,8 @@ export function App() {
 					{agents.map((one) => (
 						<AgentRow
 							key={one.id}
-							plane={plane}
 							agent={one}
 							live={live[one.id] ?? QUIET}
-							onChanged={() => void look()}
 							// Where you are, not what you last opened: the plugins take the pane, so while they
 							// are up nothing in this list is the thing on screen. A dialog is different — the
 							// conversation is still behind it, and that is still where you are.
@@ -639,24 +636,16 @@ export function App() {
 }
 
 function AgentRow({
-	plane,
 	agent,
 	live,
 	here,
 	onPick,
-	onChanged,
 }: {
-	plane: Plane | undefined;
 	agent: AgentSummary;
 	live: Live;
 	here: boolean;
 	onPick: () => void;
-	onChanged: () => void;
 }) {
-	// Shut, and per row: an agent's week is worth a look when you are thinking about that agent, and
-	// twelve of them open at once is a wall. Whether it is open is this console's business and not
-	// the plane's, so it is state here and nothing is remembered about it anywhere.
-	const [open, setOpen] = useState(false);
 	// A question nobody has answered outranks everything else this row could say. It is the one
 	// state where the agent is stopped and waiting on the person reading this.
 	const state =
@@ -685,44 +674,34 @@ function AgentRow({
 					: undefined;
 
 	return (
-		// The row is the container and the name is the button, because the chevron beside it is a
-		// button too and one cannot be inside the other. They are two things anyway: one opens the
-		// conversation and the other opens what the agent is going to do without leaving the one you
-		// are reading.
-		<>
-			<div className="row" data-here={here} data-open={open}>
-				<button type="button" className="row-pick" onClick={onPick}>
-					{/* On the face rather than beside it. A column of its own put every name in this rail
-					    fourteen pixels further from the edge to say a thing that fits in the corner of
-					    the picture it is about — which is where every program that has ever drawn who is
-					    online puts it. */}
-					<span className="row-icon">
-						<Avatar id={agent.id} />
-						<span className="mark" data-state={state} title={says} />
-					</span>
-					<span className="row-name">{nameOf(agent.id)}</span>
-				</button>
-				{/* When it comes back, which is the one thing about a sleeping agent worth knowing and
-				    the only thing nothing else on this screen says. Before the spend, because it is a
-				    fact about the future and the spend is one about the day. */}
-				{agent.wakeAt !== undefined && <span className="row-note when">{until(agent.wakeAt)}</span>}
-				{agent.spentUsd > 0 && (
-					<span className="row-note" data-heat={heat}>
-						${agent.spentUsd.toFixed(2)}
-					</span>
-				)}
-				<button
-					type="button"
-					className="row-open"
-					aria-label={`${nameOf(agent.id)}'s tasks`}
-					aria-expanded={open}
-					onClick={() => setOpen(!open)}
-				>
-					<ChevronRight className="size-3.5" />
-				</button>
-			</div>
-			{open && <Tasks plane={plane} agentId={agent.id} onChanged={onChanged} />}
-		</>
+		// The row is the container and the name is the button, because the facts beside it are not
+		// part of what opens the conversation.
+		<div className="row" data-here={here}>
+			<button type="button" className="row-pick" onClick={onPick}>
+				{/* On the face rather than beside it. A column of its own put every name in this rail
+				    fourteen pixels further from the edge to say a thing that fits in the corner of the
+				    picture it is about — which is where every program that has ever drawn who is online
+				    puts it. */}
+				<span className="row-icon">
+					<Avatar id={agent.id} />
+					<span className="mark" data-state={state} title={says} />
+				</span>
+				<span className="row-name">{nameOf(agent.id)}</span>
+			</button>
+			{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the
+			    only thing nothing else on this screen says. Before the spend, because it is a fact
+			    about the future and the spend is one about the day.
+			
+			    Nothing hides these. What was here was a disclosure that appeared on hover and stood
+			    where they stand, so reading the spend meant taking the mouse off the row — and the
+			    list it opened lives on the agent's own screen, beside everything else about it. */}
+			{agent.wakeAt !== undefined && <span className="row-note when">{until(agent.wakeAt)}</span>}
+			{agent.spentUsd > 0 && (
+				<span className="row-note" data-heat={heat}>
+					${agent.spentUsd.toFixed(2)}
+				</span>
+			)}
+		</div>
 	);
 }
 
