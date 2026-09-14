@@ -64,11 +64,20 @@ function agentAt(pathname: string): string | undefined {
 	return id === "" ? undefined : decodeURIComponent(id);
 }
 
-/** Whether an address names an agent's settings rather than its conversation. */
+/**
+ * Whether an address names an agent's settings rather than its conversation, and which page of
+ * them: `/agents/scout/settings/waking`.
+ *
+ * The page is in the address because it is a place — six screens about one agent, and "send me the
+ * one where the webhooks are" has to be a link. Absent, it is the first of them.
+ */
 const SETTINGS = "/settings";
 
-function settingsAt(pathname: string): boolean {
-	return pathname.startsWith(AGENTS) && pathname.endsWith(SETTINGS);
+function settingsAt(pathname: string): string | undefined {
+	if (!pathname.startsWith(AGENTS)) return undefined;
+	const parts = pathname.slice(AGENTS.length).split("/");
+	if (parts[1] !== "settings") return undefined;
+	return parts[2] === undefined || parts[2] === "" ? "general" : decodeURIComponent(parts[2]);
 }
 
 /**
@@ -119,7 +128,9 @@ export function App() {
 	 * this is one agent's, so it lives under that agent's address and closes by itself when the
 	 * conversation moves to another.
 	 */
-	const [setting, setSetting] = useState(() => settingsAt(window.location.pathname));
+	const [setting, setSetting] = useState<string | undefined>(() =>
+		settingsAt(window.location.pathname),
+	);
 	/**
 	 * Whether the first-key screen has been put away.
 	 *
@@ -177,7 +188,7 @@ export function App() {
 			const at = who === undefined ? chosen : (who ?? undefined);
 			const address =
 				next === "none" ? (at === undefined ? "/" : `${AGENTS}${at}`) : addressOf(next);
-			setSetting(false);
+			setSetting(undefined);
 			if (address === undefined || address === window.location.pathname) return;
 			window.history.pushState(null, "", `${address}${window.location.search}`);
 		},
@@ -364,14 +375,14 @@ export function App() {
 	 * Under the agent rather than beside it: what is on it is true of that agent and of nothing
 	 * else, and a link to it is a link to that agent's settings.
 	 */
-	const openSetup = useCallback((agentId: string): void => {
-		setSetting(true);
+	const openSetup = useCallback((agentId: string, page = "general"): void => {
+		setSetting(page);
 		setShowing("none");
 		setChosen(agentId);
 		setInRoom(undefined);
 		setMaking(false);
 		setMakingRoom(false);
-		const address = `${AGENTS}${agentId}${SETTINGS}`;
+		const address = `${AGENTS}${agentId}${SETTINGS}/${page}`;
 		if (address !== window.location.pathname) {
 			window.history.pushState(null, "", `${address}${window.location.search}`);
 		}
@@ -383,7 +394,7 @@ export function App() {
 		setChosen(undefined);
 		setMaking(false);
 		setMakingRoom(false);
-		setSetting(false);
+		setSetting(undefined);
 		const address = `${ROOMS}${name}`;
 		if (address !== window.location.pathname) {
 			window.history.pushState(null, "", `${address}${window.location.search}`);
@@ -458,11 +469,11 @@ export function App() {
 							// Where you are, not what you last opened: the plugins take the pane, so while they
 							// are up nothing in this list is the thing on screen. A dialog is different — the
 							// conversation is still behind it, and that is still where you are.
-							here={one.id === chosen && showing === "none" && !making && !setting}
+							here={one.id === chosen && showing === "none" && !making && setting === undefined}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
-								setSetting(false);
+								setSetting(undefined);
 								show("none", one.id);
 							}}
 						/>
@@ -561,12 +572,14 @@ export function App() {
 					<Plugins plane={plane} agents={agents} />
 				) : showing === "repos" && plane !== undefined ? (
 					<Repos plane={plane} agents={agents} />
-				) : setting && agent !== undefined && plane !== undefined ? (
+				) : setting !== undefined && agent !== undefined && plane !== undefined ? (
 					<Setup
 						key={agent.id}
 						plane={plane}
 						agent={agent}
 						agents={agents}
+						page={setting}
+						onPage={(page) => openSetup(agent.id, page)}
 						onChanged={() => void look()}
 						// Back to the conversation this was opened from, which is where the address goes too.
 						onClose={() => show("none", agent.id)}

@@ -8,6 +8,16 @@ import type { Connected, Plane, Skill, Trigger } from "./plane.ts";
 import { Spin } from "./spin.tsx";
 import { Tasks } from "./Tasks.tsx";
 
+/** The screens, in the order somebody works down them. `danger` is last and looks it. */
+const PAGES = [
+	{ id: "general", name: "General" },
+	{ id: "waking", name: "Waking" },
+	{ id: "plugins", name: "Plugins" },
+	{ id: "skills", name: "Skills" },
+	{ id: "sending", name: "Sending" },
+	{ id: "danger", name: "Delete", danger: true },
+] as const;
+
 /**
  * One agent's settings.
  *
@@ -17,16 +27,21 @@ import { Tasks } from "./Tasks.tsx";
  * with, what it can reach and who may wake it are in one place and none of them is a sentence to
  * remember.
  *
- * A column of cards, one fact each: what it is, the control, and a bar along the bottom holding the
- * sentence that qualifies it and the button that commits it. The shape is borrowed on purpose —
- * every settings screen anybody has used this decade is this shape, and one that invents its own is
- * one where the button has to be found. What it replaced had the qualifying sentence floating
- * between two controls on one line, which is how six settings read as a heap.
+ * Six screens rather than one, with a menu down the left: what an agent is, when it wakes, what it
+ * can reach, what it knows, what it shows you, and the end of it. One column of everything was a
+ * page somebody scrolled past four settings to reach the fifth, and every one of them was boxed —
+ * a card inside a card inside a pane, three borders deep to say one thing.
+ *
+ * So no boxes. A setting is a name and a sentence on the left and its control on the right, with a
+ * rule between one and the next. What was carrying the weight of a card is carried by the rule and
+ * the space, which is what they are for.
  */
 export function Setup({
 	plane,
 	agent,
 	agents,
+	page,
+	onPage,
 	onClose,
 	onChanged,
 }: {
@@ -34,6 +49,9 @@ export function Setup({
 	agent: AgentSummary;
 	/** The rest of the fleet, so a skill can be handed to one of them without leaving this screen. */
 	agents: readonly AgentSummary[];
+	/** Which of the six screens is up. It is in the address, so it is passed in rather than kept. */
+	page: string;
+	onPage: (page: string) => void;
 	/** Back to the conversation, which is where this was opened from. */
 	onClose: () => void;
 	onChanged: () => void;
@@ -112,332 +130,333 @@ export function Setup({
 				</div>
 			</header>
 
-			<div className="pane-scroll">
-				<div className="cards-column">
+			<div className="setup">
+				{/* The menu, which is what makes this six screens instead of one long one. Each is an
+				    address of its own, so one of them is a thing to link somebody to. */}
+				<nav className="setup-nav">
+					{PAGES.map((one) => (
+						<button
+							key={one.id}
+							type="button"
+							className="setup-tab"
+							data-here={page === one.id}
+							data-danger={"danger" in one}
+							onClick={() => onPage(one.id)}
+						>
+							{one.name}
+						</button>
+					))}
+				</nav>
+
+				<div className="setup-page">
 					{why !== undefined && <p className="why">{why}</p>}
 
-					{/* ── what it may spend ─────────────────────────────────── */}
-					<form
-						className="card"
-						onSubmit={(event) => {
-							event.preventDefault();
-							const amount = Number(limit.replace(/^\$/, ""));
-							if (!Number.isFinite(amount) || amount <= 0) {
-								setWhy(`"${limit}" is not an amount.`);
-								return;
-							}
-							void run("limit", () => plane.setLimit(agent.id, amount));
-						}}
-					>
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Daily ceiling</h2>
-								<p className="card-says">
-									The most {nameOf(agent.id)} may spend in a day. It stops taking turns when it gets
-									there, and starts again when the day does.
-								</p>
-							</div>
-							<div className="flex flex-wrap items-center gap-2">
-								<span className="text-[0.85rem] text-muted">$</span>
-								<input
-									className="field field-short font-mono"
-									value={limit}
-									placeholder="none"
-									onChange={(event) => setLimit(event.target.value)}
-								/>
-								<span className="text-[0.85rem] text-muted">a day</span>
-							</div>
-							<div className="flex items-center gap-3">
-								<div className="h-1 flex-1 overflow-hidden rounded-full bg-sunk">
-									<div
-										className="h-full rounded-full"
-										style={{
-											width:
-												ceiling === undefined ? "0%" : `${Math.min(100, (spent / ceiling) * 100)}%`,
-											background:
-												ceiling !== undefined && spent >= ceiling
-													? "var(--red)"
-													: ceiling !== undefined && spent >= ceiling * 0.8
-														? "var(--amber)"
-														: "var(--green)",
-										}}
-									/>
-								</div>
-								<span className="font-mono text-[0.8rem] text-muted tabular-nums">
-									${spent.toFixed(2)} today
-								</span>
-							</div>
-						</div>
-						<div className="card-foot">
-							<p>Resets at midnight UTC. The agent can ask to be held to less, never to more.</p>
-							<div className="flex items-center gap-2">
-								{ceiling !== undefined && (
-									<button
-										type="button"
-										className="pill"
-										disabled={busy === "limit"}
-										onClick={() => {
-											setLimit("");
-											void run("limit", () => plane.setLimit(agent.id, null));
-										}}
-									>
-										no ceiling
-									</button>
-								)}
-								<button type="submit" className="pill" data-yes="true" disabled={busy === "limit"}>
-									{busy === "limit" && <Spin />}
-									save
-								</button>
-							</div>
-						</div>
-					</form>
-
-					{/* ── what it thinks with ───────────────────────────────── */}
-					<div className="card">
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Model</h2>
-								<p className="card-says">
-									What it thinks with. Only the models this plane is configured with and holds a key
-									for.
-								</p>
-							</div>
-							<select
-								className="select"
-								value={agent.model ?? ""}
-								disabled={busy === "model" || models.length === 0}
-								onChange={(event) => {
-									const id = event.target.value;
-									void run("model", async () => {
-										await plane.command(agent.id, `/model ${id}`);
-									});
-								}}
+					{page === "general" && (
+						<>
+							<Setting
+								title="Model"
+								says="What it thinks with. Only the models this plane is configured with and holds a key for. It takes effect on the next turn; one that is running finishes on the model it started with."
 							>
-								{agent.model === undefined && <option value="">the plane's default</option>}
-								{models.map((model) => (
-									<option key={model.id} value={model.id} disabled={!model.held}>
-										{model.id}
-										{model.held ? "" : ` — no ${model.keyEnv}`}
-									</option>
-								))}
-							</select>
-						</div>
-						<div className="card-foot">
-							<p>
-								{models.length === 0
-									? "No models are configured on this plane."
-									: "It takes effect on the next turn. One that is running finishes on the model it started with."}
-							</p>
-						</div>
-					</div>
-
-					{/* ── when it comes back on its own ─────────────────────── */}
-					<Tasks plane={plane} agentId={agent.id} onChanged={onChanged} />
-
-					{/* ── who may wake it ───────────────────────────────────── */}
-					<div className="card">
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Triggers</h2>
-								<p className="card-says">
-									An address that gives {nameOf(agent.id)} a turn. Paste it into whatever should
-									wake it — Stripe, GitHub, a script of yours — and anything posted there is a turn,
-									with the payload in its hands.
-								</p>
-							</div>
-
-							{triggers.length > 0 && (
-								<div className="card-rows">
-									{triggers.map((one) => (
-										<div key={one.name} className="card-row">
-											<div className="card-row-main">
-												<Address url={`${window.location.origin}/hooks/${one.name}`} />
-												{/* What the operator says arrives here. It reaches the turn as their
-												    instruction, apart from the payload, so the agent is not left
-												    inferring from the JSON what it is looking at — and inferring it
-												    differently each time. */}
-												<Says
-													said={one.says ?? ""}
-													busy={busy === `says:${one.name}`}
-													onSay={(says) =>
-														void run(`says:${one.name}`, () =>
-															plane.describeTrigger(one.name, says),
-														)
-													}
-												/>
-												<span className="card-row-meta">
-													<span className="badge">{one.from}</span>
-													<span>{one.only.length === 0 ? "every event" : one.only.join(", ")}</span>
-													<span>·</span>
-													<span>{one.fired === 0 ? "never fired" : `fired ${one.fired}×`}</span>
-												</span>
-											</div>
-											<button
-												type="button"
-												className="pill"
-												data-no="true"
-												disabled={busy === `trigger:${one.name}`}
-												onClick={() =>
-													void run(`trigger:${one.name}`, async () => {
-														await plane.dropTrigger(one.name);
-														setSecret(undefined);
-													})
-												}
-											>
-												{busy === `trigger:${one.name}` && <Spin />}
-												delete
-											</button>
-										</div>
-									))}
-								</div>
-							)}
-
-							{/* Once, here, and never again: it goes into a form on the sender's own site the
-							    moment it exists, and a console it could be read from later is one it could be
-							    taken from. */}
-							{secret !== undefined && (
-								<div className="lines">
-									<p className="note">
-										The secret <strong>{secret.name}</strong> signs with, for {secret.from}. It is
-										not shown again.
-									</p>
-									<Address url={secret.secret} />
-								</div>
-							)}
-
-							{/* For a sender that signs: the signature is checked, and only the events named are
-							    worth a turn. Stripe posts every event on the account at anything that takes one. */}
-							{signing && (
-								<form
-									className="lines"
-									onSubmit={(event) => {
-										event.preventDefault();
-										const name = making.name.trim();
-										if (name === "") return;
-										void run("trigger", async () => {
-											const one = await plane.addTrigger(
-												agent.id,
-												name,
-												making.from,
-												making.only
-													.split(/[\s,]+/)
-													.map((word) => word.trim())
-													.filter((word) => word.length > 0),
-												making.says,
-											);
-											if (one?.secret !== undefined) {
-												setSecret({ name: one.name, from: one.from, secret: one.secret });
-											}
-											setMaking({ name: "", from: making.from, only: "", says: "" });
+								<select
+									className="select"
+									value={agent.model ?? ""}
+									disabled={busy === "model" || models.length === 0}
+									onChange={(event) => {
+										const id = event.target.value;
+										void run("model", async () => {
+											await plane.command(agent.id, `/model ${id}`);
 										});
 									}}
 								>
-									<label className="ask-line">
-										<span className="ask-name">Called</span>
-										<input
-											className="field font-mono"
-											value={making.name}
-											placeholder="stripe-cancels"
-											spellCheck={false}
-											onChange={(event) => setMaking({ ...making, name: event.target.value })}
+									{agent.model === undefined && <option value="">the plane's default</option>}
+									{models.map((model) => (
+										<option key={model.id} value={model.id} disabled={!model.held}>
+											{model.id}
+											{model.held ? "" : ` — no ${model.keyEnv}`}
+										</option>
+									))}
+								</select>
+								{models.length === 0 && (
+									<p className="note">No models are configured on this plane.</p>
+								)}
+							</Setting>
+
+							<Setting
+								title="Daily ceiling"
+								says="The most it may spend in a day. It stops taking turns when it gets there and starts again when the day does, at midnight UTC. The agent can ask to be held to less, never to more."
+							>
+								<form
+									className="flex flex-wrap items-center gap-2"
+									onSubmit={(event) => {
+										event.preventDefault();
+										const amount = Number(limit.replace(/^\$/, ""));
+										if (!Number.isFinite(amount) || amount <= 0) {
+											setWhy(`"${limit}" is not an amount.`);
+											return;
+										}
+										void run("limit", () => plane.setLimit(agent.id, amount));
+									}}
+								>
+									<span className="text-[0.85rem] text-muted">$</span>
+									<input
+										className="field field-short font-mono"
+										value={limit}
+										placeholder="none"
+										onChange={(event) => setLimit(event.target.value)}
+									/>
+									<span className="text-[0.85rem] text-muted">a day</span>
+									<button
+										type="submit"
+										className="pill"
+										data-yes="true"
+										disabled={busy === "limit"}
+									>
+										{busy === "limit" && <Spin />}
+										save
+									</button>
+									{ceiling !== undefined && (
+										<button
+											type="button"
+											className="pill"
+											disabled={busy === "limit"}
+											onClick={() => {
+												setLimit("");
+												void run("limit", () => plane.setLimit(agent.id, null));
+											}}
+										>
+											no ceiling
+										</button>
+									)}
+								</form>
+								<div className="flex items-center gap-3">
+									<div className="h-1 flex-1 overflow-hidden rounded-full bg-sunk">
+										<div
+											className="h-full rounded-full"
+											style={{
+												width:
+													ceiling === undefined
+														? "0%"
+														: `${Math.min(100, (spent / ceiling) * 100)}%`,
+												background:
+													ceiling !== undefined && spent >= ceiling
+														? "var(--red)"
+														: ceiling !== undefined && spent >= ceiling * 0.8
+															? "var(--amber)"
+															: "var(--green)",
+											}}
 										/>
-									</label>
-									<div className="ask-line">
-										<span className="ask-name">Signed by</span>
-										<span className="flex flex-wrap gap-1.5">
-											{SIGNERS.map((one) => (
+									</div>
+									<span className="font-mono text-[0.8rem] text-muted tabular-nums">
+										${spent.toFixed(2)} today
+									</span>
+								</div>
+							</Setting>
+						</>
+					)}
+
+					{page === "waking" && (
+						<>
+							<Tasks plane={plane} agentId={agent.id} onChanged={onChanged} />
+
+							<Setting
+								wide
+								title="Triggers"
+								says={`An address that gives ${nameOf(agent.id)} a turn. Paste it into whatever should wake it — Stripe, GitHub, a script of yours — and anything posted there is a turn, with the payload in its hands. The address is the secret: anyone who has it can wake this agent.`}
+							>
+								{triggers.length === 0 && (
+									<p className="note">Nothing outside this plane wakes {nameOf(agent.id)}.</p>
+								)}
+								{triggers.length > 0 && (
+									<div className="listing">
+										{triggers.map((one) => (
+											<div key={one.name} className="listed">
+												<div className="listed-main">
+													<Address url={`${window.location.origin}/hooks/${one.name}`} />
+													{/* What the operator says arrives here. It reaches the turn as their
+													    instruction, apart from the payload, so the agent is not left
+													    inferring from the JSON what it is looking at — and inferring it
+													    differently each time. */}
+													<Says
+														said={one.says ?? ""}
+														busy={busy === `says:${one.name}`}
+														onSay={(says) =>
+															void run(`says:${one.name}`, () =>
+																plane.describeTrigger(one.name, says),
+															)
+														}
+													/>
+													<span className="listed-meta">
+														<span className="badge">{one.from}</span>
+														<span>
+															{one.only.length === 0 ? "every event" : one.only.join(", ")}
+														</span>
+														<span>·</span>
+														<span>{one.fired === 0 ? "never fired" : `fired ${one.fired}×`}</span>
+													</span>
+												</div>
 												<button
-													key={one}
 													type="button"
 													className="pill"
-													data-yes={making.from === one}
-													onClick={() => setMaking({ ...making, from: one })}
+													data-no="true"
+													disabled={busy === `trigger:${one.name}`}
+													onClick={() =>
+														void run(`trigger:${one.name}`, async () => {
+															await plane.dropTrigger(one.name);
+															setSecret(undefined);
+														})
+													}
 												>
-													{one}
+													{busy === `trigger:${one.name}` && <Spin />}
+													delete
 												</button>
-											))}
-										</span>
+											</div>
+										))}
 									</div>
-									<label className="ask-line">
-										<span className="ask-name">Only</span>
-										<input
-											className="field font-mono"
-											value={making.only}
-											placeholder="customer.subscription.deleted"
-											spellCheck={false}
-											onChange={(event) => setMaking({ ...making, only: event.target.value })}
-										/>
-									</label>
-									<label className="ask-line">
-										<span className="ask-name">Arrives</span>
-										<input
-											className="field"
-											value={making.says}
-											placeholder="A subscription was cancelled. Find out why and write it up."
-											onChange={(event) => setMaking({ ...making, says: event.target.value })}
-										/>
-									</label>
-									<div className="ask-line">
-										<span className="ask-name" />
-										<button
-											type="submit"
-											className="pill"
-											data-yes="true"
-											disabled={busy === "trigger" || making.name.trim() === ""}
-										>
-											{busy === "trigger" && <Spin />}
-											create
-										</button>
-										<span className="note">
-											Leave <em>only</em> empty and every event the sender has is a turn.
-										</span>
-									</div>
-								</form>
-							)}
-						</div>
-						<div className="card-foot">
-							<p>
-								The address is the secret: anyone who has it can wake {nameOf(agent.id)}. A sender
-								that signs can be checked as well.
-							</p>
-							<div className="flex items-center gap-2">
-								<button
-									type="button"
-									className="pill"
-									aria-expanded={signing}
-									onClick={() => setSigning(!signing)}
-								>
-									{signing ? "never mind" : "signed…"}
-								</button>
-								<button
-									type="button"
-									className="pill"
-									data-yes="true"
-									disabled={busy === "webhook"}
-									onClick={() =>
-										void run("webhook", async () => {
-											await plane.addTrigger(agent.id, "", "url", []);
-											setSecret(undefined);
-										})
-									}
-								>
-									{busy === "webhook" && <Spin />}
-									create webhook
-								</button>
-							</div>
-						</div>
-					</div>
+								)}
 
-					{/* ── what it can reach ─────────────────────────────────── */}
-					<div className="card">
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Plugins</h2>
-								<p className="card-says">
-									Which connections {nameOf(agent.id)} holds. One it does not hold is one it cannot
-									reach, however logged in the account is.
-								</p>
-							</div>
+								{/* Once, here, and never again: it goes into a form on the sender's own site the
+								    moment it exists, and a console it could be read from later is one it could
+								    be taken from. */}
+								{secret !== undefined && (
+									<div className="lines">
+										<p className="note">
+											The secret <strong>{secret.name}</strong> signs with, for {secret.from}. It is
+											not shown again.
+										</p>
+										<Address url={secret.secret} />
+									</div>
+								)}
+
+								<div className="flex flex-wrap items-center gap-2">
+									<button
+										type="button"
+										className="pill"
+										data-yes="true"
+										disabled={busy === "webhook"}
+										onClick={() =>
+											void run("webhook", async () => {
+												await plane.addTrigger(agent.id, "", "url", []);
+												setSecret(undefined);
+											})
+										}
+									>
+										{busy === "webhook" && <Spin />}
+										create webhook
+									</button>
+									<button
+										type="button"
+										className="pill"
+										aria-expanded={signing}
+										onClick={() => setSigning(!signing)}
+									>
+										{signing ? "never mind" : "signed…"}
+									</button>
+									<span className="note flex-1">
+										A sender that signs — Stripe, GitHub — can be checked as well, and told which
+										events are worth a turn.
+									</span>
+								</div>
+
+								{/* For a sender that signs: the signature is checked, and only the events named
+								    are worth a turn. Stripe posts every event on the account at anything that
+								    will take one. */}
+								{signing && (
+									<form
+										className="lines"
+										onSubmit={(event) => {
+											event.preventDefault();
+											const name = making.name.trim();
+											if (name === "") return;
+											void run("trigger", async () => {
+												const one = await plane.addTrigger(
+													agent.id,
+													name,
+													making.from,
+													making.only
+														.split(/[\s,]+/)
+														.map((word) => word.trim())
+														.filter((word) => word.length > 0),
+													making.says,
+												);
+												if (one?.secret !== undefined) {
+													setSecret({ name: one.name, from: one.from, secret: one.secret });
+												}
+												setMaking({ name: "", from: making.from, only: "", says: "" });
+											});
+										}}
+									>
+										<label className="ask-line">
+											<span className="ask-name">Called</span>
+											<input
+												className="field font-mono"
+												value={making.name}
+												placeholder="stripe-cancels"
+												spellCheck={false}
+												onChange={(event) => setMaking({ ...making, name: event.target.value })}
+											/>
+										</label>
+										<div className="ask-line">
+											<span className="ask-name">Signed by</span>
+											<span className="flex flex-wrap gap-1.5">
+												{SIGNERS.map((one) => (
+													<button
+														key={one}
+														type="button"
+														className="pill"
+														data-yes={making.from === one}
+														onClick={() => setMaking({ ...making, from: one })}
+													>
+														{one}
+													</button>
+												))}
+											</span>
+										</div>
+										<label className="ask-line">
+											<span className="ask-name">Only</span>
+											<input
+												className="field font-mono"
+												value={making.only}
+												placeholder="customer.subscription.deleted"
+												spellCheck={false}
+												onChange={(event) => setMaking({ ...making, only: event.target.value })}
+											/>
+										</label>
+										<label className="ask-line">
+											<span className="ask-name">Arrives</span>
+											<input
+												className="field"
+												value={making.says}
+												placeholder="A subscription was cancelled. Find out why and write it up."
+												onChange={(event) => setMaking({ ...making, says: event.target.value })}
+											/>
+										</label>
+										<div className="ask-line">
+											<span className="ask-name" />
+											<button
+												type="submit"
+												className="pill"
+												data-yes="true"
+												disabled={busy === "trigger" || making.name.trim() === ""}
+											>
+												{busy === "trigger" && <Spin />}
+												create
+											</button>
+											<span className="note">
+												Leave <em>only</em> empty and every event the sender has is a turn.
+											</span>
+										</div>
+									</form>
+								)}
+							</Setting>
+						</>
+					)}
+
+					{page === "plugins" && (
+						<Setting
+							wide
+							title="Plugins"
+							says={`Which connections ${nameOf(agent.id)} holds. One it does not hold is one it cannot reach, however logged in the account is. An agent never holds the credential: its requests leave with none and the proxy writes this plane's onto them on the way out.`}
+						>
 							{made.length === 0 ? (
 								<p className="note">Nothing is connected on this plane yet.</p>
 							) : (
@@ -487,37 +506,15 @@ export function Setup({
 									})}
 								</div>
 							)}
-						</div>
-						<div className="card-foot">
-							<p>
-								An agent never holds the credential. Its requests leave with none and the proxy
-								writes this plane's onto them on the way out.
-							</p>
-						</div>
-					</div>
+						</Setting>
+					)}
 
-					{/* ── what it has learned ───────────────────────────────── */}
-					<form
-						className="card"
-						onSubmit={(event) => {
-							event.preventDefault();
-							const name = keeping.trim();
-							if (name === "") return;
-							void run("keep", async () => {
-								await plane.keepSkill(agent.id, name);
-								setKeeping("");
-							});
-						}}
-					>
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Skills</h2>
-								<p className="card-says">
-									What it has written down about how to do something, in its own repository, where
-									it reads them back. It writes them; this asks it to.
-								</p>
-							</div>
-
+					{page === "skills" && (
+						<Setting
+							wide
+							title="Skills"
+							says="What it has written down about how to do something, in its own repository, where it reads them back. It writes them; this asks it to, and hands one to another agent."
+						>
 							{skills === undefined ? (
 								<p className="note flex items-center gap-2">
 									<Spin /> reading its repository…
@@ -528,13 +525,14 @@ export function Setup({
 									ask it to keep the procedure.
 								</p>
 							) : (
-								<div className="card-rows">
+								<div className="listing">
 									{skills.map((skill) => (
-										<div key={skill.name} className="card-row">
-											<div className="card-row-main">
-												<span className="card-row-said">{skill.name}</span>
-												<span className="card-row-meta">
-													{skill.does === "" ? "—" : skill.does}
+										<div key={skill.name} className="listed">
+											<div className="listed-main">
+												<span className="listed-said">{skill.name}</span>
+												<span className="listed-meta">
+													<span className="flex-1">{skill.does === "" ? "—" : skill.does}</span>
+													<span>{skill.lines} lines</span>
 												</span>
 											</div>
 											{/* Handed over rather than shared: the copy is the other agent's from then
@@ -564,90 +562,80 @@ export function Setup({
 									))}
 								</div>
 							)}
-
-							<input
-								className="field field-name font-mono"
-								value={keeping}
-								placeholder="weekly-report"
-								spellCheck={false}
-								onChange={(event) => setKeeping(event.target.value)}
-							/>
-						</div>
-						<div className="card-foot">
-							<p>It takes a turn to write the procedure down and commit it.</p>
-							<button
-								type="submit"
-								className="pill"
-								data-yes="true"
-								disabled={busy === "keep" || keeping.trim() === ""}
+							<form
+								className="flex flex-wrap items-center gap-2"
+								onSubmit={(event) => {
+									event.preventDefault();
+									const name = keeping.trim();
+									if (name === "") return;
+									void run("keep", async () => {
+										await plane.keepSkill(agent.id, name);
+										setKeeping("");
+									});
+								}}
 							>
-								{busy === "keep" && <Spin />}
-								keep what it just did
-							</button>
-						</div>
-					</form>
+								<input
+									className="field field-name font-mono"
+									value={keeping}
+									placeholder="weekly-report"
+									spellCheck={false}
+									onChange={(event) => setKeeping(event.target.value)}
+								/>
+								<button
+									type="submit"
+									className="pill"
+									data-yes="true"
+									disabled={busy === "keep" || keeping.trim() === ""}
+								>
+									{busy === "keep" && <Spin />}
+									keep what it just did
+								</button>
+								<span className="note flex-1">
+									It takes a turn to write the procedure down and commit it.
+								</span>
+							</form>
+						</Setting>
+					)}
 
-					{/* ── what it must show you ─────────────────────────────── */}
-					<div className="card">
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Ask before sending</h2>
-								<p className="card-says">
-									The two doors that open onto somebody else's inbox. Held, an answer is shown to
-									you whole before it goes, and a yes sends exactly what it wrote.
-								</p>
-							</div>
-							<div>
-								{GATES.map((gate) => {
-									const held = agent.gates.includes(gate.id);
-									return (
-										<button
-											key={gate.id}
-											type="button"
-											className="switch"
-											data-on={held}
-											disabled={busy === `gate:${gate.id}`}
-											onClick={() =>
-												void run(`gate:${gate.id}`, () => plane.setGate(agent.id, gate.id, !held))
-											}
-										>
-											<span className="switch-box" />
-											<span className="switch-name">
-												{gate.name}
-												<span className="switch-says">
-													{held
-														? `Shown to you before it goes ${gate.said}.`
-														: `Goes out ${gate.said} as written.`}
-												</span>
+					{page === "sending" && (
+						<Setting
+							title="Ask before sending"
+							says="The two doors that open onto somebody else's inbox. Held, an answer is shown to you whole before it goes, and a yes sends exactly what it wrote — an approval decides the message it is shown, it does not take back one already sent."
+						>
+							{GATES.map((gate) => {
+								const held = agent.gates.includes(gate.id);
+								return (
+									<button
+										key={gate.id}
+										type="button"
+										className="switch"
+										data-on={held}
+										disabled={busy === `gate:${gate.id}`}
+										onClick={() =>
+											void run(`gate:${gate.id}`, () => plane.setGate(agent.id, gate.id, !held))
+										}
+									>
+										<span className="switch-box" />
+										<span className="switch-name">
+											{gate.name}
+											<span className="switch-says">
+												{held
+													? `Shown to you before it goes ${gate.said}.`
+													: `Goes out ${gate.said} as written.`}
 											</span>
-											{busy === `gate:${gate.id}` && <Spin />}
-										</button>
-									);
-								})}
-							</div>
-						</div>
-						<div className="card-foot">
-							<p>
-								An approval decides the message it is shown. It does not take back one already sent.
-							</p>
-						</div>
-					</div>
+										</span>
+										{busy === `gate:${gate.id}` && <Spin />}
+									</button>
+								);
+							})}
+						</Setting>
+					)}
 
-					{/* ── and the end of it ─────────────────────────────────── */}
-					<div className="card" data-danger="true">
-						<div className="card-body">
-							<div>
-								<h2 className="card-title">Delete {nameOf(agent.id)}</h2>
-								<p className="card-says">
-									The container, its conversation, and everything decided here. What it wrote in its
-									own repository goes with it. This cannot be undone.
-								</p>
-							</div>
-						</div>
-						<div className="card-foot">
-							<p>
-								Its name is free afterwards, and an agent made again under it is a different agent.
-							</p>
+					{page === "danger" && (
+						<Setting
+							title={`Delete ${nameOf(agent.id)}`}
+							says="The container, its conversation, and everything decided here. What it wrote in its own repository goes with it. Its name is free afterwards, and an agent made again under it is a different agent. This cannot be undone."
+						>
 							<Sure
 								what={`Delete ${nameOf(agent.id)}`}
 								busy={busy === "delete"}
@@ -658,11 +646,43 @@ export function Setup({
 									})
 								}
 							/>
-						</div>
-					</div>
+						</Setting>
+					)}
 				</div>
 			</div>
 		</>
+	);
+}
+
+/**
+ * One setting: what it is on the left, the control on the right, a rule between it and the next.
+ *
+ * No box. A card inside a card inside a pane is three borders to say one thing, and what a card was
+ * doing here — grouping a name, a sentence and a control — is done by the space around them and the
+ * line under them.
+ *
+ * `wide` is for the ones that are a list rather than a control: a column of addresses reads badly
+ * in half the width, and there is nothing to line the labels up against anyway.
+ */
+function Setting({
+	title,
+	says,
+	wide,
+	children,
+}: {
+	title: string;
+	says: string;
+	wide?: boolean;
+	children: React.ReactNode;
+}) {
+	return (
+		<section className="setting" data-wide={wide === true}>
+			<div className="setting-head">
+				<h2 className="setting-title">{title}</h2>
+				<p className="setting-says">{says}</p>
+			</div>
+			<div className="setting-body">{children}</div>
+		</section>
 	);
 }
 

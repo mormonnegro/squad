@@ -64,16 +64,17 @@ export function Tasks({
 	const ready = making.when.trim() !== "" && making.body.trim() !== "";
 
 	return (
-		<div className="card">
-			<div className="card-body">
-				<div>
-					<h2 className="card-title">Tasks</h2>
-					<p className="card-says">
-						When {nameOf(agentId)} comes back on its own. A trigger answers when something happens;
-						this answers when. What you write is what it is told at that moment, in your words.
-					</p>
-				</div>
-
+		<section className="setting" data-wide="true">
+			<div className="setting-head">
+				<h2 className="setting-title">Tasks</h2>
+				<p className="setting-says">
+					When {nameOf(agentId)} comes back on its own. A trigger answers when something happens;
+					this answers when. What you write is what it is told at that moment, in your words — and
+					it answers where it answers everything else. An agent can book its own as well, and those
+					say so.
+				</p>
+			</div>
+			<div className="setting-body">
 				{why !== undefined && <p className="why">{why}</p>}
 
 				{wakes === undefined ? (
@@ -83,7 +84,7 @@ export function Tasks({
 				) : wakes.length === 0 ? (
 					<p className="task-says">Nothing booked. It waits to be spoken to.</p>
 				) : (
-					<div className="card-rows">
+					<div className="listing">
 						{wakes.map((wake) => (
 							<Booked
 								key={wake.id}
@@ -135,31 +136,21 @@ export function Tasks({
 							onChange={(event) => setMaking({ ...making, body: event.target.value })}
 						/>
 					</label>
+					<div className="ask-line">
+						<span className="ask-name" />
+						<button
+							type="submit"
+							className="pill"
+							data-yes="true"
+							disabled={!ready || busy === "book"}
+						>
+							{busy === "book" && <Spin />}
+							book it
+						</button>
+					</div>
 				</form>
 			</div>
-			<div className="card-foot">
-				<p>
-					It answers where it answers everything else. An agent can book its own as well, and those
-					say so.
-				</p>
-				<button
-					type="button"
-					className="pill"
-					data-yes="true"
-					disabled={!ready || busy === "book"}
-					onClick={() => {
-						if (!ready) return;
-						void run("book", async () => {
-							await plane.schedule(agentId, making.when.trim(), making.body.trim());
-							setMaking({ when: "", body: "" });
-						});
-					}}
-				>
-					{busy === "book" && <Spin />}
-					book it
-				</button>
-			</div>
-		</div>
+		</section>
 	);
 }
 
@@ -171,8 +162,8 @@ function Booked({ wake, busy, onStop }: { wake: Wake; busy: boolean; onStop: () 
 	const mine = wake.createdBy !== "operator";
 
 	return (
-		<div className="card-row">
-			<div className="card-row-main">
+		<div className="listed">
+			<div className="listed-main">
 				<span className="task-head">
 					{said(wake)}
 					<span className="task-whose">

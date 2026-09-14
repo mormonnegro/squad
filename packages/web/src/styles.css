@@ -205,11 +205,20 @@
 
 
 
+/*
+ * One small scale, and the same one everywhere.
+ *
+ * A control is a rectangle with its corners taken off, not a lozenge: `999px` made every button a
+ * capsule, which is a shape that says "tag" rather than "press me" and reads as a different family
+ * from the fields beside it. Six pixels on a control, five on the chips that are smaller, ten on a
+ * surface that holds them. Round is kept for the things that are actually round — a face, a status
+ * dot, the knob in a switch.
+ */
 .field {
 	width: 100%;
 	background: var(--bg-code);
 	border: 1px solid var(--line);
-	border-radius: 5px;
+	border-radius: 6px;
 	color: var(--text);
 	font: 0.9rem var(--mono);
 	padding: 0.5rem 0.7rem;
@@ -614,7 +623,7 @@
 	gap: 0.3rem;
 	padding: 0.12rem 0.4rem 0.12rem 0.15rem;
 	border: 1px solid transparent;
-	border-radius: 999px;
+	border-radius: 6px;
 	color: var(--muted);
 	font: 0.74rem var(--sans);
 }
@@ -648,7 +657,7 @@
 	width: 1.5rem;
 	height: 1.5rem;
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: 6px;
 	color: var(--muted);
 }
 
@@ -788,7 +797,7 @@
 	left: 50%;
 	transform: translateX(-50%);
 	bottom: 0.4rem;
-	border-radius: 999px;
+	border-radius: 6px;
 	background: var(--bg-raised);
 	color: var(--muted);
 	font: 0.76rem var(--mono);
@@ -1128,7 +1137,7 @@ ol.md-list {
 	box-shadow: var(--shadow-border);
 	border-left: 2px solid var(--amber);
 	background: var(--bg-raised);
-	border-radius: 9px;
+	border-radius: 8px;
 	padding: 0.9rem 1rem;
 	display: flex;
 	flex-direction: column;
@@ -1271,7 +1280,7 @@ ol.md-list {
 
 .box {
 	border: 1px solid var(--line);
-	border-radius: 11px;
+	border-radius: 8px;
 	background: var(--bg-raised);
 	display: flex;
 	align-items: flex-start;
@@ -1317,7 +1326,7 @@ ol.md-list {
 }
 
 .menu {
-	border-radius: 11px;
+	border-radius: 8px;
 	background: var(--bg-raised);
 	/* Raised over the conversation, so a ring rather than a border. */
 	box-shadow: var(--shadow-border), 0 8px 24px #0006;
@@ -1407,7 +1416,7 @@ ol.md-list {
 }
 
 .choice {
-	border-radius: 7px;
+	border-radius: 8px;
 	background: var(--bg-raised);
 	box-shadow: var(--shadow-border);
 	padding: 0.9rem;
@@ -1537,7 +1546,7 @@ ol.md-list {
    name of the thing, and it is a fact about it. */
 .tally {
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: 5px;
 	padding: 0.05rem 0.5rem;
 	font: 0.72rem var(--mono);
 	color: var(--muted);
@@ -1579,177 +1588,189 @@ ol.md-list {
 /* ── one agent's settings ────────────────────────────────────────────── */
 
 /*
- * A column of cards, and nothing beside it.
+ * Six screens with a menu down the left, rather than one column of everything.
  *
- * Six unrelated facts about an agent, one to a card: what it is, what it is for, the control, and
- * a bar along the bottom with the sentence that qualifies it and the button that commits it. The
- * shape is borrowed on purpose — every settings screen anybody has used this decade is this shape,
- * and a screen that invents its own is a screen where the button has to be found.
- *
- * One column rather than two. What was here before packed the short controls side by side to use
- * the width, and reading it meant crossing back and forth over a gutter between two unrelated
- * things. A card is read top to bottom and the next one is under it.
+ * A single page meant scrolling past four settings to reach the fifth, and every one of them was in
+ * a box — a card inside a card inside a pane, three borders deep to say one thing. The menu makes
+ * each of them a screen with an address, and the boxes are gone: what a card was doing here is done
+ * by the rule between one setting and the next, and by the space around it.
  */
-.cards-column {
+.setup {
+	flex: 1;
 	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-	width: 100%;
-	max-width: 48rem;
-	margin-inline: auto;
+	min-height: 0;
 }
 
-.card {
-	/* Never squeezed: a column of flex children inside a box with a height of its own shrinks them
-	   to fit rather than scrolling, and a card with its footer cut off is a card with no button. */
+.setup-nav {
 	flex: none;
-	border-radius: 12px;
-	background: var(--bg-raised);
-	/* The hairline is depth rather than structure, so it is a ring. The rules inside the card —
-	   the footer's top border, the line under each row — are structure and stay borders. */
-	box-shadow: var(--shadow-border);
-	overflow: hidden;
-}
-
-.card-body {
+	width: 12.5rem;
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
-	padding: 1.3rem 1.4rem;
+	gap: 0.1rem;
+	padding: 1.6rem 0.8rem;
+	border-right: 1px solid var(--line);
+	overflow-y: auto;
 }
 
-.card-title {
+.setup-tab {
+	padding: 0.42rem 0.7rem;
+	border-radius: 6px;
+	text-align: left;
+	font-size: 0.88rem;
+	color: var(--muted);
+	transition-property: background, color, scale;
+	transition-duration: 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease-out;
+}
+
+.setup-tab:hover {
+	background: #ffffff08;
+	color: var(--text);
+}
+
+.setup-tab:active {
+	scale: 0.98;
+}
+
+.setup-tab[data-here="true"] {
+	background: #ffffff0f;
+	color: var(--text-strong);
+}
+
+/* The end of an agent, at the end of the list and looking like it before it is pressed. */
+.setup-tab[data-danger="true"] {
+	margin-top: auto;
+	color: color-mix(in srgb, var(--red) 75%, var(--muted));
+}
+
+.setup-tab[data-danger="true"]:hover,
+.setup-tab[data-danger="true"][data-here="true"] {
+	background: color-mix(in srgb, var(--red) 10%, transparent);
+	color: var(--red);
+}
+
+.setup-page {
+	flex: 1;
+	min-width: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 1.6rem 2rem 3rem;
+	/* Measured so the settings inside can ask how wide *this* is rather than how wide the window is.
+	   The window is a poor proxy: two sidebars stand between it and here, and a laptop at 1280 leaves
+	   this column narrower than a phone's viewport. */
+	container-type: inline-size;
+}
+
+/*
+ * One setting: what it is on the left, the control on the right.
+ *
+ * The rule above it is what separates it from the last one, which is all a card was doing — and a
+ * rule does it without drawing a second border inside the one the pane already has.
+ */
+.setting {
+	display: grid;
+	grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+	gap: 1rem 2.5rem;
+	align-items: start;
+	max-width: 58rem;
+	padding: 1.7rem 0;
+}
+
+.setting + .setting {
+	border-top: 1px solid var(--line-soft);
+}
+
+/* The ones that are a list rather than a control: a column of addresses reads badly in half a pane,
+   and there is nothing to line labels up against anyway. */
+.setting[data-wide="true"] {
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.1rem;
+}
+
+.setting[data-wide="true"] .setting-head {
+	max-width: 46rem;
+}
+
+.setting-title {
 	margin: 0;
-	font-size: 1.05rem;
+	font-size: 0.98rem;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-strong);
 }
 
-/* Under the title and never beside it: what the card is for, in one sentence a person would say. */
-.card-says {
-	margin: 0.35rem 0 0;
-	font-size: 0.86rem;
+.setting-says {
+	margin: 0.4rem 0 0;
+	font-size: 0.84rem;
 	line-height: 1.6;
 	color: var(--muted);
 }
 
-/*
- * The bar along the bottom: the qualification on the left, the commit on the right.
- *
- * Everything that used to float beside a button as a grey paragraph lives here. It is the one place
- * on the card where a sentence and a control share a line, and they can because the line is theirs.
- */
-.card-foot {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.75rem;
-	padding: 0.75rem 1.4rem;
-	border-top: 1px solid var(--line);
-	background: #ffffff04;
-	font-size: 0.8rem;
-	color: var(--muted);
-}
-
-.card-foot p {
-	margin: 0;
-	/* Short enough that what it qualifies stays on the same line as it: a footer whose sentence
-	   pushes the button onto a second row is two rows where the shape promised one. */
-	max-width: 27rem;
-	line-height: 1.5;
-}
-
-/* The one that takes something away. Its own card at the end, the way every screen like this has. */
-.card[data-danger="true"] {
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 35%, transparent);
-}
-
-.card[data-danger="true"] .card-foot {
-	border-top-color: color-mix(in srgb, var(--red) 30%, var(--line));
-	background: color-mix(in srgb, var(--red) 7%, transparent);
-}
-
-/* ── what a card holds ───────────────────────────────────────────────── */
-
-/*
- * A list inside a card: rows to the edges, ruled between, and no box around each one.
- *
- * Boxing every row inside a boxed card is two borders saying the same thing, which is what made the
- * last one look like a filing cabinet. The card is the box; a row is a line in it.
- *
- * Named for the card rather than for what it is, because `.row` is the rail's and a second thing
- * called nearly that put a rule under every channel in the sidebar.
- */
-.card-rows {
+.setting-body {
 	display: flex;
 	flex-direction: column;
-	margin: 0 -1.4rem;
+	gap: 0.9rem;
+	min-width: 0;
+}
+
+/* A control on its own is as wide as it is, not as wide as the column: a column stretches what it
+   holds, and a button stretched to eighteen rems is a bar somebody is going to click by accident. */
+.setting-body > .pill,
+.setting-body > .switch,
+.setting-body > form > .pill {
+	align-self: flex-start;
+}
+
+/* Under this the two columns are two cramped columns, so it is one: the name and its sentence, and
+   the control under them. */
+@container (max-width: 46rem) {
+	.setting {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.9rem;
+	}
+}
+
+/* ── what a setting holds ────────────────────────────────────────────── */
+
+/*
+ * A list inside a setting: rows ruled between, and no box around each one.
+ *
+ * Named for the listing rather than for the row, because `.row` is the rail's and a second thing
+ * called nearly that put a rule under every channel in the sidebar once already.
+ */
+.listing {
+	display: flex;
+	flex-direction: column;
 	border-top: 1px solid var(--line-soft);
 }
 
-.card-row {
+.listed {
 	display: flex;
 	align-items: center;
 	gap: 0.85rem;
-	padding: 0.8rem 1.4rem;
+	padding: 0.85rem 0;
 	border-bottom: 1px solid var(--line-soft);
 	min-width: 0;
 }
 
-.card-row:hover {
-	background: #ffffff04;
-}
-
 /* What the row is about, taking the width, with anything to press held out of its way. */
-.card-row-main {
+.listed-main {
 	flex: 1;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 0.3rem;
+	gap: 0.35rem;
 }
 
-.card-row-said {
-	font: 0.84rem var(--mono);
+.listed-said {
+	font: 0.86rem var(--mono);
 	color: var(--text-strong);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-/*
- * The sentence on a row, which is a field until it is being read.
- *
- * Bordered only under a mouse or a cursor: a list of rows each with a boxed input in it reads as a
- * form to fill in, and what this mostly is is a sentence already written.
- */
-.says {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.says .field {
-	padding: 0.25rem 0.4rem;
-	border-color: transparent;
-	background: transparent;
-	font: 0.82rem / 1.5 var(--sans);
-	color: var(--text);
-}
-
-.says .field::placeholder {
-	color: color-mix(in srgb, var(--muted) 70%, transparent);
-}
-
-.card-row:hover .says .field,
-.says .field:focus {
-	border-color: var(--line);
-	background: var(--bg-code);
-}
-
-.card-row-meta {
+.listed-meta {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -1759,12 +1780,12 @@ ol.md-list {
 }
 
 /* Quiet until the row is under a mouse: a column of red is an alarm, and none of this is one. */
-.card-row .pill[data-no="true"] {
+.listed .pill[data-no="true"] {
 	opacity: 0;
 }
 
-.card-row:hover .pill[data-no="true"],
-.card-row:focus-within .pill[data-no="true"] {
+.listed:hover .pill[data-no="true"],
+.listed:focus-within .pill[data-no="true"] {
 	opacity: 1;
 }
 
@@ -1778,9 +1799,10 @@ ol.md-list {
 	display: flex;
 	align-items: stretch;
 	border: 1px solid var(--line);
-	border-radius: 8px;
+	border-radius: 6px;
 	background: var(--bg-code);
 	overflow: hidden;
+	max-width: 44rem;
 }
 
 .address code {
@@ -1803,16 +1825,50 @@ ol.md-list {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.35rem;
-	padding: 0 0.85rem;
+	padding: 0 0.85rem 0 0.72rem;
 	border-left: 1px solid var(--line);
 	background: #ffffff05;
 	font-size: 0.8rem;
 	color: var(--muted);
+	transition-property: background, color, scale;
+	transition-duration: 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease-out;
 }
 
 .address button:hover {
 	background: #ffffff0d;
 	color: var(--text-strong);
+}
+
+/*
+ * The sentence on a row, which is a field until it is being read.
+ *
+ * Bordered only under a mouse or a cursor: a list of rows each with a boxed input in it reads as a
+ * form to fill in, and what this mostly is is a sentence already written.
+ */
+.says {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	max-width: 44rem;
+}
+
+.says .field {
+	padding: 0.25rem 0.4rem;
+	border-color: transparent;
+	background: transparent;
+	font: 0.82rem / 1.5 var(--sans);
+	color: var(--text);
+}
+
+.says .field::placeholder {
+	color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.listed:hover .says .field,
+.says .field:focus {
+	border-color: var(--line);
+	background: var(--bg-code);
 }
 
 /*
@@ -1894,7 +1950,7 @@ ol.md-list {
 	max-width: 22rem;
 	padding: 0.5rem 2rem 0.5rem 0.7rem;
 	border: 1px solid var(--line);
-	border-radius: 8px;
+	border-radius: 6px;
 	background: var(--bg-code);
 	color: var(--text);
 	font: 0.88rem var(--sans);
@@ -1910,13 +1966,14 @@ ol.md-list {
 	border-color: var(--cyan);
 }
 
-/* A form of labelled lines inside a card, for the half of a thing that is set rather than pressed. */
+/* A form of labelled lines, for the half of a thing that is set rather than pressed. */
 .lines {
 	display: flex;
 	flex-direction: column;
 	gap: 0.75rem;
 	padding-top: 1rem;
 	border-top: 1px solid var(--line-soft);
+	max-width: 44rem;
 }
 
 .ask-line {
@@ -1962,7 +2019,7 @@ ol.md-list {
 	padding: 0.7rem 0.8rem;
 	/* A border and not a ring: this one carries a state — held or not — and a state is structure. */
 	border: 1px solid var(--line);
-	border-radius: 10px;
+	border-radius: 8px;
 	background: var(--bg-code);
 	text-align: left;
 	transition-property: border-color, background, scale;
@@ -1987,7 +2044,7 @@ ol.md-list {
 	width: 1.6rem;
 	height: 1.6rem;
 	margin-left: -0.3rem;
-	border-radius: 7px;
+	border-radius: 6px;
 	color: var(--muted);
 	transition-property: background, color, scale;
 	transition-duration: 0.12s, 0.12s, 150ms;
@@ -1997,6 +2054,365 @@ ol.md-list {
 .pane-back:hover {
 	background: #ffffff0f;
 	color: var(--text-strong);
+}
+
+/*
+ * One icon becoming another.
+ *
+ * Both are in the tree, one laid over the other, so the one arriving has somewhere to come from and
+ * the one leaving has somewhere to go: it scales up out of a quarter with the blur coming off while
+ * the other does the reverse. Mounting one and unmounting the other gives neither, and the change
+ * lands between two frames as a flicker.
+ *
+ * The curve is the one the spring in a motion library settles on. There is no motion library here
+ * and this wants none.
+ */
+.swap {
+	position: relative;
+	display: inline-grid;
+	place-items: center;
+	flex: none;
+}
+
+.swap > * {
+	grid-area: 1 / 1;
+	transition-property: opacity, filter, scale;
+	transition-duration: 300ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.swap > .swap-on,
+.swap[data-on="true"] > :not(.swap-on) {
+	opacity: 0;
+	scale: 0.25;
+	filter: blur(4px);
+}
+
+.swap[data-on="true"] > .swap-on {
+	opacity: 1;
+	scale: 1;
+	filter: blur(0px);
+}
+
+/* ── the box you type in ─────────────────────────────────────────────── */
+
+.composer {
+	padding: 0.6rem 1.2rem 1.4rem;
+}
+
+/* On the column the conversation is read in, so the answer and the question sit on one left edge. */
+.box,
+.menu {
+	width: 100%;
+	max-width: var(--measure);
+	margin-inline: auto;
+}
+
+.box {
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--bg-raised);
+	display: flex;
+	align-items: flex-start;
+	gap: 0.6rem;
+	padding: 0.8rem 1rem;
+	transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* A ring rather than a brighter border: the box has to say it has the keys from across the room,
+   and a single-pixel change of grey does not carry that far. */
+.box:focus-within {
+	border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 12%, transparent);
+}
+
+.box[data-mode="shell"] {
+	border-color: #6b4a86;
+}
+
+.box-mark {
+	font: 0.95rem var(--mono);
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+	padding-top: 0.16rem;
+	flex: none;
+}
+
+.box textarea {
+	flex: 1;
+	background: none;
+	border: 0;
+	resize: none;
+	color: var(--text);
+	font: 1rem / 1.6 var(--sans);
+	max-height: 12rem;
+}
+
+.box textarea::placeholder {
+	color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.box textarea:focus {
+	outline: none;
+}
+
+.menu {
+	border-radius: 8px;
+	background: var(--bg-raised);
+	/* Raised over the conversation, so a ring rather than a border. */
+	box-shadow: var(--shadow-border), 0 8px 24px #0006;
+	margin-bottom: 0.4rem;
+	overflow: hidden;
+	/* Every command there is, rather than a window onto them. The list is thirteen rows and it is
+	   the same thirteen every time — one that scrolls hides the bottom of a menu somebody is
+	   reading to find out what there is. */
+	padding: 0.25rem 0;
+}
+
+.menu-row {
+	display: flex;
+	gap: 0.9rem;
+	width: 100%;
+	padding: 0.28rem 0.8rem;
+	font: 0.82rem var(--mono);
+	text-align: left;
+}
+
+.menu-row[data-here="true"] {
+	background: #ffffff0f;
+}
+
+/* Padded to the longest of them, so the sentences line up whatever the names are — which is what
+   the terminal does with the same list, and the reason it can be read down rather than across. */
+.menu-name {
+	color: var(--code);
+	min-width: 49ch;
+	flex: none;
+}
+
+/* The names a room offers are not commands: a face and a name, and nothing to the right of them to
+   line a column up against — the menu is as wide as the names in it. */
+.menu-row .menu-name:has(.avatar),
+.menu-row .menu-name:has(.face) {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	min-width: 0;
+}
+
+.menu-does {
+	color: var(--muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ── the empty room, and the doors out of it ─────────────────────────── */
+
+.empty {
+	margin: auto;
+	max-width: 34rem;
+	padding: 2rem 1.2rem;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.empty h1 {
+	font-size: 1.5rem;
+	margin: 0;
+	color: var(--text-strong);
+}
+
+.empty p {
+	margin: 0;
+	color: var(--muted);
+}
+
+/*
+ * The things there are to do on a screen with nothing on it yet.
+ *
+ * Laid out rather than stretched: one across a pane this wide is a button pretending to be a
+ * section, and the row has to look the same whether it holds one of these or three.
+ *
+ * Called a choice rather than a card, which is what it was — and `.card` is the settings screen's,
+ * where a card is a surface with a footer. Two things under one name in one stylesheet is the
+ * second of them quietly restyling the first.
+ */
+.choices {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem;
+	margin-top: 0.4rem;
+}
+
+.choice {
+	border-radius: 8px;
+	background: var(--bg-raised);
+	box-shadow: var(--shadow-border);
+	padding: 0.9rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+	text-align: left;
+	flex: 0 1 10.5rem;
+	transition-property: box-shadow, scale;
+	transition-duration: 0.15s, 150ms;
+	transition-timing-function: ease-out, ease-out;
+}
+
+.choice:hover {
+	box-shadow: var(--shadow-border-hover);
+}
+
+.choice:active {
+	scale: 0.96;
+}
+
+.choice-glyph {
+	font-size: 1.1rem;
+}
+
+.choice-name {
+	color: var(--text-strong);
+	font-size: 0.9rem;
+}
+
+/* ── the state of the connection, said rather than implied ───────────── */
+
+.down {
+	background: #2a1a18;
+	border-bottom: 1px solid var(--red);
+	color: var(--red);
+	font: 0.82rem var(--mono);
+	padding: 0.45rem 1.2rem;
+}
+
+.why {
+	color: var(--red);
+	font-size: 0.85rem;
+}
+
+/* The way into one agent's own settings, at the end of the facts it sets. Quiet until it is wanted:
+   a title row is read for the name and the spend, and a lit control there would be read first. */
+.pane-gear {
+	display: grid;
+	place-items: center;
+	width: 1.5rem;
+	height: 1.5rem;
+	/* Against the numbers rather than a gap away from them: it sets what they say. */
+	margin-left: -0.5rem;
+	border-radius: 6px;
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.pane-gear:hover {
+	background: #ffffff0d;
+	color: var(--text-strong);
+}
+
+/* ── the plugins, as a screen rather than a list ─────────────────────── */
+
+/*
+ * The title of a page, which the bar at the top of the pane is not.
+ *
+ * That bar is the frame: it says which screen the column is on and carries its numbers, the way it
+ * carries an agent's model and spend. This is the page itself opening — bigger, with the sentence
+ * that says what the page is for under it — and it is what a person reads first when they arrive
+ * somewhere they have never been.
+ */
+.page-head {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+}
+
+.page-title {
+	margin: 0;
+	font-size: 1.55rem;
+	line-height: 1.2;
+	font-weight: 600;
+	letter-spacing: -0.015em;
+	color: var(--text-strong);
+}
+
+.page-says {
+	margin: 0;
+	max-width: 44rem;
+	font-size: 0.95rem;
+	line-height: 1.65;
+	color: var(--muted);
+}
+
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: 1.15rem;
+}
+
+/* The line between what is connected and what could be, drawn rather than left to a gap: a page
+   this long needs the eye to be told where one list ends. */
+.section + .section {
+	border-top: 1px solid var(--line-soft);
+	padding-top: 2.2rem;
+}
+
+.section-head {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+}
+
+.section-title {
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 1.02rem;
+	font-weight: 600;
+	color: var(--text-strong);
+}
+
+/* The count beside the heading rather than inside it: "Connected · 1" made the number part of the
+   name of the thing, and it is a fact about it. */
+.tally {
+	border: 1px solid var(--line);
+	border-radius: 5px;
+	padding: 0.05rem 0.5rem;
+	font: 0.72rem var(--mono);
+	color: var(--muted);
+}
+
+.section-says {
+	margin: 0;
+	max-width: 46rem;
+	font-size: 0.83rem;
+	line-height: 1.55;
+	color: var(--muted);
+}
+
+/* The group's name, with a rule carried out to the edge so the grid under it reads as its own. */
+.shelf-label {
+	display: flex;
+	align-items: center;
+	gap: 0.7rem;
+	font: 600 0.7rem / 1 var(--sans);
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+	margin-top: 0.5rem;
+}
+
+.shelf-label::after {
+	content: "";
+	flex: 1;
+	height: 1px;
+	background: var(--line-soft);
+}
+
+.plugs {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr));
+	gap: 0.9rem;
 }
 
 /*
@@ -2012,7 +2428,7 @@ ol.md-list {
 	flex-direction: column;
 	gap: 0.7rem;
 	padding: 1.05rem;
-	border-radius: 12px;
+	border-radius: 10px;
 	background: var(--bg-raised);
 	/* A ring rather than a border: this is a card that is raised, and depth is not structure. */
 	box-shadow: var(--shadow-border);
@@ -2038,7 +2454,7 @@ ol.md-list {
 }
 
 .conn {
-	border-radius: 12px;
+	border-radius: 10px;
 	background: var(--bg-raised);
 	/* A ring for the card's own depth. The rule under it, which separates what the connection is
 	   from who holds it, is structure and stays a border. */
@@ -2110,7 +2526,7 @@ ol.md-list {
 	align-items: center;
 	gap: 0.3rem;
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: 5px;
 	padding: 0.15rem 0.65rem;
 	font: 0.76rem var(--mono);
 	color: var(--muted);
@@ -2145,7 +2561,7 @@ ol.md-list {
 	gap: 0.35rem;
 	flex: none;
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: 6px;
 	padding: 0.3rem 0.85rem;
 	background: var(--bg-code);
 	font: 500 0.82rem var(--sans);
@@ -2231,7 +2647,7 @@ ol.md-list {
 	gap: 0.3rem;
 	flex: none;
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: 5px;
 	padding: 0.12rem 0.6rem;
 	font: 0.72rem var(--mono);
 	color: var(--muted);
@@ -2393,7 +2809,7 @@ ol.md-list {
  */
 .site-mark {
 	flex: none;
-	border-radius: 8px;
+	border-radius: 6px;
 	background: #eceef1;
 	outline: 1px solid oklch(0 0 0 / 0.1);
 	outline-offset: -1px;
@@ -2425,7 +2841,7 @@ ol.md-list {
 	flex: none;
 	align-self: flex-end;
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: 6px;
 	transition-property: border-color, color, background, scale;
 	transition-duration: 0.12s, 0.12s, 0.12s, 150ms;
 	transition-timing-function: ease, ease, ease, ease-out;
