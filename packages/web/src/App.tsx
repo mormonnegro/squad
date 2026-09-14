@@ -523,10 +523,10 @@ export function App() {
 							// Where you are, not what you last opened: the plugins take the pane, so while they
 							// are up nothing in this list is the thing on screen.
 							//
-							// An agent's settings are that agent, so the row stays lit while they are up: you
-							// are inside it either way, and which of its screens you are on is what the pane
-							// is for saying.
-							here={one.id === chosen && showing === "none" && !making && browsing === undefined}
+							// An agent's settings are that agent, and so are its files: the row stays lit while
+							// either is up, because you are inside that agent either way, and which of its
+							// screens you are on is what the pane is for saying.
+							here={one.id === chosen && showing === "none" && !making}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
