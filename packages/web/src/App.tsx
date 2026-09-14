@@ -835,10 +835,10 @@ function Nothing({ onMake }: { onMake: () => void }) {
 				An agent here is a container that stays running and wakes up when something happens. Pick
 				one on the left, or make one.
 			</p>
-			<div className="cards">
-				<button type="button" className="card" onClick={onMake}>
-					<span className="card-glyph">＋</span>
-					<span className="card-name">Create an agent</span>
+			<div className="choices">
+				<button type="button" className="choice" onClick={onMake}>
+					<span className="choice-glyph">＋</span>
+					<span className="choice-name">Create an agent</span>
 				</button>
 			</div>
 		</div>

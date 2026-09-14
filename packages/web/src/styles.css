@@ -412,6 +412,13 @@
  * So it hangs over the end of the row instead, and what was written there steps aside while it is
  * up. Faded rather than hidden, so it is still a thing the keyboard can reach.
  */
+/*
+ * An icon that appears because of where the mouse is, rather than because of what it does.
+ *
+ * Fading one in leaves it arriving from nowhere at full size. Coming out of a quarter with the blur
+ * lifting is the same three-hundred milliseconds spent saying it came from the row it belongs to.
+ * Rotation is its own property so the open state can turn it without touching the scale.
+ */
 .row-open {
 	position: absolute;
 	right: 0.9rem;
@@ -421,14 +428,20 @@
 	height: var(--row-tail);
 	color: var(--muted);
 	opacity: 0;
+	scale: 0.25;
+	filter: blur(4px);
 	pointer-events: none;
-	transition: opacity 120ms ease, transform 150ms ease;
+	transition-property: opacity, filter, scale, rotate;
+	transition-duration: 300ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 .row:hover .row-open,
 .row:focus-within .row-open,
 .row[data-open="true"] .row-open {
 	opacity: 1;
+	scale: 1;
+	filter: blur(0px);
 	pointer-events: auto;
 }
 
@@ -446,7 +459,7 @@
 }
 
 .row[data-open="true"] .row-open {
-	transform: rotate(90deg);
+	rotate: 90deg;
 	color: var(--text);
 }
 
@@ -701,11 +714,19 @@
 /* Taking somebody out of a room is not something to offer until it is wanted. */
 .room-off {
 	opacity: 0;
+	scale: 0.25;
+	filter: blur(4px);
 	color: var(--red);
+	transition-property: opacity, filter, scale;
+	transition-duration: 300ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.room-one:hover .room-off {
+.room-one:hover .room-off,
+.room-one:focus-visible .room-off {
 	opacity: 1;
+	scale: 1;
+	filter: blur(0px);
 }
 
 .room-add {
@@ -854,18 +875,25 @@
 	left: 50%;
 	transform: translateX(-50%);
 	bottom: 0.4rem;
-	border: 1px solid var(--line);
 	border-radius: 999px;
 	background: var(--bg-raised);
 	color: var(--muted);
 	font: 0.76rem var(--mono);
 	padding: 0.3rem 0.9rem;
-	box-shadow: 0 2px 12px #0008;
+	/* Floating over the conversation, so the ring and the lift are the same declaration. */
+	box-shadow: var(--shadow-border), 0 2px 12px #0008;
+	transition-property: box-shadow, color, scale;
+	transition-duration: 0.15s, 0.12s, 150ms;
+	transition-timing-function: ease-out, ease, ease-out;
 }
 
 .latest:hover {
 	color: var(--text-strong);
-	border-color: var(--muted);
+	box-shadow: var(--shadow-border-hover), 0 2px 12px #0008;
+}
+
+.latest:active {
+	scale: 0.96;
 }
 
 /* So the pill above is placed against the conversation rather than against the window. */
@@ -1156,6 +1184,10 @@ ol.md-list {
 	border-radius: 2px;
 	object-fit: contain;
 	flex: none;
+	/* Somebody else's favicon, on a dark ground: pure white at a tenth, and an outline rather than a
+	   border so fifteen pixels stay fifteen pixels. A tinted ring at this size is a grey smudge. */
+	outline: 1px solid oklch(1 0 0 / 0.1);
+	outline-offset: -1px;
 }
 
 /* The stand-in for a site that serves no icon: its initial, in the space the icon would have had,
@@ -1172,7 +1204,8 @@ ol.md-list {
 /* ── the question an agent raises, where it raised it ────────────────── */
 
 .ask {
-	border: 1px solid var(--line);
+	/* The ring is depth; the amber edge is which agent is asking and why, which is structure. */
+	box-shadow: var(--shadow-border);
 	border-left: 2px solid var(--amber);
 	background: var(--bg-raised);
 	border-radius: 9px;
@@ -1364,9 +1397,10 @@ ol.md-list {
 }
 
 .menu {
-	border: 1px solid var(--line);
 	border-radius: 11px;
 	background: var(--bg-raised);
+	/* Raised over the conversation, so a ring rather than a border. */
+	box-shadow: var(--shadow-border), 0 8px 24px #0006;
 	margin-bottom: 0.4rem;
 	overflow: hidden;
 	/* Every command there is, rather than a window onto them. The list is thirteen rows and it is
@@ -1435,36 +1469,51 @@ ol.md-list {
 	color: var(--muted);
 }
 
-/* Laid out rather than stretched: one card across a pane this wide is a button pretending to be a
-   section, and the row has to look the same whether it holds one of these or three. */
-.cards {
+/*
+ * The things there are to do on a screen with nothing on it yet.
+ *
+ * Laid out rather than stretched: one across a pane this wide is a button pretending to be a
+ * section, and the row has to look the same whether it holds one of these or three.
+ *
+ * Called a choice rather than a card, which is what it was — and `.card` is the settings screen's,
+ * where a card is a surface with a footer. Two things under one name in one stylesheet is the
+ * second of them quietly restyling the first.
+ */
+.choices {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.7rem;
 	margin-top: 0.4rem;
 }
 
-.card {
-	border: 1px solid var(--line);
+.choice {
 	border-radius: 7px;
 	background: var(--bg-raised);
+	box-shadow: var(--shadow-border);
 	padding: 0.9rem;
 	display: flex;
 	flex-direction: column;
 	gap: 0.45rem;
 	text-align: left;
 	flex: 0 1 10.5rem;
+	transition-property: box-shadow, scale;
+	transition-duration: 0.15s, 150ms;
+	transition-timing-function: ease-out, ease-out;
 }
 
-.card:hover {
-	border-color: #363c44;
+.choice:hover {
+	box-shadow: var(--shadow-border-hover);
 }
 
-.card-glyph {
+.choice:active {
+	scale: 0.96;
+}
+
+.choice-glyph {
 	font-size: 1.1rem;
 }
 
-.card-name {
+.choice-name {
 	color: var(--text-strong);
 	font-size: 0.9rem;
 }
@@ -2069,9 +2118,11 @@ ol.md-list {
 }
 
 .conn {
-	border: 1px solid var(--line);
 	border-radius: 12px;
 	background: var(--bg-raised);
+	/* A ring for the card's own depth. The rule under it, which separates what the connection is
+	   from who holds it, is structure and stays a border. */
+	box-shadow: var(--shadow-border);
 }
 
 .conn-head {
@@ -2196,6 +2247,12 @@ ol.md-list {
  */
 .pill:active:not(:disabled),
 .key:active:not(:disabled),
+.menu-row:active,
+.task-add:active,
+.task-off:active,
+.room-one:active,
+.room-add:active,
+.box-stop:active,
 .plug:active:not(:disabled),
 .plug-row:active:not(:disabled),
 .switch:active:not(:disabled),
@@ -2451,10 +2508,13 @@ ol.md-list {
 	align-self: flex-end;
 	border: 1px solid var(--line);
 	border-radius: 999px;
-	padding: 0.22rem 0.7rem;
+	transition-property: border-color, color, background, scale;
+	transition-duration: 0.12s, 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease, ease-out;
+	/* Two pixels closer on the icon side: the square carries less ink to its edge than the word. */
+	padding: 0.22rem 0.7rem 0.22rem 0.58rem;
 	font: 500 0.78rem var(--sans);
 	color: var(--muted);
-	transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
 
 .box-stop:hover {
