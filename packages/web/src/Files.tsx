@@ -371,7 +371,9 @@ export function Files({
 function Crumbs({ where, onWhere }: { where: string; onWhere: (path: string) => void }) {
 	const parts = where === "" ? [] : where.split("/");
 	return (
-		<div className="flex flex-wrap items-center gap-1 font-mono text-[0.85rem]">
+		// The padding hangs outside the column, so the path starts on the same line as the pills above
+		// it and the rows below: one left edge down the screen rather than three that nearly agree.
+		<div className="-mx-1 flex flex-wrap items-center gap-1 font-mono text-[0.85rem]">
 			<button
 				type="button"
 				className="rounded px-1 py-0.5 text-muted hover:bg-white/5 hover:text-said"
@@ -419,7 +421,7 @@ function Rows({
 	const hidden = listing.entries.length - shown.length;
 
 	return (
-		<div className="flex flex-col">
+		<div className="-mx-2.5 flex flex-col">
 			{where !== "" && (
 				<button
 					type="button"
@@ -440,7 +442,7 @@ function Rows({
 			))}
 
 			{shown.length === 0 && (
-				<div className="flex flex-col items-start gap-2 py-6">
+				<div className="flex flex-col items-start gap-2 px-2.5 py-6">
 					<p className="text-[0.9rem] text-muted">
 						{listing.entries.length === 0
 							? "Nothing in here yet."
@@ -453,7 +455,7 @@ function Rows({
 				</div>
 			)}
 
-			<div className="mt-3 flex items-center gap-3 text-[0.78rem] text-muted">
+			<div className="mt-3 flex items-center gap-3 px-2.5 text-[0.78rem] text-muted">
 				{listing.entries.length < listing.total && (
 					<span>
 						{listing.entries.length} of {listing.total} — the rest is past what a list is for.
@@ -573,7 +575,11 @@ function Document({
 					reading…
 				</p>
 			) : picture ? (
-				<img src={url} alt={name} className="max-w-full self-start rounded-lg" />
+				<img
+					src={url}
+					alt={name}
+					className="max-h-[70vh] max-w-full self-start rounded-lg object-contain"
+				/>
 			) : text === undefined ? (
 				<p className="text-[0.88rem] text-muted">
 					{sized(size)} of something that is not text. Save it and open it where it belongs.

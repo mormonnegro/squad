@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -389,6 +389,24 @@ describe("the files", () => {
 	it("says the bundle is missing rather than serving a blank page", async () => {
 		const response = await fetch(at("/"), { headers: { cookie: `squad_web=${web.token}` } });
 		expect(await response.text()).toContain("has not been built");
+	});
+
+	/*
+	 * The addresses in the HTML are relative, so a page opened deep inside the application asks for
+	 * its own script from wherever it is standing. Without this, a link to a conversation or a folder
+	 * works while you click your way to it and is a blank screen when somebody opens it.
+	 */
+	it("finds the bundle's own files from an address deep inside the application", async () => {
+		await mkdir(join(root, "assets"), { recursive: true });
+		await writeFile(join(root, "assets", "index-abc.js"), "export const here = true;\n");
+
+		const response = await fetch(at("/agents/scout/files/workspace/assets/index-abc.js"), {
+			headers: { cookie: `squad_web=${web.token}` },
+		});
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("text/javascript");
+		expect(await response.text()).toContain("here");
 	});
 
 	it("does not serve its way out of the bundle", async () => {

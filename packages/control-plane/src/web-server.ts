@@ -828,10 +828,39 @@ export class WebServer {
 		const file = inside && extname(target) !== "" ? target : join(root, "index.html");
 
 		const found = await stat(file).catch(() => undefined);
+		/*
+		 * The bundle's own files, asked for from wherever the page happens to be standing.
+		 *
+		 * The addresses in the HTML are relative — `./assets/index-abc.js` — because the same bundle is
+		 * served from here at the root and from a website under a path, and an absolute address is
+		 * wrong in one of the two. What that costs is this: a page opened at `/agents/scout/files/x`
+		 * asks for `/agents/scout/files/assets/index-abc.js`, which is not where anything is, and the
+		 * failure is a blank screen with nothing in the console — a deep link that works while you
+		 * click your way to it and never when somebody opens it.
+		 *
+		 * So an asset is found by its own directory rather than by the path it was asked from. One
+		 * directory, named by the build, and everything in it is already inside the bundle — which is
+		 * the same trick the served ports pull with the referer, for the same reason.
+		 */
+		if (found === undefined && inside) {
+			const own = asked.lastIndexOf(`assets/`);
+			if (own > 0) {
+				const under = resolve(root, asked.slice(own));
+				if (under.startsWith(root + sep)) {
+					const also = await stat(under).catch(() => undefined);
+					if (also?.isFile() === true) return this.#send(under, response);
+				}
+			}
+		}
 		if (found === undefined || !found.isFile()) {
 			await this.#unbuilt(response);
 			return;
 		}
+		this.#send(file, response);
+	}
+
+	/** One file of the bundle, out. */
+	#send(file: string, response: ServerResponse): void {
 		response.writeHead(200, {
 			"content-type": TYPES[extname(file)] ?? "application/octet-stream",
 			// The bundle's names carry its version; the page that names them must never be a stale copy.
