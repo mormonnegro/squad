@@ -48,6 +48,20 @@
 	--red: #e0796f;
 	--cyan: #79c6dd;
 	--blue: #93a9ea;
+	/*
+	 * What a literal is drawn in: a path, an event name, a command, an id. And a link, which is the
+	 * other thing a sentence holds that is not a word.
+	 *
+	 * The text's own colour, which is to say none of its own. Cyan is this console's accent — what
+	 * is selected, what has focus, what you may press — and spending it on the words inside a
+	 * sentence made every identifier look like something to click, in a paragraph that already had
+	 * five of them. The box around a literal and the rule under a link say what each one is; colour
+	 * was saying it a second time, in the one colour that meant something else.
+	 *
+	 * Its own token rather than the raw value, because two things use it and they should move
+	 * together.
+	 */
+	--code: var(--text);
 	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
 
@@ -912,11 +926,11 @@ ol.md-list {
 
 .md-code {
 	font: 0.86em var(--mono);
-	background: color-mix(in srgb, var(--cyan) 9%, var(--bg-code));
-	border: 1px solid color-mix(in srgb, var(--cyan) 14%, var(--line-soft));
+	background: color-mix(in srgb, var(--code) 9%, var(--bg-code));
+	border: 1px solid color-mix(in srgb, var(--code) 14%, var(--line-soft));
 	border-radius: 5px;
 	padding: 0.12em 0.38em;
-	color: var(--cyan);
+	color: var(--code);
 }
 
 .md-fence {
@@ -989,20 +1003,27 @@ ol.md-list {
 	text-align: center;
 }
 
-/* Underlined, faintly, because in a conversation a link has to say it is one before it is hovered —
-   and faintly rather than fully, because a paragraph with three addresses in it should not read as
-   three strikethroughs. */
+/*
+ * Underlined, faintly, because in a conversation a link has to say it is one before it is hovered —
+ * and faintly rather than fully, because a paragraph with three addresses in it should not read as
+ * three strikethroughs.
+ *
+ * The rule under it is the whole of what marks it. It carries no colour of its own for the reason a
+ * literal carries none: the accent means something else here, and a sentence with five coloured
+ * words in it has no emphasis left to give the one that matters.
+ */
 .md a {
-	color: var(--cyan);
+	color: var(--code);
 	text-decoration: underline;
 	text-decoration-thickness: 1px;
-	text-decoration-color: color-mix(in srgb, var(--cyan) 32%, transparent);
+	text-decoration-color: color-mix(in srgb, var(--muted) 55%, transparent);
 	text-underline-offset: 3px;
 	transition: color 0.12s ease, text-decoration-color 0.12s ease;
 }
 
+/* Brighter and fully ruled under the mouse, which is where a link says it is going to do something. */
 .md a:hover {
-	color: color-mix(in srgb, var(--cyan) 80%, white);
+	color: var(--text-strong);
 	text-decoration-color: currentColor;
 }
 
@@ -1124,7 +1145,7 @@ ol.md-list {
 
 .ask-what code {
 	font: 0.85rem var(--mono);
-	color: var(--cyan);
+	color: var(--code);
 }
 
 /* The words themselves, set apart from the sentence about them: what is being approved is this text
@@ -1324,7 +1345,7 @@ ol.md-list {
 /* Padded to the longest of them, so the sentences line up whatever the names are — which is what
    the terminal does with the same list, and the reason it can be read down rather than across. */
 .menu-name {
-	color: var(--cyan);
+	color: var(--code);
 	min-width: 49ch;
 	flex: none;
 }
@@ -1767,7 +1788,7 @@ ol.md-list {
 	min-width: 0;
 	padding: 0.55rem 0.7rem;
 	font: 0.82rem / 1.6 var(--mono);
-	color: var(--cyan);
+	color: var(--code);
 	overflow-x: auto;
 	white-space: nowrap;
 	scrollbar-width: none;
