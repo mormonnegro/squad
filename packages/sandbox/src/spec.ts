@@ -19,6 +19,17 @@ export const SANDBOX_HOME = "/home/agent";
  */
 export const SANDBOX_WORKSPACE_PATH = `${SANDBOX_HOME}/workspace`;
 
+/**
+ * Where what the operator leaves for the agent lands.
+ *
+ * Under the workspace rather than beside it, because it is work rather than soul, and named rather
+ * than dropped at the top of it, because the top of the workspace is the one place the agent is
+ * told to keep clear — a file left loose there is a file the next turn tidies away, which is the
+ * one thing a drawer for somebody else's things must never do. The house rules say so out loud, so
+ * that what is in here is read and not swept.
+ */
+export const SANDBOX_INBOX_PATH = `${SANDBOX_WORKSPACE_PATH}/inbox`;
+
 /** Non-root uid:gid the agent process runs as. Must match the sandbox image. */
 export const SANDBOX_USER = "1000:1000";
 

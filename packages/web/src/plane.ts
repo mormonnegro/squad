@@ -85,6 +85,53 @@ export interface Skill {
 }
 
 /**
+ * One name in one of an agent's folders.
+ *
+ * Written out here like everything else on this wire. A listing is read once and drawn; nothing on
+ * this side keeps one, because the box is the answer and it changes while you are looking at it.
+ */
+export interface FileEntry {
+	readonly name: string;
+	readonly kind: "dir" | "file";
+	/** A symlink, drawn as whatever it points at and worth saying is one. */
+	readonly link?: boolean;
+	readonly size: number;
+	readonly changedAt: string;
+}
+
+/**
+ * What is at a path: the names in it, or the fact that it is a file.
+ *
+ * One answer for both because an address is not a promise about what is at the end of it. A link to
+ * a folder that has since become a file is a link somebody will click, and a screen that had to
+ * guess first would be a screen that guesses wrong in front of them.
+ */
+export type Listing =
+	| {
+			readonly at: string;
+			readonly kind: "dir";
+			readonly entries: readonly FileEntry[];
+			/** How many are in there, which is more than arrived when the listing was cut short. */
+			readonly total: number;
+	  }
+	| {
+			readonly at: string;
+			readonly kind: "file";
+			readonly size: number;
+			readonly changedAt: string;
+	  };
+
+/** As much of a file as one answer carries, from a byte offset, as base64. */
+export interface Slice {
+	readonly at: string;
+	readonly from: number;
+	readonly size: number;
+	readonly changedAt: string;
+	readonly data: string;
+	readonly more: boolean;
+}
+
+/**
  * Something outside this plane that gives an agent a turn.
  *
  * The secret is only ever on the one that comes back from making it. Everything read afterwards has
@@ -401,6 +448,44 @@ export class Plane {
 	async complete(agentId: string, word: string): Promise<readonly string[]> {
 		const answer = await this.#ask({ op: "complete", agentId, word });
 		return (answer.options as string[] | undefined) ?? [];
+	}
+
+	/**
+	 * What is in one of an agent's folders, or that the path is a file.
+	 *
+	 * The same reach the shell already had and a different shape: `!ls` is a screenful to read and
+	 * type against, and this is rows to point at. Asked again every time it is drawn — a box changes
+	 * while somebody is looking at it, and a listing kept on this side would be a picture of a
+	 * minute ago.
+	 */
+	async files(agentId: string, at: string): Promise<Listing> {
+		const answer = await this.#ask({ op: "files", agentId, at });
+		return answer.listing as Listing;
+	}
+
+	/** As much of one of its files as an answer carries, from a byte offset. base64, always. */
+	async readFile(agentId: string, at: string, from = 0): Promise<Slice> {
+		const answer = await this.#ask({ op: "read-file", agentId, at, from });
+		return answer.slice as Slice;
+	}
+
+	/**
+	 * Puts a chunk of a file into the box, at an offset. The last of them says so and lands it.
+	 *
+	 * Chunked because a line of this protocol is not the place for a video, and because an upload
+	 * with no progress on it is an upload people cancel. Nothing appears under the name until the
+	 * last chunk, so a drop that fails halfway leaves nothing for the agent to read as a document.
+	 */
+	async putFile(
+		agentId: string,
+		at: string,
+		data: string,
+		from: number,
+		last: boolean,
+	): Promise<{ size: number; done: boolean }> {
+		const answer = await this.#ask({ op: "put-file", agentId, at, data, from, last });
+		const wrote = answer.wrote as { size?: number; done?: boolean } | undefined;
+		return { size: wrote?.size ?? 0, done: wrote?.done ?? last };
 	}
 
 	async create(agentId: string): Promise<AgentSummary> {

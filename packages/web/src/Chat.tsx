@@ -1,5 +1,5 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
-import { Settings2, Square, Terminal, User } from "lucide-react";
+import { FolderOpen, Settings2, Square, Terminal, User } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -20,6 +20,7 @@ export function Chat({
 	live,
 	onLocal,
 	onSetup,
+	onFiles,
 }: {
 	plane: Plane;
 	agent: AgentSummary;
@@ -27,6 +28,8 @@ export function Chat({
 	live: Live;
 	onLocal: (agentId: string, said: Utterance) => void;
 	onSetup: () => void;
+	/** What it has in its box: what it built, what it wrote down, what you left it. */
+	onFiles: () => void;
 }) {
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
@@ -73,6 +76,12 @@ export function Chat({
 					{/* The facts to the left of this are the ones this button sets: the model it thinks
 					    with and the ceiling it spends against are read here and changed there, which is
 					    why it sits at the end of them rather than anywhere else on the screen. */}
+					{/* Beside the settings because they are the two other rooms of the same agent: what it
+					    is set to, and what it has got. The conversation says what it did; this is where
+					    what it did ended up. */}
+					<button type="button" className="pane-gear" onClick={onFiles} title="Files">
+						<FolderOpen className="size-3.5" />
+					</button>
 					<button type="button" className="pane-gear" onClick={onSetup} title="Settings">
 						<Settings2 className="size-3.5" />
 					</button>

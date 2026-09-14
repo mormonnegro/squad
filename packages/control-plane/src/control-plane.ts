@@ -70,6 +70,22 @@ import {
 	withoutSecrets,
 } from "./commands.ts";
 import { ExecStream } from "./exec-stream.ts";
+import {
+	FILE_CHUNK,
+	folderOf,
+	insideBox,
+	LIST_SCRIPT,
+	type Listing,
+	MOST_ENTRIES,
+	nameOfPath,
+	READ_SCRIPT,
+	readAnswer,
+	refused,
+	type Slice,
+	tilde,
+	WRITE_SCRIPT,
+	type Wrote,
+} from "./files.ts";
 import { type Gate, Gates, gateOf, gateSaid } from "./gates.ts";
 import {
 	AddedGrants,
@@ -3080,6 +3096,124 @@ export class ControlPlane {
 			.catch(() => undefined);
 		if (found === undefined || found.exitCode !== 0) return [];
 		return found.stdout.split("\n").filter((option) => option.length > 0);
+	}
+
+	/**
+	 * What is at a path inside an agent's box: the names in that folder, or that it is a file.
+	 *
+	 * The same reach as the shell above it and none of its shape. `!ls` answers a screenful of text
+	 * that has to be read, remembered and typed against; this answers rows, which is what a person
+	 * pointing at a folder is asking for. Nothing here is a new authority — whoever can reach this
+	 * socket already holds that shell — and what it buys is that the question gets asked at all.
+	 *
+	 * Independent of the turn, like the shell, so an agent that is working can be looked at while it
+	 * works. That is when there is most to see: a file appearing under a name nobody expected is the
+	 * fastest way to find out what a turn actually decided to do.
+	 */
+	async files(agentId: string, at: string): Promise<Listing> {
+		const path = this.#insideBox(agentId, at);
+		const found = await this.sandboxes.exec(agentId, [
+			"node",
+			"-e",
+			LIST_SCRIPT,
+			path,
+			String(MOST_ENTRIES),
+		]);
+		if (found.exitCode !== 0)
+			throw new Error(refused(found.stderr, `Nothing is readable at ${tilde(path)}.`));
+		return readAnswer<Listing>(found.stdout);
+	}
+
+	/**
+	 * As much of one of its files as an answer carries, from a byte offset, as base64.
+	 *
+	 * In chunks rather than whole because a file has no upper bound and a protocol line does: the
+	 * relay in front of a plane that is not on this machine refuses a frame over a quarter of a
+	 * megabyte, and an answer that worked locally and failed over a link would be a feature that
+	 * works on the developer's desk.
+	 *
+	 * base64 rather than text because half of what is worth looking at is not text — a screenshot,
+	 * a PDF, the sqlite file a project keeps its state in — and a reader that could only carry
+	 * strings would have to decide what a file is before it has read a byte of it.
+	 */
+	async readFile(agentId: string, at: string, from = 0): Promise<Slice> {
+		const path = this.#insideBox(agentId, at);
+		const found = await this.sandboxes.exec(agentId, [
+			"node",
+			"-e",
+			READ_SCRIPT,
+			path,
+			String(Math.max(0, Math.floor(from))),
+			String(FILE_CHUNK),
+		]);
+		if (found.exitCode !== 0)
+			throw new Error(refused(found.stderr, `${tilde(path)} could not be read.`));
+		return readAnswer<Slice>(found.stdout);
+	}
+
+	/**
+	 * Puts a file into the box: one chunk, at an offset, and the last of them says so.
+	 *
+	 * The other direction, and the one that had no answer at all. An operator holding a PDF had to
+	 * talk the agent into fetching it from somewhere the agent could reach — which means standing up
+	 * a web server for a file that is already on the desk, or pasting it into the conversation as
+	 * text it is not. Dropped on the screen instead, and it is in there.
+	 *
+	 * The last chunk is what writes the line into the conversation, and that line is the whole point
+	 * of saying anything: a file that lands in a container nobody mentions is a file nobody knows
+	 * arrived. The agent is not woken for it — a drop is not a turn, and spending one on every file
+	 * of a folder is a bill for saying hello — so the console offers the sentence and the operator
+	 * sends it.
+	 */
+	async putFile(
+		agentId: string,
+		at: string,
+		data: string,
+		from: number,
+		last: boolean,
+	): Promise<Wrote> {
+		const path = this.#insideBox(agentId, at);
+		const result = await this.sandboxes.run(
+			agentId,
+			[
+				"node",
+				"-e",
+				WRITE_SCRIPT,
+				path,
+				String(Math.max(0, Math.floor(from))),
+				last ? "last" : "more",
+			],
+			data,
+			{ timeoutMs: SHELL_TIMEOUT_MS },
+		);
+		if (result.exitCode !== 0) {
+			throw new Error(refused(result.stderr, `${tilde(path)} could not be written.`));
+		}
+		const wrote = readAnswer<Wrote>(result.stdout);
+		if (last) {
+			await this.#record(agentId, {
+				from: "plane",
+				text: `You left ${nameOfPath(path)} in ${tilde(folderOf(path))}.`,
+			});
+			this.#emit({ kind: "note", who: agentId, action: "given", detail: tilde(path) });
+		}
+		return wrote;
+	}
+
+	/**
+	 * The agent this is about, and where in its box the path lands — or a refusal, before anything
+	 * is run.
+	 *
+	 * Both questions in one because they are asked together every time and both have to be settled
+	 * before a container is touched: a path is checked here rather than in the script inside the box,
+	 * so that the edge of what this screen shows is a fact about the plane and not about whatever
+	 * program happened to run.
+	 */
+	#insideBox(agentId: string, at: string): string {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		return insideBox(at);
 	}
 
 	async #runShell(agentId: string, line: string): Promise<string> {

@@ -7,6 +7,7 @@ import type { CarrierSpec, Channel, Reply, Signer } from "@squad/channels";
 import type { Schedule } from "@squad/scheduler";
 import type { EmailOffer, LoginPage } from "./commands.ts";
 import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts";
+import type { Listing, Slice, Wrote } from "./files.ts";
 import type { Gate } from "./gates.ts";
 import type { GrantStanding } from "./grants.ts";
 import type { MailStanding } from "./mailbox.ts";
@@ -54,6 +55,36 @@ export type ControlRequest =
 			readonly op: "complete";
 			readonly agentId: string;
 			readonly word: string;
+	  }
+	/**
+	 * What is at a path inside an agent's box, and the bytes of one of its files.
+	 *
+	 * On this socket for the same reason the shell is: it is the operator's reach into the container,
+	 * and a webhook that could ask would be a stranger with a URL reading an agent's files. A drop
+	 * goes the other way and is the same trust — whoever may write into that box may put a document
+	 * in it.
+	 *
+	 * In chunks, with an offset, because a file has no upper bound and a line of this protocol does.
+	 * `last` on a write is what moves the file under its own name, so an upload that stops halfway
+	 * leaves nothing the agent can mistake for a finished document.
+	 */
+	| { readonly id: string; readonly op: "files"; readonly agentId: string; readonly at: string }
+	| {
+			readonly id: string;
+			readonly op: "read-file";
+			readonly agentId: string;
+			readonly at: string;
+			readonly from?: number;
+	  }
+	| {
+			readonly id: string;
+			readonly op: "put-file";
+			readonly agentId: string;
+			readonly at: string;
+			/** The chunk, base64. Never in the command line: arguments are visible inside the box. */
+			readonly data: string;
+			readonly from: number;
+			readonly last: boolean;
 	  }
 	/**
 	 * The schedules an agent is waiting on, with what each of them will say to it.
@@ -485,6 +516,12 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly offer: EmailOffer }
 	/** What a `!` printed, and the directory it left the next one standing in. */
 	| { readonly id: string; readonly ok: true; readonly text: string; readonly cwd: string }
+	/** What is at a path in an agent's box: the names in that folder, or that it is a file. */
+	| { readonly id: string; readonly ok: true; readonly listing: Listing }
+	/** As much of one of its files as an answer carries, from an offset, as base64. */
+	| { readonly id: string; readonly ok: true; readonly slice: Slice }
+	/** What a written chunk landed as, and whether that was the last of them. */
+	| { readonly id: string; readonly ok: true; readonly wrote: Wrote }
 	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
 	| { readonly id: string; readonly ok: true; readonly options: readonly string[] }
 	| { readonly id: string; readonly ok: false; readonly error: string }
@@ -760,6 +797,30 @@ export class ControlServer {
 			} else if (request.op === "shell") {
 				const ran = await this.#plane.shell(request.agentId, request.line);
 				this.#write(socket, { id: request.id, ok: true, text: ran.text, cwd: ran.cwd });
+			} else if (request.op === "files") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					listing: await this.#plane.files(request.agentId, request.at),
+				});
+			} else if (request.op === "read-file") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					slice: await this.#plane.readFile(request.agentId, request.at, request.from ?? 0),
+				});
+			} else if (request.op === "put-file") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					wrote: await this.#plane.putFile(
+						request.agentId,
+						request.at,
+						request.data,
+						request.from,
+						request.last,
+					),
+				});
 			} else if (request.op === "complete") {
 				this.#write(socket, {
 					id: request.id,
