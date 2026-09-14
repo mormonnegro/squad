@@ -432,7 +432,7 @@
 	align-items: center;
 	gap: var(--row-gap);
 	width: 100%;
-	padding: 0.26rem 0.9rem 0.26rem calc(0.9rem + var(--row-face) + var(--row-gap));
+	padding: 0.44rem 0.9rem 0.44rem calc(0.9rem + var(--row-face) + var(--row-gap));
 	border-left: 2px solid transparent;
 	color: var(--muted);
 	font-size: 0.86rem;
@@ -453,6 +453,34 @@
 /* Which of its screens is on. The same cyan edge the agent's own row takes, one step in. */
 .row-under[data-here="true"] {
 	background: #ffffff0a;
+	border-left-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+	color: var(--text-strong);
+}
+
+/*
+ * Focus in the rail is drawn the way selection is, not as a box around it.
+ *
+ * The default ring is a rounded rectangle with an offset, which is right for a button standing in a
+ * page and wrong for a row that runs edge to edge: it floated over the row's own left edge and over
+ * the two facts written at its right, so the row you had just clicked was wearing a second outline
+ * that said nothing the background was not already saying.
+ *
+ * Nothing is lost by taking it off, because what it was there for is still said: the row lights up
+ * and takes the cyan edge, which is exactly what being on it looks like with a mouse. A keyboard
+ * moving down the list sees the same thing move with it.
+ */
+.row-pick:focus-visible,
+.row-under:focus-visible,
+.rail-screen:focus-visible,
+.row-line:focus-visible {
+	outline: none;
+}
+
+.row:has(> .row-pick:focus-visible),
+.row-under:focus-visible,
+.rail-screen:focus-visible,
+.row-line:focus-visible {
+	background: #ffffff12;
 	border-left-color: color-mix(in srgb, var(--cyan) 55%, transparent);
 	color: var(--text-strong);
 }
