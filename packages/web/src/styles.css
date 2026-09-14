@@ -54,6 +54,16 @@
 	--rail: 17rem;
 
 	/*
+	 * The hairline around something raised, as a ring rather than a border.
+	 *
+	 * A border is a solid colour picked for one background; a ring is transparent and takes the
+	 * ground it is on. On a dark screen the layered lift shadows a light one would use are invisible,
+	 * so it is one white ring and nothing else.
+	 */
+	--shadow-border: 0 0 0 1px oklch(1 0 0 / 0.08);
+	--shadow-border-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
+
+	/*
 	 * How wide a line of the conversation is allowed to get.
 	 *
 	 * A pane is as wide as the window and prose is not: past ninety-odd characters the eye loses the
@@ -1220,6 +1230,9 @@ ol.md-list {
 	padding: 0.2rem 0.7rem;
 	font: 0.8rem var(--mono);
 	background: var(--bg-code);
+	transition-property: border-color, color, scale;
+	transition-duration: 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease-out;
 }
 
 .key:hover {
@@ -1230,6 +1243,63 @@ ol.md-list {
 .key[data-yes="true"]:hover {
 	border-color: var(--green);
 	color: var(--green);
+}
+
+/*
+ * An icon carries the optical weight of the text beside it.
+ *
+ * The set draws at 2px, which is the weight for a semibold label and shouts beside a regular one —
+ * and regular is what almost every line in this console is. Set here rather than at three hundred
+ * call sites, because a stroke width chosen per icon is a set that drifts: CSS wins over the
+ * attribute the set writes, so one rule moves all of them.
+ */
+.lucide {
+	stroke-width: 1.5;
+}
+
+/* Except beside a label that is heavier. A pill is medium, and a hairline in one reads as broken. */
+.pill .lucide,
+.key .lucide,
+.box-stop .lucide {
+	stroke-width: 2;
+}
+
+/*
+ * One icon becoming another.
+ *
+ * Both are in the tree, one laid over the other, so the one arriving has somewhere to come from and
+ * the one leaving has somewhere to go: it scales up out of a quarter with the blur coming off while
+ * the other does the reverse. Mounting one and unmounting the other gives neither, and the change
+ * lands between two frames as a flicker.
+ *
+ * The curve is the one the spring in a motion library settles on. There is no motion library here
+ * and this wants none.
+ */
+.swap {
+	position: relative;
+	display: inline-grid;
+	place-items: center;
+	flex: none;
+}
+
+.swap > * {
+	grid-area: 1 / 1;
+	transition-property: opacity, filter, scale;
+	transition-duration: 300ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.swap > .swap-on,
+.swap[data-on="true"] > :not(.swap-on) {
+	opacity: 0;
+	scale: 0.25;
+	filter: blur(4px);
+}
+
+.swap[data-on="true"] > .swap-on {
+	opacity: 1;
+	scale: 1;
+	filter: blur(0px);
 }
 
 /* ── the box you type in ─────────────────────────────────────────────── */
@@ -1564,9 +1634,11 @@ ol.md-list {
 	/* Never squeezed: a column of flex children inside a box with a height of its own shrinks them
 	   to fit rather than scrolling, and a card with its footer cut off is a card with no button. */
 	flex: none;
-	border: 1px solid var(--line);
 	border-radius: 12px;
 	background: var(--bg-raised);
+	/* The hairline is depth rather than structure, so it is a ring. The rules inside the card —
+	   the footer's top border, the line under each row — are structure and stay borders. */
+	box-shadow: var(--shadow-border);
 	overflow: hidden;
 }
 
@@ -1622,7 +1694,7 @@ ol.md-list {
 
 /* The one that takes something away. Its own card at the end, the way every screen like this has. */
 .card[data-danger="true"] {
-	border-color: color-mix(in srgb, var(--red) 30%, var(--line));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 35%, transparent);
 }
 
 .card[data-danger="true"] .card-foot {
@@ -1790,6 +1862,9 @@ ol.md-list {
 	color: var(--text);
 	text-align: left;
 	width: 100%;
+	transition-property: scale;
+	transition-duration: 150ms;
+	transition-timing-function: ease-out;
 }
 
 .switch-box {
@@ -1916,11 +1991,14 @@ ol.md-list {
 	align-items: center;
 	gap: 0.75rem;
 	padding: 0.7rem 0.8rem;
+	/* A border and not a ring: this one carries a state — held or not — and a state is structure. */
 	border: 1px solid var(--line);
 	border-radius: 10px;
 	background: var(--bg-code);
 	text-align: left;
-	transition: border-color 0.12s ease, background 0.12s ease;
+	transition-property: border-color, background, scale;
+	transition-duration: 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease-out;
 }
 
 .plug-row:hover {
@@ -1942,6 +2020,9 @@ ol.md-list {
 	margin-left: -0.3rem;
 	border-radius: 7px;
 	color: var(--muted);
+	transition-property: background, color, scale;
+	transition-duration: 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease-out;
 }
 
 .pane-back:hover {
@@ -1962,10 +2043,13 @@ ol.md-list {
 	flex-direction: column;
 	gap: 0.7rem;
 	padding: 1.05rem;
-	border: 1px solid var(--line);
 	border-radius: 12px;
 	background: var(--bg-raised);
-	transition: border-color 0.12s ease, background 0.12s ease;
+	/* A ring rather than a border: this is a card that is raised, and depth is not structure. */
+	box-shadow: var(--shadow-border);
+	transition-property: box-shadow, background, scale;
+	transition-duration: 0.15s, 0.12s, 150ms;
+	transition-timing-function: ease-out, ease, ease-out;
 }
 
 .plug > .pill {
@@ -1973,7 +2057,7 @@ ol.md-list {
 }
 
 .plug:hover {
-	border-color: color-mix(in srgb, var(--muted) 45%, var(--line));
+	box-shadow: var(--shadow-border-hover);
 	background: #ffffff05;
 }
 
@@ -2095,7 +2179,45 @@ ol.md-list {
 	background: var(--bg-code);
 	font: 500 0.82rem var(--sans);
 	color: var(--text);
-	transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+	transition-property: border-color, color, background, scale;
+	transition-duration: 0.12s, 0.12s, 0.12s, 150ms;
+	transition-timing-function: ease, ease, ease, ease-out;
+}
+
+/*
+ * A control gives way under the finger.
+ *
+ * `0.96` and no lower: the press has to be felt rather than watched, and past a twentieth it reads
+ * as the button flinching. A transition rather than a keyframe, so letting go halfway comes back
+ * smoothly instead of finishing an animation nobody is still asking for.
+ *
+ * Only on things that are pressed. A row in the rail is a place you go, and a list of places that
+ * shrink as you walk into them is a list that fidgets.
+ */
+.pill:active:not(:disabled),
+.key:active:not(:disabled),
+.plug:active:not(:disabled),
+.plug-row:active:not(:disabled),
+.switch:active:not(:disabled),
+.address button:active:not(:disabled),
+.pane-back:active,
+.row-open:active,
+.pane-gear:active {
+	scale: 0.96;
+}
+
+/*
+ * The leading icon sits two pixels closer than the text does.
+ *
+ * Equal padding around a pill with an icon in it measures equal and looks lopsided: a glyph carries
+ * less ink to its edge than a letter does, so the gap on that side reads as larger than the one on
+ * the other.
+ */
+.pill:has(> .lucide:first-child),
+.pill:has(> .orbit:first-child),
+.pill:has(> .avatar:first-child),
+.pill:has(> .face:first-child) {
+	padding-inline-start: 0.72rem;
 }
 
 .pill:hover {
@@ -2286,11 +2408,20 @@ ol.md-list {
  * read back a pixel at a time. Every mark gets the background they were all drawn against, and the
  * ones with colour of their own lose nothing by it.
  */
+/*
+ * Somebody else's logo, on a plate of its own.
+ *
+ * The ring is pure black at a tenth, which is the one colour that separates an edge without being
+ * seen: a near-black from this palette would pick up the plate under it and read as dirt along the
+ * corner. An outline rather than a border or an inset shadow, because an outline costs no layout
+ * and `-1px` draws it just inside the corner radius.
+ */
 .site-mark {
 	flex: none;
 	border-radius: 8px;
 	background: #eceef1;
-	box-shadow: inset 0 0 0 1px #00000014;
+	outline: 1px solid oklch(0 0 0 / 0.1);
+	outline-offset: -1px;
 	object-fit: contain;
 	padding: 3px;
 	color: #4a4f57;

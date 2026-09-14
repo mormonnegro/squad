@@ -1,6 +1,6 @@
 import type { AgentSummary, ModelStanding, Plugin } from "@squad/control-plane";
 import { ArrowLeft, Check, Copy } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { nameOf } from "./face.ts";
 import { Mark } from "./Plugins.tsx";
@@ -671,26 +671,48 @@ export function Setup({
  */
 function Address({ url }: { url: string }) {
 	const [took, setTook] = useState(false);
+	/** The clipboard can refuse — no permission, no secure context — and silence is not an answer. */
+	const [refused, setRefused] = useState(false);
+	const said = useRef<HTMLElement>(null);
 
 	return (
 		<span className="address">
-			<code>{url}</code>
+			<code ref={said}>{url}</code>
 			<button
 				type="button"
 				title="copy"
 				onClick={() => {
 					void navigator.clipboard.writeText(url).then(
 						() => {
+							setRefused(false);
 							setTook(true);
 							// Long enough to be seen, short enough that the next copy says so too.
 							setTimeout(() => setTook(false), 1400);
 						},
-						() => undefined,
+						() => {
+							// Selected instead, so the one keystroke everybody knows still works — and said
+							// out loud, because a button that does nothing and reports nothing is a button
+							// somebody presses four times before looking for another way.
+							setRefused(true);
+							const text = said.current;
+							if (text !== null) window.getSelection()?.selectAllChildren(text);
+						},
 					);
 				}}
 			>
-				{took ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-				{took ? "copied" : "copy"}
+				{/*
+				 * Both icons stay in the tree and cross-fade, one over the other.
+				 *
+				 * Swapping which one is mounted gives the tick no way in and the sheets no way out, so
+				 * the change happens between two frames — which at this size reads as a flicker rather
+				 * than as an answer. There is no motion library here, and this needs none.
+				 */}
+				<span className="swap" data-on={took}>
+					<Check className="size-3.5 swap-on" />
+					<Copy className="size-3.5" />
+				</span>
+				{/* The word changes too. Motion is never the only thing that says what happened. */}
+				{took ? "copied" : refused ? "selected — ⌘C" : "copy"}
 			</button>
 		</span>
 	);
