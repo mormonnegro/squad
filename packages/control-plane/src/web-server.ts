@@ -691,7 +691,7 @@ export class WebServer {
 		try {
 			tunnel = await this.#forward(to.agentId, to.port);
 		} catch (error) {
-			this.#fail(response, 502, (error as Error).message);
+			this.#quiet(response, to.agentId, to.port, (error as Error).message);
 			return;
 		}
 
@@ -763,7 +763,10 @@ export class WebServer {
 
 		asked.on("error", (error: Error) => {
 			tunnel.destroy();
-			if (!response.headersSent) this.#fail(response, 502, error.message);
+			// A tunnel that opened and then died is the relay giving up on a port nothing answered at.
+			// "socket hang up" is what node calls that, and it is a sentence about a socket in front of
+			// somebody who clicked a link.
+			if (!response.headersSent) this.#quiet(response, to.agentId, to.port, error.message);
 			else response.end();
 		});
 		response.once("close", () => tunnel.destroy());
@@ -867,6 +870,42 @@ export class WebServer {
 			"cache-control": extname(file) === ".html" ? "no-store" : "public, max-age=604800",
 		});
 		createReadStream(file).pipe(response);
+	}
+
+	/**
+	 * A port that was opened and is not answering.
+	 *
+	 * `/serve 3101` writes down that a port should be reachable; what makes it reachable is something
+	 * listening on it inside the sandbox, and that is a process, and processes stop. The link stays —
+	 * it is a standing arrangement rather than a handle on a running thing, and it starts working
+	 * again the moment something binds that port in there.
+	 *
+	 * So the page says which of the two halves is missing, in those words. What was here was the
+	 * error node gives a socket that closed, on a black page: true, and about the wrong subject.
+	 */
+	#quiet(response: ServerResponse, agentId: string, port: number, why: string): void {
+		if (response.headersSent) {
+			response.end();
+			return;
+		}
+		const said = why.includes("not serving")
+			? `${agentId} has no link open on ${port}.`
+			: `Nothing is listening on ${port} inside ${agentId}'s sandbox.`;
+		const next = why.includes("not serving")
+			? `<code>/serve ${port}</code> in ${agentId}'s conversation opens one.`
+			: `Whatever was serving it has stopped. Start it again in there — with <code>keep</code>, ` +
+				`so it outlives the turn that starts it — and this link works again with nothing to type ` +
+				`here. <code>/serve stop ${port}</code> takes the link down.`;
+		response
+			.writeHead(502, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
+			.end(
+				`<!doctype html><meta charset="utf-8"><title>${port} — nothing there</title>` +
+					`<body style="background:#0b0c0e;color:#dedcd7;font:15px/1.7 ui-sans-serif,system-ui,sans-serif;padding:3rem;max-width:34rem">` +
+					`<p style="font-size:1.05rem;margin:0 0 0.6rem">${said}</p>` +
+					`<p style="color:#9ba1a9;margin:0">${next}</p>` +
+					`<style>code{font:0.9em ui-monospace,SFMono-Regular,Menlo,monospace;background:#0e1013;` +
+					`border:1px solid #22252a;border-radius:4px;padding:0.1em 0.35em}</style>`,
+			);
 	}
 
 	/**

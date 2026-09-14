@@ -17,6 +17,30 @@ class FakeSocket extends Duplex {
 	say(bytes: string): void {
 		this.push(bytes);
 	}
+
+	/*
+	 * The four things node's http client calls on a socket it is handed.
+	 *
+	 * A forward turns this connection into one an HTTP request is spoken over, and `createConnection`
+	 * hands it whatever it is given — which in the plane is a real socket and here is this. Without
+	 * these the client throws inside itself and the request neither answers nor fails, which is a
+	 * test that hangs rather than one that says anything.
+	 */
+	setNoDelay(): this {
+		return this;
+	}
+	setKeepAlive(): this {
+		return this;
+	}
+	setTimeout(): this {
+		return this;
+	}
+	override ref(): this {
+		return this;
+	}
+	override unref(): this {
+		return this;
+	}
 }
 
 let dir = "";
@@ -545,5 +569,62 @@ describe("letting the same browser in twice", () => {
 			await fetch(at("/devices"), { headers: { cookie: `squad_web=${carried}` } })
 		).json()) as { devices: unknown[] };
 		expect(listed.devices).toHaveLength(2);
+	});
+});
+
+/*
+ * A port that was opened and is not answering.
+ *
+ * The link is a standing arrangement rather than a handle on a running thing, so it outlives the
+ * process that was behind it — and what the browser used to get for that was "socket hang up" on a
+ * black page, which is true and about the wrong subject.
+ */
+describe("a port with nothing behind it", () => {
+	/** The socket the door opened for the forward, once it has written its request down it. */
+	async function forwarding(): Promise<FakeSocket> {
+		for (let tried = 0; tried < 200; tried++) {
+			const socket = sockets.at(-1);
+			if (socket?.written.includes('"op":"forward"') === true) return socket;
+			await new Promise((wake) => setTimeout(wake, 10));
+		}
+		throw new Error("the door never asked the plane to forward anything");
+	}
+
+	it("says nothing is listening, rather than what node calls a socket that closed", async () => {
+		const asked = fetch(at("/at/scout/3101/"), {
+			headers: { cookie: `squad_web=${web.token}` },
+		});
+		const socket = await forwarding();
+		// What the relay says when it has waited out its three seconds for something to bind that
+		// port. The same page is what the browser gets when the tunnel opens and dies instead, which
+		// is the other shape of the same fact.
+		socket.say(
+			'{"id":"forward","ok":false,"error":"relay: connect ECONNREFUSED 127.0.0.1:3101"}\n',
+		);
+
+		const response = await asked;
+		const page = await response.text();
+
+		expect(response.status).toBe(502);
+		expect(response.headers.get("content-type")).toContain("text/html");
+		expect(page).toContain("Nothing is listening on 3101");
+		expect(page).toContain("keep");
+		expect(page).toContain("/serve stop 3101");
+		expect(page).not.toContain("ECONNREFUSED");
+	});
+
+	it("says the link is not open at all, when that is the half that is missing", async () => {
+		const asked = fetch(at("/at/scout/3101/"), {
+			headers: { cookie: `squad_web=${web.token}` },
+		});
+		const socket = await forwarding();
+		socket.say(
+			'{"id":"forward","ok":false,"error":"scout is not serving 3101. /serve 3101 opens it."}\n',
+		);
+
+		const page = await (await asked).text();
+
+		expect(page).toContain("no link open on 3101");
+		expect(page).toContain("/serve 3101");
 	});
 });
