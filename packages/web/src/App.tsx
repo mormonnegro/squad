@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
 import { Devices } from "./Devices.tsx";
+import { FILES_HOME, Files } from "./Files.tsx";
 import { FirstKey } from "./FirstKey.tsx";
 import { nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
@@ -81,6 +82,25 @@ function settingsAt(pathname: string): string | undefined {
 }
 
 /**
+ * Whether an address names an agent's own files, and which folder of them:
+ * `/agents/scout/files/workspace/todo-list`.
+ *
+ * The path is in the address because a folder is a place: "look at what it built" is a thing to send
+ * somebody, and a screen that kept the path to itself would be one where the only way to share what
+ * you are looking at is to describe it. Empty is the agent's home, which is the root of all of it;
+ * the folder button in a conversation opens the workspace rather than the home, because that is
+ * where the work is.
+ */
+const FILES = "/files";
+
+function filesAt(pathname: string): string | undefined {
+	if (!pathname.startsWith(AGENTS)) return undefined;
+	const parts = pathname.slice(AGENTS.length).split("/");
+	if (parts[1] !== "files") return undefined;
+	return parts.slice(2).map(decodeURIComponent).join("/");
+}
+
+/**
  * Where a room lives. `channels` rather than `rooms` in the address, because that is the word on
  * the screen — what a person would type is what they were shown.
  */
@@ -130,6 +150,16 @@ export function App() {
 	 */
 	const [setting, setSetting] = useState<string | undefined>(() =>
 		settingsAt(window.location.pathname),
+	);
+	/**
+	 * Which folder of the selected agent's own filesystem is on screen, if any.
+	 *
+	 * Kept beside the settings and not among the screens above for the same reason they are: this is
+	 * one agent's, not the plane's, so it lives under that agent's address and goes away when the
+	 * conversation moves to somebody else.
+	 */
+	const [browsing, setBrowsing] = useState<string | undefined>(() =>
+		filesAt(window.location.pathname),
 	);
 	/**
 	 * Whether the first-key screen has been put away.
@@ -189,6 +219,7 @@ export function App() {
 			const address =
 				next === "none" ? (at === undefined ? "/" : `${AGENTS}${at}`) : addressOf(next);
 			setSetting(undefined);
+			setBrowsing(undefined);
 			if (address === undefined || address === window.location.pathname) return;
 			window.history.pushState(null, "", `${address}${window.location.search}`);
 		},
@@ -209,6 +240,7 @@ export function App() {
 			setMaking(false);
 			setMakingRoom(false);
 			setSetting(settingsAt(at));
+			setBrowsing(filesAt(at));
 		};
 		window.addEventListener("popstate", walked);
 		return () => window.removeEventListener("popstate", walked);
@@ -377,6 +409,7 @@ export function App() {
 	 */
 	const openSetup = useCallback((agentId: string, page = "general"): void => {
 		setSetting(page);
+		setBrowsing(undefined);
 		setShowing("none");
 		setChosen(agentId);
 		setInRoom(undefined);
@@ -388,8 +421,29 @@ export function App() {
 		}
 	}, []);
 
+	/**
+	 * One agent's files, which are a place and so have an address — the folder included.
+	 *
+	 * Beside the settings rather than inside them, because what an agent has in its box is not a
+	 * setting: it is the other half of what it has been doing, and the conversation is the first.
+	 */
+	const openFiles = useCallback((agentId: string, path: string): void => {
+		setBrowsing(path);
+		setSetting(undefined);
+		setShowing("none");
+		setChosen(agentId);
+		setInRoom(undefined);
+		setMaking(false);
+		setMakingRoom(false);
+		const address = `${AGENTS}${agentId}${FILES}${path === "" ? "" : `/${path}`}`;
+		if (address !== window.location.pathname) {
+			window.history.pushState(null, "", `${address}${window.location.search}`);
+		}
+	}, []);
+
 	const openRoom = useCallback((name: string): void => {
 		setInRoom(name);
+		setBrowsing(undefined);
 		setShowing("none");
 		setChosen(undefined);
 		setMaking(false);
@@ -467,13 +521,17 @@ export function App() {
 							agent={one}
 							live={live[one.id] ?? QUIET}
 							// Where you are, not what you last opened: the plugins take the pane, so while they
-							// are up nothing in this list is the thing on screen. A dialog is different — the
-							// conversation is still behind it, and that is still where you are.
-							here={one.id === chosen && showing === "none" && !making && setting === undefined}
+							// are up nothing in this list is the thing on screen.
+							//
+							// An agent's settings are that agent, so the row stays lit while they are up: you
+							// are inside it either way, and which of its screens you are on is what the pane
+							// is for saying.
+							here={one.id === chosen && showing === "none" && !making && browsing === undefined}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
 								setSetting(undefined);
+								setBrowsing(undefined);
 								show("none", one.id);
 							}}
 						/>
@@ -572,6 +630,15 @@ export function App() {
 					<Plugins plane={plane} agents={agents} />
 				) : showing === "repos" && plane !== undefined ? (
 					<Repos plane={plane} agents={agents} />
+				) : browsing !== undefined && agent !== undefined && plane !== undefined ? (
+					<Files
+						key={agent.id}
+						plane={plane}
+						agent={agent}
+						where={browsing}
+						onWhere={(path) => openFiles(agent.id, path)}
+						onClose={() => show("none", agent.id)}
+					/>
 				) : setting !== undefined && agent !== undefined && plane !== undefined ? (
 					<Setup
 						key={agent.id}
@@ -593,6 +660,7 @@ export function App() {
 						live={live[agent.id] ?? QUIET}
 						onLocal={local}
 						onSetup={() => openSetup(agent.id)}
+						onFiles={() => openFiles(agent.id, FILES_HOME)}
 					/>
 				) : (
 					<Nothing onMake={() => setMaking(true)} />
