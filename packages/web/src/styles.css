@@ -410,6 +410,61 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/*
+ * What hangs under the agent you are in: its other screens, and its week.
+ *
+ * One step in, and the step is exactly the face column plus its gap — so the icon of a child stands
+ * where the name of its parent does, and the rail is still three columns down its whole length
+ * rather than a list with a second list loose inside it.
+ *
+ * Quieter than the row above it, and only there while that row is the one selected. A rail that
+ * listed every screen of every agent would be a rail you cannot find an agent in.
+ */
+.row-kids {
+	display: flex;
+	flex-direction: column;
+	padding-bottom: 0.3rem;
+}
+
+.row-under {
+	display: grid;
+	grid-template-columns: var(--row-face) minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--row-gap);
+	width: 100%;
+	padding: 0.26rem 0.9rem 0.26rem calc(0.9rem + var(--row-face) + var(--row-gap));
+	border-left: 2px solid transparent;
+	color: var(--muted);
+	font-size: 0.86rem;
+	text-align: left;
+	text-decoration: none;
+	--row-bg: var(--bg);
+}
+
+.row-under:hover {
+	background: #ffffff08;
+	color: var(--text);
+}
+
+.row-under:active {
+	scale: 0.995;
+}
+
+/* Which of its screens is on. The same cyan edge the agent's own row takes, one step in. */
+.row-under[data-here="true"] {
+	background: #ffffff0a;
+	border-left-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+	color: var(--text-strong);
+}
+
+.row-under .row-icon {
+	color: var(--muted);
+}
+
+.row-under[data-here="true"] .row-icon {
+	color: var(--cyan);
+}
+
 .row-note[data-heat="warm"] {
 	color: var(--amber);
 }

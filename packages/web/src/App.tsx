@@ -1,5 +1,13 @@
 import type { AgentStep, AgentSummary, Utterance } from "@squad/control-plane";
-import { Blocks, GitBranch } from "lucide-react";
+import {
+	Blocks,
+	Clock3,
+	ExternalLink,
+	FolderOpen,
+	GitBranch,
+	MessageSquare,
+	Settings2,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { Chat } from "./Chat.tsx";
@@ -10,7 +18,7 @@ import { nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
 import { Modal } from "./Modal.tsx";
 import { Plugins } from "./Plugins.tsx";
-import { browserWire, Plane, roomChannel, type Room as Standing } from "./plane.ts";
+import { browserWire, Plane, roomChannel, type Room as Standing, type Wake } from "./plane.ts";
 import { RailHead } from "./RailHead.tsx";
 import { Repos } from "./Repos.tsx";
 import { Room } from "./Room.tsx";
@@ -20,6 +28,15 @@ import { until } from "./until.ts";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
 const POLL_MS = 2000;
+
+/**
+ * How often the selected agent's own week is asked for.
+ *
+ * Slower than the roster, because it is one agent's and it is a list of appointments: a wakeup
+ * booked at another console is worth seeing within a few seconds, and nothing here changes between
+ * one breath and the next.
+ */
+const TASKS_MS = 15_000;
 
 /**
  * The screens that are places rather than dialogs, and the address each one is at.
@@ -179,6 +196,13 @@ export function App() {
 	const [making, setMaking] = useState(false);
 	/** The rooms, and which one is open. A room is a place like a conversation, not a screen over one. */
 	const [rooms, setRooms] = useState<readonly Standing[]>([]);
+	/**
+	 * What the selected agent is going to do, under its row.
+	 *
+	 * Only ever the selected one's. A rail that asked for everybody's week every two seconds would be
+	 * asking the plane for a paragraph per agent to draw three lines under one of them.
+	 */
+	const [wakes, setWakes] = useState<readonly Wake[]>([]);
 	const [inRoom, setInRoom] = useState<string | undefined>(() => roomAt(window.location.pathname));
 	const [makingRoom, setMakingRoom] = useState(false);
 	/**
@@ -369,6 +393,30 @@ export function App() {
 		};
 	}, [plane]);
 
+	useEffect(() => {
+		if (plane === undefined || chosen === undefined) {
+			setWakes([]);
+			return;
+		}
+		let alive = true;
+		// Emptied first, so the week under one agent's row is never the week of the one above it for
+		// as long as an answer takes.
+		setWakes([]);
+		const ask = (): void => {
+			void plane.schedules(chosen).then(
+				(all) => alive && setWakes(all),
+				// An older plane does not know the question, and a rail is not the place to say so.
+				() => {},
+			);
+		};
+		ask();
+		const timer = setInterval(ask, TASKS_MS);
+		return () => {
+			alive = false;
+			clearInterval(timer);
+		};
+	}, [plane, chosen]);
+
 	const agent = useMemo(() => agents.find((one) => one.id === chosen), [agents, chosen]);
 	// The open room as the plane last described it, so adding somebody to it redraws the roster
 	// under the thread rather than only in the rail.
@@ -527,6 +575,10 @@ export function App() {
 							// either is up, because you are inside that agent either way, and which of its
 							// screens you are on is what the pane is for saying.
 							here={one.id === chosen && showing === "none" && !making}
+							// Which of that agent's screens is up, for the list under it. Read here rather
+							// than worked out there, because this is the same answer the pane is drawn from.
+							where={browsing !== undefined ? "files" : setting !== undefined ? "settings" : "chat"}
+							wakes={one.id === chosen ? wakes : []}
 							onPick={() => {
 								setChosen(one.id);
 								setMaking(false);
@@ -534,6 +586,8 @@ export function App() {
 								setBrowsing(undefined);
 								show("none", one.id);
 							}}
+							onFiles={() => openFiles(one.id, FILES_HOME)}
+							onSetup={(page) => openSetup(one.id, page)}
 						/>
 					))}
 					<button
@@ -720,12 +774,22 @@ function AgentRow({
 	agent,
 	live,
 	here,
+	where,
+	wakes,
 	onPick,
+	onFiles,
+	onSetup,
 }: {
 	agent: AgentSummary;
 	live: Live;
 	here: boolean;
+	/** Which of this agent's screens is up, while it is the one selected. */
+	where: "chat" | "files" | "settings";
+	/** What it is going to do, for the list under it. Only ever the selected agent's. */
+	wakes: readonly Wake[];
 	onPick: () => void;
+	onFiles: () => void;
+	onSetup: (page?: string) => void;
 }) {
 	// A question nobody has answered outranks everything else this row could say. It is the one
 	// state where the agent is stopped and waiting on the person reading this.
@@ -745,6 +809,11 @@ function AgentRow({
 		running: "running",
 		stopped: "stopped",
 	}[state];
+	// Everything this agent is stopped and waiting on somebody for, which is the one kind of pending
+	// work that is not the agent's: a host to reach, an agent to write to, a message to let out.
+	const waiting = agent.asking.length + agent.wants.length + agent.sending.length;
+	/** Three of the week, because a rail is a list of agents and not a calendar. */
+	const shown = wakes.slice(0, 3);
 	const heat =
 		agent.limitUsd === undefined
 			? undefined
@@ -755,35 +824,127 @@ function AgentRow({
 					: undefined;
 
 	return (
-		// The row is the container and the name is the button, because the facts beside it are not
-		// part of what opens the conversation.
-		<div className="row" data-here={here}>
-			<button type="button" className="row-pick" onClick={onPick}>
-				{/* On the face rather than beside it. A column of its own put every name in this rail
+		<>
+			{/* The row is the container and the name is the button, because the facts beside it are not
+			    part of what opens the conversation. */}
+			<div className="row" data-here={here}>
+				<button type="button" className="row-pick" onClick={onPick}>
+					{/* On the face rather than beside it. A column of its own put every name in this rail
 				    fourteen pixels further from the edge to say a thing that fits in the corner of the
 				    picture it is about — which is where every program that has ever drawn who is online
 				    puts it. */}
-				<span className="row-icon">
-					<Avatar id={agent.id} />
-					<span className="mark" data-state={state} title={says} />
-				</span>
-				<span className="row-name">{nameOf(agent.id)}</span>
-			</button>
-			{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the
+					<span className="row-icon">
+						<Avatar id={agent.id} />
+						<span className="mark" data-state={state} title={says} />
+					</span>
+					<span className="row-name">{nameOf(agent.id)}</span>
+				</button>
+				{/* When it comes back, which is the one thing about a sleeping agent worth knowing and the
 			    only thing nothing else on this screen says. Before the spend, because it is a fact
 			    about the future and the spend is one about the day.
 			
 			    Nothing hides these. What was here was a disclosure that appeared on hover and stood
 			    where they stand, so reading the spend meant taking the mouse off the row — and the
 			    list it opened lives on the agent's own screen, beside everything else about it. */}
-			{agent.wakeAt !== undefined && <span className="row-note when">{until(agent.wakeAt)}</span>}
-			{agent.spentUsd > 0 && (
-				<span className="row-note" data-heat={heat}>
-					${agent.spentUsd.toFixed(2)}
-				</span>
+				{agent.wakeAt !== undefined && <span className="row-note when">{until(agent.wakeAt)}</span>}
+				{agent.spentUsd > 0 && (
+					<span className="row-note" data-heat={heat}>
+						${agent.spentUsd.toFixed(2)}
+					</span>
+				)}
+			</div>
+
+			{/*
+			 * What else this agent is, under it, while it is the one you are in.
+			 *
+			 * An agent is three screens and a week, and two of the screens were reachable only from
+			 * the head of a third: you went to the conversation to find the button that opened the
+			 * files. Here they are where the agent is, they say which one you are on, and they go
+			 * away when you leave it — a rail that listed every screen of every agent would be a
+			 * rail nobody could find an agent in.
+			 *
+			 * The week is under them because it is the same question in a different tense: what it
+			 * has, and what it is about to do. Each line opens the screen where it can be called off.
+			 */}
+			{here && (
+				<div className="row-kids">
+					<button type="button" className="row-under" data-here={where === "chat"} onClick={onPick}>
+						<span className="row-icon">
+							<MessageSquare className="size-3.5" />
+						</span>
+						<span className="row-name">Conversation</span>
+						{waiting > 0 && <span className="row-note when">{waiting} for you</span>}
+					</button>
+					<button
+						type="button"
+						className="row-under"
+						data-here={where === "files"}
+						onClick={onFiles}
+					>
+						<span className="row-icon">
+							<FolderOpen className="size-3.5" />
+						</span>
+						<span className="row-name">Workspace</span>
+					</button>
+					<button
+						type="button"
+						className="row-under"
+						data-here={where === "settings"}
+						onClick={() => onSetup()}
+					>
+						<span className="row-icon">
+							<Settings2 className="size-3.5" />
+						</span>
+						<span className="row-name">Settings</span>
+					</button>
+					{/* A port it opened, which is otherwise only reachable from the head of the
+					    conversation — and is the one thing here that leaves this page. */}
+					{agent.served.map((one) => (
+						<a
+							key={one.port}
+							className="row-under"
+							href={`/at/${agent.id}/${one.port}/`}
+							target="_blank"
+							rel="noreferrer"
+						>
+							<span className="row-icon">
+								<ExternalLink className="size-3.5" />
+							</span>
+							<span className="row-name">:{one.port}</span>
+						</a>
+					))}
+
+					{shown.map((wake) => (
+						<button
+							key={wake.id}
+							type="button"
+							className="row-under"
+							title={wake.body}
+							onClick={() => onSetup("waking")}
+						>
+							<span className="row-icon">
+								<Clock3 className="size-3.5" />
+							</span>
+							<span className="row-name">{said(wake)}</span>
+							<span className="row-note when">{until(wake.nextRunAt)}</span>
+						</button>
+					))}
+					{wakes.length > shown.length && (
+						<button type="button" className="row-under" onClick={() => onSetup("waking")}>
+							<span className="row-icon" />
+							<span className="row-name">{wakes.length - shown.length} more</span>
+						</button>
+					)}
+				</div>
 			)}
-		</div>
+		</>
 	);
+}
+
+/** What a wakeup will say to the agent, in the room a rail row has for it. */
+function said(wake: Wake): string {
+	const body = wake.body.trim().split("\n")[0] ?? "";
+	return body.length > 0 ? body : wake.kind === "cron" ? "on a schedule" : "a turn";
 }
 
 /**
