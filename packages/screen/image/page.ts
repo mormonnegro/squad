@@ -146,7 +146,12 @@ export function viewPage(agentId: string): string {
 		if (typed === "") return;
 		// What a person types into an address bar is a hostname about as often as it is a URL, and
 		// the screen only opens http and https — so the scheme is added rather than refused.
-		if (!/^https?:///i.test(typed)) typed = "https://" + typed;
+		// Written without a regular expression on purpose. This whole script is a string inside a
+		// template literal, so a backslash in here is read twice before a browser ever sees it: the
+		// first version of this line shipped as /^https?:///i — not a bad regex but a syntax error, and
+		// a syntax error anywhere in this script means not one of the handlers below is ever attached.
+		// What that looks like from the outside is a page that draws correctly and ignores every click.
+		if (typed.indexOf("://") === -1) typed = "https://" + typed;
 		address.blur();
 		// A refusal goes where the agent's notes go rather than into a dialog: a modal in here would
 		// block every later request from this page, which is the one failure this view cannot recover
