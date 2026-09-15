@@ -820,7 +820,22 @@ if [ -f "$STATE/web.token" ]; then
 			note "     sudo sed -i 's|^SQUAD_SERVED_DOMAIN=.*|SQUAD_SERVED_DOMAIN=$DOMAIN|' $DIR/deploy/.env"
 			note "     cd $DIR/deploy && sudo docker compose --profile tls up -d"
 			note ""
+			note "DNS only, the same as the record above: a certificate is obtained per name the"
+			note "first time it is asked for, and the challenge for it has to arrive here."
+			note ""
 			note "Until then those links say so rather than opening — the console still works."
+		else
+			# The same check the domain itself gets, for the same failure: a wildcard that is not
+			# there, or is there and proxied, is a link that opens onto somebody else's edge — and
+			# what the operator sees is a certificate error naming a host that is working fine.
+			UNDER=$(resolves_to "scout-3000.$SERVED" | tr '\n' ' ' | sed 's/ *$//')
+			if [ -z "$UNDER" ]; then
+				warn "But nothing under *.$SERVED resolves, so the links to the agents' ports will not"
+				note "open. Add the wildcard — *.$SERVED A $ADDR — and give it a minute."
+			elif ! printf '%s' " $UNDER " | grep -q " $ADDR "; then
+				warn "But *.$SERVED resolves to $UNDER rather than to this machine at $ADDR."
+				note "On Cloudflare that is the orange cloud on the wildcard: set it to DNS only."
+			fi
 		fi
 	elif [ "$OPEN" = yes ]; then
 		# The machine's own address, because that is what it is answering on. Dashes rather than dots
