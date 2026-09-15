@@ -6,6 +6,7 @@ import {
 	FolderOpen,
 	GitBranch,
 	MessageSquare,
+	Monitor,
 	Settings2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,6 +24,7 @@ import { browserWire, Plane, roomChannel, type Room as Standing, type Wake } fro
 import { RailHead } from "./RailHead.tsx";
 import { Repos } from "./Repos.tsx";
 import { Room } from "./Room.tsx";
+import { hasScreen, SCREEN_VIEW_PORT } from "./Screen.tsx";
 import { Setup } from "./Setup.tsx";
 import { ServedIs, useServedAt, useServedLinks } from "./served.tsx";
 import { Spin } from "./spin.tsx";
@@ -992,38 +994,57 @@ function AgentRow({
 					    conversation — and is the one thing here that leaves this origin, onto a name of
 					    that port's own. Which name is written into the link rather than arrived at by
 					    following it: a link is hovered, copied and read before it is clicked. */}
-					{agent.served.map((one) => (
-						<div
-							key={one.port}
-							className="row-under row-split"
-							data-here={where === "logs" && logs === one.port}
+					{/* The browser it has, when it has one. A row of its own rather than one of the ports
+					    below, because it is not a port the agent opened and nothing it is serving: it is
+					    the plane's way in to a browser in a container beside this agent, and the place it
+					    is actually used is over the conversation. This is the way to a window of its own. */}
+					{hasScreen(agent) && (
+						<a
+							className="row-under row-line"
+							href={servedAt(agent.id, SCREEN_VIEW_PORT)}
+							target="_blank"
+							rel="noreferrer"
 						>
-							<a
-								className="row-line"
-								href={servedAt(agent.id, one.port)}
-								target="_blank"
-								rel="noreferrer"
+							<span className="row-icon">
+								<Monitor className="size-3.5" />
+							</span>
+							<span className="row-name">Screen</span>
+						</a>
+					)}
+					{agent.served
+						.filter((one) => one.port !== SCREEN_VIEW_PORT)
+						.map((one) => (
+							<div
+								key={one.port}
+								className="row-under row-split"
+								data-here={where === "logs" && logs === one.port}
 							>
-								<span className="row-icon">
-									<ExternalLink className="size-3.5" />
-								</span>
-								<span className="row-name">:{one.port}</span>
-							</a>
-							{/* What the thing behind it is printing, which is the other half of having a port:
+								<a
+									className="row-line"
+									href={servedAt(agent.id, one.port)}
+									target="_blank"
+									rel="noreferrer"
+								>
+									<span className="row-icon">
+										<ExternalLink className="size-3.5" />
+									</span>
+									<span className="row-name">:{one.port}</span>
+								</a>
+								{/* What the thing behind it is printing, which is the other half of having a port:
 							    the link opens what it built, and this says what it is saying about it. A word
 							    at the end rather than a row of its own, because it is a fact about this port
 							    and not a second port — and always there, because nothing in this rail is
 							    hidden behind a pointer. */}
-							<button
-								type="button"
-								className="row-note row-tail"
-								title={`what is printing on :${one.port}`}
-								onClick={() => onLogs(one.port)}
-							>
-								logs
-							</button>
-						</div>
-					))}
+								<button
+									type="button"
+									className="row-note row-tail"
+									title={`what is printing on :${one.port}`}
+									onClick={() => onLogs(one.port)}
+								>
+									logs
+								</button>
+							</div>
+						))}
 
 					{shown.map((wake) => (
 						<button

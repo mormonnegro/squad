@@ -11,6 +11,7 @@ import {
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import { AGENT_NAME_PATTERN } from "@squad/agent-repo";
+import { SCREEN_VIEW_PORT } from "@squad/screen";
 import type { Dial } from "./control-client.ts";
 import { Devices, nameFromAgent } from "./devices.ts";
 import { Invites } from "./invites.ts";
@@ -800,6 +801,28 @@ export class WebServer {
 		await this.#file(asked.pathname, response);
 	}
 
+	/**
+	 * Where this console is read, as the origins allowed to frame a screen.
+	 *
+	 * Derived from the name this request arrived at rather than configured, because the two are the
+	 * same address with one label swapped: a request at `scout-7180.localhost:8979` was made by a
+	 * page at loopback on 8979, and one under a domain by a page at that domain. Which of the three
+	 * loopback spellings the operator is reading cannot be known from in here, so all three are
+	 * named — they are the same machine, and the alternative is a frame that works at one of them.
+	 */
+	#consoleOrigins(request: IncomingMessage): string {
+		const said = portOf(request.headers.host);
+		const scheme = schemeOf(request);
+		const under = this.#servedDomain();
+		const name = hostnameOf(request.headers.host);
+		if (under !== undefined && name.endsWith(`.${under}`)) return `${scheme}://${under}${said}`;
+		return [
+			`${scheme}://localhost${said}`,
+			`${scheme}://127.0.0.1${said}`,
+			`${scheme}://[::1]${said}`,
+		].join(" ");
+	}
+
 	/** The domain served ports hang off, when the operator has given this plane one. */
 	#servedDomain(): string | undefined {
 		const said = this.#options.servedDomain?.toLowerCase().replace(/^\.+/, "").trim();
@@ -869,6 +892,39 @@ export class WebServer {
 	): Promise<void> {
 		const label = servedLabel(to.agentId, to.port);
 		const key = asked.searchParams.get(SERVED_KEY);
+
+		/*
+		 * The one port on this door that is framed rather than opened, and so the one that cannot be
+		 * let in with a cookie.
+		 *
+		 * A screen is watched inside the console, over the conversation it belongs to — and a frame
+		 * from another origin is a third-party context, where a `SameSite=Lax` cookie is not sent at
+		 * all. Not a browser's preference either: it is what `Lax` means. So the screen carries its
+		 * key on every request instead, the way it was handed one to arrive with, and nothing here is
+		 * ever admitted by something a browser decided to attach on its own.
+		 *
+		 * It stays a separate origin. The page inside is the plane's own rather than an agent's, and
+		 * it would have been simpler to serve it here — but the rule that nothing the agent can reach
+		 * is read at the console's address is worth more than the twenty lines this costs, and a rule
+		 * with one exception in it is a rule somebody extends next year.
+		 */
+		if (to.port === SCREEN_VIEW_PORT) {
+			if (!(await this.#passed(key ?? undefined, label))) {
+				this.#stranger(response, to.agentId, to.port);
+				return;
+			}
+			// Named rather than denied, and named narrowly: the console this request was read through,
+			// and nothing else on the internet. Set here rather than at the top of the door, so no
+			// other port is framed by anything.
+			response.removeHeader("x-frame-options");
+			response.setHeader(
+				"content-security-policy",
+				`frame-ancestors ${this.#consoleOrigins(request)}`,
+			);
+			await this.#served(request, response, to);
+			return;
+		}
+
 		if (key !== null) {
 			if (!(await this.#passed(key, label))) {
 				this.#stranger(response, to.agentId, to.port);

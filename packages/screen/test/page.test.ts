@@ -38,10 +38,14 @@ describe("the page's script", () => {
 		const source = script(page);
 		// Relative, with no leading slash: this page is reached through a tunnel and served at the
 		// root of an origin of its own, and an absolute path would be a guess about both.
-		for (const route of ['"state"', '"keyboard"', '"input"', '"open"']) {
+		for (const route of ['"state"', '"keyboard"', '"input"', '"open"', '"frames"']) {
 			expect(source).toContain(route);
 		}
-		expect(page).toContain('src="frames"');
+		// The picture is pointed at from the script rather than written into the tag, because the key
+		// it has to carry is only known once the page is running. A static src would fire first, with
+		// no key on it, and the frame would be refused before anything else had a chance to happen.
+		expect(page).not.toContain('src="frames"');
+		expect(source).toContain('screen.src = to("frames")');
 	});
 });
 

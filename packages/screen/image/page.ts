@@ -97,7 +97,7 @@ export function viewPage(agentId: string): string {
 </header>
 <main>
 	<div class="frame">
-		<img id="screen" src="frames" width="${VIEWPORT.width}" height="${VIEWPORT.height}" alt="">
+		<img id="screen" width="${VIEWPORT.width}" height="${VIEWPORT.height}" alt="">
 		<div class="veil" id="veil">the agent is driving — take the keyboard to touch this page</div>
 	</div>
 </main>
@@ -111,6 +111,20 @@ export function viewPage(agentId: string): string {
 	var address = document.getElementById("url");
 	var go = document.getElementById("go");
 	var holding = false;
+
+	// The key this page was let in with, carried on everything it asks for afterwards.
+	//
+	// Because this page is watched inside a frame on the console, and a frame is another site: the
+	// cookie the door would otherwise hand out is SameSite=Lax, and Lax cookies are not sent on a
+	// request from a frame belonging to somebody else's page. That is what Lax means, not a setting
+	// somebody can change. Absent when this page is opened straight at the container, which is how
+	// it is reached from inside the deployment, and then there is nothing to carry.
+	var key = new URLSearchParams(location.search).get("k");
+	function to(path) {
+		return key === null ? path : path + "?k=" + encodeURIComponent(key);
+	}
+
+	screen.src = to("frames");
 
 	function show(state) {
 		holding = state.holder === "operator";
@@ -128,7 +142,7 @@ export function viewPage(agentId: string): string {
 	}
 
 	function post(path, body) {
-		return fetch(path, {
+		return fetch(to(path), {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify(body || {})
@@ -204,9 +218,9 @@ export function viewPage(agentId: string): string {
 	});
 
 	setInterval(function () {
-		fetch("state").then(function (r) { return r.json(); }).then(show).catch(function () {});
+		fetch(to("state")).then(function (r) { return r.json(); }).then(show).catch(function () {});
 	}, 2000);
-	fetch("state").then(function (r) { return r.json(); }).then(show).catch(function () {});
+	fetch(to("state")).then(function (r) { return r.json(); }).then(show).catch(function () {});
 })();
 </script>`;
 }

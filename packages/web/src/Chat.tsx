@@ -9,6 +9,7 @@ import { nameOf } from "./face.ts";
 import { here } from "./here.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
+import { hasScreen, Screen } from "./Screen.tsx";
 import { safeEnd } from "./safe-end.ts";
 import { Spin } from "./spin.tsx";
 
@@ -75,6 +76,17 @@ export function Chat({
 					</span>
 				</div>
 			</header>
+
+			{/*
+			 * The agent's browser, when it has one, over the conversation about it.
+			 *
+			 * Not a door in the rail like the workspace and the settings, because it is not a room to
+			 * go to: it is the thing the next sentence is about. An agent that says it cannot get past
+			 * a sign-in is asking somebody to look up and act, and a browser in another tab makes
+			 * looking and acting two separate things — you leave to do it and come back to find out
+			 * whether it worked.
+			 */}
+			{hasScreen(agent) && <Screen agentId={agent.id} />}
 
 			<div className="floor">
 				<div
