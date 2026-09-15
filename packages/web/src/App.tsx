@@ -85,7 +85,7 @@ function agentAt(pathname: string): string | undefined {
 
 /**
  * Whether an address names an agent's settings rather than its conversation, and which page of
- * them: `/agents/scout/settings/waking`.
+ * them: `/agents/scout/settings/triggers`.
  *
  * The page is in the address because it is a place — six screens about one agent, and "send me the
  * one where the webhooks are" has to be a link. Absent, it is the first of them.
@@ -937,7 +937,7 @@ function AgentRow({
 							type="button"
 							className="row-under"
 							title={wake.body}
-							onClick={() => onSetup("waking")}
+							onClick={() => onSetup("triggers")}
 						>
 							<span className="row-icon">
 								<Clock3 className="size-3.5" />
@@ -947,7 +947,7 @@ function AgentRow({
 						</button>
 					))}
 					{wakes.length > shown.length && (
-						<button type="button" className="row-under" onClick={() => onSetup("waking")}>
+						<button type="button" className="row-under" onClick={() => onSetup("triggers")}>
 							<span className="row-icon" />
 							<span className="row-name">{wakes.length - shown.length} more</span>
 						</button>
