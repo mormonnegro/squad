@@ -23,6 +23,7 @@ import { RailHead } from "./RailHead.tsx";
 import { Repos } from "./Repos.tsx";
 import { Room } from "./Room.tsx";
 import { Setup } from "./Setup.tsx";
+import { useServedAt } from "./served.ts";
 import { Spin } from "./spin.tsx";
 import { until } from "./until.ts";
 
@@ -566,6 +567,7 @@ export function App() {
 					{agents.map((one) => (
 						<AgentRow
 							key={one.id}
+							plane={plane}
 							agent={one}
 							live={live[one.id] ?? QUIET}
 							// Where you are, not what you last opened: the plugins take the pane, so while they
@@ -772,6 +774,7 @@ export function App() {
 }
 
 function AgentRow({
+	plane,
 	agent,
 	live,
 	here,
@@ -781,6 +784,7 @@ function AgentRow({
 	onFiles,
 	onSetup,
 }: {
+	plane: Plane | undefined;
 	agent: AgentSummary;
 	live: Live;
 	here: boolean;
@@ -792,6 +796,8 @@ function AgentRow({
 	onFiles: () => void;
 	onSetup: (page?: string) => void;
 }) {
+	// Where each of its ports is read, which is a name of that port's own and is the door's to say.
+	const servedAt = useServedAt(plane, agent.id, agent.served);
 	// A question nobody has answered outranks everything else this row could say. It is the one
 	// state where the agent is stopped and waiting on the person reading this.
 	const state =
@@ -900,12 +906,13 @@ function AgentRow({
 					</button>
 					{/* A port it opened, which is otherwise only reachable from the head of the
 					    conversation — and is the one thing here that leaves this origin, onto a name of
-					    that port's own. */}
+					    that port's own. Which name is written into the link rather than arrived at by
+					    following it: a link is hovered, copied and read before it is clicked. */}
 					{agent.served.map((one) => (
 						<a
 							key={one.port}
 							className="row-under"
-							href={`/at/${agent.id}/${one.port}/`}
+							href={servedAt(one.port)}
 							target="_blank"
 							rel="noreferrer"
 						>

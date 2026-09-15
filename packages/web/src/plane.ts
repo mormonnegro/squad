@@ -584,6 +584,22 @@ export class Plane {
 		};
 	}
 
+	/**
+	 * Where a port an agent opened is read, which is a name of that port's own.
+	 *
+	 * Asked of the door rather than built here, and it is the door's to answer: the name comes from
+	 * the address the door is reached at, and in development that is not the address this page is
+	 * read at. Answers nothing when the console is being read at an address that can have no names
+	 * under it — a machine's own address on a network — and then the path is what to keep, because
+	 * the path lands on the page that says so.
+	 */
+	async servedAt(agentId: string, port: number): Promise<string | undefined> {
+		const answer = (await this.#door(
+			`/at/where?agent=${encodeURIComponent(agentId)}&port=${port}`,
+		)) as { url?: string | null };
+		return answer.url ?? undefined;
+	}
+
 	async #door(path: string, init?: RequestInit): Promise<unknown> {
 		const knock = this.#wire.door;
 		if (knock === undefined) throw new PlaneError("This connection has no door.");

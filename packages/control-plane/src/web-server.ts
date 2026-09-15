@@ -63,6 +63,20 @@ const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const TLS_ASK = "/tls/ask";
 
 /**
+ * Where the console asks what address a port of an agent's is read at.
+ *
+ * So that the link it draws is the address it opens, rather than a path that turns into one on the
+ * way. A link has to say where it goes: it is hovered, copied, sent to a phone, and read before it
+ * is clicked.
+ *
+ * Asked of this door rather than worked out by the page, because the page can almost do it and
+ * almost is the wrong amount. The name comes from the address this door is reached at, which in
+ * development is not the address the page is read at — the console is a dev server on another port
+ * — so a page building the name out of its own address would point it at the dev server.
+ */
+const SERVED_WHERE = `${SERVED_PREFIX}where`;
+
+/**
  * Where a trigger is posted to, under the same origin as the console.
  *
  * The same path the channel's own server answers on, so a plane reachable both ways answers the
@@ -749,6 +763,24 @@ export class WebServer {
 		 * The path is kept, so a deep link is still a deep link, and `/at/scout/3000/` typed from
 		 * memory still lands where it always did.
 		 */
+		if (asked.pathname === SERVED_WHERE) {
+			const agentId = asked.searchParams.get("agent") ?? "";
+			const port = Number(asked.searchParams.get("port") ?? "");
+			const to =
+				AGENT_NAME_PATTERN.test(agentId) && Number.isInteger(port) && port >= 1 && port <= 65_535
+					? this.#servedOrigin(request, agentId, port)
+					: undefined;
+			// Null rather than an absence, because "there is no name for this here" is an answer and the
+			// screen has something to do with it: keep the path, which lands on the page that says why.
+			this.#json(response, {
+				url:
+					to === undefined
+						? null
+						: `${to}/?${SERVED_KEY}=${encodeURIComponent(this.#pass(whose?.id, servedLabel(agentId, port)))}`,
+			});
+			return;
+		}
+
 		const served = servedAt(asked.pathname);
 		if (served !== undefined) {
 			const to = this.#servedOrigin(request, served.agentId, served.port);
@@ -757,7 +789,10 @@ export class WebServer {
 				return;
 			}
 			const target = new URL(`${served.path}${asked.search}`, to);
-			target.searchParams.set(SERVED_KEY, this.#pass(whose?.id));
+			target.searchParams.set(
+				SERVED_KEY,
+				this.#pass(whose?.id, servedLabel(served.agentId, served.port)),
+			);
 			response.writeHead(302, { location: target.href, "cache-control": "no-store" }).end();
 			return;
 		}
@@ -832,9 +867,10 @@ export class WebServer {
 		to: { agentId: string; port: number },
 		asked: URL,
 	): Promise<void> {
+		const label = servedLabel(to.agentId, to.port);
 		const key = asked.searchParams.get(SERVED_KEY);
 		if (key !== null) {
-			if (!(await this.#passed(key))) {
+			if (!(await this.#passed(key, label))) {
 				this.#stranger(response, to.agentId, to.port);
 				return;
 			}
@@ -854,7 +890,7 @@ export class WebServer {
 				.end();
 			return;
 		}
-		if (!(await this.#passed(cookie(request, SERVED_COOKIE)))) {
+		if (!(await this.#passed(cookie(request, SERVED_COOKIE), label))) {
 			this.#stranger(response, to.agentId, to.port);
 			return;
 		}
@@ -862,25 +898,30 @@ export class WebServer {
 	}
 
 	/**
-	 * The key that opens every port this plane serves, handed to a browser that is already in.
+	 * The key that opens one port of one agent's, handed to a browser that is already in.
 	 *
 	 * Derived rather than written down: the plane restarts and the same browser's key is still its
 	 * key, and there is no third list to be kept in step with the two that exist. What it is derived
-	 * from is the device it was handed to, so taking a browser out of that list takes its way into
-	 * every sandbox with it — a key that outlived a revoked device would be the quiet way back in.
+	 * from is two things, and both matter. The device, so taking a browser out of that list takes
+	 * its way into the sandboxes with it — a key that outlived a revoked device would be the quiet
+	 * way back in. And the port's own name, so the link the console draws is a key to that one
+	 * preview and not to everything every agent is serving: it is in a link, and a link gets copied
+	 * and sent to a phone, which is most of what these are for.
 	 */
-	#pass(deviceId: string | undefined): string {
+	#pass(deviceId: string | undefined, label: string): string {
 		const who = deviceId ?? "-";
-		return `${who}.${createHmac("sha256", this.#token).update(who, "utf8").digest("base64url")}`;
+		return `${who}.${createHmac("sha256", this.#token)
+			.update(`${who}\n${label}`, "utf8")
+			.digest("base64url")}`;
 	}
 
-	/** Whether a key, or the cookie made from one, is this door's and still belongs to somebody. */
-	async #passed(offered: string | undefined): Promise<boolean> {
+	/** Whether a key, or the cookie made from one, is this door's, for this port, and still somebody's. */
+	async #passed(offered: string | undefined, label: string): Promise<boolean> {
 		if (offered === undefined || offered.length === 0) return false;
 		const cut = offered.lastIndexOf(".");
 		if (cut <= 0) return false;
 		const who = offered.slice(0, cut);
-		const mine = Buffer.from(this.#pass(who === "-" ? undefined : who), "utf8");
+		const mine = Buffer.from(this.#pass(who === "-" ? undefined : who, label), "utf8");
 		const theirs = Buffer.from(offered, "utf8");
 		if (mine.byteLength !== theirs.byteLength || !timingSafeEqual(mine, theirs)) return false;
 		// The plane's own token is not a device and never becomes one — it is what hands them out, and
@@ -1027,7 +1068,10 @@ export class WebServer {
 		// is asked for here or it is a way in that asks nobody — and the key is the served host's own,
 		// because that is the only one a browser sends to a served host.
 		const to = this.#servedFrom(request);
-		if (to === undefined || !(await this.#passed(cookie(request, SERVED_COOKIE)))) {
+		if (
+			to === undefined ||
+			!(await this.#passed(cookie(request, SERVED_COOKIE), servedLabel(to.agentId, to.port)))
+		) {
 			socket.end("HTTP/1.1 403 Forbidden\r\nconnection: close\r\n\r\n");
 			return;
 		}

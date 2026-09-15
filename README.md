@@ -1691,7 +1691,10 @@ open on a machine nobody is looking at.
 
 The first line is the same port from the web console, and it is a path rather than an address
 because the one thing the plane cannot know is which address you are reading the console at. Click
-it and it lands somewhere else: `scout-3000.localhost:8789`, a name of that port's own.
+it and it lands somewhere else: `scout-3000.localhost:8789`, a name of that port's own. In the
+console itself the link is already that name — the screen asks the door which one it is, since the
+door is the end that knows — so what you hover, copy and send is the address that opens, with a key
+on it that opens that one port and nothing else.
 
 That hop is not decoration. A page an agent wrote, served at the address the console is read at, is
 a page your browser hands your session to — it can open `/events`, read every conversation, create

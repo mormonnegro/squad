@@ -650,6 +650,18 @@ describe("a port an agent opened, on an origin that is not this console's", () =
 		expect(link.searchParams.get("k")).toBeTruthy();
 	});
 
+	it("gives a key that opens that port and no other", async () => {
+		const key = await letIn();
+		// The same browser, the same plane, a different agent's port: the key it was handed for one
+		// is not a key to the rest. What it is in is a link, and a link gets sent to somebody.
+		const elsewhere = await askAt(`scribe-3000.localhost:${web.port}`, "/", {
+			cookie: `squad_at=${key}`,
+		});
+
+		expect(elsewhere.status).toBe(401);
+		expect(elsewhere.body).toContain("scribe");
+	});
+
 	it("refuses a browser that arrives at that name holding no key", async () => {
 		const answer = await askAt(port3101(), "/");
 
@@ -740,6 +752,25 @@ describe("a port an agent opened, on an origin that is not this console's", () =
 		// that is not this origin either way.
 		expect(clicked.status).toBe(302);
 		expect(quiet.status).toBe(403);
+	});
+
+	it("says where a port is read, so the console can draw the link rather than the path", async () => {
+		const answer = await askAt(`127.0.0.1:${web.port}`, "/at/where?agent=scout&port=3101", {
+			cookie: `squad_web=${web.token}`,
+		});
+		const nobody = await askAt(`127.0.0.1:${web.port}`, "/at/where?agent=scout&port=nope", {
+			cookie: `squad_web=${web.token}`,
+		});
+
+		const { url } = JSON.parse(answer.body) as { url: string };
+		const link = new URL(url);
+
+		expect(link.host).toBe(`scout-3101.localhost:${web.port}`);
+		expect(link.pathname).toBe("/");
+		// With the key on it, because a link the console draws has to work on the first click — the
+		// browser holds nothing for that name until it has been there once.
+		expect(link.searchParams.get("k")).toBeTruthy();
+		expect(JSON.parse(nobody.body)).toEqual({ url: null });
 	});
 
 	it("still answers its own page, which is what all of that is for", async () => {

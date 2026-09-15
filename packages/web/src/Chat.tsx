@@ -10,6 +10,7 @@ import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
+import { useServedAt } from "./served.ts";
 import { Spin } from "./spin.tsx";
 
 /** Enough marks to say who was read, before the row turns into the list it is summarising. */
@@ -40,6 +41,9 @@ export function Chat({
 	 */
 	onFiles: (agentId: string, path: string) => void;
 }) {
+	// Where each port it opened is read. Asked here as well as in the rail, and asked once: the two
+	// draw the same link and the answer is kept for the page.
+	const servedAt = useServedAt(plane, agent.id, agent.served);
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
 	const [following, setFollowing] = useState(true);
@@ -63,15 +67,14 @@ export function Chat({
 					{agent.model !== undefined && <span>{agent.model}</span>}
 					{/* An agent that booked its own next turn is not idle, it is waiting, and those read
 					    identically on a screen that only says whether it is running. */}
-					{/* Asked of this console's own address, which is the one address that is certainly
-					    reachable — you are reading this through it — and answered somewhere else. The
-					    door turns it into a name of that port's own, because a page an agent wrote, read
-					    at the address this console is read at, is a page the browser would hand this
-					    session to. */}
+					{/* A name of that port's own, and never this console's: a page an agent wrote, read at
+					    the address this console is read at, is a page the browser would hand this session
+					    to. The door says which name, because it is built out of the address the door is
+					    reached at and that is not always the address this page is read at. */}
 					{agent.served.map((one) => (
 						<a
 							key={one.port}
-							href={`/at/${agent.id}/${one.port}/`}
+							href={servedAt(one.port)}
 							target="_blank"
 							rel="noreferrer"
 							title={`what ${nameOf(agent.id)} is serving on ${one.port}`}
