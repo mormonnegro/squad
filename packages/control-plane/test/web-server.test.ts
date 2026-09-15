@@ -783,6 +783,48 @@ describe("a port an agent opened, on an origin that is not this console's", () =
 		expect(answer.headers["x-frame-options"]).toBe("DENY");
 	});
 
+	/*
+	 * The same plane read at a name of its own, which is what a plane on a server is.
+	 *
+	 * The console is behind a proxy that terminates TLS, so the scheme is only in the header that
+	 * proxy sets and the port is not in the `Host` at all — and a link that got either of those
+	 * wrong would be an address the browser refuses before it ever reaches this door.
+	 */
+	it("builds the name under the domain the operator gave it, over the scheme it is read at", async () => {
+		const web2 = new WebServer({
+			stateDir: dir,
+			root,
+			port: 0,
+			servedDomain: "plane.example",
+			dial: async () => new FakeSocket(),
+		});
+		await web2.listen();
+		const answer = await new Promise<{ status: number; location: string }>((settle, fail) => {
+			const asked = httpRequest(
+				{
+					host: "127.0.0.1",
+					port: web2.port,
+					path: "/at/dev/3005/",
+					headers: {
+						host: "plane.example",
+						cookie: `squad_web=${web2.token}`,
+						"x-forwarded-proto": "https",
+					},
+				},
+				(said) => {
+					said.resume();
+					settle({ status: said.statusCode ?? 0, location: String(said.headers.location) });
+				},
+			);
+			asked.once("error", fail);
+			asked.end();
+		});
+
+		expect(answer.status).toBe(302);
+		expect(new URL(answer.location).origin).toBe("https://dev-3005.plane.example");
+		await web2.close();
+	});
+
 	// Caddy asks this before it goes and gets a certificate for a name somebody has just offered it.
 	it("says which names are ports of this plane's and which are nobody's", async () => {
 		const web2 = new WebServer({

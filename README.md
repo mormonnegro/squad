@@ -1715,6 +1715,14 @@ wildcard record pointing at the plane and `SQUAD_SERVED_DOMAIN` in `deploy/.env`
 domain — Caddy gets a certificate per name the first time each is asked for. Without that record the
 link says so instead of opening, and nothing about the console changes.
 
+A plane on a server is one of those two and never a third thing. Reached the way the install
+prints — the web port on the server's loopback and an `ssh -L 8789:127.0.0.1:8789` from your own
+computer — the console is at `127.0.0.1:8789`, so `dev-3005.localhost:8789` resolves to your own
+machine, goes down the same forward, and arrives at the plane with nothing else opened anywhere.
+Published at a name instead, it is the wildcard record. What has no answer is a console read at a
+bare address on a network — `http://203.0.113.9:8789` has no names under it — and there the link
+says which of the two to do rather than opening.
+
 Inside the sandbox it goes to `127.0.0.1`, which is the part worth having. Sandboxes share one
 network and can dial each other by container name, so a server bound to `0.0.0.0` is a server every
 other agent on the plane can reach; a server on loopback is one only this reaches. The agent is told

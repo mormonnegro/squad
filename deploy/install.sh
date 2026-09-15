@@ -817,8 +817,8 @@ if [ -f "$STATE/web.token" ]; then
 			note "is a page your browser hands your session to. Point a wildcard here and say so:"
 			note ""
 			note "     *.$DOMAIN   A   $ADDR"
-			note "     echo SQUAD_SERVED_DOMAIN=$DOMAIN | sudo tee -a $DIR/deploy/.env"
-			note "     cd $DIR/deploy && sudo docker compose up -d"
+			note "     sudo sed -i 's|^SQUAD_SERVED_DOMAIN=.*|SQUAD_SERVED_DOMAIN=$DOMAIN|' $DIR/deploy/.env"
+			note "     cd $DIR/deploy && sudo docker compose --profile tls up -d"
 			note ""
 			note "Until then those links say so rather than opening — the console still works."
 		fi
