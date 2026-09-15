@@ -774,7 +774,10 @@ async function serve(words: readonly string[], context: CommandContext): Promise
 	return [
 		`${id} is serving ${port}${moved}`,
 		"",
-		`  ${servedPath(id, port)}`,
+		// On its own line and against the margin. It used to be indented, which set two addresses off
+		// from the prose around them; one link drawn as the address it opens needs no setting off, and
+		// what the indent looks like on a screen is a gap in front of the link.
+		servedPath(id, port),
 		"",
 		(await context.listening(port))
 			? `Something is listening on ${port} in there, so that link has something behind it.`

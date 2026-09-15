@@ -1671,7 +1671,7 @@ it starts is a dev server nobody can open, and what the agent does instead is de
 > /serve 3000
 scout is serving 3000
 
-  /at/scout/3000/
+/at/scout/3000/
 
 Nothing is listening on 3000 inside the sandbox yet. The link waits: it starts working the
 moment something binds that port in there, with nothing to type here.
