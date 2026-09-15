@@ -858,6 +858,11 @@ describe("/serve", () => {
 	 * The `localhost` one is a real port on the machine a terminal console is running on, which is
 	 * better when you are at that machine and absent when you are not — and printing only that one
 	 * is what made a plane on a server hand out a link to whatever laptop was reading it.
+	 *
+	 * And the path is said to be passed on whole, because an agent handed one writes a link out of
+	 * it and needs an address to put in front — so it guesses, names the console's dev server or
+	 * whatever host it last saw, and hands the operator a link that works only where the guess was
+	 * right. The address is the one thing this end cannot know, which is why it is not in there.
 	 */
 	it("says both ways in, every time it prints one", async () => {
 		const opened = await runCommand("/serve 3000", context().context);
@@ -869,7 +874,8 @@ describe("/serve", () => {
 		for (const said of [opened, listed]) {
 			expect(said).toContain("/at/scout/3000/");
 			expect(said).toContain("scout.localhost:3000");
-			expect(said).toContain("whatever address you are reading this console at");
+			expect(said).toContain("exactly as it is written here");
+			expect(said).toContain("cannot know");
 		}
 	});
 

@@ -719,9 +719,15 @@ async function models(words: readonly string[], context: CommandContext): Promis
  * both roads run through the plane, which is the thing that was already let in.
  */
 const ONLY_HERE = [
-	"The first hangs off whatever address you are reading this console at, so it works from",
-	"wherever the console does. The second is a port on the machine a terminal console is",
-	"running on, and exists only while one is. Nothing is published off the server either way.",
+	"Pass the first one on exactly as it is written here, starting at the slash. It is a path and",
+	"not an address because which address the console is read at is the one thing you cannot know —",
+	"it is a laptop's loopback, a domain, a forwarded port, and it is none of your business which.",
+	"Completed with a guess it is a link that works only where the guess was right. Whoever clicks",
+	"it is already at the console, so the path lands, and what it lands on is a name of that port's",
+	"own: your page is never read at the address the console is read at.",
+	"",
+	"The second is a port on the machine a terminal console is running on, and exists only while",
+	"one is. Nothing is published off the server either way.",
 ].join("\n");
 
 /**
