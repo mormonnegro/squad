@@ -35,15 +35,43 @@ describe("who is driving", () => {
 		expect(keyboard.holder).toBe("agent");
 	});
 
-	it("keeps it while the operator is still being sent frames", () => {
+	it("keeps it while somebody is still saying they are there", () => {
 		const time = clock();
 		const keyboard = new TheKeyboard(time.now, 90_000);
 		keyboard.take();
 		for (let tick = 0; tick < 10; tick += 1) {
 			time.pass(60_000);
-			keyboard.take();
+			keyboard.stillThere();
 		}
 		expect(keyboard.holder).toBe("operator");
+	});
+
+	/*
+	 * The one that cost an evening. The lease was renewed by every frame sent, which was right while
+	 * a screen was only ever watched in a window somebody opened on purpose — and wrong the moment it
+	 * lived in the console, where the frames flow all day whether or not anybody is looking. Taken
+	 * once, the keyboard was held until the browser was closed, and the agent spent its turns being
+	 * refused.
+	 *
+	 * So being there is something that has to be said, and saying it cannot be a way to take it.
+	 */
+	it("will not be taken by something that only says it is still there", () => {
+		const time = clock();
+		const keyboard = new TheKeyboard(time.now, 90_000);
+
+		expect(keyboard.stillThere().holder).toBe("agent");
+		time.pass(200_000);
+		expect(keyboard.stillThere().holder).toBe("agent");
+	});
+
+	it("gives it back when the saying stops, whatever else is still connected", () => {
+		const time = clock();
+		const keyboard = new TheKeyboard(time.now, 90_000);
+		keyboard.take();
+		time.pass(60_000);
+		keyboard.stillThere();
+		time.pass(91_000);
+		expect(keyboard.holder).toBe("agent");
 	});
 });
 

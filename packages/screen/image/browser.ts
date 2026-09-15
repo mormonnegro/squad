@@ -53,6 +53,15 @@ function sleep(ms: number): Promise<void> {
 export class Browser {
 	#cdp: Cdp | undefined;
 	#session = "";
+	/**
+	 * The page being driven, which is not always the page it started on.
+	 *
+	 * Half the web opens a new tab to check out in. Attached once at startup, this browser went on
+	 * driving the page behind the new one: the agent clicked, read, clicked again, and nothing it did
+	 * changed anything it could see — which reads, from a transcript, exactly like a site that has
+	 * blocked you.
+	 */
+	#target = "";
 	#frame: string | undefined;
 	/**
 	 * Everybody watching, which is more than one more often than it looks.
@@ -73,6 +82,8 @@ export class Browser {
 	 * every viewer, forever, for something that changes when somebody clicks a link.
 	 */
 	#where = "about:blank";
+	/** One attachment at a time, because the events that ask for one arrive in bursts. */
+	#following: Promise<void> = Promise.resolve();
 
 	/** Starts the browser and waits for it to answer, which is the slowest thing this container does. */
 	async start(): Promise<void> {
@@ -145,23 +156,36 @@ export class Browser {
 
 	async #attach(): Promise<void> {
 		const cdp = this.#need();
-		const { targetInfos } = await cdp.send<{
-			targetInfos: readonly { targetId: string; type: string }[];
-		}>("Target.getTargets");
-		const page = targetInfos.find((target) => target.type === "page");
-		if (page === undefined) throw new Error("chromium opened no page to drive");
-		const { sessionId } = await cdp.send<{ sessionId: string }>("Target.attachToTarget", {
-			targetId: page.targetId,
-			flatten: true,
+		// Told about tabs as they come and go, which is what lets a checkout that opens one be
+		// followed rather than watched from behind.
+		await cdp.send("Target.setDiscoverTargets", { discover: true });
+		cdp.on((event) => {
+			const info = event.params.targetInfo as
+				| { targetId?: string; type?: string; url?: string }
+				| undefined;
+			if (event.method === "Target.targetCreated" || event.method === "Target.targetInfoChanged") {
+				if (info?.type !== "page" || info.targetId === undefined) return;
+				// The newest page is the one a person would be looking at: a tab opened by a click comes
+				// to the front, and this is the same rule with none of the chrome around it.
+				if (info.targetId !== this.#target) void this.#follow(info.targetId, info.url);
+				return;
+			}
+			if (event.method === "Target.targetDestroyed") {
+				const gone = event.params.targetId;
+				if (gone !== this.#target) return;
+				// Whatever is left, which after a checkout tab is closed is the page it was opened from.
+				void this.#lastPage();
+			}
 		});
-		this.#session = sessionId;
-		await cdp.send("Page.enable", {}, sessionId);
-		await cdp.send("Runtime.enable", {}, sessionId);
-		await cdp.send(
-			"Emulation.setDeviceMetricsOverride",
-			{ ...VIEWPORT, deviceScaleFactor: 1, mobile: false },
-			sessionId,
-		);
+
+		const { targetInfos } = await cdp.send<{
+			targetInfos: readonly { targetId: string; type: string; url?: string }[];
+		}>("Target.getTargets");
+		const pages = targetInfos.filter((target) => target.type === "page");
+		const page = pages[pages.length - 1];
+		if (page === undefined) throw new Error("chromium opened no page to drive");
+		await this.#follow(page.targetId, page.url);
+
 		cdp.on((event) => {
 			if (event.method === "Page.frameNavigated") {
 				const frame = event.params.frame as { url?: string; parentId?: string } | undefined;
@@ -185,6 +209,68 @@ export class Browser {
 				void cdp.send("Page.screencastFrameAck", { sessionId: ack }, this.#session).catch(() => {});
 			}
 		});
+	}
+
+	/**
+	 * Drives a different page, and takes the picture with it.
+	 *
+	 * Serialised through a promise because the events that call it arrive in bursts — a new tab
+	 * announces itself as created and then again as its title and address settle, and two attachments
+	 * racing would leave the screencast running on a session nobody is reading.
+	 */
+	async #follow(targetId: string, url?: string): Promise<void> {
+		this.#following = this.#following.catch(() => {}).then(() => this.#followed(targetId, url));
+		return this.#following;
+	}
+
+	async #followed(targetId: string, url?: string): Promise<void> {
+		if (this.#target === targetId) return;
+		const cdp = this.#need();
+		const was = this.#session;
+		const { sessionId } = await cdp.send<{ sessionId: string }>("Target.attachToTarget", {
+			targetId,
+			flatten: true,
+		});
+		if (was !== "" && this.#watching.size > 0) {
+			await cdp.send("Page.stopScreencast", {}, was).catch(() => {});
+		}
+		this.#target = targetId;
+		this.#session = sessionId;
+		if (typeof url === "string" && url !== "") this.#where = url;
+		await cdp.send("Page.enable", {}, sessionId);
+		await cdp.send("Runtime.enable", {}, sessionId);
+		await cdp.send(
+			"Emulation.setDeviceMetricsOverride",
+			{ ...VIEWPORT, deviceScaleFactor: 1, mobile: false },
+			sessionId,
+		);
+		if (this.#watching.size > 0) await this.#cast();
+	}
+
+	/** Back to whichever page is left, after the one being driven was closed. */
+	async #lastPage(): Promise<void> {
+		const { targetInfos } = await this.#need().send<{
+			targetInfos: readonly { targetId: string; type: string; url?: string }[];
+		}>("Target.getTargets");
+		const pages = targetInfos.filter((target) => target.type === "page");
+		const page = pages[pages.length - 1];
+		if (page !== undefined) await this.#follow(page.targetId, page.url);
+	}
+
+	#cast(): Promise<unknown> {
+		return this.#need()
+			.send(
+				"Page.startScreencast",
+				{
+					format: "jpeg",
+					quality: 60,
+					maxWidth: VIEWPORT.width,
+					maxHeight: VIEWPORT.height,
+					everyNthFrame: 1,
+				},
+				this.#session,
+			)
+			.catch(() => undefined);
 	}
 
 	#need(): Cdp {
@@ -379,21 +465,7 @@ export class Browser {
 		// Started when the first viewer arrives and stopped when the last one goes, rather than on
 		// every arrival and departure: what is being turned off is a browser encoding a JPEG of every
 		// animation frame on the page, forever, on a machine that is also running agents.
-		if (this.#watching.size === 0) {
-			void this.#need()
-				.send(
-					"Page.startScreencast",
-					{
-						format: "jpeg",
-						quality: 60,
-						maxWidth: VIEWPORT.width,
-						maxHeight: VIEWPORT.height,
-						everyNthFrame: 1,
-					},
-					this.#session,
-				)
-				.catch(() => {});
-		}
+		if (this.#watching.size === 0) void this.#cast();
 		this.#watching.add(onFrame);
 		return () => {
 			if (!this.#watching.delete(onFrame) || this.#watching.size > 0) return;

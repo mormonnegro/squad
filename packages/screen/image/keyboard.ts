@@ -13,14 +13,25 @@
  */
 
 /**
- * How long the operator keeps it without saying anything.
+ * How long the operator keeps it without touching anything.
  *
  * A lease rather than a latch, because the way this ends is almost never the button: it is a closed
  * tab, a laptop shut, a browser that went to sleep on the train. Without an expiry, the agent is
  * locked out of its own screen until somebody remembers a page they closed yesterday — and what
  * that looks like from the console is an agent that has quietly stopped being able to work.
+ *
+ * Five minutes rather than ninety seconds, and what it measures is the person rather than the
+ * picture. It used to be renewed by every frame sent, which was right while this was only ever
+ * watched in a window somebody had opened on purpose — and became wrong the moment the screen
+ * lived in the console, where the frames flow all day whether or not anybody is looking. Taken
+ * once, the keyboard was then held forever: the agent's every verb refused, its turns spent saying
+ * so, and nothing on the screen suggesting that the button was still down.
+ *
+ * Five because of what the wait is actually for. Somebody who takes the keyboard to sign in goes to
+ * their phone for a code, and ninety seconds is not enough for that — an agent that started
+ * clicking halfway through a login would be the exact failure this exists to prevent.
  */
-export const LEASE_MS = 90_000;
+export const LEASE_MS = 300_000;
 
 export type Holder = "agent" | "operator";
 
@@ -55,15 +66,21 @@ export class TheKeyboard {
 		return { holder: this.holder, note: this.#note };
 	}
 
-	/**
-	 * The operator takes it, and takes it again with every frame they are sent.
-	 *
-	 * Renewing on the view rather than on their clicks is deliberate: somebody reading a page they
-	 * are about to type into is not idle, and a lease that only counted keystrokes would expire in
-	 * the middle of them reading the two-factor mail.
-	 */
+	/** The operator takes it, from whenever they said so. */
 	take(): Keyboard {
 		this.#heldUntil = this.#now() + this.#leaseMs;
+		return this.state();
+	}
+
+	/**
+	 * Still there, said by something a person did.
+	 *
+	 * Only extends a hold that exists — it is not a second way to take the keyboard, which matters
+	 * because what calls this is a page rather than a button, and a page that could take the
+	 * keyboard by saying it was open would take it from the agent by being left open.
+	 */
+	stillThere(): Keyboard {
+		if (this.holder === "operator") this.#heldUntil = this.#now() + this.#leaseMs;
 		return this.state();
 	}
 

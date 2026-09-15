@@ -176,6 +176,38 @@ export function Screen({ agentId }: { agentId: string }) {
 		);
 	}
 
+	/*
+	 * While the keyboard is held, say every so often that somebody is still here.
+	 *
+	 * The screen gives it back on its own after a while, and what that timer has to measure is a
+	 * person rather than a picture. It used to be renewed by the frames, which was fine while the
+	 * screen was only ever watched in a window somebody had opened on purpose — and wrong the moment
+	 * it lived here, where the frames flow all day whether or not anybody is looking. Taken once, the
+	 * keyboard was then held until the console was closed, with every verb the agent tried refused.
+	 *
+	 * Any interaction anywhere in the console counts. Somebody typing a long message to the agent
+	 * about what they are looking at is present, and their mouse has not moved in a minute.
+	 */
+	useEffect(() => {
+		if (!holding) return;
+		let last = 0;
+		const here = () => {
+			const now = Date.now();
+			if (now - last < 30_000) return;
+			last = now;
+			void fetch(at("here"), { method: "POST" }).catch(() => undefined);
+		};
+		here();
+		for (const kind of ["pointermove", "pointerdown", "keydown"]) {
+			document.addEventListener(kind, here, { passive: true });
+		}
+		return () => {
+			for (const kind of ["pointermove", "pointerdown", "keydown"]) {
+				document.removeEventListener(kind, here);
+			}
+		};
+	}, [holding, agentId]);
+
 	// Nothing gets selected while an edge is being dragged. Without this, pulling the handle left
 	// sweeps a selection across the conversation behind it, and the drag ends with half the page
 	// highlighted.

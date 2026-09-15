@@ -147,6 +147,21 @@ const view = http.createServer((request, response) => {
 			return;
 		}
 
+		/*
+		 * Somebody is still there, said by a page that has seen them move.
+		 *
+		 * The lease used to be renewed by the frames themselves, which was fine while this was only
+		 * ever watched in a window opened on purpose and wrong as soon as it lived in the console: the
+		 * frames flow all day whether or not anybody is looking, so a keyboard taken once was held
+		 * until the browser was closed — the agent's every verb refused, its turns spent saying so,
+		 * and nothing on the screen suggesting the button was still down. What renews it now is a
+		 * console that has seen a pointer move or a key pressed, and nothing else.
+		 */
+		if (request.method === "POST" && path === "/here") {
+			json(response, 200, keyboard.stillThere());
+			return;
+		}
+
 		if (request.method === "POST" && path === "/keyboard") {
 			const asked = (await body(request)) as { hold?: unknown };
 			json(response, 200, asked?.hold === true ? keyboard.take() : keyboard.release());
@@ -161,7 +176,7 @@ const view = http.createServer((request, response) => {
 			const event = (await body(request)) as Record<string, unknown>;
 			await operated(event);
 			// Every event is proof somebody is there, which is what the lease is actually measuring.
-			keyboard.take();
+			keyboard.stillThere();
 			json(response, 200, keyboard.state());
 			return;
 		}
@@ -191,9 +206,9 @@ async function operated(event: Record<string, unknown>): Promise<void> {
  * the last one in the `<img>`. What it buys over a websocket is that nothing in the chain has to
  * understand it — not the plane's tunnel, not the door on the operator's machine, not the browser.
  *
- * The lease is renewed on every frame rather than on clicks, because somebody reading the page they
- * are about to type into is not idle, and a keyboard that expired while they read would hand the
- * screen back to the agent mid-login.
+ * Frames do not renew the keyboard's lease. They used to, which cost an afternoon: in a window
+ * somebody opened on purpose a frame arriving is somebody watching, and in a panel that is part of
+ * the console it is only the console being open. What says a person is there is `/here`.
  */
 async function frames(response: http.ServerResponse): Promise<void> {
 	const boundary = "squadframe";
@@ -225,7 +240,6 @@ async function frames(response: http.ServerResponse): Promise<void> {
 		response.write(`Content-Length: ${bytes.byteLength}\r\n\r\n`);
 		response.write(bytes);
 		response.write(`\r\n--${boundary}\r\n`);
-		if (keyboard.holder === "operator") keyboard.take();
 	};
 
 	// One straight away, so the page is not blank until the browser next decides something changed.
