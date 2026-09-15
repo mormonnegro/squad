@@ -1,5 +1,5 @@
 import type { AgentSummary } from "@squad/control-plane";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServedAt } from "./served.tsx";
 
@@ -111,43 +111,43 @@ export function Screen({ agentId }: { agentId: string }) {
 		return () => img.removeEventListener("wheel", rolled);
 	});
 
+	// Away, and a way back. A column that collapses to nothing would take its own handle with it, so
+	// what is left is the narrowest thing that can still be clicked.
+	if (!open) {
+		return (
+			<aside className="flex w-9 flex-none flex-col items-center border-line border-l py-2">
+				<button
+					type="button"
+					className="text-muted hover:text-say"
+					onClick={() => setOpen(true)}
+					title="show the screen"
+				>
+					<ChevronLeft className="size-4" />
+				</button>
+			</aside>
+		);
+	}
+
 	return (
-		<section className="flex flex-none flex-col border-line border-b" aria-label="screen">
-			<div className="flex items-center gap-3 px-5 py-1.5 text-[0.78rem] text-muted">
+		<section
+			className="flex w-[clamp(22rem,42%,46rem)] flex-none flex-col border-line border-l"
+			aria-label="screen"
+		>
+			<div className="flex items-center gap-3 px-3 py-1.5 text-[0.78rem] text-muted">
 				<button
 					type="button"
 					className="flex items-center gap-1.5 hover:text-say"
-					onClick={() => setOpen(!open)}
-					title={open ? "put the screen away" : "show the screen"}
+					onClick={() => setOpen(false)}
+					title="put the screen away"
 				>
-					{open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+					<ChevronRight className="size-3.5" />
 					<span>screen</span>
 				</button>
 
-				<form
-					className="flex min-w-0 flex-1 items-center"
-					onSubmit={(event) => {
-						event.preventDefault();
-						const wanted = typed.trim();
-						if (wanted === "" || !holding) return;
-						// What a person types into an address bar is a hostname about as often as it is a
-						// URL, and the screen opens http and https — so the scheme is added, not refused.
-						const url = wanted.includes("://") ? wanted : `https://${wanted}`;
-						void ask("open", { url }).then((said) => said && setStanding(said));
-					}}
-				>
-					<input
-						className="w-full rounded-md border border-line bg-sunk px-2.5 py-1 font-mono text-[0.74rem] text-say disabled:text-muted"
-						value={typed}
-						disabled={!holding}
-						spellCheck={false}
-						placeholder={holding ? "Where to?" : "Take the keyboard to go somewhere"}
-						onChange={(event) => setTyped(event.target.value)}
-					/>
-				</form>
+				<span className="flex-1" />
 
 				{standing.note !== undefined && (
-					<span className="max-w-[26ch] truncate text-working" title={standing.note}>
+					<span className="max-w-[18ch] truncate text-working" title={standing.note}>
 						asks: {standing.note}
 					</span>
 				)}
@@ -178,23 +178,52 @@ export function Screen({ agentId }: { agentId: string }) {
 				</a>
 			</div>
 
-			{open && (
-				// Focusable, so that typing goes to the page only once somebody has clicked on it. The
-				// alternative — listening on the window — is a console where every keystroke meant for
-				// the message box lands in whatever the agent has open.
-				<div
-					ref={stage}
-					// biome-ignore lint/a11y/noNoninteractiveTabindex: it is interactive — it is a browser
-					tabIndex={0}
-					className="relative flex h-[min(46vh,30rem)] items-center justify-center border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
-					onKeyDown={(event) => {
-						if (!holding) return;
-						if (event.metaKey || event.ctrlKey || event.altKey) return;
-						if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(event.key)) return;
+			{/* On a line of its own, because a column is narrow: an address bar sharing a row with two
+			    buttons in here would be a field too short to read a URL in. */}
+			<div className="px-3 pb-2">
+				<form
+					className="flex min-w-0 items-center"
+					onSubmit={(event) => {
 						event.preventDefault();
-						void ask("input", { kind: "key", key: event.key });
+						const wanted = typed.trim();
+						if (wanted === "" || !holding) return;
+						// What a person types into an address bar is a hostname about as often as it is a
+						// URL, and the screen opens http and https — so the scheme is added, not refused.
+						const url = wanted.includes("://") ? wanted : `https://${wanted}`;
+						void ask("open", { url }).then((said) => said && setStanding(said));
 					}}
 				>
+					<input
+						className="w-full rounded-md border border-line bg-sunk px-2.5 py-1 font-mono text-[0.74rem] text-say disabled:text-muted"
+						value={typed}
+						disabled={!holding}
+						spellCheck={false}
+						placeholder={holding ? "Where to?" : "Take the keyboard to go somewhere"}
+						onChange={(event) => setTyped(event.target.value)}
+					/>
+				</form>
+			</div>
+
+			{/* Focusable, so that typing goes to the page only once somebody has clicked on it. The
+			    alternative — listening on the window — is a console where every keystroke meant for the
+			    message box lands in whatever the agent has open. */}
+			<div
+				ref={stage}
+				// biome-ignore lint/a11y/noNoninteractiveTabindex: it is interactive — it is a browser
+				tabIndex={0}
+				// Against the top rather than the middle of the column: the picture belongs under the
+				// address bar that says where it is, and a browser floating in the vertical centre of a tall
+				// column with a gap over it reads as something that failed to load.
+				className="flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
+				onKeyDown={(event) => {
+					if (!holding) return;
+					if (event.metaKey || event.ctrlKey || event.altKey) return;
+					if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(event.key)) return;
+					event.preventDefault();
+					void ask("input", { kind: "key", key: event.key });
+				}}
+			>
+				<figure className="relative m-0 self-start leading-none">
 					<img
 						ref={picture}
 						// Keyed by the agent alone: changing this address restarts the stream, and a stream
@@ -216,17 +245,18 @@ export function Screen({ agentId }: { agentId: string }) {
 						}}
 						onDragStart={(event) => event.preventDefault()}
 					/>
-					{/* Along the bottom rather than across the middle: it is a note about the page, and a
-					    sentence over the part somebody is trying to read is the one place it cannot go. */}
+					{/* Along the bottom of the picture rather than across the middle of it: it is a note
+				    about the page, and the part somebody is trying to read is the one place it cannot
+				    go. Inside the figure, so it stays with the picture rather than with the column. */}
 					{!holding && (
-						<div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+						<figcaption className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
 							<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
 								the agent is driving — take the keyboard to touch this page
 							</span>
-						</div>
+						</figcaption>
 					)}
-				</div>
-			)}
+				</figure>
+			</div>
 		</section>
 	);
 }

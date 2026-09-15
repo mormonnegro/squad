@@ -78,107 +78,113 @@ export function Chat({
 			</header>
 
 			{/*
-			 * The agent's browser, when it has one, over the conversation about it.
+			 * The conversation and, beside it, the browser it is about.
 			 *
-			 * Not a door in the rail like the workspace and the settings, because it is not a room to
-			 * go to: it is the thing the next sentence is about. An agent that says it cannot get past
-			 * a sign-in is asking somebody to look up and act, and a browser in another tab makes
-			 * looking and acting two separate things — you leave to do it and come back to find out
-			 * whether it worked.
+			 * Beside rather than above, which is the whole of why it is worth the split: what this is
+			 * for is watching an agent work and typing to it about what you are watching, and a screen
+			 * stacked over the column pushes the words you are answering off the bottom. Side by side
+			 * they are one thing — the page on the right, what was said about it on the left, and the
+			 * box to answer in still under your hands.
+			 *
+			 * And not a door in the rail like the workspace and the settings, because it is not a room
+			 * to go to: it is the thing the next sentence is about.
 			 */}
-			{hasScreen(agent) && <Screen agentId={agent.id} />}
+			<div className="flex min-h-0 flex-1">
+				<div className="flex min-w-0 flex-1 flex-col">
+					<div className="floor">
+						<div
+							className="scroll"
+							ref={floor}
+							onScroll={(event) => setFollowing(atFloor(event.currentTarget))}
+						>
+							{said.map((one, index) => (
+								// Nothing in an utterance is unique — the same agent can say the same word twice in a
+								// row — and the list only ever grows at the end, so the position is the identity.
+								<Said
+									// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
+									key={index}
+									said={one}
+									agentId={agent.id}
+									onFiles={onFiles}
+									// Whether it stands alone is not something a line knows about itself: it is the
+									// two beside it that decide, and this is the only place both are in hand.
+									run={sameRun(said[index - 1], one)}
+									ends={!sameRun(one, said[index + 1])}
+								/>
+							))}
 
-			<div className="floor">
-				<div
-					className="scroll"
-					ref={floor}
-					onScroll={(event) => setFollowing(atFloor(event.currentTarget))}
-				>
-					{said.map((one, index) => (
-						// Nothing in an utterance is unique — the same agent can say the same word twice in a
-						// row — and the list only ever grows at the end, so the position is the identity.
-						<Said
-							// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
-							key={index}
-							said={one}
-							agentId={agent.id}
-							onFiles={onFiles}
-							// Whether it stands alone is not something a line knows about itself: it is the
-							// two beside it that decide, and this is the only place both are in hand.
-							run={sameRun(said[index - 1], one)}
-							ends={!sameRun(one, said[index + 1])}
-						/>
-					))}
+							{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
+								<Turn agentId={agent.id} live={live} onFiles={onFiles} />
+							)}
 
-					{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
-						<Turn agentId={agent.id} live={live} onFiles={onFiles} />
-					)}
-
-					{agent.asking.map((host) => (
-						<Ask
-							key={`reach:${host}`}
-							what={
-								<>
-									<strong>{nameOf(agent.id)}</strong> wants to reach <code>{host}</code> on its way
-									out.
-								</>
-							}
-							onAnswer={(open) => void plane.answerReach(agent.id, host, open)}
-						/>
-					))}
-					{agent.wants.map((to) => (
-						<Ask
-							key={`talk:${to}`}
-							what={
-								<>
-									<strong>{nameOf(agent.id)}</strong> wants to write to <code>{to}</code>. A message
-									wakes that agent and spends its ceiling.
-								</>
-							}
-							onAnswer={(open) => void plane.answerTalk(agent.id, to, open)}
-						/>
-					))}
-					{/* Written, and waiting. Unlike the two above it, what is being decided here is not
+							{agent.asking.map((host) => (
+								<Ask
+									key={`reach:${host}`}
+									what={
+										<>
+											<strong>{nameOf(agent.id)}</strong> wants to reach <code>{host}</code> on its
+											way out.
+										</>
+									}
+									onAnswer={(open) => void plane.answerReach(agent.id, host, open)}
+								/>
+							))}
+							{agent.wants.map((to) => (
+								<Ask
+									key={`talk:${to}`}
+									what={
+										<>
+											<strong>{nameOf(agent.id)}</strong> wants to write to <code>{to}</code>. A
+											message wakes that agent and spends its ceiling.
+										</>
+									}
+									onAnswer={(open) => void plane.answerTalk(agent.id, to, open)}
+								/>
+							))}
+							{/* Written, and waiting. Unlike the two above it, what is being decided here is not
 					    whether a door opens but whether these exact words leave — so they are on the
 					    screen, whole, above the keys. */}
-					{agent.sending.map((held, index) => (
-						<Ask
-							// The place in the list is the identity: the same sentence can be held twice.
-							// biome-ignore lint/suspicious/noArrayIndexKey: the list is what is being answered
-							key={`send:${index}`}
-							keys={["y send it", "n drop it"]}
-							what={
-								<>
-									<strong>{nameOf(agent.id)}</strong> would send this {outOf(held.channel)}, in your
-									name. Nothing has gone.
-									<span className="ask-said">{held.body}</span>
-								</>
-							}
-							onAnswer={(send) => void plane.answerSend(agent.id, index, send)}
-						/>
-					))}
-				</div>
-				{!following && (
-					<button
-						type="button"
-						className="latest"
-						onClick={() => {
-							setFollowing(true);
-							floor.current?.scrollTo({ top: floor.current.scrollHeight, behavior: "smooth" });
-						}}
-					>
-						↓ jump to latest
-					</button>
-				)}
-			</div>
+							{agent.sending.map((held, index) => (
+								<Ask
+									// The place in the list is the identity: the same sentence can be held twice.
+									// biome-ignore lint/suspicious/noArrayIndexKey: the list is what is being answered
+									key={`send:${index}`}
+									keys={["y send it", "n drop it"]}
+									what={
+										<>
+											<strong>{nameOf(agent.id)}</strong> would send this {outOf(held.channel)}, in
+											your name. Nothing has gone.
+											<span className="ask-said">{held.body}</span>
+										</>
+									}
+									onAnswer={(send) => void plane.answerSend(agent.id, index, send)}
+								/>
+							))}
+						</div>
+						{!following && (
+							<button
+								type="button"
+								className="latest"
+								onClick={() => {
+									setFollowing(true);
+									floor.current?.scrollTo({ top: floor.current.scrollHeight, behavior: "smooth" });
+								}}
+							>
+								↓ jump to latest
+							</button>
+						)}
+					</div>
 
-			<Composer
-				plane={plane}
-				agent={agent}
-				busy={live.thinking}
-				onLocal={onLocal}
-				onStop={() => void plane.stop(agent.id)}
-			/>
+					<Composer
+						plane={plane}
+						agent={agent}
+						busy={live.thinking}
+						onLocal={onLocal}
+						onStop={() => void plane.stop(agent.id)}
+					/>
+				</div>
+				{hasScreen(agent) && <Screen agentId={agent.id} />}
+			</div>
 		</>
 	);
 }
