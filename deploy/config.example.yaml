@@ -129,6 +129,16 @@ agents:
     # with an @ in what you write to this one opens a door for that turn alone.
     talksTo: [ledger]
 
+    # A browser of its own, in a container beside the sandbox rather than inside it. The agent
+    # drives it through a short list of verbs — open a page, read it, click a numbered element,
+    # type, look — and never touches the profile, which is mounted where it has no filesystem: an
+    # operator who signs this browser into their mail has lent the use of the session rather than
+    # handed over the cookie. It reaches only what this agent already reaches, under this agent's
+    # own egress credential. Left out it is no, and `/screen on` gives one at the console for as
+    # long as it is wanted — which is where most of them should be turned on, because a screen is a
+    # container and a browser, and the image for it is built the first time anybody asks.
+    screen: true
+
     # A plugin the operator logged into needs nothing here. `/plugins login <name>` sends them to
     # that server's consent screen, and what comes back grants one host and that server's own path,
     # for as long as the agent holds the server. It is the only capability not in this file, and it

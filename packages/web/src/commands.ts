@@ -35,6 +35,11 @@ export const COMMANDS: readonly Command[] = [
 		does: "open a port inside it on the machine you are sitting at",
 	},
 	{
+		name: "/screen",
+		takes: "[on|off|auto]",
+		does: "give it a browser of its own, and open the live view of it here",
+	},
+	{
 		name: "/reach",
 		takes: "<host>",
 		does: "ask to open a host on the way out, answered here with one key",

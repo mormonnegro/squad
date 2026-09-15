@@ -52,6 +52,7 @@ import {
 	type Schedule,
 	Scheduler,
 } from "@squad/scheduler";
+import { buildScreenImage, DockerScreens, SCREEN_VIEW_PORT } from "@squad/screen";
 import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
@@ -142,6 +143,7 @@ import {
 	standingOf as repoStanding,
 } from "./repos.ts";
 import { nameRefused, type Room, RoomChannel, Rooms, roomChannel } from "./rooms.ts";
+import { hasScreen, ScreenChoices, type ScreenStanding } from "./screens.ts";
 import {
 	DEFAULT_SEARCH_PROVIDER,
 	resolveSearch,
@@ -228,6 +230,15 @@ export interface AgentConfig {
 	 * set at the keyboard overrides this one, and neither is written back to the operator's file.
 	 */
 	readonly limitUsd?: number;
+	/**
+	 * Whether this agent gets a browser of its own, in a container beside its sandbox.
+	 *
+	 * Declared here and switched at the console, because it is both: an agent whose whole job is the
+	 * web should come up with a screen every time this plane starts, and an agent that needs one for
+	 * the next twenty minutes should not need an edit to this file and a redeploy. The console wins
+	 * while it disagrees, and never writes back here.
+	 */
+	readonly screen?: boolean;
 }
 
 /** What every agent starts from: the same shape as an agent, minus the one thing that names it. */
@@ -275,6 +286,14 @@ export interface ControlPlaneOptions {
 	/** Host directory for durable state: event queues, schedules and the proxy CA. */
 	readonly stateDir: string;
 	readonly image?: string;
+	/**
+	 * The image a screen runs, when it is not the one built on this machine.
+	 *
+	 * Beside the sandbox's and for its reason: which images this install runs is a fact about how it
+	 * was installed rather than a decision about any agent, so it comes from the environment and the
+	 * operator's file stays the same either way.
+	 */
+	readonly screenImage?: string;
 	readonly hooks?: readonly Hook[];
 	readonly secrets?: SecretStore;
 	readonly networkName?: string;
@@ -516,6 +535,15 @@ export class ControlPlane {
 	readonly scheduler: Scheduler;
 	readonly router = new ChannelRouter();
 	readonly sandboxes: DockerSandboxManager;
+	/**
+	 * The browsers, which are containers of their own rather than anything inside a sandbox.
+	 *
+	 * Public beside the sandboxes because the same things are true of it: the plane makes them, the
+	 * console asks about them, and neither of those is a secret the plane needs to keep from itself.
+	 */
+	readonly screens: DockerScreens;
+	/** The daemon itself, for the one thing neither manager does: building an image. */
+	readonly #docker: DockerEngine;
 	readonly directory = new StaticAgentDirectory();
 	readonly broker: EgressBroker;
 	readonly webhooks: WebhookChannel;
@@ -562,6 +590,16 @@ export class ControlPlane {
 	 * watching — and because two consoles looking into the same plane should find the same links.
 	 */
 	readonly #served: ServedPorts;
+	/** Which agents an operator has turned a screen on for, which outranks what the file declares. */
+	readonly #screenChoices: ScreenChoices;
+	/**
+	 * The browser image being built, while it is being built.
+	 *
+	 * One build at a time and never two, because the first `/screen on` on a fresh install is the one
+	 * that pays for Chromium and it takes minutes: an operator who typed it twice, or two agents given
+	 * screens in the same minute, would otherwise have the machine building the same image twice.
+	 */
+	#buildingScreens: Promise<void> | undefined;
 	/**
 	 * The file each served port was last seen printing into, so that a server which has stopped can
 	 * still be read.
@@ -696,6 +734,7 @@ export class ControlPlane {
 		this.#transcript = new Transcript(join(this.#stateDir, "transcript"));
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 		this.#served = new ServedPorts(join(this.#stateDir, "served.json"));
+		this.#screenChoices = new ScreenChoices(join(this.#stateDir, "screens.json"));
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
@@ -720,10 +759,20 @@ export class ControlPlane {
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
 		this.#desk = new LoginDesk(this.#logins, (url) => this.#emit({ kind: "open", url }));
 
+		// One client for both, because they are the same daemon and a second connection would only be
+		// a second thing to get wrong when DOCKER_HOST is unusual.
+		const engine = new DockerEngine();
+		this.#docker = engine;
 		this.sandboxes = new DockerSandboxManager(
-			new DockerEngine(),
+			engine,
 			options.networkName ?? DEFAULT_NETWORK,
 			options.deployment ?? DEFAULT_DEPLOYMENT,
+		);
+		this.screens = new DockerScreens(
+			engine,
+			options.networkName ?? DEFAULT_NETWORK,
+			options.deployment ?? DEFAULT_DEPLOYMENT,
+			...(options.screenImage === undefined ? [] : [options.screenImage]),
 		);
 		this.bus = new EventBus({
 			store: new FileEventStore(join(this.#stateDir, "events")),
@@ -976,6 +1025,12 @@ export class ControlPlane {
 		this.bus.unregister(agentId);
 		this.#runners.delete(agentId);
 		await this.sandboxes.destroy(agentId, { discardState: options.purge === true });
+		// The browser goes with the agent, and the profile goes only on a purge — for the reason the
+		// repository volume does. A screen stopped and started again should not cost the operator
+		// every login they signed it into; a name being given away should cost them all of them.
+		await this.screens
+			.destroy(agentId, { discardProfile: options.purge === true })
+			.catch(() => undefined);
 		this.#tokens.delete(agentId);
 		// The directory was inside the container that just went. Whatever comes back is at its door.
 		this.#cwd.delete(agentId);
@@ -992,6 +1047,10 @@ export class ControlPlane {
 			else await this.#deleted.add(agentId);
 			await this.#spend.forget(agentId);
 			await this.#choices.forget(agentId);
+			// Whether this name had a screen was a decision about this agent, and the next one to hold
+			// the name is not it: a browser nobody asked for, already signed in, would be the worst kind
+			// of inheritance.
+			await this.#screenChoices.forget(agentId);
 			// The ports go with the container they pointed into. Left behind, the next agent to take
 			// this name would inherit links to servers it never started.
 			await this.#served.forget(agentId);
@@ -2950,6 +3009,8 @@ export class ControlPlane {
 			},
 			serve: (port) => this.#served.open(agentId, port),
 			unserve: (port) => this.#served.close(agentId, port),
+			screen: () => this.screenStanding(agentId),
+			setScreen: (on) => this.setScreen(agentId, on),
 			listening: (port) => this.#listening(agentId, port),
 			// Asked of the same set the proxy will ask, so what the operator is told here is what the
 			// agent will actually meet — rather than a second opinion that can be right while the wire
@@ -3334,13 +3395,171 @@ export class ControlPlane {
 		}
 		// Long enough to ride out a dev server restarting under a page that is being reloaded, short
 		// enough that a port with nothing behind it fails while the person is still looking at it.
-		const stream = await this.sandboxes.attach(agentId, [
-			"node",
-			RELAY_PATH,
-			String(port),
-			String(FORWARD_CONNECT_MS),
-		]);
+		const relay = ["node", RELAY_PATH, String(port), String(FORWARD_CONNECT_MS)];
+		// The one port that is not in the sandbox at all. A screen is a second container, and its live
+		// view is on that container's loopback — which is what keeps it out of the agent's reach, since
+		// the agent shares a network with it and not a loopback. Same tunnel, one door along.
+		const stream =
+			port === SCREEN_VIEW_PORT && (await this.wantsScreen(agentId))
+				? await this.screens.attach(agentId, relay)
+				: await this.sandboxes.attach(agentId, relay);
 		return new ExecStream(stream);
+	}
+
+	/** Whether this agent is meant to have a browser: what the file said, unless the console differs. */
+	async wantsScreen(agentId: string): Promise<boolean> {
+		const declared = this.#agents.find((agent) => agent.id === agentId)?.screen;
+		return hasScreen(declared, await this.#screenChoices.of(agentId));
+	}
+
+	/**
+	 * Turns a screen on or off and makes it so, answering with where it ended up.
+	 *
+	 * `null` hands the decision back to the operator's file rather than setting it to off, which is
+	 * the difference between "not for this agent" and "I have stopped having an opinion".
+	 */
+	async setScreen(agentId: string, on: boolean | null): Promise<ScreenStanding> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		await this.#screenChoices.set(agentId, on);
+		await this.#settleScreen(agentId);
+		return this.screenStanding(agentId);
+	}
+
+	/** What to say about an agent's screen: whether it is meant to be there, and whether it is. */
+	async screenStanding(agentId: string): Promise<ScreenStanding> {
+		const on = await this.wantsScreen(agentId);
+		const status = await this.screens.status(agentId).catch(() => undefined);
+		const at = (await this.#served.of(agentId)).find((one) => one.port === SCREEN_VIEW_PORT);
+		// Asked only of a screen that is up, and left out when even that would not answer: a container
+		// that is starting has no opinion about who is driving yet, and inventing one would put the
+		// word "agent" in front of an operator at the moment they were about to take it.
+		const keyboard = status?.running === true ? await this.#keyboardOf(agentId) : undefined;
+		return {
+			on,
+			running: status?.running === true,
+			...(at === undefined ? {} : { at }),
+			...(keyboard === undefined ? {} : { keyboard }),
+			...(this.buildingScreen ? { building: true } : {}),
+		};
+	}
+
+	/**
+	 * Who is holding the keyboard, asked of the screen itself.
+	 *
+	 * Asked rather than remembered, because the plane is not where that is decided: the keyboard is
+	 * taken on the live view and expires on a lease, and a copy of it here would be a copy that is
+	 * wrong for ninety seconds every time somebody closes the tab. An exec is slow and this is a
+	 * console command, which is the one place that is affordable.
+	 */
+	async #keyboardOf(agentId: string): Promise<"agent" | "operator" | undefined> {
+		const asked = [
+			`fetch("http://127.0.0.1:${SCREEN_VIEW_PORT}/state")`,
+			".then((r) => r.text())",
+			".then((t) => process.stdout.write(t))",
+			".catch(() => process.exit(1))",
+		].join("");
+		const read = await this.screens.exec(agentId, ["node", "-e", asked]).catch(() => undefined);
+		if (read?.exitCode !== 0) return undefined;
+		try {
+			const state: unknown = JSON.parse(read.stdout);
+			const holder = (state as { holder?: unknown }).holder;
+			return holder === "operator" ? "operator" : "agent";
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * Makes the browser match the decision about it, and opens or closes the way in to it.
+	 *
+	 * Called on every start and every time the decision changes, so it has to be safe to run against
+	 * a screen that is already exactly right — which is most of the times it runs.
+	 *
+	 * The container is replaced rather than reused when the image moved or the egress credential did.
+	 * Cheap, and the alternative is worse in a way that is hard to see: a screen adopted with a stale
+	 * token is a browser whose every request is refused at the proxy, which looks from the inside like
+	 * a browser with no internet and from the console like nothing at all.
+	 */
+	async #settleScreen(agentId: string): Promise<void> {
+		const wanted = await this.wantsScreen(agentId);
+		let existing = await this.screens.status(agentId).catch(() => undefined);
+
+		if (!wanted) {
+			if (existing !== undefined) await this.screens.destroy(agentId);
+			// The way in goes with it. A link that opens onto a container that is not there is worse
+			// than no link, because it is indistinguishable from the screen being broken.
+			await this.#served.close(agentId, SCREEN_VIEW_PORT);
+			return;
+		}
+
+		const token = this.#tokens.get(agentId);
+		// No token means the sandbox has not started yet, and a browser carrying no egress credential
+		// is one that reaches nothing. Settling happens again right after the sandbox does.
+		if (token === undefined) return;
+		const proxyUrl = `http://${encodeURIComponent(agentId)}:${token}@${this.#proxyOrigin}`;
+
+		if (existing !== undefined) {
+			const wantedImage = await this.screens.imageId().catch(() => undefined);
+			const current = wantedImage === undefined || wantedImage === existing.imageId;
+			if (!current || existing.proxyUrl !== proxyUrl) {
+				await this.screens.destroy(agentId);
+				existing = undefined;
+			}
+		}
+
+		if (existing === undefined) {
+			// The image is built here, on the machine that runs it, the first time anybody asks for a
+			// screen. Started and not waited for: it is a gigabyte of Chromium and several minutes on a
+			// small machine, and a console that hung for those minutes would look like one that had
+			// crashed. The screen comes up when the build lands.
+			if ((await this.screens.imageId().catch(() => undefined)) === undefined) {
+				this.#buildScreenImage(agentId);
+				return;
+			}
+			await this.screens.create({ agentId, proxyUrl, caCertHostPath: this.caCertPath });
+		}
+		await this.screens.start(agentId);
+		await this.#served.open(agentId, SCREEN_VIEW_PORT);
+	}
+
+	/** Whether the browser image is being built right now, which is what an empty screen is waiting on. */
+	get buildingScreen(): boolean {
+		return this.#buildingScreens !== undefined;
+	}
+
+	/**
+	 * Builds the browser image, says so in the conversation of whoever is waiting for it, and settles
+	 * the screen again when it lands.
+	 *
+	 * Reported into the agent's own pane rather than only into the log, because the operator who
+	 * typed `/screen on` is looking at that pane and is about to wonder why nothing opened. Two lines
+	 * and not the build's four hundred: what it is doing, and how it went.
+	 */
+	#buildScreenImage(agentId: string): void {
+		if (this.#buildingScreens !== undefined) return;
+		void this.#record(agentId, {
+			from: "plane",
+			text: "Building the browser image. It is Chromium, so this takes a few minutes the first time — the screen comes up on its own when it lands, with nothing to type here.",
+		});
+		this.#buildingScreens = buildScreenImage({
+			engine: this.#docker,
+			image: this.screens.image,
+			dir: screenImagePath(),
+			// Swallowed rather than emitted line by line. A Docker build narrates four hundred lines and
+			// every one of them would be in somebody's conversation, which is how a feed stops being read.
+			say: () => {},
+		})
+			.then(async () => {
+				void this.#record(agentId, { from: "plane", tone: "good", text: "The browser is built." });
+				this.#buildingScreens = undefined;
+				await this.#settleScreen(agentId);
+			})
+			.catch((error: unknown) => {
+				this.#buildingScreens = undefined;
+				this.#reportError(agentId, error as Error);
+			});
 	}
 
 	/**
@@ -3595,6 +3814,13 @@ export class ControlPlane {
 		await this.#reregister(agent.id);
 
 		await this.sandboxes.start(agent.id);
+		// After the sandbox rather than beside it, because the screen carries the agent's egress
+		// credential and the credential is not known until the sandbox it belongs to exists. Failing
+		// here is reported and not thrown: a screen that will not come up is a missing browser, and an
+		// agent that cannot start at all because of one would be a far larger outage than the feature.
+		await this.#settleScreen(agent.id).catch((error: unknown) =>
+			this.#reportError(agent.id, error as Error),
+		);
 		// The manifest wants the model qualified by whoever serves it, so a configured one is written
 		// out in full rather than by the short name it is picked by here.
 		const thinking = await this.#modelFor(agent.id);
@@ -3621,6 +3847,10 @@ export class ControlPlane {
 			// And the repositories, so one given at the console is in front of the agent on its next
 			// turn, with the branches it may push named before it tries one it may not.
 			repos: (agentId) => this.repos(agentId),
+			// And whether it has a browser, asked again each turn for the reason the rest are: a screen
+			// turned on at the console is a screen the next turn can use, without the container that
+			// the tools would otherwise have to be rebuilt into.
+			screen: (agentId) => this.wantsScreen(agentId),
 			// And the other agents, asked again each turn because the answer changes within one: a door
 			// opened at the console, and the one an operator opens by naming an agent in the message
 			// that started this very turn.
@@ -3671,6 +3901,17 @@ export class ControlPlane {
 		});
 		return proxyToken;
 	}
+}
+
+/**
+ * Where the browser image's sources are, relative to this file.
+ *
+ * The same shape as the console bundle's path, and for the same reason: the plane runs from the
+ * repository whether it was installed by cloning it or by pulling an image that copied it in, so a
+ * path from here is the one thing that is true in both.
+ */
+function screenImagePath(): string {
+	return join(import.meta.dirname, "..", "..", "screen", "image");
 }
 
 /**

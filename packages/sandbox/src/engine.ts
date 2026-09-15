@@ -129,6 +129,50 @@ export class DockerEngine {
 	}
 
 	/**
+	 * Posts something that is not JSON and reads the answer as it arrives.
+	 *
+	 * For the endpoints that narrate rather than answer: a build sends a tar and then talks for
+	 * several minutes, and a caller that only got the whole reply at the end would have nothing to
+	 * show for the wait — which, on a machine slow enough for the wait to matter, is the whole of
+	 * what somebody watching needs.
+	 */
+	async stream(
+		method: string,
+		path: string,
+		body: Buffer,
+		contentType: string,
+		onChunk: (text: string) => void,
+	): Promise<void> {
+		return new Promise<void>((resolve, reject) => {
+			const request = http.request(
+				{
+					socketPath: this.socketPath,
+					method,
+					path,
+					headers: { "content-type": contentType, "content-length": String(body.byteLength) },
+				},
+				(response) => {
+					const status = response.statusCode ?? 0;
+					const failure: Buffer[] = [];
+					response.on("data", (chunk: Buffer) => {
+						if (status >= 400) failure.push(chunk);
+						else onChunk(chunk.toString("utf8"));
+					});
+					response.on("end", () => {
+						if (status >= 400) {
+							reject(new DockerError(status, Buffer.concat(failure).toString("utf8")));
+							return;
+						}
+						resolve();
+					});
+				},
+			);
+			request.on("error", reject);
+			request.end(body);
+		});
+	}
+
+	/**
 	 * Upgrades the connection and returns the raw socket, for endpoints Docker hijacks such as
 	 * exec start with stdin attached. The socket is a full duplex: writes go to the process stdin,
 	 * reads arrive as Docker's multiplexed frames unless the exec was created with a TTY.

@@ -33,6 +33,7 @@
 		"@squad/proxy": "workspace:*",
 		"@squad/relay": "workspace:*",
 		"@squad/sandbox": "workspace:*",
+		"@squad/screen": "workspace:*",
 		"@squad/scheduler": "workspace:*",
 		"ink": "^7.1.1",
 		"react": "^19.2.8",

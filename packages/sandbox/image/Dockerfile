@@ -50,6 +50,13 @@ COPY console.ts /usr/local/lib/squad/extensions/console.ts
 COPY remember.ts /usr/local/lib/squad/extensions/remember.ts
 COPY send.ts /usr/local/lib/squad/extensions/send.ts
 
+# The browser's half of the screen, which is the one that runs in here: the other half is a whole
+# container. Copied in always and handed to pi only when the agent has been given one, because an
+# image built with it missing would be an image where turning a screen on does nothing until the
+# next rebuild.
+COPY screen-answer.ts /usr/local/lib/squad/extensions/screen-answer.ts
+COPY computer.ts /usr/local/lib/squad/extensions/computer.ts
+
 USER agent
 WORKDIR /home/agent
 CMD ["sleep", "infinity"]

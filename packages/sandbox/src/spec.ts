@@ -75,6 +75,17 @@ export const SANDBOX_REMEMBER_EXTENSION = "/usr/local/lib/squad/extensions/remem
 export const SANDBOX_SEND_EXTENSION = "/usr/local/lib/squad/extensions/send.ts";
 
 /**
+ * The extension that gives the agent a browser, in a container it is not inside. Shipped in the
+ * image, and handed over only when the operator has given this agent a screen.
+ *
+ * Conditional where the others are not, because it is the only one whose other half is a second
+ * container: an agent handed these tools without one has nine ways to be told that nothing
+ * answered. And a tool that is present and always fails is worse than an absent one, which the
+ * agent simply works without.
+ */
+export const SANDBOX_SCREEN_EXTENSION = "/usr/local/lib/squad/extensions/computer.ts";
+
+/**
  * Every extension the plane hands the agent, which is a list because there is more than one and
  * naming only the first is a silent way to lose the rest. An extension in the image that nothing
  * names is one the agent never finds, and what that looks like from outside is not an error: it is
@@ -89,6 +100,20 @@ export const SANDBOX_EXTENSIONS: readonly string[] = [
 	SANDBOX_REMEMBER_EXTENSION,
 	SANDBOX_SEND_EXTENSION,
 ];
+
+/**
+ * The extensions this agent gets on this turn.
+ *
+ * A function rather than a list because one of them comes and goes while the agent is running: a
+ * screen is turned on at the console, and an agent that only learned about it when its container
+ * was next replaced would be an agent the operator has to restart to give a browser to. Asked every
+ * turn, like the servers and the model and the search provider, and for the same reason.
+ */
+export function extensionsFor(has: { readonly screen?: boolean }): readonly string[] {
+	return has.screen === true
+		? [...SANDBOX_EXTENSIONS, SANDBOX_SCREEN_EXTENSION]
+		: SANDBOX_EXTENSIONS;
+}
 
 /**
  * Where that extension leaves the request, and the plane looks for it once the turn is over.

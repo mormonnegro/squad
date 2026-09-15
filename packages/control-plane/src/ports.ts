@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { SCREEN_VIEW_PORT } from "@squad/screen";
 
 /** The lowest port a console can bind without being root, which is where the operator's end is. */
 export const LOWEST_PORT = 1024;
@@ -154,6 +155,13 @@ export function unservable(port: number): string | undefined {
 	// an ordinary listener under 1024 needs root.
 	if (port < LOWEST_PORT) {
 		return `Port ${port} is under ${LOWEST_PORT}, and the console opens it as an ordinary listener on your own machine, which needs root down there. Serve it from a higher port inside the sandbox.`;
+	}
+	// The one number on this list that is not the agent's to give away. A screen's live view is
+	// opened here by the plane, and it goes somewhere else entirely — into the browser's container
+	// rather than the sandbox. An agent that could serve this port could put a page of its own behind
+	// the link its operator opens to watch it, which is a page read at an address the operator trusts.
+	if (port === SCREEN_VIEW_PORT) {
+		return `Port ${SCREEN_VIEW_PORT} belongs to the screen, whether or not this agent has one. Its live view is opened there by the plane, and /screen is what opens and closes it. Serve something else from inside the sandbox.`;
 	}
 	return undefined;
 }

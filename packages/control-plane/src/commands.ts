@@ -14,6 +14,7 @@ import {
 	readPush,
 	readRepo,
 } from "./repos.ts";
+import type { ScreenStanding } from "./screens.ts";
 import type { Skill } from "./skills.ts";
 import type { Teammate } from "./team.ts";
 import type { Trigger } from "./triggers.ts";
@@ -146,6 +147,17 @@ export interface CommandContext {
 	serve(port: number): Promise<Served>;
 	/** Closes one. Answers whether there was one to close. */
 	unserve(port: number): Promise<boolean>;
+	/** Where this agent's browser stands: whether it is meant to have one, and whether it has. */
+	screen(): Promise<ScreenStanding>;
+	/**
+	 * Gives this agent a browser, or takes it away. `null` hands the decision back to the file.
+	 *
+	 * Allowed here for the reason serving a port is, and with the same direction: it opens nothing
+	 * outwards. The browser reaches exactly the hosts the agent already reaches, under the agent's own
+	 * egress credential, because it is handed the agent's own — so a screen widens what an agent can
+	 * do with its grants and not what its grants are.
+	 */
+	setScreen(on: boolean | null): Promise<ScreenStanding>;
 	/** Whether anything is listening on that port inside the sandbox, asked of the sandbox. */
 	listening(port: number): Promise<boolean>;
 	/**
@@ -330,6 +342,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/serve",
 		takes: "[<port>|stop <port>]",
 		does: "open a port inside it on the machine you are sitting at",
+	},
+	{
+		name: "/screen",
+		takes: "[on|off|auto]",
+		does: "give it a browser of its own, and open the live view of it here",
 	},
 	{
 		name: "/reach",
@@ -815,6 +832,111 @@ async function serving(context: CommandContext): Promise<string> {
 		"",
 		`/serve stop ${mine[0]?.port} closes one.`,
 	].join("\n");
+}
+
+/**
+ * What a screen is, said once, wherever the answer needs it said.
+ *
+ * Every sentence in here is one somebody would otherwise find out the hard way: that the browser is
+ * not in the sandbox, that it stays signed in, that the operator can take it, and that it costs
+ * something to leave running. An operator deciding whether to turn this on is deciding about a
+ * container and a session of their own, and both of those are things to say out loud.
+ */
+const WHAT_A_SCREEN_IS = [
+	"A screen is a browser in a container of its own, beside the sandbox and not inside it. The",
+	"agent drives it through a short list of verbs — open a page, read it, click a numbered thing,",
+	"type, look — and has no other way in: the profile, with every cookie in it, is mounted where",
+	"the agent has no filesystem at all.",
+	"",
+	"It stays signed in. Anything you log it into, it is still logged into next week, through",
+	"restarts and rebuilds, until you sign it out or delete the agent with its profile.",
+	"",
+	"It reaches what the agent reaches. The browser carries the agent's own egress credential, so",
+	"the proxy holds it to the same grants and the same bill.",
+].join("\n");
+
+/** Said wherever the link is, because the keyboard is the half of this that is not obvious. */
+const THE_KEYBOARD = [
+	"On that page there is a button that takes the keyboard. While you hold it the agent cannot",
+	"touch the page — it can still read it, so it sees whatever you leave on the screen — and it",
+	"comes back to the agent when you give it back, or a minute and a half after you walk away.",
+	"That is how you sign it in: take the keyboard, log in as yourself, give it back.",
+].join("\n");
+
+/**
+ * The browser an agent has, and the window onto it.
+ *
+ * The one command here that makes a container. It is allowed for the same reason `/serve` is — it
+ * opens nothing outwards, and the thing it creates can reach only what the agent could already
+ * reach — and it is spelled out at more length than the others because it is the only one whose
+ * consequence is a place an operator's own logged-in session lives.
+ */
+async function screen(words: readonly string[], context: CommandContext): Promise<string> {
+	const { id } = context.agent;
+	const [said = ""] = words;
+
+	if (said === "on" || said === "yes") {
+		const standing = await context.setScreen(true);
+		return [
+			standing.running
+				? `${id} has a screen.`
+				: standing.building === true
+					? `${id} has a screen, and this machine is building the browser image for it. That is Chromium, so it takes a few minutes the first time and happens once — the screen comes up on its own when it lands, with nothing to type here.`
+					: `${id} has a screen. It is starting — a browser takes a few seconds to come up, longer the first time.`,
+			"",
+			...(standing.at === undefined ? [] : [servedPath(id, standing.at.port), ""]),
+			THE_KEYBOARD,
+			"",
+			WHAT_A_SCREEN_IS,
+			"",
+			ONLY_HERE,
+		].join("\n");
+	}
+
+	if (said === "off" || said === "no" || said === "stop") {
+		const standing = await context.setScreen(false);
+		return [
+			`${id} has no screen. The container is gone and the link with it${standing.on ? ", though the operator's file says it should have one, so this holds only until somebody types /screen auto" : ""}.`,
+			"",
+			"What it was signed into is kept. The profile is a volume and outlives the browser, so",
+			`/screen on gives ${id} back the same browser, still logged into everything it was. To`,
+			`throw the logins away as well, delete ${id} with its state.`,
+		].join("\n");
+	}
+
+	if (said === "auto" || said === "default") {
+		const standing = await context.setScreen(null);
+		return standing.on
+			? `${id} is back to what the operator's file says, which is that it has a screen.`
+			: `${id} is back to what the operator's file says, which is that it has no screen.`;
+	}
+
+	if (said !== "") {
+		return `"${said}" is not something to do to a screen. /screen on gives it one, /screen off takes it away, /screen auto leaves it to the operator's file, and /screen on its own says where it stands.`;
+	}
+
+	const standing = await context.screen();
+	if (!standing.on) {
+		return [`${id} has no screen. /screen on gives it one.`, "", WHAT_A_SCREEN_IS].join("\n");
+	}
+
+	return [
+		standing.running
+			? `${id} has a screen, and it is up.`
+			: standing.building === true
+				? `${id} has a screen, and the browser image is still being built here. It comes up on its own when that finishes.`
+				: `${id} has a screen, and nothing is running it. It comes up on its own — if it does not, look for what the plane said when it tried.`,
+		standing.keyboard === "operator"
+			? "Somebody has the keyboard on it right now, so the agent cannot touch the page."
+			: "",
+		"",
+		...(standing.at === undefined ? [] : [servedPath(id, standing.at.port), ""]),
+		THE_KEYBOARD,
+		"",
+		ONLY_HERE,
+	]
+		.filter((line, index, all) => !(line === "" && all[index - 1] === ""))
+		.join("\n");
 }
 
 /** The words `/plugins` reads as instructions, and therefore not names a plugin may be given. */
@@ -1943,6 +2065,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "plugins" || name === "mcp") return plugins(rest, context);
 	if (name === "model") return models(rest, context);
 	if (name === "serve") return serve(rest, context);
+	if (name === "screen") return screen(rest, context);
 	if (name === "telegram") return telegram(rest, context);
 	if (name === "email") return email(rest, context);
 	if (name === "repo") return repo(rest, context);

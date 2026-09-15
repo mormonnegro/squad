@@ -81,6 +81,9 @@ importers:
       '@squad/scheduler':
         specifier: workspace:*
         version: link:../scheduler
+      '@squad/screen':
+        specifier: workspace:*
+        version: link:../screen
       ink:
         specifier: ^7.1.1
         version: 7.1.1(@types/react@19.2.18)(react@19.2.8)
@@ -126,6 +129,12 @@ importers:
       '@squad/events':
         specifier: workspace:*
         version: link:../events
+
+  packages/screen:
+    dependencies:
+      '@squad/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
 
   packages/web:
     devDependencies:

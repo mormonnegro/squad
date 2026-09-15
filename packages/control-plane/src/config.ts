@@ -122,6 +122,19 @@ function checkLimit(raw: unknown, label: string, issues: string[]): void {
 }
 
 /**
+ * Checked rather than passed through, because a screen is a container and a gigabyte of image.
+ *
+ * `screen: yes` is what a person writes in YAML and it parses as the string "yes", which is truthy
+ * everywhere it would then be read — so an operator who wrote it and meant it would get what they
+ * asked for, and one who wrote `screen: "no"` would get a browser. Neither of them would find out
+ * from anything on screen.
+ */
+function checkScreen(raw: unknown, label: string, issues: string[]): void {
+	if (raw === undefined || typeof raw === "boolean") return;
+	issues.push(`${label}.screen must be true or false: it is whether this agent gets a browser.`);
+}
+
+/**
  * The one thing a grant on `*` may not do, checked because the alternative finds out by happening.
  *
  * A grant is a host and a credential to reach it with, and those two halves have very different
@@ -304,6 +317,7 @@ function parseAgent(
 		...parseEnvFrom(envFrom, label, env, issues),
 	};
 	checkLimit(raw.limitUsd, label, issues);
+	checkScreen(raw.screen, label, issues);
 	checkGrants(raw.grants, label, issues);
 	checkRepos(raw.repos, label, issues);
 	checkTalksTo(raw.talksTo, label, issues);
@@ -343,6 +357,7 @@ function parseDefaults(
 		...parseEnvFrom(envFrom, "defaults", env, issues),
 	};
 	checkLimit(raw.limitUsd, "defaults", issues);
+	checkScreen(raw.screen, "defaults", issues);
 	checkGrants(raw.grants, "defaults", issues);
 	checkRepos(raw.repos, "defaults", issues);
 	checkTalksTo(raw.talksTo, "defaults", issues);

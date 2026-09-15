@@ -1,4 +1,5 @@
 import { asOperator, tooWide } from "@squad/channels";
+import { SCREEN_VIEW_PORT } from "@squad/screen";
 import { describe, expect, it } from "vitest";
 import {
 	agentMayNot,
@@ -84,6 +85,13 @@ function context(
 		githubRefuses?: string;
 		/** A token that can see the repository and not write to it. */
 		readOnlyToken?: boolean;
+		/** Whether this agent already has a browser, and whether the container behind it is up. */
+		screen?: boolean;
+		screenRunning?: boolean;
+		/** Who is holding the keyboard on it, when there is a screen to ask. */
+		keyboard?: "agent" | "operator";
+		/** Whether the browser image is being built, which is what an empty screen usually waits on. */
+		building?: boolean;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -102,6 +110,15 @@ function context(
 	const cleared: string[] = [];
 	const serving = [...(start.serving ?? [])];
 	const takenBy = start.takenBy ?? new Map<number, string>();
+	/** The screen as the plane would hold it: a decision, and a container that follows it. */
+	const screen = {
+		on: start.screen ?? false,
+		running: start.screenRunning ?? start.screen ?? false,
+		...(start.keyboard === undefined ? {} : { keyboard: start.keyboard }),
+		...(start.building === true ? { building: true } : {}),
+	};
+	/** Every screen decision that got as far as the plane, including the `null` that hands it back. */
+	const screened: (boolean | null)[] = [];
 	const bot = { held: start.bot };
 	/** Every token the command handed on, which is what tells a refusal apart from a typo caught early. */
 	const offered: string[] = [];
@@ -177,6 +194,8 @@ function context(
 		removed,
 		cleared,
 		serving,
+		screen,
+		screened,
 		bot,
 		offered,
 		repos,
@@ -225,6 +244,24 @@ function context(
 				if (at === -1) return false;
 				serving.splice(at, 1);
 				return true;
+			},
+			screen: async () => ({
+				on: screen.on,
+				running: screen.running,
+				...(screen.on ? { at: { port: SCREEN_VIEW_PORT, at: SCREEN_VIEW_PORT } } : {}),
+				...(screen.keyboard === undefined ? {} : { keyboard: screen.keyboard }),
+				...(screen.building === true ? { building: true } : {}),
+			}),
+			setScreen: async (on: boolean | null) => {
+				screened.push(on);
+				// `null` is the file's decision, and in here the file never asked for one.
+				screen.on = on ?? false;
+				screen.running = screen.on;
+				return {
+					on: screen.on,
+					running: screen.running,
+					...(screen.on ? { at: { port: SCREEN_VIEW_PORT, at: SCREEN_VIEW_PORT } } : {}),
+				};
 			},
 			listening: async (port: number) => (start.bound ?? []).includes(port),
 			granted: async (host: string) => (start.grants ?? []).includes(host),
@@ -814,6 +851,84 @@ describe("/config", () => {
  * it into a listener. So what the answer says is mostly about where a link works and what it needs
  * before it does — an operator who reads this as "published" has been told the wrong thing.
  */
+describe("/screen", () => {
+	it("gives an agent a browser and hands back the link to watch it", async () => {
+		const plane = context({ agentId: "scout" });
+		const said = await runCommand("/screen on", plane.context);
+
+		expect(plane.screened).toEqual([true]);
+		expect(said).toContain("scout has a screen");
+		expect(said).toContain(`/at/scout/${SCREEN_VIEW_PORT}/`);
+	});
+
+	it("says how to sign it in, because that is the whole reason the view is interactive", async () => {
+		const said = await runCommand("/screen on", context({ agentId: "scout" }).context);
+
+		expect(said).toContain("takes the keyboard");
+		expect(said).toContain("give it back");
+	});
+
+	it("says what the browser can reach, which is what the agent can reach", async () => {
+		// The question an operator is actually asking when they turn this on. A browser that quietly
+		// reached further than the agent would be a way around the grants, opened by a convenience.
+		expect(await runCommand("/screen on", context({}).context)).toContain(
+			"carries the agent's own egress credential",
+		);
+	});
+
+	it("takes it away and promises the logins are still there", async () => {
+		const plane = context({ agentId: "scout", screen: true });
+		const said = await runCommand("/screen off", plane.context);
+
+		expect(plane.screened).toEqual([false]);
+		expect(said).toContain("scout has no screen");
+		expect(said).toContain("What it was signed into is kept");
+	});
+
+	it("hands the decision back to the operator's file", async () => {
+		const plane = context({ agentId: "scout", screen: true });
+		await runCommand("/screen auto", plane.context);
+
+		expect(plane.screened).toEqual([null]);
+	});
+
+	it("says where it stands when asked nothing", async () => {
+		const said = await runCommand(
+			"/screen",
+			context({ agentId: "scout", screen: true, keyboard: "operator" }).context,
+		);
+
+		expect(said).toContain("scout has a screen");
+		expect(said).toContain("Somebody has the keyboard");
+	});
+
+	it("explains what a screen is to an agent that has none, rather than only refusing", async () => {
+		const said = await runCommand("/screen", context({ agentId: "scout" }).context);
+
+		expect(said).toContain("scout has no screen");
+		expect(said).toContain("/screen on");
+		expect(said).toContain("container of its own");
+	});
+
+	it("says the browser is being built rather than leaving the link looking broken", async () => {
+		// The first /screen on on a fresh plane pays for Chromium, and it takes minutes. An operator
+		// who was told only "it is starting" would open the link, find nothing, and go looking.
+		const plane = context({ agentId: "scout", screen: true, screenRunning: false, building: true });
+		const said = await runCommand("/screen", plane.context);
+
+		expect(said).toContain("still being built");
+		expect(said).toContain("comes up on its own");
+	});
+
+	it("says which words would have worked when the one typed is not one of them", async () => {
+		const plane = context({ agentId: "scout" });
+		const said = await runCommand("/screen maybe", plane.context);
+
+		expect(said).toContain("/screen on");
+		expect(plane.screened).toEqual([]);
+	});
+});
+
 describe("/serve", () => {
 	it("opens a port and gives back the one link that leads to it", async () => {
 		const plane = context({ agentId: "scout" });

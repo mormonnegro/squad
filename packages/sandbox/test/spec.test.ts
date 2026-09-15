@@ -6,6 +6,9 @@ import {
 	buildNetworkConfig,
 	CA_CERT_PATH,
 	containerName,
+	extensionsFor,
+	SANDBOX_EXTENSIONS,
+	SANDBOX_SCREEN_EXTENSION,
 	SANDBOX_WORKSPACE_PATH,
 	type SandboxSpec,
 } from "../src/spec.ts";
@@ -144,5 +147,20 @@ describe("environment", () => {
 describe("naming", () => {
 	it("namespaces containers by agent", () => {
 		expect(containerName("emma")).toBe("squad-emma");
+	});
+});
+
+describe("the tools an agent is handed", () => {
+	it("leaves the screen tools out when there is no screen", () => {
+		// Nine tools that always fail is a turn spent finding that out. An agent without a browser has
+		// no browser tools at all, and works the way it did before there were any.
+		expect(extensionsFor({})).toEqual(SANDBOX_EXTENSIONS);
+		expect(extensionsFor({ screen: false })).not.toContain(SANDBOX_SCREEN_EXTENSION);
+	});
+
+	it("adds them for an agent that has one, keeping everything else", () => {
+		const handed = extensionsFor({ screen: true });
+		expect(handed).toContain(SANDBOX_SCREEN_EXTENSION);
+		for (const extension of SANDBOX_EXTENSIONS) expect(handed).toContain(extension);
 	});
 });

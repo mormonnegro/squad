@@ -3,6 +3,7 @@ import type { Reply } from "@squad/channels";
 import { type AgentEvent, isOwnNote, type WakeupHandler } from "@squad/events";
 import {
 	type ExecResult,
+	extensionsFor,
 	SANDBOX_CONSOLE_FILE,
 	SANDBOX_EXTENSIONS,
 	SANDBOX_INBOX_PATH,
@@ -170,6 +171,8 @@ export interface PiTurnRunnerOptions {
 	readonly wakeFile?: string;
 	readonly consoleFile?: string;
 	readonly extensions?: readonly string[];
+	/** Whether this agent has a screen, and so the tools for one. Asked at the start of every turn. */
+	readonly screen?: (agentId: string) => Promise<boolean>;
 	/** The MCP servers this agent has been given, asked for again at the start of every turn. */
 	readonly servers?: (agentId: string) => Promise<readonly NamedServer[]>;
 	readonly mcpFile?: string;
@@ -301,6 +304,14 @@ export class PiTurnRunner {
 	readonly #wakeFile: string;
 	readonly #consoleFile: string;
 	readonly #extensions: readonly string[];
+	/**
+	 * Whether this agent has a browser, asked at the start of every turn.
+	 *
+	 * Asked rather than settled once, like the servers and the model: a screen is turned on at the
+	 * console mid-conversation, and an agent that only got the tools when its container was next
+	 * replaced would be one the operator has to restart to hand a browser to.
+	 */
+	readonly #screen: ((agentId: string) => Promise<boolean>) | undefined;
 	readonly #servers: ((agentId: string) => Promise<readonly NamedServer[]>) | undefined;
 	readonly #mcpFile: string;
 	readonly #search: (() => Promise<Search | undefined>) | undefined;
@@ -325,6 +336,7 @@ export class PiTurnRunner {
 		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
 		this.#consoleFile = options.consoleFile ?? SANDBOX_CONSOLE_FILE;
 		this.#extensions = options.extensions ?? SANDBOX_EXTENSIONS;
+		this.#screen = options.screen;
 		this.#servers = options.servers;
 		this.#mcpFile = options.mcpFile ?? SANDBOX_MCP_FILE;
 		this.#search = options.search;
@@ -349,6 +361,7 @@ export class PiTurnRunner {
 		thinksWith?: ModelChoice,
 		lessons?: string,
 		repos?: readonly RepoStanding[],
+		screen?: boolean,
 	): string[] {
 		const learned = lessons === undefined ? undefined : lessonsPrompt(lessons);
 		const holding = repos === undefined ? undefined : reposPrompt(repos, this.#workspacePath);
@@ -382,7 +395,9 @@ export class PiTurnRunner {
 			`${this.#repoPath}/${SKILLS_DIR}`,
 			// Named rather than discovered, for the same reason the skills are: discovery is gated on
 			// the project being trusted, and these are the plane's rather than the project's anyway.
-			...this.#extensions.flatMap((extension) => ["--extension", extension]),
+			...(screen === true ? extensionsFor({ screen: true }) : this.#extensions).flatMap(
+				(extension) => ["--extension", extension],
+			),
 			...(thinksWith?.provider !== undefined ? ["--provider", thinksWith.provider] : []),
 			...(thinksWith?.model !== undefined ? ["--model", thinksWith.model] : []),
 		];
@@ -458,13 +473,16 @@ export class PiTurnRunner {
 			const lessons = await this.#lessons(agentId);
 			// A failed read leaves the turn to happen without the list, which is the turn there was before.
 			const repos = await this.#repos?.(agentId).catch(() => undefined);
+			// A screen that cannot be asked about is one the agent goes without for this turn, which is
+			// the turn there was before it had one. Better than a turn that does not happen.
+			const screen = await this.#screen?.(agentId).catch(() => false);
 			// In the workspace, because a turn works where it is standing and the repository is not a
 			// workspace: standing there is what had agents building projects inside their own soul. The
 			// soul, the skills and the session are named by absolute path above, so none of them needs
 			// this to be the repository — and the agent can still walk into it when it means to.
 			executed = await this.#sandbox.run(
 				agentId,
-				this.commandFor(agentId, thinksWith, lessons, repos),
+				this.commandFor(agentId, thinksWith, lessons, repos, screen),
 				prompt,
 				{
 					idleMs: this.#idleMs,
