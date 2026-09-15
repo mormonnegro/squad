@@ -120,6 +120,16 @@ const CONTROL = ["/events", "/rpc", "/devices", "/invites"];
 const HEARTBEAT_MS = 25_000;
 
 /** Whose port a path names, and what it was asking that port for. */
+/** Where the console reads one of its agents' screens, which is a path here and not a name. */
+const SCREEN_PREFIX = "/screen/";
+
+function screening(pathname: string): { agentId: string; path: string } | undefined {
+	if (!pathname.startsWith(SCREEN_PREFIX)) return undefined;
+	const [agentId = "", ...rest] = pathname.slice(SCREEN_PREFIX.length).split("/");
+	if (!AGENT_NAME_PATTERN.test(agentId)) return undefined;
+	return { agentId, path: `/${rest.join("/")}` };
+}
+
 function servedAt(pathname: string): { agentId: string; port: number; path: string } | undefined {
 	if (!pathname.startsWith(SERVED_PREFIX)) return undefined;
 	const [agentId = "", said = "", ...rest] = pathname.slice(SERVED_PREFIX.length).split("/");
@@ -782,6 +792,43 @@ export class WebServer {
 			return;
 		}
 
+		/*
+		 * A screen, read at this console's own address rather than at a name of its own.
+		 *
+		 * Every other port an agent opens is answered at `scout-3000.localhost`, which keeps a page an
+		 * agent wrote off the origin this console is read at. A screen is the one thing here that is
+		 * not a page an agent wrote — what crosses is a JPEG, and the console draws the frame around
+		 * it itself — so it is the one that can be answered here, and it has to be: the name has an
+		 * IPv6 address that nothing answers on, because Docker Desktop publishes a loopback port on
+		 * IPv4 alone and silently drops a `[::1]` publish. A browser survives that on a tab it can
+		 * retry and not on a picture inside a page, which is a link that works when you paste it and
+		 * not where it is used.
+		 *
+		 * What is served through here is pixels and four small JSON answers, to a console that has
+		 * already proved who it is. No document from that container is ever read at this address.
+		 */
+		const screen = screening(asked.pathname);
+		if (screen !== undefined) {
+			// The picture, and the one response on this door that has to be sniffed.
+			//
+			// A stream of JPEGs is `multipart/x-mixed-replace`, which is how a picture that keeps
+			// changing has been sent since before any of this — and it is not an `image/*` type, so a
+			// browser told not to sniff refuses to draw it in an `<img>`. Silently: the element is
+			// there, the request is a 200, and the space where the page should be stays empty.
+			//
+			// Dropped for this path and no other. What nosniff is for is a browser deciding that
+			// something is script; what is on the other end of this is a JPEG, written by us, a
+			// frame at a time.
+			if (screen.path === "/frames") response.removeHeader("x-content-type-options");
+			await this.#served(
+				request,
+				response,
+				{ agentId: screen.agentId, port: SCREEN_VIEW_PORT },
+				`${screen.path}${asked.search}`,
+			);
+			return;
+		}
+
 		const served = servedAt(asked.pathname);
 		if (served !== undefined) {
 			const to = this.#servedOrigin(request, served.agentId, served.port);
@@ -799,28 +846,6 @@ export class WebServer {
 		}
 
 		await this.#file(asked.pathname, response);
-	}
-
-	/**
-	 * Where this console is read, as the origins allowed to frame a screen.
-	 *
-	 * Derived from the name this request arrived at rather than configured, because the two are the
-	 * same address with one label swapped: a request at `scout-7180.localhost:8979` was made by a
-	 * page at loopback on 8979, and one under a domain by a page at that domain. Which of the three
-	 * loopback spellings the operator is reading cannot be known from in here, so all three are
-	 * named — they are the same machine, and the alternative is a frame that works at one of them.
-	 */
-	#consoleOrigins(request: IncomingMessage): string {
-		const said = portOf(request.headers.host);
-		const scheme = schemeOf(request);
-		const under = this.#servedDomain();
-		const name = hostnameOf(request.headers.host);
-		if (under !== undefined && name.endsWith(`.${under}`)) return `${scheme}://${under}${said}`;
-		return [
-			`${scheme}://localhost${said}`,
-			`${scheme}://127.0.0.1${said}`,
-			`${scheme}://[::1]${said}`,
-		].join(" ");
 	}
 
 	/** The domain served ports hang off, when the operator has given this plane one. */
@@ -892,38 +917,6 @@ export class WebServer {
 	): Promise<void> {
 		const label = servedLabel(to.agentId, to.port);
 		const key = asked.searchParams.get(SERVED_KEY);
-
-		/*
-		 * The one port on this door that is framed rather than opened, and so the one that cannot be
-		 * let in with a cookie.
-		 *
-		 * A screen is watched inside the console, over the conversation it belongs to — and a frame
-		 * from another origin is a third-party context, where a `SameSite=Lax` cookie is not sent at
-		 * all. Not a browser's preference either: it is what `Lax` means. So the screen carries its
-		 * key on every request instead, the way it was handed one to arrive with, and nothing here is
-		 * ever admitted by something a browser decided to attach on its own.
-		 *
-		 * It stays a separate origin. The page inside is the plane's own rather than an agent's, and
-		 * it would have been simpler to serve it here — but the rule that nothing the agent can reach
-		 * is read at the console's address is worth more than the twenty lines this costs, and a rule
-		 * with one exception in it is a rule somebody extends next year.
-		 */
-		if (to.port === SCREEN_VIEW_PORT) {
-			if (!(await this.#passed(key ?? undefined, label))) {
-				this.#stranger(response, to.agentId, to.port);
-				return;
-			}
-			// Named rather than denied, and named narrowly: the console this request was read through,
-			// and nothing else on the internet. Set here rather than at the top of the door, so no
-			// other port is framed by anything.
-			response.removeHeader("x-frame-options");
-			response.setHeader(
-				"content-security-policy",
-				`frame-ancestors ${this.#consoleOrigins(request)}`,
-			);
-			await this.#served(request, response, to);
-			return;
-		}
 
 		if (key !== null) {
 			if (!(await this.#passed(key, label))) {
@@ -1174,6 +1167,8 @@ export class WebServer {
 		request: IncomingMessage,
 		response: ServerResponse,
 		to: { agentId: string; port: number },
+		/** The path to ask that port for, when it is not the one this request arrived at. */
+		instead?: string,
 	): Promise<void> {
 		let tunnel: Duplex;
 		try {
@@ -1201,7 +1196,7 @@ export class WebServer {
 		if (mine === undefined) delete headers.cookie;
 		else headers.cookie = mine;
 
-		const here = new URL(request.url ?? "/", "http://squad.invalid");
+		const here = new URL(instead ?? request.url ?? "/", "http://squad.invalid");
 		const asked = httpRequest(
 			{
 				createConnection: () => tunnel as never,

@@ -203,12 +203,28 @@ async function frames(response: http.ServerResponse): Promise<void> {
 		connection: "close",
 	});
 
+	/*
+	 * Each frame ends with the boundary that opens the next one, rather than waiting for the next one
+	 * to write it.
+	 *
+	 * This is the whole of why a still page showed nothing. A browser's multipart parser does not
+	 * commit a part when its Content-Length is satisfied — it commits it when the next boundary
+	 * arrives. Written the ordinary way, the last frame sent is always the one being held back, and
+	 * on a page that is not moving the last frame is the only frame. What that looks like is a live
+	 * view that is perfect while something on the page animates and empty the moment it settles,
+	 * which is a bug that hides behind whatever site you happened to test it on.
+	 */
+	let opened = false;
 	const send = (jpeg: string): void => {
 		const bytes = Buffer.from(jpeg, "base64");
-		response.write(`--${boundary}\r\nContent-Type: image/jpeg\r\n`);
+		if (!opened) {
+			response.write(`--${boundary}\r\n`);
+			opened = true;
+		}
+		response.write(`Content-Type: image/jpeg\r\n`);
 		response.write(`Content-Length: ${bytes.byteLength}\r\n\r\n`);
 		response.write(bytes);
-		response.write("\r\n");
+		response.write(`\r\n--${boundary}\r\n`);
 		if (keyboard.holder === "operator") keyboard.take();
 	};
 

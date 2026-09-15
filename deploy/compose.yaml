@@ -65,6 +65,13 @@ services:
       # agents, which is why the install says so out loud and prints the one line that puts a
       # certificate in front of it.
       - "${SQUAD_WEB_BIND:-127.0.0.1}:${SQUAD_WEB_PORT:-8789}:${SQUAD_WEB_PORT:-8789}"
+      # And the same port on IPv6 loopback, which is not a nicety: every served port is reached at a
+      # name — `scout-3000.localhost` — and a browser resolving one of those on macOS is handed `::1`
+      # before `127.0.0.1`. A top-level tab survives that by trying the other address after the
+      # refusal; a frame on a page does not, and what it shows instead is "refused to connect" beside
+      # a link that works when you paste it into the address bar. The console's own doors bind both
+      # for this reason already, and this is the other half of it.
+      - "${SQUAD_WEB_BIND6:-[::1]}:${SQUAD_WEB_PORT:-8789}:${SQUAD_WEB_PORT:-8789}"
     networks:
       egress:
         aliases:

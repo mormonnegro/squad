@@ -13,7 +13,9 @@ describe("where a screen is watched", () => {
 
 describe("whether an agent has one", () => {
 	const agent = (ports: readonly number[]) =>
-		({ served: ports.map((port) => ({ port, at: port })) }) as Parameters<typeof hasScreen>[0];
+		({ served: ports.map((port) => ({ port, at: port })) }) as unknown as Parameters<
+			typeof hasScreen
+		>[0];
 
 	it("reads it off the ports the plane says it is serving", () => {
 		expect(hasScreen(agent([OURS]))).toBe(true);
