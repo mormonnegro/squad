@@ -815,23 +815,24 @@ describe("/config", () => {
  * before it does — an operator who reads this as "published" has been told the wrong thing.
  */
 describe("/serve", () => {
-	it("opens a port and gives back the address it comes out at", async () => {
+	it("opens a port and gives back the one link that leads to it", async () => {
 		const plane = context({ agentId: "scout" });
 		const said = await runCommand("/serve 3000", plane.context);
 
 		expect(said).toContain("scout is serving 3000");
-		expect(said).toContain("http://scout.localhost:3000");
+		expect(said).toContain("/at/scout/3000/");
 		expect(plane.serving).toEqual([{ port: 3000, at: 3000 }]);
 	});
 
-	// Two agents both land on 3000 without either of them having chosen it, and the machine at the
-	// other end has one 3000. The answer has to name both numbers, or the operator opens the wrong one.
+	// Two agents both land on 3000 without either of them having chosen it, and the machine a console
+	// in a terminal runs on has one 3000. The number that gave way is said, because that console is
+	// about to bind the other one and the agent is about to be asked why its link says 3001.
 	it("says whose the number was when it had to give way", async () => {
 		const plane = context({ agentId: "scribe", takenBy: new Map([[3000, "scout"]]) });
 		const said = await runCommand("/serve 3000", plane.context);
 
 		expect(said).toContain("3000 is scout's here, so this one is on 3001");
-		expect(said).toContain("http://scribe.localhost:3001");
+		expect(said).toContain("/at/scribe/3000/");
 	});
 
 	// The link is opened whether or not anything is behind it, because the agent that asks for one is
@@ -852,19 +853,22 @@ describe("/serve", () => {
 	// Nothing is published off the server and the sandbox network is as unrouted as it was. An answer
 	// that left that out would read as a port on the internet, which is the opposite of what this is.
 	/**
-	 * Both roads, every time, because they are reachable from different places.
+	 * One link, every time it prints one.
 	 *
-	 * The path hangs off whatever address the console is being read at and works wherever that does.
-	 * The `localhost` one is a real port on the machine a terminal console is running on, which is
-	 * better when you are at that machine and absent when you are not — and printing only that one
-	 * is what made a plane on a server hand out a link to whatever laptop was reading it.
+	 * There used to be two, because there are two consoles: the path, which hangs off whatever
+	 * address the console is being read at, and `scout.localhost:3000`, which is a real port on the
+	 * machine a console in a terminal is running on and is nothing at all the rest of the time. In a
+	 * conversation read from a browser the second one is a dead link sitting under a live one, and
+	 * the dead one was the one drawn as something to click.
 	 *
-	 * And the path is said to be passed on whole, because an agent handed one writes a link out of
-	 * it and needs an address to put in front — so it guesses, names the console's dev server or
-	 * whatever host it last saw, and hands the operator a link that works only where the guess was
-	 * right. The address is the one thing this end cannot know, which is why it is not in there.
+	 * So the answer says the path and each console draws what it means — the browser turns it into a
+	 * name of that port's own, and a console in a terminal names the port it bound itself, in its own
+	 * feed, at the moment it binds it. And the path is said to be passed on whole, because an agent
+	 * handed one writes a link out of it and needs an address to put in front — so it guesses, names
+	 * the dev server it last saw, and hands the operator a link that works only where the guess was
+	 * right. That address is the one thing this end cannot know, which is why it is not in there.
 	 */
-	it("says both ways in, every time it prints one", async () => {
+	it("says the one link that is true wherever it is read", async () => {
 		const opened = await runCommand("/serve 3000", context().context);
 		const listed = await runCommand(
 			"/serve",
@@ -873,7 +877,7 @@ describe("/serve", () => {
 
 		for (const said of [opened, listed]) {
 			expect(said).toContain("/at/scout/3000/");
-			expect(said).toContain("scout.localhost:3000");
+			expect(said).not.toContain("scout.localhost");
 			expect(said).toContain("as it is written");
 			expect(said).toContain("cannot be known from in here");
 		}
@@ -899,7 +903,7 @@ describe("/serve", () => {
 		const plane = context({ serving: [{ port: 3000, at: 3001 }] });
 		const said = await runCommand("/serve 3000", plane.context);
 
-		expect(said).toContain("http://scout.localhost:3001");
+		expect(said).toContain("/at/scout/3000/");
 		expect(plane.serving).toEqual([{ port: 3000, at: 3001 }]);
 	});
 
@@ -913,9 +917,13 @@ describe("/serve", () => {
 		});
 		const said = await runCommand("/serve", plane.context);
 
-		expect(said).toContain("http://scout.localhost:3000");
-		expect(said).toContain("http://scout.localhost:8081");
-		expect(said).toContain("(8080 is scribe's here)");
+		expect(said).toContain("/at/scout/3000/");
+		expect(said).toContain("/at/scout/8080/");
+		// The number the agent knows is the one in the link either way. That it lands on another one
+		// on the machine a terminal console is running on is that console's business, and is said
+		// because the agent is the one who will be asked about it.
+		expect(said).toContain("8080 is scribe's");
+		expect(said).toContain("opened there on 8081");
 		expect(said).toContain("/serve stop 3000");
 	});
 

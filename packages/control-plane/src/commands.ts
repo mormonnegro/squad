@@ -5,7 +5,7 @@ import { GATES, type Gate, gateSaid, isGate } from "./gates.ts";
 import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
-import { type Served, servedAt, servedPath, unservable } from "./ports.ts";
+import { type Served, servedPath, unservable } from "./ports.ts";
 import {
 	looksLikeGithubToken,
 	type RepoHold,
@@ -708,23 +708,28 @@ async function models(words: readonly string[], context: CommandContext): Promis
 }
 
 /**
- * Where a served port is reachable from, said once wherever the links are.
+ * Where a served port is reachable from, said once wherever the link is.
  *
- * Two ways in and they are not alternatives: the first hangs off whatever address this console is
- * being read at and is the one that always works, and the second is a real port on the machine a
- * terminal console happens to be running on, which is better when you are at that machine and
- * absent when you are not.
+ * One link, because the answer is read in two places and only one sentence is true in both. The
+ * path hangs off whatever address the console is being read at, which is an address that can be
+ * reached by definition — you are reading it through that address — and whichever console reads it
+ * draws the link it means: the browser's turns it into a name of that port's own, and a console in
+ * a terminal names the port it bound itself, in its own feed, at the moment it binds it.
+ *
+ * What used to be here was both addresses every time, and the second of them — a port on the
+ * machine a terminal console happens to be running on — is a real link while one is running and
+ * nothing at all the rest of the time. Printed into a conversation, it is a link that is wrong more
+ * often than it is right, sitting under one that is always right.
  *
  * Nothing is published off the server either way. The sandbox network is as unrouted as it was and
- * both roads run through the plane, which is the thing that was already let in.
+ * every road runs through the plane, which is the thing that was already let in.
  */
 const ONLY_HERE = [
-	"The first hangs off whatever address the console is being read at, so it works from wherever",
-	"the console does, and opens at a name of that port's own. Pass it on as it is written, from",
-	"the slash — which address that is cannot be known from in here, and a link completed with a",
-	"guess works only where the guess was right. The second is a port on the machine a terminal",
-	"console is running on, and exists only while one is. Nothing is published off the server",
-	"either way.",
+	"The link hangs off whatever address the console is being read at, so it works from wherever",
+	"the console does, and it opens at a name of that port's own. Pass it on as it is written, from",
+	"the slash: which address the console is read at cannot be known from in here, and a link",
+	"completed with a guess works only where the guess was right. Nothing is published off the",
+	"server.",
 ].join("\n");
 
 /**
@@ -770,7 +775,6 @@ async function serve(words: readonly string[], context: CommandContext): Promise
 		`${id} is serving ${port}${moved}`,
 		"",
 		`  ${servedPath(id, port)}`,
-		`  ${servedAt(id, opened)}`,
 		"",
 		(await context.listening(port))
 			? `Something is listening on ${port} in there, so that link has something behind it.`
@@ -786,8 +790,7 @@ async function serving(context: CommandContext): Promise<string> {
 	if (mine.length === 0) {
 		return [
 			`${id} is serving nothing. /serve 3000 opens a port inside it — on this console's own`,
-			"address, and on the machine a terminal console is running on — whether or not anything",
-			"is listening on it in there yet.",
+			"address, whether or not anything is listening on it in there yet.",
 			"",
 			ONLY_HERE,
 		].join("\n");
@@ -800,7 +803,7 @@ async function serving(context: CommandContext): Promise<string> {
 				(one) =>
 					[
 						`  ${one.port}`,
-						`${servedPath(id, one.port)}   ${servedAt(id, one)}${one.at === one.port ? "" : `   (${one.port} is ${theirs.get(one.port) ?? "another agent"}'s here)`}`,
+						`${servedPath(id, one.port)}${one.at === one.port ? "" : `   (${one.port} is ${theirs.get(one.port) ?? "another agent"}'s on the machine a terminal console is on, so this one is opened there on ${one.at})`}`,
 					] as const,
 			),
 		),

@@ -1672,7 +1672,6 @@ it starts is a dev server nobody can open, and what the agent does instead is de
 scout is serving 3000
 
   /at/scout/3000/
-  http://scout.localhost:3000
 
 Nothing is listening on 3000 inside the sandbox yet. The link waits: it starts working the
 moment something binds that port in there, with nothing to type here.
@@ -1689,14 +1688,24 @@ loopback, over the control socket the console was already talking on. Nothing is
 server, no firewall rule changes, and the link dies when you close the console rather than staying
 open on a machine nobody is looking at.
 
-The first line is the same port from the web console, and it is a path rather than an address
-because the one thing the plane cannot know is which address you are reading the console at. Click
-it and it lands somewhere else: `scout-3000.localhost:8789`, a name of that port's own. In the
-console itself the link is already that name — the screen asks the door which one it is, since the
-door is the end that knows — so what you hover, copy and send is the address that opens, with a key
-on it that opens that one port and nothing else.
+One link, and it is a path rather than an address because the one thing the plane cannot know is
+which address you are reading the console at. Whichever console reads it draws what it means. In the
+browser that is `scout-3000.localhost:8789`, a name of that port's own: the screen asks the door
+which name, since the door is the end that knows, so what you hover, copy and send is the address
+that opens — with a key on it that opens that one port and nothing else. In a terminal it is the
+port the console bound on your own machine, which that console says in its own feed the moment it
+binds it:
 
-That hop is not decoration. A page an agent wrote, served at the address the console is read at, is
+```
+scout serve  http://scout.localhost:3000 → :3000
+```
+
+Which is the half that used to be printed into the conversation as well, under the path. A port on
+the machine a terminal console happens to be running on is a real link while one is running and
+nothing at all the rest of the time — so read from a browser it was a dead address sitting under a
+live one, and it was the dead one the console drew as something to click.
+
+The name is not decoration. A page an agent wrote, served at the address the console is read at, is
 a page your browser hands your session to — it can open `/events`, read every conversation, create
 and delete agents, and approve the reach it asked for a minute ago, as you, with the credentials the
 proxy injects. Nothing checked at the door can prevent it, because the browser is doing exactly what
@@ -1720,8 +1729,9 @@ the second agent being refused for something it did not do:
 > /serve
 scout is serving:
 
-  3000  /at/scout/3000/   http://scout.localhost:3000
-  8080  /at/scout/8080/   http://scout.localhost:8081   (8080 is scribe's here)
+  3000  /at/scout/3000/
+  8080  /at/scout/8080/   (8080 is scribe's on the machine a terminal console is on, so this one
+                           is opened there on 8081)
 ```
 
 Which is why the answer names both numbers. The port inside the sandbox is the one the agent knows
