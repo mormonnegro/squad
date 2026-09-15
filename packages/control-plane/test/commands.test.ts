@@ -92,6 +92,8 @@ function context(
 		keyboard?: "agent" | "operator";
 		/** Whether the browser image is being built, which is what an empty screen usually waits on. */
 		building?: boolean;
+		/** Whether the sandbox is too old to hold the tools that drive the browser. */
+		toolless?: boolean;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -116,6 +118,7 @@ function context(
 		running: start.screenRunning ?? start.screen ?? false,
 		...(start.keyboard === undefined ? {} : { keyboard: start.keyboard }),
 		...(start.building === true ? { building: true } : {}),
+		...(start.toolless === true ? { toolless: true } : {}),
 	};
 	/** Every screen decision that got as far as the plane, including the `null` that hands it back. */
 	const screened: (boolean | null)[] = [];
@@ -251,6 +254,7 @@ function context(
 				...(screen.on ? { at: { port: SCREEN_VIEW_PORT, at: SCREEN_VIEW_PORT } } : {}),
 				...(screen.keyboard === undefined ? {} : { keyboard: screen.keyboard }),
 				...(screen.building === true ? { building: true } : {}),
+				...(screen.toolless === true ? { toolless: true } : {}),
 			}),
 			setScreen: async (on: boolean | null) => {
 				screened.push(on);
@@ -918,6 +922,20 @@ describe("/screen", () => {
 
 		expect(said).toContain("still being built");
 		expect(said).toContain("comes up on its own");
+	});
+
+	it("says when the browser is there and the agent is too old to drive it", async () => {
+		// The two halves ship in two images and one of them is usually pulled, so a plane built from
+		// today's sources can make a browser the agent has no tools for. Invisible from both ends —
+		// the view works, the agent just never mentions it — unless it is said here.
+		const said = await runCommand(
+			"/screen",
+			context({ agentId: "scout", screen: true, toolless: true }).context,
+		);
+
+		expect(said).toContain("cannot drive it yet");
+		expect(said).toContain("the live view is a whole browser");
+		expect(said).toContain("next update");
 	});
 
 	it("says which words would have worked when the one typed is not one of them", async () => {

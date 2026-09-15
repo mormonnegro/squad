@@ -855,6 +855,23 @@ const WHAT_A_SCREEN_IS = [
 	"the proxy holds it to the same grants and the same bill.",
 ].join("\n");
 
+/**
+ * What to say when the browser is there and the agent cannot drive it.
+ *
+ * The two halves of a screen ship in two images, and on most installs one of them is pulled: a
+ * plane built from today's sources can make the browser before the sandbox image that knows what to
+ * do with it exists. Nothing about this is visible from either end — the live view works and the
+ * agent simply never mentions a browser — so it is said here, with the thing to do about it.
+ */
+const NO_TOOLS = [
+	"The agent cannot drive it yet. The browser is this plane's to build, but the tools that drive it",
+	"ship in the sandbox image, and this agent is running one from before they existed. You can use",
+	"the screen yourself in the meantime — the live view is a whole browser.",
+	"",
+	"It fixes itself on the next update that brings a newer sandbox image: the plane replaces a",
+	"container whose image has moved, and the agent has the tools on its next turn.",
+].join("\n");
+
 /** Said wherever the link is, because the keyboard is the half of this that is not obvious. */
 const THE_KEYBOARD = [
 	"On that page there is a button that takes the keyboard. While you hold it the agent cannot",
@@ -885,6 +902,7 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 					: `${id} has a screen. It is starting — a browser takes a few seconds to come up, longer the first time.`,
 			"",
 			...(standing.at === undefined ? [] : [servedPath(id, standing.at.port), ""]),
+			...(standing.toolless === true ? [NO_TOOLS, ""] : []),
 			THE_KEYBOARD,
 			"",
 			WHAT_A_SCREEN_IS,
@@ -931,6 +949,7 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 			: "",
 		"",
 		...(standing.at === undefined ? [] : [servedPath(id, standing.at.port), ""]),
+		...(standing.toolless === true ? [NO_TOOLS, ""] : []),
 		THE_KEYBOARD,
 		"",
 		ONLY_HERE,

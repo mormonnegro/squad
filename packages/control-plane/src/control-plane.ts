@@ -44,7 +44,12 @@ import {
 	type SecretStore,
 	StaticAgentDirectory,
 } from "@squad/proxy";
-import { DEFAULT_DEPLOYMENT, DockerEngine, DockerSandboxManager } from "@squad/sandbox";
+import {
+	DEFAULT_DEPLOYMENT,
+	DockerEngine,
+	DockerSandboxManager,
+	SANDBOX_SCREEN_EXTENSION,
+} from "@squad/sandbox";
 import {
 	FileScheduleStore,
 	type NewSchedule,
@@ -600,6 +605,19 @@ export class ControlPlane {
 	 * screens in the same minute, would otherwise have the machine building the same image twice.
 	 */
 	#buildingScreens: Promise<void> | undefined;
+	/**
+	 * Which sandboxes carry the screen tools, by the container that was asked.
+	 *
+	 * Asked at all because pi refuses to start when it is handed an extension that is not there — not
+	 * warns, refuses — so passing the flag to a sandbox built before these tools existed would not cost
+	 * the agent a browser: it would cost it every turn, with the reason in a message about a file path.
+	 * A published sandbox image lags the plane's own by however long it is between releases, and that
+	 * gap is exactly where somebody would first type `/screen on`.
+	 *
+	 * By container id rather than by agent, because the answer cannot change under a container — a file
+	 * appears in there by the container being replaced, and a replaced container has a new id.
+	 */
+	readonly #screenToolsIn = new Map<string, boolean>();
 	/**
 	 * The file each served port was last seen printing into, so that a server which has stopped can
 	 * still be read.
@@ -3406,6 +3424,39 @@ export class ControlPlane {
 		return new ExecStream(stream);
 	}
 
+	/**
+	 * Whether this agent's turns get the screen tools, which is two questions and not one.
+	 *
+	 * It has to have a screen, and its sandbox has to be able to use one. The second is not a detail:
+	 * the tools ship in the sandbox image, and an agent running an image from before they existed is
+	 * one pi will refuse to start for if it is handed them.
+	 */
+	async #screenTools(agentId: string): Promise<boolean> {
+		return (await this.wantsScreen(agentId)) && (await this.sandboxHasScreenTools(agentId));
+	}
+
+	/**
+	 * Whether the screen tools are in this agent's sandbox, asked of the sandbox and remembered.
+	 *
+	 * One exec the first time and nothing afterwards. The answer is a property of the image the
+	 * container was made from, which cannot change while the container exists.
+	 */
+	async sandboxHasScreenTools(agentId: string): Promise<boolean> {
+		const status = await this.sandboxes.status(agentId).catch(() => undefined);
+		if (status === undefined) return false;
+		const known = this.#screenToolsIn.get(status.containerId);
+		if (known !== undefined) return known;
+		const probed = await this.sandboxes
+			.exec(agentId, ["test", "-f", SANDBOX_SCREEN_EXTENSION])
+			.catch(() => undefined);
+		// An exec that would not run at all is not an answer, and remembering it as "no" would leave an
+		// agent without its browser until somebody restarted something. Asked again next turn instead.
+		if (probed === undefined) return false;
+		const has = probed.exitCode === 0;
+		this.#screenToolsIn.set(status.containerId, has);
+		return has;
+	}
+
 	/** Whether this agent is meant to have a browser: what the file said, unless the console differs. */
 	async wantsScreen(agentId: string): Promise<boolean> {
 		const declared = this.#agents.find((agent) => agent.id === agentId)?.screen;
@@ -3436,9 +3487,14 @@ export class ControlPlane {
 		// that is starting has no opinion about who is driving yet, and inventing one would put the
 		// word "agent" in front of an operator at the moment they were about to take it.
 		const keyboard = status?.running === true ? await this.#keyboardOf(agentId) : undefined;
+		// Asked only of an agent that is meant to have one, because the answer costs an exec and means
+		// nothing for an agent with no screen: every sandbox on a plane where nobody uses this would
+		// otherwise be probed for a file it has no use for.
+		const tools = on ? await this.sandboxHasScreenTools(agentId) : true;
 		return {
 			on,
 			running: status?.running === true,
+			...(tools ? {} : { toolless: true }),
 			...(at === undefined ? {} : { at }),
 			...(keyboard === undefined ? {} : { keyboard }),
 			...(this.buildingScreen ? { building: true } : {}),
@@ -3850,7 +3906,7 @@ export class ControlPlane {
 			// And whether it has a browser, asked again each turn for the reason the rest are: a screen
 			// turned on at the console is a screen the next turn can use, without the container that
 			// the tools would otherwise have to be rebuilt into.
-			screen: (agentId) => this.wantsScreen(agentId),
+			screen: (agentId) => this.#screenTools(agentId),
 			// And the other agents, asked again each turn because the answer changes within one: a door
 			// opened at the console, and the one an operator opens by naming an agent in the message
 			// that started this very turn.

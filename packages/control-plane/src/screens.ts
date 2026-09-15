@@ -20,6 +20,16 @@ export interface ScreenStanding {
 	 * something to look into.
 	 */
 	readonly building?: boolean;
+	/**
+	 * Whether the agent's sandbox is too old to hold the screen tools.
+	 *
+	 * A screen has two halves and they ship in different images. The browser is this plane's to
+	 * build; the tools that drive it are in the sandbox image, which on most installs is pulled and
+	 * therefore lags. Said out loud because the failure is otherwise invisible from both ends: the
+	 * live view works, the operator can drive the browser themselves, and the agent simply never
+	 * mentions having one.
+	 */
+	readonly toolless?: boolean;
 }
 
 /**

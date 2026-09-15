@@ -1,5 +1,5 @@
 import { EventBus } from "@squad/events";
-import { type ExecResult, SANDBOX_EXTENSIONS } from "@squad/sandbox";
+import { type ExecResult, SANDBOX_EXTENSIONS, SANDBOX_SCREEN_EXTENSION } from "@squad/sandbox";
 import { describe, expect, it } from "vitest";
 import type { NamedServer } from "../src/mcp.ts";
 import {
@@ -216,6 +216,25 @@ describe("PiTurnRunner", () => {
 		const named = command.filter((_, index) => command[index - 1] === "--extension");
 
 		expect(named).toEqual(SANDBOX_EXTENSIONS);
+	});
+
+	/*
+	 * The screen's tools come and go while the agent is running, which is why they are asked for per
+	 * turn rather than baked into the command when the runner was made: a screen is turned on at a
+	 * console, and an agent that only learned about it when its container was next replaced would be
+	 * one the operator has to restart to hand a browser to.
+	 */
+	it("hands over the screen tools only for a turn that has a screen", () => {
+		const runner = new PiTurnRunner({ sandbox: new StubSandbox() });
+		const named = (screen: boolean) => {
+			const command = runner.commandFor("a1", undefined, undefined, undefined, screen);
+			return command.filter((_, index) => command[index - 1] === "--extension");
+		};
+
+		expect(named(false)).toEqual(SANDBOX_EXTENSIONS);
+		expect(named(true)).toContain(SANDBOX_SCREEN_EXTENSION);
+		// Everything else is still there. The screen adds a tool; it does not replace the agent's.
+		for (const extension of SANDBOX_EXTENSIONS) expect(named(true)).toContain(extension);
 	});
 
 	/**
