@@ -350,11 +350,13 @@ export function inline(text: string, base?: string | undefined): ReactNode[] {
 		 * the path is drawn as the link it means, the same one the chip beside the agent draws, and
 		 * the reader gets something to click rather than something to retype.
 		 */
-		const port = SERVED_IN_TEXT.exec(rest);
+		// Trimmed the way a bare address is, and for the same reason: the full stop that ended the
+		// sentence is the sentence's and not the link's.
+		const port = SERVED_IN_TEXT.exec(addressOf(SERVED_IN_TEXT.exec(rest)?.[0] ?? ""));
 		if (port !== null) {
 			keep();
 			out.push(
-				<ServedLink key={key++} agentId={port[1] ?? ""} port={Number(port[2])}>
+				<ServedLink key={key++} agentId={port[1] ?? ""} port={Number(port[2])} path={port[3] ?? ""}>
 					{port[0]}
 				</ServedLink>,
 			);

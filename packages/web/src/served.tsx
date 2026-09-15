@@ -21,8 +21,13 @@ export function servedPath(agentId: string, port: number): string {
 	return `/at/${agentId}/${port}/`;
 }
 
-/** A port written into a sentence, which is how `/serve` hands one over. */
-export const SERVED_IN_TEXT = /^\/at\/([a-z0-9][a-z0-9-]*)\/([0-9]{1,5})\/?/;
+/**
+ * A port written into a sentence, which is how `/serve` hands one over.
+ *
+ * The rest of it is kept, because a path under a served port is a page on that server: an agent
+ * that says `/at/dev/3005/dashboard` means the dashboard and not the root of the site it is on.
+ */
+export const SERVED_IN_TEXT = /^\/at\/([a-z0-9][a-z0-9-]*)\/([0-9]{1,5})(?:\/([^\s<>"]*))?/;
 
 /**
  * Where each port is read, for everything on the screen that draws one.
@@ -80,14 +85,28 @@ export function useServedAt(): (agentId: string, port: number) => string {
 	return useContext(Where) ?? servedPath;
 }
 
-/** A port an agent opened, named in a sentence, as the address that opens it. */
+/**
+ * A port an agent opened, named in a sentence, as the address that opens it.
+ *
+ * Drawn as the address and not as the path it was written as. The path is what the plane had to
+ * say, because from in there the address cannot be known; this end does know it, and a reader who
+ * is handed `/at/dev/3005/` still has to be told what that turns into before they can say it out
+ * loud, put it in a message or type it into a phone.
+ *
+ * What is drawn leaves the key off. The key is what makes the link work on a browser that has never
+ * been to that name, and it is not part of the address: copying the link takes it along, reading
+ * the line does not have to.
+ */
 export function ServedLink({
 	agentId,
 	port,
+	path = "",
 	children,
 }: {
 	agentId: string;
 	port: number;
+	/** Whatever was written after the port, which is a page on that server rather than its root. */
+	path?: string;
 	children: ReactNode;
 }) {
 	const where = useContext(Where);
@@ -95,14 +114,19 @@ export function ServedLink({
 	// was: the characters somebody wrote. A link to a path that only this console can complete
 	// would be a link that goes to this console.
 	if (where === undefined) return <>{children}</>;
+	const at = where(agentId, port);
+	// Still the path, which is this console's own address until the door has answered. Drawn as it
+	// was written, because for that moment that is exactly what it is.
+	const link = at.startsWith("/") ? undefined : new URL(at);
+	if (link !== undefined) link.pathname = `/${path}`;
 	return (
 		<a
-			href={where(agentId, port)}
+			href={link === undefined ? `${at}${path}` : link.href}
 			target="_blank"
 			rel="noreferrer noopener"
 			title={`what ${agentId} is serving on ${port}`}
 		>
-			{children}
+			{link === undefined ? children : `${link.origin}${link.pathname}`}
 		</a>
 	);
 }

@@ -191,6 +191,19 @@ describe("a port an agent opened, written into what it said", () => {
 		expect(inline("/at/dev-two/8080/").map(port)).toEqual(["dev-two:8080"]);
 	});
 
+	it("keeps the page under it, which is what the agent meant", () => {
+		const [link] = inline("/at/dev/3101/dashboard");
+		expect(port(link)).toBe("dev:3101");
+		expect((link as { props: { path: string } }).props.path).toBe("dashboard");
+	});
+
+	// The same trimming a bare address gets: the stop belongs to the sentence.
+	it("leaves the full stop that ended the sentence outside it", () => {
+		const [link, stop] = inline("/at/dev/3101/.");
+		expect((link as { props: { path: string } }).props.path).toBe("");
+		expect(stop).toBe(".");
+	});
+
 	it("leaves a path that is not one alone", () => {
 		expect(inline("/at/dev/").map(port)).toEqual([undefined]);
 		expect(inline("/atlas/dev/3101/").map(port)).toEqual([undefined]);
