@@ -108,6 +108,17 @@ export default defineConfig({
 			// this server — and without this, pasting what it said into Stripe posts into a 404.
 			"/hooks": { target: PLANE, changeOrigin: false, ...carried },
 			/*
+			 * An agent's screen, which this console draws itself: a stream of JPEGs and three small
+			 * answers about who has the keyboard.
+			 *
+			 * Missing, it fails the way `/devices` did and for the same reason — the picture and the
+			 * state both came back as this server's index.html, so the address bar stayed empty and the
+			 * image broke, with nothing anywhere naming the proxy. `changeOrigin` stays off: unlike the
+			 * link to a served port, nothing here is a name the plane builds out of the Host it was
+			 * asked at.
+			 */
+			"/screen": { target: PLANE, changeOrigin: false, ...carried },
+			/*
 			 * A link to a port an agent opened, which the plane answers by sending the browser to a
 			 * name of that port's own — `scout-3000.localhost:8789`, straight at the plane and past
 			 * this server, where it is another origin and cannot reach this console.

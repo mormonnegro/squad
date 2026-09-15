@@ -216,9 +216,13 @@ export function Screen({ agentId }: { agentId: string }) {
 						}}
 						onDragStart={(event) => event.preventDefault()}
 					/>
+					{/* Along the bottom rather than across the middle: it is a note about the page, and a
+					    sentence over the part somebody is trying to read is the one place it cannot go. */}
 					{!holding && (
-						<div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-ground/40 text-[0.8rem] text-muted">
-							the agent is driving — take the keyboard to touch this page
+						<div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+							<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
+								the agent is driving — take the keyboard to touch this page
+							</span>
 						</div>
 					)}
 				</div>
