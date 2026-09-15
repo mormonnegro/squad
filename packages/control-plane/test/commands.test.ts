@@ -874,8 +874,8 @@ describe("/serve", () => {
 		for (const said of [opened, listed]) {
 			expect(said).toContain("/at/scout/3000/");
 			expect(said).toContain("scout.localhost:3000");
-			expect(said).toContain("exactly as it is written here");
-			expect(said).toContain("cannot know");
+			expect(said).toContain("as it is written");
+			expect(said).toContain("cannot be known from in here");
 		}
 	});
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FileLink, folderSaid, linkedPath, pathOf, paths, useBox } from "./box.tsx";
 import { coloured, grammarOf } from "./code.tsx";
+import { SERVED_IN_TEXT, ServedLink } from "./served.tsx";
 import { drawsTree, fenced } from "./tree.tsx";
 
 /**
@@ -338,6 +339,26 @@ export function inline(text: string, base?: string | undefined): ReactNode[] {
 				),
 			);
 			i += link[0].length;
+			continue;
+		}
+
+		/*
+		 * A port an agent opened, which arrives as a path rather than as an address.
+		 *
+		 * `/serve` answers with `/at/dev/3101/` and it has to: the plane cannot know which address
+		 * this console is being read at. This end can — it is the address this page came from — so
+		 * the path is drawn as the link it means, the same one the chip beside the agent draws, and
+		 * the reader gets something to click rather than something to retype.
+		 */
+		const port = SERVED_IN_TEXT.exec(rest);
+		if (port !== null) {
+			keep();
+			out.push(
+				<ServedLink key={key++} agentId={port[1] ?? ""} port={Number(port[2])}>
+					{port[0]}
+				</ServedLink>,
+			);
+			i += port[0].length;
 			continue;
 		}
 

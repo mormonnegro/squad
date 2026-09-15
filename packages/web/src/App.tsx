@@ -23,7 +23,7 @@ import { RailHead } from "./RailHead.tsx";
 import { Repos } from "./Repos.tsx";
 import { Room } from "./Room.tsx";
 import { Setup } from "./Setup.tsx";
-import { useServedAt } from "./served.ts";
+import { ServedIs, useServedAt, useServedLinks } from "./served.tsx";
 import { Spin } from "./spin.tsx";
 import { until } from "./until.ts";
 
@@ -523,258 +523,267 @@ export function App() {
 		void look();
 	}, [look]);
 
+	// Where each port an agent opened is read, asked of the door once per port and kept for the page.
+	const servedAt = useServedLinks(plane);
+
 	return (
-		<div className="app">
-			<nav className="rail">
-				<div className="rail-head">
-					<RailHead
-						connected={plane !== undefined}
-						onKeys={() => show("keys")}
-						onPlugins={() => show("plugins")}
-						onAccess={() => show("devices")}
-					/>
-				</div>
-
-				<div className="rail-scroll">
-					{/* Above the agents, because it is not one of them: the plugins are the plane's, and the
-					    list below has no end anybody scrolls to. */}
-					<button
-						type="button"
-						className="rail-screen"
-						data-here={showing === "plugins"}
-						disabled={plane === undefined}
-						onClick={() => show("plugins")}
-					>
-						<span className="row-icon">
-							<Blocks className="size-4" />
-						</span>
-						<span className="row-name">Plugins</span>
-					</button>
-					<button
-						type="button"
-						className="rail-screen"
-						data-here={showing === "repos"}
-						disabled={plane === undefined}
-						onClick={() => show("repos")}
-					>
-						<span className="row-icon">
-							<GitBranch className="size-4" />
-						</span>
-						<span className="row-name">Repositories</span>
-					</button>
-
-					<div className="rail-group">Agents</div>
-					{agents.map((one) => (
-						<AgentRow
-							key={one.id}
-							plane={plane}
-							agent={one}
-							live={live[one.id] ?? QUIET}
-							// Where you are, not what you last opened: the plugins take the pane, so while they
-							// are up nothing in this list is the thing on screen.
-							//
-							// An agent's settings are that agent, and so are its files: the row stays lit while
-							// either is up, because you are inside that agent either way, and which of its
-							// screens you are on is what the pane is for saying.
-							here={one.id === chosen && showing === "none" && !making}
-							// Which of that agent's screens is up, for the list under it. Read here rather
-							// than worked out there, because this is the same answer the pane is drawn from.
-							where={browsing !== undefined ? "files" : setting !== undefined ? "settings" : "chat"}
-							wakes={one.id === chosen ? wakes : []}
-							onPick={() => {
-								setChosen(one.id);
-								setMaking(false);
-								setSetting(undefined);
-								setBrowsing(undefined);
-								show("none", one.id);
-							}}
-							onFiles={() => openFiles(one.id, FILES_HOME)}
-							onSetup={(page) => openSetup(one.id, page)}
+		// Where every port an agent opened is read, for everything below that draws one: the chips
+		// beside an agent, and a `/serve` answered in any conversation on this screen. Held here
+		// because it is one question with one answer — which address this console is read at — and
+		// four levels of message, markdown, line and word have no use for it on the way down.
+		<ServedIs value={servedAt}>
+			<div className="app">
+				<nav className="rail">
+					<div className="rail-head">
+						<RailHead
+							connected={plane !== undefined}
+							onKeys={() => show("keys")}
+							onPlugins={() => show("plugins")}
+							onAccess={() => show("devices")}
 						/>
-					))}
-					<button
-						type="button"
-						className="row row-line"
-						data-here={making}
-						onClick={() => {
-							setMaking(true);
-							setChosen(undefined);
-							show("none", null);
-						}}
-					>
-						<span className="row-icon">+</span>
-						<span className="row-name">New agent</span>
-					</button>
+					</div>
 
-					{/* Below the agents, because a room is made out of them: you have agents, and then you
-					    put some of them in a room together. */}
-					<div className="rail-group">Channels</div>
-					{rooms.map((one) => (
+					<div className="rail-scroll">
+						{/* Above the agents, because it is not one of them: the plugins are the plane's, and the
+					    list below has no end anybody scrolls to. */}
 						<button
-							key={one.name}
+							type="button"
+							className="rail-screen"
+							data-here={showing === "plugins"}
+							disabled={plane === undefined}
+							onClick={() => show("plugins")}
+						>
+							<span className="row-icon">
+								<Blocks className="size-4" />
+							</span>
+							<span className="row-name">Plugins</span>
+						</button>
+						<button
+							type="button"
+							className="rail-screen"
+							data-here={showing === "repos"}
+							disabled={plane === undefined}
+							onClick={() => show("repos")}
+						>
+							<span className="row-icon">
+								<GitBranch className="size-4" />
+							</span>
+							<span className="row-name">Repositories</span>
+						</button>
+
+						<div className="rail-group">Agents</div>
+						{agents.map((one) => (
+							<AgentRow
+								key={one.id}
+								agent={one}
+								live={live[one.id] ?? QUIET}
+								// Where you are, not what you last opened: the plugins take the pane, so while they
+								// are up nothing in this list is the thing on screen.
+								//
+								// An agent's settings are that agent, and so are its files: the row stays lit while
+								// either is up, because you are inside that agent either way, and which of its
+								// screens you are on is what the pane is for saying.
+								here={one.id === chosen && showing === "none" && !making}
+								// Which of that agent's screens is up, for the list under it. Read here rather
+								// than worked out there, because this is the same answer the pane is drawn from.
+								where={
+									browsing !== undefined ? "files" : setting !== undefined ? "settings" : "chat"
+								}
+								wakes={one.id === chosen ? wakes : []}
+								onPick={() => {
+									setChosen(one.id);
+									setMaking(false);
+									setSetting(undefined);
+									setBrowsing(undefined);
+									show("none", one.id);
+								}}
+								onFiles={() => openFiles(one.id, FILES_HOME)}
+								onSetup={(page) => openSetup(one.id, page)}
+							/>
+						))}
+						<button
 							type="button"
 							className="row row-line"
-							data-here={one.name === inRoom}
-							onClick={() => openRoom(one.name)}
+							data-here={making}
+							onClick={() => {
+								setMaking(true);
+								setChosen(undefined);
+								show("none", null);
+							}}
 						>
-							<span className="row-icon row-hash">#</span>
-							<span className="row-name">{one.name}</span>
-							{/* Who is in it, small. A room is its members, and a list of names with no faces
-							    is a list of rooms nobody can tell apart. */}
-							<span className="row-faces">
-								{one.members.slice(0, 3).map((id) => (
-									<Avatar key={id} id={id} size={16} />
-								))}
-								{one.members.length > 3 && (
-									<span className="row-note">+{one.members.length - 3}</span>
-								)}
-							</span>
+							<span className="row-icon">+</span>
+							<span className="row-name">New agent</span>
 						</button>
-					))}
-					<button
-						type="button"
-						className="row row-line"
-						data-here={makingRoom}
-						disabled={plane === undefined}
-						onClick={() => {
-							setMakingRoom(true);
-							setInRoom(undefined);
-						}}
-					>
-						<span className="row-icon">+</span>
-						<span className="row-name">New channel</span>
-					</button>
-				</div>
-			</nav>
 
-			<main className="pane">
-				{down !== undefined && (
-					<div className="down" role="status">
-						{down} — it will come back on its own.
-					</div>
-				)}
-				{keyless && down === undefined && (
-					<div
-						role="status"
-						className="flex items-center gap-2 border-working/40 border-b bg-working/10 px-5 py-2 text-[0.82rem] text-working"
-					>
-						<span className="flex-1">
-							This plane holds no key yet, so a turn stops at the model.
-						</span>
+						{/* Below the agents, because a room is made out of them: you have agents, and then you
+					    put some of them in a room together. */}
+						<div className="rail-group">Channels</div>
+						{rooms.map((one) => (
+							<button
+								key={one.name}
+								type="button"
+								className="row row-line"
+								data-here={one.name === inRoom}
+								onClick={() => openRoom(one.name)}
+							>
+								<span className="row-icon row-hash">#</span>
+								<span className="row-name">{one.name}</span>
+								{/* Who is in it, small. A room is its members, and a list of names with no faces
+							    is a list of rooms nobody can tell apart. */}
+								<span className="row-faces">
+									{one.members.slice(0, 3).map((id) => (
+										<Avatar key={id} id={id} size={16} />
+									))}
+									{one.members.length > 3 && (
+										<span className="row-note">+{one.members.length - 3}</span>
+									)}
+								</span>
+							</button>
+						))}
 						<button
 							type="button"
-							className="font-medium underline underline-offset-2"
-							onClick={() => show("first-key")}
+							className="row row-line"
+							data-here={makingRoom}
+							disabled={plane === undefined}
+							onClick={() => {
+								setMakingRoom(true);
+								setInRoom(undefined);
+							}}
 						>
-							Add one
+							<span className="row-icon">+</span>
+							<span className="row-name">New channel</span>
 						</button>
 					</div>
-				)}
-				{making ? (
-					<NewAgent onMake={create} />
-				) : room !== undefined && plane !== undefined ? (
-					<Room
-						key={room.name}
-						plane={plane}
-						room={room}
-						agents={agents}
-						said={talk[roomChannel(room.name)] ?? []}
-						live={live}
-						onFiles={openFiles}
-						onGone={() => show("none", null)}
-					/>
-				) : showing === "plugins" && plane !== undefined ? (
-					<Plugins plane={plane} agents={agents} />
-				) : showing === "repos" && plane !== undefined ? (
-					<Repos plane={plane} agents={agents} />
-				) : browsing !== undefined && agent !== undefined && plane !== undefined ? (
-					<Files
-						key={agent.id}
-						plane={plane}
-						agent={agent}
-						where={browsing}
-						onWhere={(path) => openFiles(agent.id, path)}
-						onClose={() => show("none", agent.id)}
-					/>
-				) : setting !== undefined && agent !== undefined && plane !== undefined ? (
-					<Setup
-						key={agent.id}
-						plane={plane}
-						agent={agent}
-						agents={agents}
-						page={setting}
-						onPage={(page) => openSetup(agent.id, page)}
-						onChanged={() => void look()}
-						// Back to the conversation this was opened from, which is where the address goes too.
-						onClose={() => show("none", agent.id)}
-					/>
-				) : agent !== undefined && plane !== undefined ? (
-					<Chat
-						key={agent.id}
-						plane={plane}
-						agent={agent}
-						said={talk[agent.id] ?? []}
-						live={live[agent.id] ?? QUIET}
-						onLocal={local}
-						onSetup={() => openSetup(agent.id)}
-						onFiles={openFiles}
-					/>
-				) : (
-					<Nothing onMake={() => setMaking(true)} />
-				)}
-			</main>
+				</nav>
 
-			{/* Raised by itself the first time, because this is the one thing missing between a plane
+				<main className="pane">
+					{down !== undefined && (
+						<div className="down" role="status">
+							{down} — it will come back on its own.
+						</div>
+					)}
+					{keyless && down === undefined && (
+						<div
+							role="status"
+							className="flex items-center gap-2 border-working/40 border-b bg-working/10 px-5 py-2 text-[0.82rem] text-working"
+						>
+							<span className="flex-1">
+								This plane holds no key yet, so a turn stops at the model.
+							</span>
+							<button
+								type="button"
+								className="font-medium underline underline-offset-2"
+								onClick={() => show("first-key")}
+							>
+								Add one
+							</button>
+						</div>
+					)}
+					{making ? (
+						<NewAgent onMake={create} />
+					) : room !== undefined && plane !== undefined ? (
+						<Room
+							key={room.name}
+							plane={plane}
+							room={room}
+							agents={agents}
+							said={talk[roomChannel(room.name)] ?? []}
+							live={live}
+							onFiles={openFiles}
+							onGone={() => show("none", null)}
+						/>
+					) : showing === "plugins" && plane !== undefined ? (
+						<Plugins plane={plane} agents={agents} />
+					) : showing === "repos" && plane !== undefined ? (
+						<Repos plane={plane} agents={agents} />
+					) : browsing !== undefined && agent !== undefined && plane !== undefined ? (
+						<Files
+							key={agent.id}
+							plane={plane}
+							agent={agent}
+							where={browsing}
+							onWhere={(path) => openFiles(agent.id, path)}
+							onClose={() => show("none", agent.id)}
+						/>
+					) : setting !== undefined && agent !== undefined && plane !== undefined ? (
+						<Setup
+							key={agent.id}
+							plane={plane}
+							agent={agent}
+							agents={agents}
+							page={setting}
+							onPage={(page) => openSetup(agent.id, page)}
+							onChanged={() => void look()}
+							// Back to the conversation this was opened from, which is where the address goes too.
+							onClose={() => show("none", agent.id)}
+						/>
+					) : agent !== undefined && plane !== undefined ? (
+						<Chat
+							key={agent.id}
+							plane={plane}
+							agent={agent}
+							said={talk[agent.id] ?? []}
+							live={live[agent.id] ?? QUIET}
+							onLocal={local}
+							onSetup={() => openSetup(agent.id)}
+							onFiles={openFiles}
+						/>
+					) : (
+						<Nothing onMake={() => setMaking(true)} />
+					)}
+				</main>
+
+				{/* Raised by itself the first time, because this is the one thing missing between a plane
 			    that is running and an agent that can answer. */}
-			{plane !== undefined && keyless && !askedForKey && showing === "none" && (
-				<FirstKey
-					plane={plane}
-					onClose={() => setAskedForKey(true)}
-					onDone={() => {
-						setAskedForKey(true);
-						void look();
-					}}
-				/>
-			)}
-			{showing === "first-key" && plane !== undefined && (
-				<FirstKey
-					plane={plane}
-					onClose={() => show("none")}
-					onDone={() => {
-						show("none");
-						void look();
-					}}
-				/>
-			)}
-			{makingRoom && plane !== undefined && (
-				<NewRoom
-					agents={agents}
-					onClose={() => setMakingRoom(false)}
-					onMake={async (name, members) => {
-						await plane.makeRoom(name, members);
-						setRooms(await plane.rooms());
-						openRoom(name);
-					}}
-				/>
-			)}
-			{showing === "devices" && plane !== undefined && (
-				<Devices plane={plane} onClose={() => show("none")} />
-			)}
-			{showing === "keys" && plane !== undefined && (
-				<Keys
-					plane={plane}
-					onClose={() => {
-						show("none");
-						void look();
-					}}
-				/>
-			)}
-		</div>
+				{plane !== undefined && keyless && !askedForKey && showing === "none" && (
+					<FirstKey
+						plane={plane}
+						onClose={() => setAskedForKey(true)}
+						onDone={() => {
+							setAskedForKey(true);
+							void look();
+						}}
+					/>
+				)}
+				{showing === "first-key" && plane !== undefined && (
+					<FirstKey
+						plane={plane}
+						onClose={() => show("none")}
+						onDone={() => {
+							show("none");
+							void look();
+						}}
+					/>
+				)}
+				{makingRoom && plane !== undefined && (
+					<NewRoom
+						agents={agents}
+						onClose={() => setMakingRoom(false)}
+						onMake={async (name, members) => {
+							await plane.makeRoom(name, members);
+							setRooms(await plane.rooms());
+							openRoom(name);
+						}}
+					/>
+				)}
+				{showing === "devices" && plane !== undefined && (
+					<Devices plane={plane} onClose={() => show("none")} />
+				)}
+				{showing === "keys" && plane !== undefined && (
+					<Keys
+						plane={plane}
+						onClose={() => {
+							show("none");
+							void look();
+						}}
+					/>
+				)}
+			</div>
+		</ServedIs>
 	);
 }
 
 function AgentRow({
-	plane,
 	agent,
 	live,
 	here,
@@ -784,7 +793,6 @@ function AgentRow({
 	onFiles,
 	onSetup,
 }: {
-	plane: Plane | undefined;
 	agent: AgentSummary;
 	live: Live;
 	here: boolean;
@@ -797,7 +805,7 @@ function AgentRow({
 	onSetup: (page?: string) => void;
 }) {
 	// Where each of its ports is read, which is a name of that port's own and is the door's to say.
-	const servedAt = useServedAt(plane, agent.id, agent.served);
+	const servedAt = useServedAt();
 	// A question nobody has answered outranks everything else this row could say. It is the one
 	// state where the agent is stopped and waiting on the person reading this.
 	const state =
@@ -912,7 +920,7 @@ function AgentRow({
 						<a
 							key={one.port}
 							className="row-under"
-							href={servedAt(one.port)}
+							href={servedAt(agent.id, one.port)}
 							target="_blank"
 							rel="noreferrer"
 						>

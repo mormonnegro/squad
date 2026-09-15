@@ -10,7 +10,7 @@ import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
-import { useServedAt } from "./served.ts";
+import { useServedAt } from "./served.tsx";
 import { Spin } from "./spin.tsx";
 
 /** Enough marks to say who was read, before the row turns into the list it is summarising. */
@@ -41,9 +41,9 @@ export function Chat({
 	 */
 	onFiles: (agentId: string, path: string) => void;
 }) {
-	// Where each port it opened is read. Asked here as well as in the rail, and asked once: the two
-	// draw the same link and the answer is kept for the page.
-	const servedAt = useServedAt(plane, agent.id, agent.served);
+	// Where each port it opened is read: the same answer the rail draws and the same one a `/serve`
+	// in the conversation below is drawn with, asked once and held for the page.
+	const servedAt = useServedAt();
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
 	const [following, setFollowing] = useState(true);
@@ -74,7 +74,7 @@ export function Chat({
 					{agent.served.map((one) => (
 						<a
 							key={one.port}
-							href={servedAt(one.port)}
+							href={servedAt(agent.id, one.port)}
 							target="_blank"
 							rel="noreferrer"
 							title={`what ${nameOf(agent.id)} is serving on ${one.port}`}

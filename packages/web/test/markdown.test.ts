@@ -166,6 +166,37 @@ describe("an address, which arrives as itself far more often than as a mark", ()
 	});
 });
 
+/*
+ * A port an agent opened, which arrives written as a path.
+ *
+ * `/serve` cannot answer with an address: the plane has no way of knowing which address the console
+ * is being read at. This end does, so the path is drawn as the link it means — and until it was, the
+ * one thing on that answer a person could click was the other line, which is a port on the machine a
+ * terminal console happens to be running on and is nothing the rest of the time.
+ */
+describe("a port an agent opened, written into what it said", () => {
+	/** Whose port a node says it is, or nothing if it is not one. */
+	const port = (node: unknown): unknown => {
+		const props = (node as { props?: { agentId?: string; port?: number } } | null)?.props;
+		return props?.agentId === undefined ? undefined : `${props.agentId}:${props.port}`;
+	};
+
+	it("draws the path `/serve` answers with as the port it names", () => {
+		const [text, link] = inline("  /at/dev/3101/");
+		expect(text).toBe("  ");
+		expect(port(link)).toBe("dev:3101");
+	});
+
+	it("takes an agent whose name has dashes in it", () => {
+		expect(inline("/at/dev-two/8080/").map(port)).toEqual(["dev-two:8080"]);
+	});
+
+	it("leaves a path that is not one alone", () => {
+		expect(inline("/at/dev/").map(port)).toEqual([undefined]);
+		expect(inline("/atlas/dev/3101/").map(port)).toEqual([undefined]);
+	});
+});
+
 describe("underscores inside a word", () => {
 	/** What the pieces are, so a run that stayed text can be told from one that became a mark. */
 	const marks = (text: string): string[] =>
