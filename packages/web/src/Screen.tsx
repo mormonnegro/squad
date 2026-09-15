@@ -21,6 +21,49 @@ export function hasScreen(agent: AgentSummary): boolean {
 	return agent.served.some((one) => one.port === SCREEN_VIEW_PORT);
 }
 
+/**
+ * The width somebody dragged, kept so that it is still there tomorrow.
+ *
+ * The first thing in this console to remember anything in the browser, and it is the right kind of
+ * thing to: how much room the screen gets against the conversation is a decision about this
+ * machine and this monitor, not about the plane — two people reading the same plane from two
+ * laptops want two different answers, and neither wants to drag it again every morning.
+ */
+const WIDTH_KEY = "squad.screen.width";
+
+/** Narrow enough to be a strip of a browser, wide enough that the address bar is still readable. */
+const NARROWEST = 320;
+
+/**
+ * The most the screen may take, which is a fact about the conversation beside it.
+ *
+ * Measured off the room the two of them share rather than off the window, and it leaves the
+ * conversation enough to be one: dragged to the far edge, what is left otherwise is a column three
+ * words wide, where every line of an answer wraps four times and the box to reply in says "Say".
+ */
+function widest(room: number): number {
+	return Math.max(NARROWEST, Math.round(room - 360));
+}
+
+function remembered(): number | undefined {
+	try {
+		const said = Number(window.localStorage.getItem(WIDTH_KEY));
+		return Number.isFinite(said) && said >= NARROWEST ? said : undefined;
+	} catch {
+		// A browser with storage turned off, or a page in a context that refuses it. The width is a
+		// convenience and the screen works without it, so this is not worth saying anything about.
+		return undefined;
+	}
+}
+
+function remember(width: number): void {
+	try {
+		window.localStorage.setItem(WIDTH_KEY, String(width));
+	} catch {
+		// As above.
+	}
+}
+
 interface Standing {
 	readonly holder: "agent" | "operator";
 	readonly url?: string;
@@ -43,6 +86,11 @@ interface Standing {
 export function Screen({ agentId }: { agentId: string }) {
 	const servedAt = useServedAt();
 	const [open, setOpen] = useState(true);
+	// Undefined until somebody drags it, and then a number of pixels. Undefined is not a width of
+	// zero: it is the share the layout gives it, which is the right answer until somebody disagrees.
+	const [width, setWidth] = useState<number | undefined>(remembered);
+	const [dragging, setDragging] = useState(false);
+	const column = useRef<HTMLElement>(null);
 	const [standing, setStanding] = useState<Standing>({ holder: "agent" });
 	const [typed, setTyped] = useState("");
 	const picture = useRef<HTMLImageElement>(null);
@@ -128,135 +176,213 @@ export function Screen({ agentId }: { agentId: string }) {
 		);
 	}
 
+	// Nothing gets selected while an edge is being dragged. Without this, pulling the handle left
+	// sweeps a selection across the conversation behind it, and the drag ends with half the page
+	// highlighted.
+	useEffect(() => {
+		if (!dragging) return;
+		const was = document.body.style.userSelect;
+		document.body.style.userSelect = "none";
+		return () => {
+			document.body.style.userSelect = was;
+		};
+	}, [dragging]);
+
+	/**
+	 * Where the edge somebody is dragging has got to, held to something usable at both ends.
+	 *
+	 * Answers with the width as well as setting it, which is what lets the end of a drag write down
+	 * exactly where it was let go. Reading the state instead wrote down the step before: a render is
+	 * one tick behind the pointer, and the column jumped back thirty pixels on the next reload.
+	 */
+	const dragTo = (clientX: number): number => {
+		const here = column.current?.getBoundingClientRect();
+		const room = column.current?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+		const right = here?.right ?? window.innerWidth;
+		const wanted = Math.min(widest(room), Math.max(NARROWEST, Math.round(right - clientX)));
+		setWidth(wanted);
+		return wanted;
+	};
+
 	return (
-		<section
-			className="flex w-[clamp(22rem,42%,46rem)] flex-none flex-col border-line border-l"
-			aria-label="screen"
-		>
-			<div className="flex items-center gap-3 px-3 py-1.5 text-[0.78rem] text-muted">
-				<button
-					type="button"
-					className="flex items-center gap-1.5 hover:text-say"
-					onClick={() => setOpen(false)}
-					title="put the screen away"
-				>
-					<ChevronRight className="size-3.5" />
-					<span>screen</span>
-				</button>
+		<>
+			{/*
+			 * The edge between the conversation and the screen, which is a thing to move.
+			 *
+			 * How much room each of them wants is not something this program can know: it depends on
+			 * the page being watched, the size of the monitor, and whether the work at hand is reading
+			 * what the agent said or watching what it is doing. So it is a handle, and where it is left
+			 * is remembered.
+			 */}
+			<div
+				role="separator"
+				aria-orientation="vertical"
+				aria-label="how much room the screen takes"
+				tabIndex={0}
+				className={`-mr-1 z-10 w-2 flex-none cursor-col-resize border-line border-l transition-colors hover:border-say/40 ${
+					dragging ? "border-say/60" : ""
+				}`}
+				onPointerDown={(event) => {
+					event.currentTarget.setPointerCapture(event.pointerId);
+					setDragging(true);
+				}}
+				onPointerMove={(event) => {
+					if (dragging) dragTo(event.clientX);
+				}}
+				onPointerUp={(event) => {
+					event.currentTarget.releasePointerCapture(event.pointerId);
+					setDragging(false);
+					remember(dragTo(event.clientX));
+				}}
+				// The same edge from the keyboard, because a handle that can only be dragged is one
+				// nobody using a keyboard can move at all.
+				onKeyDown={(event) => {
+					const step = event.key === "ArrowLeft" ? 48 : event.key === "ArrowRight" ? -48 : 0;
+					if (step === 0) return;
+					event.preventDefault();
+					const now = width ?? column.current?.getBoundingClientRect().width ?? NARROWEST;
+					const room =
+						column.current?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+					const next = Math.min(widest(room), Math.max(NARROWEST, Math.round(now + step)));
+					setWidth(next);
+					remember(next);
+				}}
+			/>
+			<section
+				ref={column}
+				className="flex w-[clamp(22rem,42%,46rem)] flex-none flex-col border-line border-l"
+				style={width === undefined ? undefined : { width }}
+				aria-label="screen"
+			>
+				<div className="flex items-center gap-3 px-3 py-1.5 text-[0.78rem] text-muted">
+					<button
+						type="button"
+						className="flex items-center gap-1.5 hover:text-say"
+						onClick={() => setOpen(false)}
+						title="put the screen away"
+					>
+						<ChevronRight className="size-3.5" />
+						<span>screen</span>
+					</button>
 
-				<span className="flex-1" />
+					<span className="flex-1" />
 
-				{standing.note !== undefined && (
-					<span className="max-w-[18ch] truncate text-working" title={standing.note}>
-						asks: {standing.note}
-					</span>
-				)}
+					{standing.note !== undefined && (
+						<span className="max-w-[18ch] truncate text-working" title={standing.note}>
+							asks: {standing.note}
+						</span>
+					)}
 
-				<button
-					type="button"
-					className={`rounded-md border px-2.5 py-1 ${
-						holding ? "border-up/50 bg-up/10 text-up" : "border-line hover:text-say"
-					}`}
-					onClick={() =>
-						void ask("keyboard", { hold: !holding }).then((said) => said && setStanding(said))
-					}
-				>
-					{holding ? "Give it back" : "Take the keyboard"}
-				</button>
+					<button
+						type="button"
+						className={`rounded-md border px-2.5 py-1 ${
+							holding ? "border-up/50 bg-up/10 text-up" : "border-line hover:text-say"
+						}`}
+						onClick={() =>
+							void ask("keyboard", { hold: !holding }).then((said) => said && setStanding(said))
+						}
+					>
+						{holding ? "Give it back" : "Take the keyboard"}
+					</button>
 
-				{/* The way out to a window of its own, for signing into something at the size it was
+					{/* The way out to a window of its own, for signing into something at the size it was
 				    designed at. That one is read at the port's own name, the way every served port is. */}
-				<a
-					className="flex items-center gap-1.5 hover:text-say"
-					href={servedAt(agentId, SCREEN_VIEW_PORT)}
-					target="_blank"
-					rel="noreferrer noopener"
-					title={`${agentId}'s browser, in a window of its own`}
-				>
-					<ExternalLink className="size-3.5" />
-					<span>open</span>
-				</a>
-			</div>
+					<a
+						className="flex items-center gap-1.5 hover:text-say"
+						href={servedAt(agentId, SCREEN_VIEW_PORT)}
+						target="_blank"
+						rel="noreferrer noopener"
+						title={`${agentId}'s browser, in a window of its own`}
+					>
+						<ExternalLink className="size-3.5" />
+						<span>open</span>
+					</a>
+				</div>
 
-			{/* On a line of its own, because a column is narrow: an address bar sharing a row with two
+				{/* On a line of its own, because a column is narrow: an address bar sharing a row with two
 			    buttons in here would be a field too short to read a URL in. */}
-			<div className="px-3 pb-2">
-				<form
-					className="flex min-w-0 items-center"
-					onSubmit={(event) => {
-						event.preventDefault();
-						const wanted = typed.trim();
-						if (wanted === "" || !holding) return;
-						// What a person types into an address bar is a hostname about as often as it is a
-						// URL, and the screen opens http and https — so the scheme is added, not refused.
-						const url = wanted.includes("://") ? wanted : `https://${wanted}`;
-						void ask("open", { url }).then((said) => said && setStanding(said));
-					}}
-				>
-					<input
-						className="w-full rounded-md border border-line bg-sunk px-2.5 py-1 font-mono text-[0.74rem] text-say disabled:text-muted"
-						value={typed}
-						disabled={!holding}
-						spellCheck={false}
-						placeholder={holding ? "Where to?" : "Take the keyboard to go somewhere"}
-						onChange={(event) => setTyped(event.target.value)}
-					/>
-				</form>
-			</div>
+				<div className="px-3 pb-2">
+					<form
+						className="flex min-w-0 items-center"
+						onSubmit={(event) => {
+							event.preventDefault();
+							const wanted = typed.trim();
+							if (wanted === "" || !holding) return;
+							// What a person types into an address bar is a hostname about as often as it is a
+							// URL, and the screen opens http and https — so the scheme is added, not refused.
+							const url = wanted.includes("://") ? wanted : `https://${wanted}`;
+							void ask("open", { url }).then((said) => said && setStanding(said));
+						}}
+					>
+						<input
+							className="w-full rounded-md border border-line bg-sunk px-2.5 py-1 font-mono text-[0.74rem] text-say disabled:text-muted"
+							value={typed}
+							disabled={!holding}
+							spellCheck={false}
+							placeholder={holding ? "Where to?" : "Take the keyboard to go somewhere"}
+							onChange={(event) => setTyped(event.target.value)}
+						/>
+					</form>
+				</div>
 
-			{/* Focusable, so that typing goes to the page only once somebody has clicked on it. The
+				{/* Focusable, so that typing goes to the page only once somebody has clicked on it. The
 			    alternative — listening on the window — is a console where every keystroke meant for the
 			    message box lands in whatever the agent has open. */}
-			<div
-				ref={stage}
-				// biome-ignore lint/a11y/noNoninteractiveTabindex: it is interactive — it is a browser
-				tabIndex={0}
-				// Against the top rather than the middle of the column: the picture belongs under the
-				// address bar that says where it is, and a browser floating in the vertical centre of a tall
-				// column with a gap over it reads as something that failed to load.
-				className="flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
-				onKeyDown={(event) => {
-					if (!holding) return;
-					if (event.metaKey || event.ctrlKey || event.altKey) return;
-					if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(event.key)) return;
-					event.preventDefault();
-					void ask("input", { kind: "key", key: event.key });
-				}}
-			>
-				<figure className="relative m-0 self-start leading-none">
-					<img
-						ref={picture}
-						// Keyed by the agent alone: changing this address restarts the stream, and a stream
-						// restarted on every render is a browser encoding a fresh keyframe forever.
-						key={agentId}
-						src={at("frames")}
-						alt={`what ${agentId}'s browser is showing`}
-						className="max-h-full max-w-full rounded-md border border-line object-contain"
-						onMouseDown={(event) => {
-							stage.current?.focus();
-							if (!holding) return;
-							const point = pointAt(event);
-							if (point !== undefined) void ask("input", { kind: "down", ...point });
-						}}
-						onMouseUp={(event) => {
-							if (!holding) return;
-							const point = pointAt(event);
-							if (point !== undefined) void ask("input", { kind: "up", ...point });
-						}}
-						onDragStart={(event) => event.preventDefault()}
-					/>
-					{/* Along the bottom of the picture rather than across the middle of it: it is a note
+				<div
+					ref={stage}
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: it is interactive — it is a browser
+					tabIndex={0}
+					// Against the top rather than the middle of the column: the picture belongs under the
+					// address bar that says where it is, and a browser floating in the vertical centre of a tall
+					// column with a gap over it reads as something that failed to load.
+					className="flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
+					onKeyDown={(event) => {
+						if (!holding) return;
+						if (event.metaKey || event.ctrlKey || event.altKey) return;
+						if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(event.key)) return;
+						event.preventDefault();
+						void ask("input", { kind: "key", key: event.key });
+					}}
+				>
+					{/* `max-h-full` here as well as on the picture, and not only there: a percentage height
+				    resolves against a definite one, and a figure that sizes itself to its contents has
+				    none to give the picture inside it. Without this the page runs off the bottom of a
+				    wide column. */}
+					<figure className="relative m-0 max-h-full min-h-0 self-start leading-none">
+						<img
+							ref={picture}
+							// Keyed by the agent alone: changing this address restarts the stream, and a stream
+							// restarted on every render is a browser encoding a fresh keyframe forever.
+							key={agentId}
+							src={at("frames")}
+							alt={`what ${agentId}'s browser is showing`}
+							className="max-h-full max-w-full rounded-md border border-line object-contain"
+							onMouseDown={(event) => {
+								stage.current?.focus();
+								if (!holding) return;
+								const point = pointAt(event);
+								if (point !== undefined) void ask("input", { kind: "down", ...point });
+							}}
+							onMouseUp={(event) => {
+								if (!holding) return;
+								const point = pointAt(event);
+								if (point !== undefined) void ask("input", { kind: "up", ...point });
+							}}
+							onDragStart={(event) => event.preventDefault()}
+						/>
+						{/* Along the bottom of the picture rather than across the middle of it: it is a note
 				    about the page, and the part somebody is trying to read is the one place it cannot
 				    go. Inside the figure, so it stays with the picture rather than with the column. */}
-					{!holding && (
-						<figcaption className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-							<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
-								the agent is driving — take the keyboard to touch this page
-							</span>
-						</figcaption>
-					)}
-				</figure>
-			</div>
-		</section>
+						{!holding && (
+							<figcaption className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+								<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
+									the agent is driving — take the keyboard to touch this page
+								</span>
+							</figcaption>
+						)}
+					</figure>
+				</div>
+			</section>
+		</>
 	);
 }
