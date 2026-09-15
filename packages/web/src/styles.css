@@ -1078,10 +1078,21 @@
 	color: var(--text-strong);
 }
 
-/* Not a voice, so not a bubble: the sandbox printed this, and what a command printed takes the
-   width it was written at. Sunk rather than raised, which is what every other block of output on
-   this console is drawn as. */
-.said[data-side="printed"] .bubble {
+/*
+ * The mark of a prompt, in the type a prompt is written in.
+ *
+ * `>` set in the sentence font is a mathematical sign; set in mono at the size the glyph marks
+ * are, it is the thing every terminal has opened a line with since there were terminals, and it is
+ * read as one without being looked at.
+ */
+.said[data-from="shell"] .face {
+	font: 1rem / 1 var(--mono);
+}
+
+/* What a command printed takes the width it was written at, and is sunk rather than raised — what
+   every other block of output on this console is drawn as. A bubble would be this console claiming
+   the sandbox said something; it printed it. */
+.said[data-from="shell"] .bubble {
 	width: 100%;
 	background: var(--bg-code);
 	border-radius: 9px;
@@ -1095,11 +1106,6 @@
 	align-items: baseline;
 	gap: 0.4rem;
 	margin: 0.25rem 0.2rem 0;
-}
-
-.said-stamp .said-name {
-	font: 0.72rem var(--mono);
-	color: color-mix(in srgb, var(--muted) 78%, transparent);
 }
 
 /* Quiet enough to be looked up rather than read past. The name says who; these say when, and when

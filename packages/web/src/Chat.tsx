@@ -202,7 +202,7 @@ export function Chat({
 }
 
 /**
- * Who said it, as the mark beside it — for the voices that have a name.
+ * Who said it, as the mark beside it — for everything that answers.
  *
  * An agent has a face of its own, derived from its name, and the same on every machine that ever
  * draws it. A peer's message gets that peer's own face, by the same hash of the same name, so a
@@ -210,11 +210,14 @@ export function Chat({
  * program is drawn with everywhere else — the same one at the head of the column and on the empty
  * screen.
  *
- * The other two are not drawn at all, because they are not a third and a fourth agent. What you
- * typed is on your own side of the column and the side is the name: no messaging app anybody has
- * used puts a face on your own line, and the one here was a grey person icon saying "you" beside
- * every line you had just written yourself. The sandbox is not a voice either — it is what a
- * command printed — and it takes the width of the column as the block of output it is.
+ * The sandbox gets a prompt, because a prompt is what printed it. It is the one answer here that
+ * nobody said: you typed a command and a machine printed back, and `>` is what that has looked
+ * like on every screen since there were screens. Drawn as a mark like the others rather than left
+ * bare — an answer with no face in a column where every other answer has one reads as a thing that
+ * fell out of the conversation, and the eye stops on the hole instead of on the output.
+ *
+ * Your own lines are the only ones with no mark at all: they are on your own side of the column
+ * and the side is the name. No messaging app anybody has used puts a face on your own line.
  */
 function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint: string } {
 	if (said.from === "agent") {
@@ -222,6 +225,9 @@ function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint
 	}
 	if (said.from === "other") {
 		return { mark: <Avatar id={said.via ?? ""} size={34} />, tint: "inherit" };
+	}
+	if (said.from === "shell") {
+		return { mark: ">", tint: "var(--muted)" };
 	}
 	return { mark: "◇", tint: "var(--cyan)" };
 }
@@ -231,13 +237,12 @@ function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint
  *
  * Question on one side, answer on the other: the shape of every conversation anybody has had on a
  * telephone, and the thing a screen of evenly stacked paragraphs never says — which of these did I
- * ask for. `printed` is the third case and it is not a side: the sandbox's output is not somebody
- * talking, so it is neither asked nor answered and sits across the whole column.
+ * ask for. What the sandbox printed is an answer like any other: it is on the side the answers are
+ * on, under the mark of the prompt that printed it, and what makes it different from prose is how
+ * it is drawn and not where it sits.
  */
-function sideOf(said: Utterance): "you" | "them" | "printed" {
-	if (said.from === "operator") return "you";
-	if (said.from === "shell") return "printed";
-	return "them";
+function sideOf(said: Utterance): "you" | "them" {
+	return said.from === "operator" ? "you" : "them";
 }
 
 /** How far apart two lines can be and still be one run of talking. */
@@ -314,9 +319,7 @@ export function Said({
 					? (said.via ?? "another agent")
 					: "squad";
 	const side = sideOf(said);
-	// The sandbox wears its name down here, because it has no face up there to carry one.
-	const marked =
-		side === "printed" || said.via !== undefined || said.to !== undefined || said.at !== undefined;
+	const marked = said.via !== undefined || said.to !== undefined || said.at !== undefined;
 
 	return (
 		<article
@@ -357,7 +360,6 @@ export function Said({
 				    is a thing it did, and this is the line that says what became of what is above it. */}
 				{ends && marked && (
 					<div className="said-stamp">
-						{side === "printed" && <span className="said-name">{who}</span>}
 						{said.via !== undefined && said.from !== "other" && (
 							<span className="said-via">‹{said.via}›</span>
 						)}
