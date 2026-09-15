@@ -797,7 +797,6 @@ export function App() {
 							said={talk[agent.id] ?? []}
 							live={live[agent.id] ?? QUIET}
 							onLocal={local}
-							onSetup={() => openSetup(agent.id)}
 							onFiles={openFiles}
 						/>
 					) : (

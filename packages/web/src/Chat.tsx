@@ -1,16 +1,14 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
-import { FolderOpen, Settings2, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
 import { BoxIs, paths } from "./box.tsx";
 import { type Command, completing, completions, isCommand, isShell } from "./commands.ts";
-import { FILES_HOME } from "./Files.tsx";
 import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
-import { useServedAt } from "./served.tsx";
 import { Spin } from "./spin.tsx";
 
 /** Enough marks to say who was read, before the row turns into the list it is summarising. */
@@ -22,7 +20,6 @@ export function Chat({
 	said,
 	live,
 	onLocal,
-	onSetup,
 	onFiles,
 }: {
 	plane: Plane;
@@ -30,7 +27,6 @@ export function Chat({
 	said: readonly Utterance[];
 	live: Live;
 	onLocal: (agentId: string, said: Utterance) => void;
-	onSetup: () => void;
 	/**
 	 * What it has in its box: what it built, what it wrote down, what you left it.
 	 *
@@ -41,9 +37,6 @@ export function Chat({
 	 */
 	onFiles: (agentId: string, path: string) => void;
 }) {
-	// Where each port it opened is read: the same answer the rail draws and the same one a `/serve`
-	// in the conversation below is drawn with, asked once and held for the page.
-	const servedAt = useServedAt();
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
 	const [following, setFollowing] = useState(true);
@@ -60,49 +53,25 @@ export function Chat({
 
 	return (
 		<>
+			{/*
+			 * Who you are talking to, and the two facts that are true of the talking.
+			 *
+			 * Nothing else. The workspace, the settings and every port it opened are rows under this
+			 * agent in the rail, where they are always visible and say which one you are on — and a
+			 * second door to the same three rooms, in the bar over the conversation, is a second
+			 * place to look for them and one more thing between the name and the words. What stays
+			 * is what belongs to the conversation itself: the model doing the thinking, and what the
+			 * thinking has cost against what it is allowed.
+			 */}
 			<header className="pane-head">
 				<Avatar id={agent.id} />
 				<span className="pane-title">{nameOf(agent.id)}</span>
 				<div className="pane-facts">
 					{agent.model !== undefined && <span>{agent.model}</span>}
-					{/* An agent that booked its own next turn is not idle, it is waiting, and those read
-					    identically on a screen that only says whether it is running. */}
-					{/* A name of that port's own, and never this console's: a page an agent wrote, read at
-					    the address this console is read at, is a page the browser would hand this session
-					    to. The door says which name, because it is built out of the address the door is
-					    reached at and that is not always the address this page is read at. */}
-					{agent.served.map((one) => (
-						<a
-							key={one.port}
-							href={servedAt(agent.id, one.port)}
-							target="_blank"
-							rel="noreferrer"
-							title={`what ${nameOf(agent.id)} is serving on ${one.port}`}
-						>
-							:{one.port}
-						</a>
-					))}
 					<span>
 						${agent.spentUsd.toFixed(2)}
 						{agent.limitUsd !== undefined && ` / $${agent.limitUsd.toFixed(2)}`}
 					</span>
-					{/* The facts to the left of this are the ones this button sets: the model it thinks
-					    with and the ceiling it spends against are read here and changed there, which is
-					    why it sits at the end of them rather than anywhere else on the screen. */}
-					{/* Beside the settings because they are the two other rooms of the same agent: what it
-					    is set to, and what it has got. The conversation says what it did; this is where
-					    what it did ended up. */}
-					<button
-						type="button"
-						className="pane-gear"
-						onClick={() => onFiles(agent.id, FILES_HOME)}
-						title="Files"
-					>
-						<FolderOpen className="size-3.5" />
-					</button>
-					<button type="button" className="pane-gear" onClick={onSetup} title="Settings">
-						<Settings2 className="size-3.5" />
-					</button>
 				</div>
 			</header>
 
