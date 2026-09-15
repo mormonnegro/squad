@@ -54,8 +54,17 @@ export class Browser {
 	#cdp: Cdp | undefined;
 	#session = "";
 	#frame: string | undefined;
-	#onFrame: ((jpeg: string) => void) | undefined;
-	#casting = false;
+	/**
+	 * Everybody watching, which is more than one more often than it looks.
+	 *
+	 * A set rather than the one slot this used to be, because a screen is watched from two places at
+	 * once as a matter of course: the frame in the console, and the window somebody opened beside it
+	 * to see the page at its own size. With one slot the second viewer to arrive took the frames and
+	 * the first went still — and worse, the first to leave stopped the screencast for whoever was
+	 * left, with nothing to start it again. What that looks like is a live view that draws its
+	 * header, polls its state, and shows a black rectangle forever.
+	 */
+	readonly #watching = new Set<(jpeg: string) => void>();
 	/**
 	 * Where the browser is, kept from the navigations rather than asked for.
 	 *
@@ -168,7 +177,7 @@ export class Browser {
 			const ack = event.params.sessionId;
 			if (typeof data === "string") {
 				this.#frame = data;
-				this.#onFrame?.(data);
+				for (const watcher of this.#watching) watcher(data);
 			}
 			// Unacknowledged frames stop the stream after a handful, and a live view that freezes after
 			// four frames is worse than one that never started, because it looks like the page froze.
@@ -367,9 +376,10 @@ export class Browser {
 	 * JPEG of every animation frame on the page, forever, on a machine that is also running agents.
 	 */
 	watch(onFrame: (jpeg: string) => void): () => void {
-		this.#onFrame = onFrame;
-		if (!this.#casting) {
-			this.#casting = true;
+		// Started when the first viewer arrives and stopped when the last one goes, rather than on
+		// every arrival and departure: what is being turned off is a browser encoding a JPEG of every
+		// animation frame on the page, forever, on a machine that is also running agents.
+		if (this.#watching.size === 0) {
 			void this.#need()
 				.send(
 					"Page.startScreencast",
@@ -384,10 +394,9 @@ export class Browser {
 				)
 				.catch(() => {});
 		}
+		this.#watching.add(onFrame);
 		return () => {
-			if (this.#onFrame !== onFrame) return;
-			this.#onFrame = undefined;
-			this.#casting = false;
+			if (!this.#watching.delete(onFrame) || this.#watching.size > 0) return;
 			void this.#need()
 				.send("Page.stopScreencast", {}, this.#session)
 				.catch(() => {});
