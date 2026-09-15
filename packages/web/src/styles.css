@@ -861,10 +861,10 @@
 	padding: 1.6rem 1.2rem 0.8rem;
 	display: flex;
 	flex-direction: column;
-	/* Air between turns rather than between lines: a turn is the thing being looked for on the way
-	   past, and what separates two of them has to be larger than what separates two paragraphs of
-	   the same one. */
-	gap: 1.7rem;
+	/* What one voice says in one breath, stacked: this is the distance between two bubbles of the
+	   same run, and the air between two people talking is put on the line that starts one — see
+	   `.said[data-run="false"]` below. A single gap here cannot tell the two apart. */
+	gap: 0.3rem;
 }
 
 /*
@@ -948,11 +948,23 @@
 	flex-direction: column;
 }
 
+/*
+ * A line of the conversation, on the side of whoever said it.
+ *
+ * What you asked on one side and what answered on the other, which is the shape of every
+ * conversation anybody has had on a telephone — and the one thing a column of evenly stacked
+ * paragraphs never says, which of these did I ask for. Reading back through a long pane for the
+ * question that produced an answer was reading names; now it is a glance at an edge.
+ *
+ * The rest follows from the side. Your own line carries no face and no name, because the side it
+ * is on is the name. The other side keeps both, because there is more than one voice over there —
+ * an agent, a peer writing in, the plane answering a command — and which one it was is the whole
+ * question. What the sandbox printed is on neither side: it is not somebody talking.
+ */
 .said {
-	display: grid;
-	grid-template-columns: 2.1rem minmax(0, 1fr);
-	gap: 0.8rem;
-	align-items: start;
+	display: flex;
+	align-items: flex-start;
+	gap: 0.7rem;
 	width: 100%;
 	max-width: var(--measure);
 	margin-inline: auto;
@@ -962,6 +974,22 @@
 	line-height: 1.7;
 }
 
+/* Your own words, at the end of the line rather than the start of it. */
+.said[data-side="you"] {
+	flex-direction: row-reverse;
+}
+
+/*
+ * The air between two people talking, carried by whoever starts.
+ *
+ * As padding rather than a margin because the first line in the pane already has one — `margin-top:
+ * auto`, which is what rests a short conversation on the prompt — and a margin here would win the
+ * cascade and leave it hanging from the top of an empty screen.
+ */
+.said[data-run="false"] {
+	padding-top: 0.9rem;
+}
+
 /* The glyph wears its own agent's colour rather than the same grey as every other tile: a turn is
    found on the way past by its mark, and a tinted chip is found without being read. */
 .said .face {
@@ -969,16 +997,109 @@
 	border-color: color-mix(in srgb, currentColor 26%, var(--line));
 }
 
+/* What was said, and the two quiet lines around it. It fills the row so that the bubble inside can
+   be put at either end of one. */
+.said-turn {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	flex: 1;
+	min-width: 0;
+}
+
+.said[data-side="you"] .said-turn {
+	align-items: flex-end;
+}
+
+/* Under the face of the line above it, where the rest of a run belongs: the column the faces are
+   in is kept clear, so a stack of three reads as one person saying three things. */
+.said[data-side="them"][data-run="true"] .said-turn {
+	margin-left: 2.8rem;
+}
+
 .said-who {
 	display: flex;
 	align-items: baseline;
 	gap: 0.5rem;
-	margin-bottom: 0.3rem;
+	margin: 0 0 0.25rem 0.2rem;
 }
 
 .said-name {
 	font-weight: 600;
 	color: var(--text-strong);
+}
+
+/*
+ * What was said, in the shape it was said in.
+ *
+ * `fit-content` so that a word is a word: a bubble the width of the column with one word in it is
+ * a paragraph with nothing in it, and the thing that makes a short line read as a short line is
+ * that it is short. It stops at the measure, and anything inside that has to be wider than that —
+ * a fence, a table — scrolls in its own box, as it did before there was a bubble around it.
+ */
+.bubble {
+	width: fit-content;
+	max-width: 100%;
+	min-width: 0;
+	border-radius: 14px;
+	padding: 0.5rem 0.85rem;
+	background: var(--bg-raised);
+	box-shadow: var(--shadow-border);
+}
+
+/*
+ * The one corner that does not round, on the side the speaker is on.
+ *
+ * What a tail is, without drawing one: the first bubble of a run points at the face beside it, the
+ * ones under it are square with nothing and read as more of the same. Every messaging app there
+ * has ever been does this, and it is the half of the shape people actually recognise.
+ */
+.said[data-side="them"][data-run="false"] .bubble {
+	border-top-left-radius: 5px;
+}
+
+.said[data-side="you"][data-run="false"] .bubble {
+	border-top-right-radius: 5px;
+}
+
+/*
+ * Your own line, in the colour your own line is in everywhere else.
+ *
+ * Cyan is what the terminal console prints the operator in and what this one lights for whatever
+ * is selected or has focus — it already means "you, here". A bubble of it, at a tenth, is the same
+ * sentence in the same voice.
+ */
+.said[data-side="you"] .bubble {
+	/* Long enough for a paragraph, short of the full column: a wall of text at the right-hand edge
+	   stops reading as something somebody typed. */
+	max-width: 85%;
+	background: color-mix(in srgb, var(--cyan) 13%, var(--bg-raised));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 22%, transparent);
+	color: var(--text-strong);
+}
+
+/* Not a voice, so not a bubble: the sandbox printed this, and what a command printed takes the
+   width it was written at. Sunk rather than raised, which is what every other block of output on
+   this console is drawn as. */
+.said[data-side="printed"] .bubble {
+	width: 100%;
+	background: var(--bg-code);
+	border-radius: 9px;
+	padding: 0.65rem 0.9rem;
+}
+
+/* When it was said, whose output it was, where it went: under the last line of the run rather than
+   over the first, because that is the line being asked about. */
+.said-stamp {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+	margin: 0.25rem 0.2rem 0;
+}
+
+.said-stamp .said-name {
+	font: 0.72rem var(--mono);
+	color: color-mix(in srgb, var(--muted) 78%, transparent);
 }
 
 /* Quiet enough to be looked up rather than read past. The name says who; these say when, and when
@@ -1272,6 +1393,13 @@ pre .md-path:hover {
 .said[data-tone="bad"] .md {
 	color: var(--red);
 }
+
+/* Bad news is the one thing in a pane that has to be found without being read, and a bubble is a
+   ground: the red that was only in the words is in the ring and under them as well. */
+.said[data-tone="bad"] .bubble {
+	background: color-mix(in srgb, var(--red) 8%, var(--bg-raised));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 24%, transparent);
+}
 .said[data-from="shell"] .said-body {
 	font: 0.82rem / 1.55 var(--mono);
 	color: var(--text);
@@ -1367,7 +1495,9 @@ pre .md-path:hover {
 	/* The same column the conversation is read in: the question was raised in it. */
 	width: 100%;
 	max-width: var(--measure);
-	margin-inline: auto;
+	/* Standing clear of the talking on both sides. The bubbles are a tenth of a line apart and this
+	   is not one of them: it is the pane stopping to ask something. */
+	margin: 0.7rem auto;
 }
 
 .ask-what {

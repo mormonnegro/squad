@@ -3,7 +3,7 @@ import { Trash2, UserMinus, UserPlus } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
-import { Said } from "./Chat.tsx";
+import { Said, sameRun } from "./Chat.tsx";
 import { nameOf } from "./face.ts";
 import type { Plane, Room as Standing } from "./plane.ts";
 import { Spin } from "./spin.tsx";
@@ -173,19 +173,30 @@ export function Room({
 					)}
 					{said.map((one, index) => (
 						// Append-only, and nothing in an utterance is unique. The position is the identity.
-						// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
-						<Said key={index} said={one} agentId={one.via ?? ""} onFiles={onFiles} />
+						<Said
+							// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
+							key={index}
+							said={one}
+							agentId={one.via ?? ""}
+							onFiles={onFiles}
+							// Who said it is who it came in as, which in a room is not the pane's own agent:
+							// two lines in a row are one run when the same one wrote both of them.
+							run={sameRun(said[index - 1], one)}
+							ends={!sameRun(one, said[index + 1])}
+						/>
 					))}
 					{working.map((id) => (
-						<article key={id} className="said" data-from="agent">
+						<article key={id} className="said" data-from="agent" data-side="them" data-run={false}>
 							<Avatar id={id} size={34} />
-							<div>
+							<div className="said-turn">
 								<div className="said-who">
 									<span className="said-name">{nameOf(id)}</span>
 								</div>
-								<div className="working">
-									<Spin />
-									working…
+								<div className="bubble">
+									<div className="working">
+										<Spin />
+										working…
+									</div>
 								</div>
 							</div>
 						</article>

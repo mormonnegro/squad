@@ -1,5 +1,5 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
-import { FolderOpen, Settings2, Square, Terminal, User } from "lucide-react";
+import { FolderOpen, Settings2, Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -115,8 +115,17 @@ export function Chat({
 					{said.map((one, index) => (
 						// Nothing in an utterance is unique — the same agent can say the same word twice in a
 						// row — and the list only ever grows at the end, so the position is the identity.
-						// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
-						<Said key={index} said={one} agentId={agent.id} onFiles={onFiles} />
+						<Said
+							// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
+							key={index}
+							said={one}
+							agentId={agent.id}
+							onFiles={onFiles}
+							// Whether it stands alone is not something a line knows about itself: it is the
+							// two beside it that decide, and this is the only place both are in hand.
+							run={sameRun(said[index - 1], one)}
+							ends={!sameRun(one, said[index + 1])}
+						/>
 					))}
 
 					{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
@@ -193,34 +202,66 @@ export function Chat({
 }
 
 /**
- * Who said it, as the mark beside it.
+ * Who said it, as the mark beside it — for the voices that have a name.
  *
  * An agent has a face of its own, derived from its name, and the same on every machine that ever
- * draws it. The other three voices were all one grey dot, which said only "not the agent" — and
- * they are not one thing: the plane answering a command is this program speaking, the sandbox is
- * what a command printed, and the third is you.
+ * draws it. A peer's message gets that peer's own face, by the same hash of the same name, so a
+ * message from `ledger` looks like `ledger` wherever it is read. The plane gets the mark this
+ * program is drawn with everywhere else — the same one at the head of the column and on the empty
+ * screen.
  *
- * So the plane gets the mark this program is drawn with everywhere else — the same one at the head
- * of the column and on the empty screen — the sandbox gets a terminal, and you get a person. A
- * peer's message gets that peer's own face, by the same hash of the same name, so a message from
- * `ledger` looks like `ledger` wherever it is read.
+ * The other two are not drawn at all, because they are not a third and a fourth agent. What you
+ * typed is on your own side of the column and the side is the name: no messaging app anybody has
+ * used puts a face on your own line, and the one here was a grey person icon saying "you" beside
+ * every line you had just written yourself. The sandbox is not a voice either — it is what a
+ * command printed — and it takes the width of the column as the block of output it is.
  */
 function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint: string } {
 	if (said.from === "agent") {
 		return { mark: <Avatar id={agentId} size={34} />, tint: "inherit" };
 	}
-	if (said.from === "operator") {
-		return { mark: <User className="size-4" />, tint: "var(--text-strong)" };
-	}
-	if (said.from === "shell") {
-		return { mark: <Terminal className="size-3.5" />, tint: "var(--muted)" };
-	}
-	// A peer's own picture, by the same name and the same arithmetic, so `ledger` looks like `ledger`
-	// wherever it is read.
 	if (said.from === "other") {
 		return { mark: <Avatar id={said.via ?? ""} size={34} />, tint: "inherit" };
 	}
 	return { mark: "◇", tint: "var(--cyan)" };
+}
+
+/**
+ * Which side of the column a line is read on.
+ *
+ * Question on one side, answer on the other: the shape of every conversation anybody has had on a
+ * telephone, and the thing a screen of evenly stacked paragraphs never says — which of these did I
+ * ask for. `printed` is the third case and it is not a side: the sandbox's output is not somebody
+ * talking, so it is neither asked nor answered and sits across the whole column.
+ */
+function sideOf(said: Utterance): "you" | "them" | "printed" {
+	if (said.from === "operator") return "you";
+	if (said.from === "shell") return "printed";
+	return "them";
+}
+
+/** How far apart two lines can be and still be one run of talking. */
+const ONE_RUN = 5 * 60 * 1000;
+
+/**
+ * Whether this line goes on under the one before it, which is what lets it drop the face and the
+ * name.
+ *
+ * Everything the name row says has to match, because the name row is what is being taken away: the
+ * same mouth, the door it came in by, where it went, and whether it is bad news. Time as well — an
+ * agent that answers you now and again at three in the morning is not one run, and grouping the two
+ * would hide the only interesting thing about the second one.
+ *
+ * Exported for the same reason `Said` is: a room is this conversation with more voices in it, and
+ * two answers to what counts as one run would drift the first time either was touched.
+ */
+export function sameRun(before: Utterance | undefined, said: Utterance | undefined): boolean {
+	if (before === undefined || said === undefined) return false;
+	if (before.from !== said.from || before.via !== said.via) return false;
+	if (before.to !== said.to || before.tone !== said.tone) return false;
+	if (before.at === undefined || said.at === undefined) return true;
+	const apart = new Date(said.at).getTime() - new Date(before.at).getTime();
+	return Number.isNaN(apart) || apart < ONE_RUN;
 }
 
 /**
@@ -234,6 +275,8 @@ export function Said({
 	said,
 	agentId,
 	onFiles,
+	run = false,
+	ends = true,
 }: {
 	said: Utterance;
 	agentId: string;
@@ -246,6 +289,10 @@ export function Said({
 	 * screen the message is being read.
 	 */
 	onFiles?: (agentId: string, path: string) => void;
+	/** Whether the line above it was the same voice saying the same thing a moment earlier. */
+	run?: boolean;
+	/** Whether the run stops here, which is where the time it was said goes. */
+	ends?: boolean;
 }) {
 	const face = markOf(said, agentId);
 	const whose = said.from === "other" ? (said.via ?? agentId) : agentId;
@@ -256,44 +303,68 @@ export function Said({
 				: { open: (path: string) => onFiles(whose, path) },
 		[onFiles, whose],
 	);
+	// Never asked for your own lines: the side they are on is the answer, and nothing on this screen
+	// says "You" any more.
 	const who =
-		said.from === "operator"
-			? "You"
-			: said.from === "agent"
-				? nameOf(agentId)
-				: said.from === "shell"
-					? "sandbox"
-					: said.from === "other"
-						? (said.via ?? "another agent")
-						: "squad";
+		said.from === "agent"
+			? nameOf(agentId)
+			: said.from === "shell"
+				? "sandbox"
+				: said.from === "other"
+					? (said.via ?? "another agent")
+					: "squad";
+	const side = sideOf(said);
+	// The sandbox wears its name down here, because it has no face up there to carry one.
+	const marked =
+		side === "printed" || said.via !== undefined || said.to !== undefined || said.at !== undefined;
 
 	return (
-		<article className="said" data-from={said.from} data-tone={said.tone}>
-			<span className="face" data-size="big" style={{ color: face.tint }} aria-hidden="true">
-				{face.mark}
-			</span>
-			<div>
-				<div className="said-who">
-					<span className="said-name">{who}</span>
-					{/* Where it came from, or where it went. A message that left this agent is a thing it
-					    did, and the pane it was typed in is where a person looks for it. */}
-					{said.via !== undefined && said.from !== "other" && (
-						<span className="said-via">‹{said.via}›</span>
-					)}
-					{said.to !== undefined && <span className="said-via">→ {said.to}</span>}
-					{said.at !== undefined && <span className="said-when">{clock(said.at)}</span>}
-				</div>
+		<article
+			className="said"
+			data-from={said.from}
+			data-tone={said.tone}
+			data-side={side}
+			data-run={run}
+		>
+			{side === "them" && !run && (
+				<span className="face" data-size="big" style={{ color: face.tint }} aria-hidden="true">
+					{face.mark}
+				</span>
+			)}
+			<div className="said-turn">
+				{side === "them" && !run && (
+					<div className="said-who">
+						<span className="said-name">{who}</span>
+					</div>
+				)}
 				{/* The sandbox's own output is not prose: it is whatever the command printed, and a `*`
 				    in it is a glob. Everything else is written by something that writes markdown. */}
-				<BoxIs value={box}>
-					{said.from === "shell" ? (
-						// Not prose, and read for one thing only: a `!ls` answers in paths, and the whole
-						// point of typing it was to find out what is in there.
-						<div className="said-body">{paths(said.text, undefined)}</div>
-					) : (
-						<Markdown text={said.text} />
-					)}
-				</BoxIs>
+				<div className="bubble" title={said.at === undefined ? undefined : full(said.at)}>
+					<BoxIs value={box}>
+						{said.from === "shell" ? (
+							// Not prose, and read for one thing only: a `!ls` answers in paths, and the whole
+							// point of typing it was to find out what is in there.
+							<div className="said-body">{paths(said.text, undefined)}</div>
+						) : (
+							<Markdown text={said.text} />
+						)}
+					</BoxIs>
+				</div>
+				{/* Under the last thing said rather than over the first, and only once for the run: a
+				    clock on every line of a stack is the same number four times, and the question it
+				    answers — when did this happen — is asked of the end of what was said. Where it came
+				    from and where it went are here for the same reason: a message that left this agent
+				    is a thing it did, and this is the line that says what became of what is above it. */}
+				{ends && marked && (
+					<div className="said-stamp">
+						{side === "printed" && <span className="said-name">{who}</span>}
+						{said.via !== undefined && said.from !== "other" && (
+							<span className="said-via">‹{said.via}›</span>
+						)}
+						{said.to !== undefined && <span className="said-via">→ {said.to}</span>}
+						{said.at !== undefined && <span className="said-when">{clock(said.at)}</span>}
+					</div>
+				)}
 			</div>
 		</article>
 	);
@@ -316,63 +387,66 @@ function Turn({
 		[onFiles, agentId],
 	);
 	return (
-		<article className="said" data-from="agent">
+		<article className="said" data-from="agent" data-side="them" data-run={false}>
 			<Avatar id={agentId} size={34} />
-			<div>
+			<div className="said-turn">
 				<div className="said-who">
 					<span className="said-name">{nameOf(agentId)}</span>
 				</div>
-
-				{/*
-				 * Under the name, where the answer is going to be.
-				 *
-				 * It is what this turn has so far, which is the same thing the steps are and the same
-				 * thing the text is — so it stands where they will stand and is replaced by them, rather
-				 * than sitting up in the name row as a label on the agent. A turn takes minutes and a
-				 * still line through all of them reads like a line something left behind, so it turns;
-				 * it stops the moment there is anything truer to show.
-				 */}
-				{live.text.length === 0 && live.steps.length === 0 && (
-					<div className="working">
-						<Spin />
-						working…
-					</div>
-				)}
-				{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two
-				    asterisks on screen that no later delta can take away, so the answer arrives a
-				    settled piece at a time rather than a character at a time. */}
-				{live.text.length > 0 && (
-					<BoxIs value={box}>
-						<Markdown text={live.text.slice(0, safeEnd(live.text))} />
-					</BoxIs>
-				)}
-				{live.steps.length > 0 && (
-					<div className="steps">
-						{live.steps.slice(-8).map((step, index, shown) => (
-							<div
-								className="step"
-								// biome-ignore lint/suspicious/noArrayIndexKey: append-only within one turn
-								key={index}
-								data-failed={step.failed === true}
-								// The last one is the one still running, so far as this screen can know: a step
-								// is written down when it starts, and the next one arriving is what says the one
-								// before it finished.
-								data-now={live.thinking && index === shown.length - 1}
-								// The tool and the argument it was called with, for whoever wants them. The row
-								// says what is happening; this is the same thing in the terms it happened in, and
-								// it belongs a hover away rather than in front of somebody waiting for an answer.
-								title={`${step.action} ${step.detail}`}
-							>
-								{/* Beside the marks rather than instead of them: what it has read so far is not
-								    something to take off the screen because it has not finished reading. */}
-								{live.thinking && index === shown.length - 1 && step.failed !== true && <Spin />}
-								<Sources urls={step.sources ?? []} />
-								<span className="step-say">{step.say || step.detail}</span>
-								{step.failed === true && <span className="step-why">✗ {step.detail}</span>}
-							</div>
-						))}
-					</div>
-				)}
+				{/* The same bubble the finished answer will be read in, so nothing moves when the turn
+				    ends: what is in it is replaced, and the shape around it was right all along. */}
+				<div className="bubble">
+					{/*
+					 * Under the name, where the answer is going to be.
+					 *
+					 * It is what this turn has so far, which is the same thing the steps are and the same
+					 * thing the text is — so it stands where they will stand and is replaced by them, rather
+					 * than sitting up in the name row as a label on the agent. A turn takes minutes and a
+					 * still line through all of them reads like a line something left behind, so it turns;
+					 * it stops the moment there is anything truer to show.
+					 */}
+					{live.text.length === 0 && live.steps.length === 0 && (
+						<div className="working">
+							<Spin />
+							working…
+						</div>
+					)}
+					{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two
+					    asterisks on screen that no later delta can take away, so the answer arrives a
+					    settled piece at a time rather than a character at a time. */}
+					{live.text.length > 0 && (
+						<BoxIs value={box}>
+							<Markdown text={live.text.slice(0, safeEnd(live.text))} />
+						</BoxIs>
+					)}
+					{live.steps.length > 0 && (
+						<div className="steps">
+							{live.steps.slice(-8).map((step, index, shown) => (
+								<div
+									className="step"
+									// biome-ignore lint/suspicious/noArrayIndexKey: append-only within one turn
+									key={index}
+									data-failed={step.failed === true}
+									// The last one is the one still running, so far as this screen can know: a step
+									// is written down when it starts, and the next one arriving is what says the one
+									// before it finished.
+									data-now={live.thinking && index === shown.length - 1}
+									// The tool and the argument it was called with, for whoever wants them. The row
+									// says what is happening; this is the same thing in the terms it happened in, and
+									// it belongs a hover away rather than in front of somebody waiting for an answer.
+									title={`${step.action} ${step.detail}`}
+								>
+									{/* Beside the marks rather than instead of them: what it has read so far is not
+									    something to take off the screen because it has not finished reading. */}
+									{live.thinking && index === shown.length - 1 && step.failed !== true && <Spin />}
+									<Sources urls={step.sources ?? []} />
+									<span className="step-say">{step.say || step.detail}</span>
+									{step.failed === true && <span className="step-why">✗ {step.detail}</span>}
+								</div>
+							))}
+						</div>
+					)}
+				</div>
 			</div>
 		</article>
 	);
@@ -659,4 +733,17 @@ function clock(at: string): string {
 	return Number.isNaN(when.getTime())
 		? ""
 		: when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * The whole of when it was said, a hover away.
+ *
+ * A run of lines carries one clock, under the last of them, and the day is nowhere on the screen at
+ * all — a conversation read from the bottom is read in hours, not in dates. Both are still true of
+ * every line taken on its own, and this is where that is kept: nothing spent on the screen, and an
+ * answer for anybody who goes looking.
+ */
+function full(at: string): string | undefined {
+	const when = new Date(at);
+	return Number.isNaN(when.getTime()) ? undefined : when.toLocaleString();
 }
