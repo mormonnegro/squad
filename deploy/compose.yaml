@@ -101,6 +101,13 @@ services:
       - caddy-config:/config
     environment:
       SQUAD_DOMAIN: ${SQUAD_DOMAIN:-}
+      # The domain the ports agents open are served under, which is a name per port and one wildcard
+      # record pointing here. Unset is a name nothing resolves to, rather than an empty one: the
+      # block that serves those names is written `*.{$SQUAD_SERVED_DOMAIN}`, and an empty value there
+      # is a site address Caddy refuses to parse — which would take the console down with it. So a
+      # plane whose operator has not made that record has nothing listening on those names, and says
+      # so on the link rather than serving an agent's page at the console's own address.
+      SQUAD_SERVED_DOMAIN: ${SQUAD_SERVED_DOMAIN:-served.invalid}
       SQUAD_WEB_PORT: ${SQUAD_WEB_PORT:-8789}
     depends_on:
       - control-plane

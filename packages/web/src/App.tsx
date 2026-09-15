@@ -899,7 +899,8 @@ function AgentRow({
 						<span className="row-name">Settings</span>
 					</button>
 					{/* A port it opened, which is otherwise only reachable from the head of the
-					    conversation — and is the one thing here that leaves this page. */}
+					    conversation — and is the one thing here that leaves this origin, onto a name of
+					    that port's own. */}
 					{agent.served.map((one) => (
 						<a
 							key={one.port}

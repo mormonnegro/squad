@@ -1671,6 +1671,7 @@ it starts is a dev server nobody can open, and what the agent does instead is de
 > /serve 3000
 scout is serving 3000
 
+  /at/scout/3000/
   http://scout.localhost:3000
 
 Nothing is listening on 3000 inside the sandbox yet. The link waits: it starts working the
@@ -1688,6 +1689,20 @@ loopback, over the control socket the console was already talking on. Nothing is
 server, no firewall rule changes, and the link dies when you close the console rather than staying
 open on a machine nobody is looking at.
 
+The first line is the same port from the web console, and it is a path rather than an address
+because the one thing the plane cannot know is which address you are reading the console at. Click
+it and it lands somewhere else: `scout-3000.localhost:8789`, a name of that port's own.
+
+That hop is not decoration. A page an agent wrote, served at the address the console is read at, is
+a page your browser hands your session to — it can open `/events`, read every conversation, create
+and delete agents, and approve the reach it asked for a minute ago, as you, with the credentials the
+proxy injects. Nothing checked at the door can prevent it, because the browser is doing exactly what
+a same-origin page is allowed to do. So it is never served there. On loopback the name costs
+nothing: every browser resolves `*.localhost` to the machine it is on. Behind a domain it is one
+wildcard record pointing at the plane and `SQUAD_SERVED_DOMAIN` in `deploy/.env` naming the same
+domain — Caddy gets a certificate per name the first time each is asked for. Without that record the
+link says so instead of opening, and nothing about the console changes.
+
 Inside the sandbox it goes to `127.0.0.1`, which is the part worth having. Sandboxes share one
 network and can dial each other by container name, so a server bound to `0.0.0.0` is a server every
 other agent on the plane can reach; a server on loopback is one only this reaches. The agent is told
@@ -1702,8 +1717,8 @@ the second agent being refused for something it did not do:
 > /serve
 scout is serving:
 
-  3000  http://scout.localhost:3000
-  8080  http://scout.localhost:8081   (8080 is scribe's here)
+  3000  /at/scout/3000/   http://scout.localhost:3000
+  8080  /at/scout/8080/   http://scout.localhost:8081   (8080 is scribe's here)
 ```
 
 Which is why the answer names both numbers. The port inside the sandbox is the one the agent knows

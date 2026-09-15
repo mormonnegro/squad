@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -572,6 +573,209 @@ describe("letting the same browser in twice", () => {
 	});
 });
 
+/** The socket the door opened for a forward, once it has written its request down it. */
+async function forwarding(): Promise<FakeSocket> {
+	for (let tried = 0; tried < 200; tried++) {
+		const socket = sockets.at(-1);
+		if (socket?.written.includes('"op":"forward"') === true) return socket;
+		await new Promise((wake) => setTimeout(wake, 10));
+	}
+	throw new Error("the door never asked the plane to forward anything");
+}
+
+/** One request to this door at whatever name the test wants it to have arrived at. */
+function askAt(
+	host: string,
+	path: string,
+	headers: Record<string, string> = {},
+): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
+	return new Promise((settle, fail) => {
+		const asked = httpRequest(
+			{ host: "127.0.0.1", port: web.port, path, headers: { host, ...headers } },
+			(answer) => {
+				let body = "";
+				answer.on("data", (chunk: Buffer) => {
+					body += chunk.toString("utf8");
+				});
+				answer.once("end", () =>
+					settle({ status: answer.statusCode ?? 0, headers: answer.headers, body }),
+				);
+			},
+		);
+		asked.once("error", fail);
+		asked.end();
+	});
+}
+
+/** The name scout's 3101 is read at, when the console is read on loopback. */
+function port3101(): string {
+	return `scout-3101.localhost:${web.port}`;
+}
+
+/** The link as the console hands it out: the name of the port, and the key to open it with. */
+async function linkTo(path = "/"): Promise<URL> {
+	const answer = await fetch(at(`/at/scout/3101${path}`), {
+		headers: { cookie: `squad_web=${web.token}` },
+		redirect: "manual",
+	});
+	expect(answer.status).toBe(302);
+	return new URL(answer.headers.get("location") ?? "");
+}
+
+/** A browser that has clicked the link and holds what that left it with. */
+async function letIn(): Promise<string> {
+	const link = await linkTo();
+	const answer = await askAt(link.host, `${link.pathname}${link.search}`);
+	expect(answer.status).toBe(302);
+	return /squad_at=([^;]+)/.exec(String(answer.headers["set-cookie"] ?? ""))?.[1] as string;
+}
+
+/*
+ * A page an agent wrote, on a name of its own.
+ *
+ * This is the whole of why any of it is shaped this way. Under the old prefix that page was read at
+ * the console's own address, which meant the browser handed it the operator's cookie, let it read
+ * `/events`, and let it post to `/rpc` — an agent that got you to click a link drove the plane as
+ * you, approved its own reach, and read every conversation. Nothing on the same origin can prevent
+ * that, so nothing tries: the page is somewhere else now.
+ */
+describe("a port an agent opened, on an origin that is not this console's", () => {
+	it("sends the link to a name of the port's own, with a key on the end of it", async () => {
+		const link = await linkTo("/thing?x=1");
+
+		expect(link.hostname).toBe("scout-3101.localhost");
+		expect(link.port).toBe(String(web.port));
+		expect(link.pathname).toBe("/thing");
+		expect(link.searchParams.get("x")).toBe("1");
+		expect(link.searchParams.get("k")).toBeTruthy();
+	});
+
+	it("refuses a browser that arrives at that name holding no key", async () => {
+		const answer = await askAt(port3101(), "/");
+
+		expect(answer.status).toBe(401);
+		expect(answer.body).toContain("has not been let in");
+	});
+
+	it("spends the key for a cookie of that name's own, and takes it back out of the address", async () => {
+		const link = await linkTo("/thing");
+		const answer = await askAt(link.host, `${link.pathname}${link.search}`);
+
+		const carried = String(answer.headers["set-cookie"] ?? "");
+		expect(answer.status).toBe(302);
+		expect(answer.headers.location).toBe("/thing");
+		expect(carried).toContain("squad_at=");
+		expect(carried).toContain("SameSite=Lax");
+		// Never this console's. That cookie belongs to the host the console is read at, and the whole
+		// point of this name is that nothing of the console's is carried to it.
+		expect(carried).not.toContain("squad_web");
+	});
+
+	it("does not hand the sandbox this console's keys", async () => {
+		const key = await letIn();
+		const answer = askAt(port3101(), "/", {
+			cookie: `squad_at=${key}; squad_web=${web.token}; theirs=1`,
+			"x-squad-session": "whatever",
+		});
+		const socket = await forwarding();
+		socket.say('{"id":"forward","ok":true}\r\n');
+		await new Promise((wake) => setTimeout(wake, 50));
+		const written = socket.written;
+		socket.say("HTTP/1.1 204 No Content\r\n\r\n");
+		await answer;
+
+		expect(written).toContain("theirs=1");
+		expect(written).not.toContain("squad_web");
+		expect(written).not.toContain("squad_at");
+		expect(written).not.toContain("x-squad-session");
+	});
+
+	it("keeps a cookie the sandbox sets on the name it came from", async () => {
+		const key = await letIn();
+		const answer = askAt(port3101(), "/", { cookie: `squad_at=${key}` });
+		const socket = await forwarding();
+		socket.say('{"id":"forward","ok":true}\r\n');
+		await new Promise((wake) => setTimeout(wake, 50));
+		socket.say(
+			"HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: 2\r\n" +
+				// What a page an agent wrote would try if it wanted the console's host: a cookie written
+				// one name up reaches every name under it, this console's included.
+				"set-cookie: mine=1; Domain=localhost; Path=/\r\n" +
+				"set-cookie: squad_web=forged; Path=/\r\n\r\nhi",
+		);
+
+		const said = String((await answer).headers["set-cookie"] ?? "");
+		expect(said).toContain("mine=1");
+		expect(said).not.toContain("Domain=localhost");
+		expect(said).not.toContain("squad_web");
+	});
+
+	it("refuses a request to the plane that came from one of those names", async () => {
+		const drive = await askAt(`127.0.0.1:${web.port}`, "/events", {
+			cookie: `squad_web=${web.token}`,
+			origin: `http://${port3101()}`,
+		});
+		const read = await askAt(`127.0.0.1:${web.port}`, "/devices", {
+			cookie: `squad_web=${web.token}`,
+			"sec-fetch-site": "same-site",
+		});
+
+		expect(drive.status).toBe(403);
+		expect(read.status).toBe(403);
+	});
+
+	it("mints a key for a click and not for a page asking quietly", async () => {
+		const clicked = await askAt(`127.0.0.1:${web.port}`, "/at/scout/3101/", {
+			cookie: `squad_web=${web.token}`,
+			"sec-fetch-site": "cross-site",
+			"sec-fetch-mode": "navigate",
+			"sec-fetch-dest": "document",
+		});
+		const quiet = await askAt(`127.0.0.1:${web.port}`, "/at/scout/3101/", {
+			cookie: `squad_web=${web.token}`,
+			origin: `http://${port3101()}`,
+		});
+
+		// A link in a message, in a bookmark, in somebody's notes: clicked, and it lands on a page
+		// that is not this origin either way.
+		expect(clicked.status).toBe(302);
+		expect(quiet.status).toBe(403);
+	});
+
+	it("still answers its own page, which is what all of that is for", async () => {
+		const answer = await askAt(`127.0.0.1:${web.port}`, "/devices", {
+			cookie: `squad_web=${web.token}`,
+			"sec-fetch-site": "same-origin",
+		});
+
+		expect(answer.status).toBe(200);
+		expect(answer.headers["x-frame-options"]).toBe("DENY");
+	});
+
+	// Caddy asks this before it goes and gets a certificate for a name somebody has just offered it.
+	it("says which names are ports of this plane's and which are nobody's", async () => {
+		const web2 = new WebServer({
+			stateDir: dir,
+			root,
+			port: 0,
+			servedDomain: "plane.example",
+			dial: async () => new FakeSocket(),
+		});
+		await web2.listen();
+		const askedAbout = async (name: string): Promise<number> =>
+			(
+				await fetch(`http://127.0.0.1:${web2.port}/tls/ask?domain=${name}`, {
+					redirect: "manual",
+				})
+			).status;
+
+		expect(await askedAbout("scout-3000.plane.example")).toBe(200);
+		expect(await askedAbout("anything.else.example")).toBe(403);
+		expect(await askedAbout("scout.plane.example")).toBe(403);
+		await web2.close();
+	});
+});
+
 /*
  * A port that was opened and is not answering.
  *
@@ -580,20 +784,9 @@ describe("letting the same browser in twice", () => {
  * black page, which is true and about the wrong subject.
  */
 describe("a port with nothing behind it", () => {
-	/** The socket the door opened for the forward, once it has written its request down it. */
-	async function forwarding(): Promise<FakeSocket> {
-		for (let tried = 0; tried < 200; tried++) {
-			const socket = sockets.at(-1);
-			if (socket?.written.includes('"op":"forward"') === true) return socket;
-			await new Promise((wake) => setTimeout(wake, 10));
-		}
-		throw new Error("the door never asked the plane to forward anything");
-	}
-
 	it("says nothing is listening, rather than what node calls a socket that closed", async () => {
-		const asked = fetch(at("/at/scout/3101/"), {
-			headers: { cookie: `squad_web=${web.token}` },
-		});
+		const key = await letIn();
+		const asked = askAt(port3101(), "/", { cookie: `squad_at=${key}` });
 		const socket = await forwarding();
 		// What the relay says when it has waited out its three seconds for something to bind that
 		// port. The same page is what the browser gets when the tunnel opens and dies instead, which
@@ -602,29 +795,27 @@ describe("a port with nothing behind it", () => {
 			'{"id":"forward","ok":false,"error":"relay: connect ECONNREFUSED 127.0.0.1:3101"}\n',
 		);
 
-		const response = await asked;
-		const page = await response.text();
+		const answer = await asked;
 
-		expect(response.status).toBe(502);
-		expect(response.headers.get("content-type")).toContain("text/html");
-		expect(page).toContain("Nothing is listening on 3101");
-		expect(page).toContain("keep");
-		expect(page).toContain("/serve stop 3101");
-		expect(page).not.toContain("ECONNREFUSED");
+		expect(answer.status).toBe(502);
+		expect(answer.headers["content-type"]).toContain("text/html");
+		expect(answer.body).toContain("Nothing is listening on 3101");
+		expect(answer.body).toContain("keep");
+		expect(answer.body).toContain("/serve stop 3101");
+		expect(answer.body).not.toContain("ECONNREFUSED");
 	});
 
 	it("says the link is not open at all, when that is the half that is missing", async () => {
-		const asked = fetch(at("/at/scout/3101/"), {
-			headers: { cookie: `squad_web=${web.token}` },
-		});
+		const key = await letIn();
+		const asked = askAt(port3101(), "/", { cookie: `squad_at=${key}` });
 		const socket = await forwarding();
 		socket.say(
 			'{"id":"forward","ok":false,"error":"scout is not serving 3101. /serve 3101 opens it."}\n',
 		);
 
-		const page = await (await asked).text();
+		const answer = await asked;
 
-		expect(page).toContain("no link open on 3101");
-		expect(page).toContain("/serve 3101");
+		expect(answer.body).toContain("no link open on 3101");
+		expect(answer.body).toContain("/serve 3101");
 	});
 });

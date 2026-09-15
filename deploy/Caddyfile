@@ -1,3 +1,19 @@
+# The certificates for the ports agents open, which are asked for one at a time.
+#
+# A plane serves each of those on a name of its own — `scout-3000.plane.tld` — and a certificate for
+# every one of them either comes from a wildcard, which needs this machine's DNS credentials sitting
+# on it, or is fetched the first time a name is actually asked for. The second, because the first is
+# a worse thing to ask an operator for than a record.
+#
+# Caddy refuses to do that without somewhere to ask first, and it is right to: otherwise anybody who
+# points a name at this machine can make it go and fetch certificates until Let's Encrypt says no.
+# The plane answers about the shape of a name and nothing else.
+{
+	on_demand_tls {
+		ask http://control-plane:{$SQUAD_WEB_PORT}/tls/ask
+	}
+}
+
 # The plane behind a name, with a certificate it obtains and renews on its own.
 #
 # Only reached when the installer was given a domain: without SQUAD_DOMAIN this service is not in
@@ -24,6 +40,34 @@
 		Referrer-Policy same-origin
 		# A year, and only once this is actually answering on https: a machine that sets this and
 		# then loses its certificate is a machine no browser will talk to over http either.
+		#
+		# This name's alone, deliberately. The names below are the agents' pages and are not this
+		# console, and a header set here for all of them would be this console deciding something
+		# about theirs.
 		Strict-Transport-Security "max-age=31536000"
+	}
+}
+
+# Every port an agent opened, each at a name of its own under the same domain.
+#
+# This is not a convenience. A page an agent wrote, served at the address the console is read at, is
+# a page the browser hands the operator's cookie to — it reads the conversations, creates agents and
+# approves its own reach, as the operator, and no header or token can stop it because the browser is
+# doing exactly what a same-origin page is allowed to do. So it is served somewhere else, and this
+# is the somewhere else.
+#
+# What it costs is one record: `*.plane.tld` pointing at this machine, and SQUAD_SERVED_DOMAIN in
+# .env set to the same domain. Without it the plane says so on the link rather than serving an
+# agent's page at its own address — the default below is a name nothing resolves to, so a plane
+# whose operator has not set one has nothing listening here.
+*.{$SQUAD_SERVED_DOMAIN:served.invalid} {
+	reverse_proxy control-plane:{$SQUAD_WEB_PORT} {
+		flush_interval -1
+	}
+
+	encode zstd gzip
+
+	tls {
+		on_demand
 	}
 }

@@ -116,13 +116,18 @@ export class ServedPorts {
 }
 
 /**
- * Where a served port hangs off the console's own address.
+ * Where a served port is asked for, which is not where it is answered.
  *
  * A path and not a URL, because the one thing this end cannot know is which address you are reading
  * the console at: a plane behind a domain, a laptop on loopback and a container published to a port
  * are the same plane, and the only honest answer is the one the browser completes. Whatever origin
  * the console came from is reachable, by definition — that is the whole of why this works
  * everywhere the old link did not.
+ *
+ * What answers it is one hop: the console's door builds a name of that port's own out of the
+ * address it was asked at — `scout-3000.localhost` — and sends the browser there. A page an agent
+ * wrote is never read at the address the console is read at, because a browser would hand it the
+ * operator's session and nothing at the door could take it back.
  */
 export function servedPath(agentId: string, port: number): string {
 	return `/at/${agentId}/${port}/`;

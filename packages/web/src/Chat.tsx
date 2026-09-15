@@ -63,10 +63,11 @@ export function Chat({
 					{agent.model !== undefined && <span>{agent.model}</span>}
 					{/* An agent that booked its own next turn is not idle, it is waiting, and those read
 					    identically on a screen that only says whether it is running. */}
-					{/* Off this console's own address, which is the one address that is certainly
-					    reachable: you are reading this through it. The link used to point at
-					    `<agent>.localhost`, which is a real port only while a terminal console is running
-					    on the machine the browser is — and a lie every other time. */}
+					{/* Asked of this console's own address, which is the one address that is certainly
+					    reachable — you are reading this through it — and answered somewhere else. The
+					    door turns it into a name of that port's own, because a page an agent wrote, read
+					    at the address this console is read at, is a page the browser would hand this
+					    session to. */}
 					{agent.served.map((one) => (
 						<a
 							key={one.port}

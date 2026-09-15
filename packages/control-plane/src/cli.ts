@@ -163,6 +163,10 @@ async function run(path: string): Promise<number> {
 			.split(",")
 			.map((one) => one.trim())
 			.filter((one) => one.length > 0),
+		// The domain a port an agent opened is reached under. Named by the operator because it costs a
+		// wildcard record pointing at this machine — on loopback there is a name per port for free,
+		// and everywhere else a plane that guessed would hand out links to nowhere.
+		...(process.env.SQUAD_SERVED_DOMAIN ? { servedDomain: process.env.SQUAD_SERVED_DOMAIN } : {}),
 	});
 	await web.listen().then(
 		() =>

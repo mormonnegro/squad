@@ -649,6 +649,17 @@ set_env SQUAD_SANDBOX_IMAGE "$SANDBOX_IMAGE"
 ensure_env SQUAD_DOMAIN "$DOMAIN"
 ensure_env SQUAD_RELAY "$RELAY"
 
+# The domain the ports agents open are reached under, which is one name per port under a wildcard
+# record. Set by hand for a name of your own, because the record has to exist first — a plane that
+# invented these names would hand out links to somewhere the DNS has never heard of.
+#
+# Except under sslip.io, where the wildcard is the whole point of the service: every name under
+# `10-0-0-5.sslip.io` already resolves to 10.0.0.5, so there is nothing to make and nothing to ask.
+case "$DOMAIN" in
+*.sslip.io) set_env SQUAD_SERVED_DOMAIN "$DOMAIN" ;;
+esac
+ensure_env SQUAD_SERVED_DOMAIN ""
+
 # The proxy is a service under a profile, so a machine with no domain never starts it and never
 # takes port 80 waiting for a certificate that is not coming.
 PROFILE=
@@ -795,6 +806,22 @@ if [ -f "$STATE/web.token" ]; then
 		note ""
 		note "That address is the key. Whoever holds it drives these agents, so it is pasted and"
 		note "not posted."
+		# The other half of a plane at a name: a port an agent opens is served at a name of its own,
+		# never at this one. Said here because it is the one thing about it that cannot be done from
+		# this machine — the record is at whoever holds the domain.
+		SERVED=$($SUDO sed -n 's/^SQUAD_SERVED_DOMAIN=//p' .env | head -1)
+		if [ -z "$SERVED" ]; then
+			note ""
+			note "One more record, for the ports the agents open. Each is served at a name of its own"
+			note "— scout-3000.$DOMAIN — because a page an agent wrote, served at the address above,"
+			note "is a page your browser hands your session to. Point a wildcard here and say so:"
+			note ""
+			note "     *.$DOMAIN   A   $ADDR"
+			note "     echo SQUAD_SERVED_DOMAIN=$DOMAIN | sudo tee -a $DIR/deploy/.env"
+			note "     cd $DIR/deploy && sudo docker compose up -d"
+			note ""
+			note "Until then those links say so rather than opening — the console still works."
+		fi
 	elif [ "$OPEN" = yes ]; then
 		# The machine's own address, because that is what it is answering on. Dashes rather than dots
 		# in the sslip.io name below: both forms resolve, and the dashed one is the one that works as
