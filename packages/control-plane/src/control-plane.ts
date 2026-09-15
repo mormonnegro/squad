@@ -96,6 +96,7 @@ import {
 	readHost,
 } from "./grants.ts";
 import { ProviderKeys } from "./keys.ts";
+import { LOG_CHUNK, LOGS_SCRIPT, type Printed } from "./logs.ts";
 import { MailboxStore, type MailStanding } from "./mailbox.ts";
 import {
 	hostOf,
@@ -561,6 +562,17 @@ export class ControlPlane {
 	 * watching — and because two consoles looking into the same plane should find the same links.
 	 */
 	readonly #served: ServedPorts;
+	/**
+	 * The file each served port was last seen printing into, so that a server which has stopped can
+	 * still be read.
+	 *
+	 * The whole value of a log is at the end of it, and the end of it is written on the way down: a
+	 * screen that could only find the file by asking which process holds the port would go blank at
+	 * the exact moment somebody opened it. Read out of `/proc` by the plane itself and never from
+	 * anything the agent said, and forgotten when the plane restarts — it is a shortcut back to a
+	 * file, not a record of anything.
+	 */
+	readonly #printing = new Map<string, string>();
 	/** The ones the operator's file declared. The console adds to these; it never rewrites them. */
 	readonly #declaredModels: readonly Model[];
 	readonly #addedModels: AddedModels;
@@ -3149,6 +3161,47 @@ export class ControlPlane {
 		if (found.exitCode !== 0)
 			throw new Error(refused(found.stderr, `${tilde(path)} could not be read.`));
 		return readAnswer<Slice>(found.stdout);
+	}
+
+	/**
+	 * What the server behind one of its served ports is printing, from a byte offset.
+	 *
+	 * The half of `/serve` that was missing. A port opens a link to something an agent started, and
+	 * when that something answers with a stack trace or does not answer at all, the only way to the
+	 * reason was to spend a turn asking the agent to read its own log out loud — a conversation about
+	 * a file, in the thread that is supposed to be about the work.
+	 *
+	 * Nothing is captured here and nothing is started here: the plane never held that process and has
+	 * no pipe on it. What it does is what a person would do at a prompt in that container — find who
+	 * holds the port, see where its output goes, read the file. Which means the answer is sometimes
+	 * that the output goes somewhere nobody can read behind its back, and that is said as it is.
+	 *
+	 * No turn is spent and the agent is not woken. Reading what a program printed is not a thing to
+	 * interrupt anybody over.
+	 */
+	async printing(agentId: string, port: number, from = -1): Promise<Printed> {
+		if (!this.#agents.some((agent) => agent.id === agentId)) {
+			throw new Error(`No agent "${agentId}" in this plane`);
+		}
+		if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+			throw new Error(`${port} is not a port.`);
+		}
+		const key = `${agentId}:${port}`;
+		const found = await this.sandboxes.exec(agentId, [
+			"node",
+			"-e",
+			LOGS_SCRIPT,
+			"/proc",
+			String(port),
+			String(Math.floor(from)),
+			String(LOG_CHUNK),
+			this.#printing.get(key) ?? "",
+		]);
+		if (found.exitCode !== 0)
+			throw new Error(refused(found.stderr, `Nothing in there could say what is on ${port}.`));
+		const printed = readAnswer<Printed>(found.stdout);
+		if (printed.at !== undefined) this.#printing.set(key, printed.at);
+		return printed;
 	}
 
 	/**

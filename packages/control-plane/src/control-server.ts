@@ -10,6 +10,7 @@ import type { AgentSummary, ControlPlane, PlaneEvent } from "./control-plane.ts"
 import type { Listing, Slice, Wrote } from "./files.ts";
 import type { Gate } from "./gates.ts";
 import type { GrantStanding } from "./grants.ts";
+import type { Printed } from "./logs.ts";
 import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
@@ -74,6 +75,23 @@ export type ControlRequest =
 			readonly op: "read-file";
 			readonly agentId: string;
 			readonly at: string;
+			readonly from?: number;
+	  }
+	/**
+	 * What the server behind one of an agent's served ports is printing.
+	 *
+	 * Beside the files rather than among the commands because it is the same reach and the same
+	 * trust: whoever may read a file in that box may read the log of a program running in it. No turn
+	 * is spent answering it, so a screen can follow a dev server without buying a conversation.
+	 *
+	 * With an offset, like a file, because following one is reading the part that is new — and with
+	 * none at all, which means the end of it, because that is where the reason is.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "printing";
+			readonly agentId: string;
+			readonly port: number;
 			readonly from?: number;
 	  }
 	| {
@@ -520,6 +538,8 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly listing: Listing }
 	/** As much of one of its files as an answer carries, from an offset, as base64. */
 	| { readonly id: string; readonly ok: true; readonly slice: Slice }
+	/** What is printing on one of an agent's served ports, and as much of it as an answer carries. */
+	| { readonly id: string; readonly ok: true; readonly printed: Printed }
 	/** What a written chunk landed as, and whether that was the last of them. */
 	| { readonly id: string; readonly ok: true; readonly wrote: Wrote }
 	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
@@ -808,6 +828,12 @@ export class ControlServer {
 					id: request.id,
 					ok: true,
 					slice: await this.#plane.readFile(request.agentId, request.at, request.from ?? 0),
+				});
+			} else if (request.op === "printing") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					printed: await this.#plane.printing(request.agentId, request.port, request.from ?? -1),
 				});
 			} else if (request.op === "put-file") {
 				this.#write(socket, {

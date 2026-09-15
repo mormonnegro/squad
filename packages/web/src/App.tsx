@@ -16,6 +16,7 @@ import { FILES_HOME, Files } from "./Files.tsx";
 import { FirstKey } from "./FirstKey.tsx";
 import { nameOf } from "./face.ts";
 import { Keys } from "./Keys.tsx";
+import { Logs } from "./Logs.tsx";
 import { Modal } from "./Modal.tsx";
 import { Plugins } from "./Plugins.tsx";
 import { browserWire, Plane, roomChannel, type Room as Standing, type Wake } from "./plane.ts";
@@ -119,6 +120,24 @@ function filesAt(pathname: string): string | undefined {
 }
 
 /**
+ * Whether an address names what one of an agent's served ports is printing, and which port:
+ * `/agents/scout/logs/3000`.
+ *
+ * A place like the others, because "the dev server is throwing this" is the thing somebody wants to
+ * send to somebody else, and what is sent has to open on the same screen rather than on a
+ * conversation with instructions for finding it.
+ */
+const LOGS = "/logs";
+
+function logsAt(pathname: string): number | undefined {
+	if (!pathname.startsWith(AGENTS)) return undefined;
+	const parts = pathname.slice(AGENTS.length).split("/");
+	if (parts[1] !== "logs") return undefined;
+	const port = Number(parts[2]);
+	return Number.isInteger(port) && port >= 1 && port <= 65_535 ? port : undefined;
+}
+
+/**
  * Where a room lives. `channels` rather than `rooms` in the address, because that is the word on
  * the screen — what a person would type is what they were shown.
  */
@@ -178,6 +197,15 @@ export function App() {
 	 */
 	const [browsing, setBrowsing] = useState<string | undefined>(() =>
 		filesAt(window.location.pathname),
+	);
+	/**
+	 * Which of the selected agent's served ports is being watched, if any.
+	 *
+	 * The same kind of thing its files are: one agent's screen, at that agent's address, gone when
+	 * the conversation moves to somebody else.
+	 */
+	const [watching, setWatching] = useState<number | undefined>(() =>
+		logsAt(window.location.pathname),
 	);
 	/**
 	 * Whether the first-key screen has been put away.
@@ -245,6 +273,7 @@ export function App() {
 				next === "none" ? (at === undefined ? "/" : `${AGENTS}${at}`) : addressOf(next);
 			setSetting(undefined);
 			setBrowsing(undefined);
+			setWatching(undefined);
 			if (address === undefined || address === window.location.pathname) return;
 			window.history.pushState(null, "", `${address}${window.location.search}`);
 		},
@@ -266,6 +295,7 @@ export function App() {
 			setMakingRoom(false);
 			setSetting(settingsAt(at));
 			setBrowsing(filesAt(at));
+			setWatching(logsAt(at));
 		};
 		window.addEventListener("popstate", walked);
 		return () => window.removeEventListener("popstate", walked);
@@ -459,6 +489,7 @@ export function App() {
 	const openSetup = useCallback((agentId: string, page = "general"): void => {
 		setSetting(page);
 		setBrowsing(undefined);
+		setWatching(undefined);
 		setShowing("none");
 		setChosen(agentId);
 		setInRoom(undefined);
@@ -479,6 +510,7 @@ export function App() {
 	const openFiles = useCallback((agentId: string, path: string): void => {
 		setBrowsing(path);
 		setSetting(undefined);
+		setWatching(undefined);
 		setShowing("none");
 		setChosen(agentId);
 		setInRoom(undefined);
@@ -490,9 +522,31 @@ export function App() {
 		}
 	}, []);
 
+	/**
+	 * What one of an agent's served ports is printing, which is a screen and so has an address.
+	 *
+	 * Under the agent beside its files, because it is the same kind of fact about the same box: the
+	 * files are what it has built and this is what the thing it built is saying while it runs.
+	 */
+	const openLogs = useCallback((agentId: string, port: number): void => {
+		setWatching(port);
+		setBrowsing(undefined);
+		setSetting(undefined);
+		setShowing("none");
+		setChosen(agentId);
+		setInRoom(undefined);
+		setMaking(false);
+		setMakingRoom(false);
+		const address = `${AGENTS}${agentId}${LOGS}/${port}`;
+		if (address !== window.location.pathname) {
+			window.history.pushState(null, "", `${address}${window.location.search}`);
+		}
+	}, []);
+
 	const openRoom = useCallback((name: string): void => {
 		setInRoom(name);
 		setBrowsing(undefined);
+		setWatching(undefined);
 		setShowing("none");
 		setChosen(undefined);
 		setMaking(false);
@@ -587,8 +641,17 @@ export function App() {
 								// Which of that agent's screens is up, for the list under it. Read here rather
 								// than worked out there, because this is the same answer the pane is drawn from.
 								where={
-									browsing !== undefined ? "files" : setting !== undefined ? "settings" : "chat"
+									watching !== undefined
+										? "logs"
+										: browsing !== undefined
+											? "files"
+											: setting !== undefined
+												? "settings"
+												: "chat"
 								}
+								// Which port is the one being watched, for the row of it. Only ever the selected
+								// agent's: the list under a row is that agent's screens and nobody else's.
+								logs={one.id === chosen ? watching : undefined}
 								wakes={one.id === chosen ? wakes : []}
 								onPick={() => {
 									setChosen(one.id);
@@ -599,6 +662,7 @@ export function App() {
 								}}
 								onFiles={() => openFiles(one.id, FILES_HOME)}
 								onSetup={(page) => openSetup(one.id, page)}
+								onLogs={(port) => openLogs(one.id, port)}
 							/>
 						))}
 						<button
@@ -705,6 +769,14 @@ export function App() {
 							onWhere={(path) => openFiles(agent.id, path)}
 							onClose={() => show("none", agent.id)}
 						/>
+					) : watching !== undefined && agent !== undefined && plane !== undefined ? (
+						<Logs
+							key={`${agent.id}:${watching}`}
+							plane={plane}
+							agent={agent}
+							port={watching}
+							onClose={() => show("none", agent.id)}
+						/>
 					) : setting !== undefined && agent !== undefined && plane !== undefined ? (
 						<Setup
 							key={agent.id}
@@ -788,21 +860,26 @@ function AgentRow({
 	live,
 	here,
 	where,
+	logs,
 	wakes,
 	onPick,
 	onFiles,
 	onSetup,
+	onLogs,
 }: {
 	agent: AgentSummary;
 	live: Live;
 	here: boolean;
 	/** Which of this agent's screens is up, while it is the one selected. */
-	where: "chat" | "files" | "settings";
+	where: "chat" | "files" | "settings" | "logs";
+	/** Which served port is the one on screen, when that is what the pane is showing. */
+	logs: number | undefined;
 	/** What it is going to do, for the list under it. Only ever the selected agent's. */
 	wakes: readonly Wake[];
 	onPick: () => void;
 	onFiles: () => void;
 	onSetup: (page?: string) => void;
+	onLogs: (port: number) => void;
 }) {
 	// Where each of its ports is read, which is a name of that port's own and is the door's to say.
 	const servedAt = useServedAt();
@@ -917,18 +994,36 @@ function AgentRow({
 					    that port's own. Which name is written into the link rather than arrived at by
 					    following it: a link is hovered, copied and read before it is clicked. */}
 					{agent.served.map((one) => (
-						<a
+						<div
 							key={one.port}
-							className="row-under"
-							href={servedAt(agent.id, one.port)}
-							target="_blank"
-							rel="noreferrer"
+							className="row-under row-split"
+							data-here={where === "logs" && logs === one.port}
 						>
-							<span className="row-icon">
-								<ExternalLink className="size-3.5" />
-							</span>
-							<span className="row-name">:{one.port}</span>
-						</a>
+							<a
+								className="row-line"
+								href={servedAt(agent.id, one.port)}
+								target="_blank"
+								rel="noreferrer"
+							>
+								<span className="row-icon">
+									<ExternalLink className="size-3.5" />
+								</span>
+								<span className="row-name">:{one.port}</span>
+							</a>
+							{/* What the thing behind it is printing, which is the other half of having a port:
+							    the link opens what it built, and this says what it is saying about it. A word
+							    at the end rather than a row of its own, because it is a fact about this port
+							    and not a second port — and always there, because nothing in this rail is
+							    hidden behind a pointer. */}
+							<button
+								type="button"
+								className="row-note row-tail"
+								title={`what is printing on :${one.port}`}
+								onClick={() => onLogs(one.port)}
+							>
+								logs
+							</button>
+						</div>
 					))}
 
 					{shown.map((wake) => (

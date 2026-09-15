@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { BoxIs, useBox } from "./box.tsx";
+import { bytesOf, decode } from "./bytes.ts";
 import { coloured } from "./code.tsx";
 import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
@@ -646,13 +647,6 @@ async function readWhole(plane: Plane, agentId: string, at: string, cap: number)
 	return { bytes: joined(parts), size, cut: more };
 }
 
-function bytesOf(base64: string): Uint8Array {
-	const binary = atob(base64);
-	const out = new Uint8Array(binary.length);
-	for (let at = 0; at < binary.length; at++) out[at] = binary.charCodeAt(at);
-	return out;
-}
-
 function base64Of(bytes: Uint8Array): string {
 	let binary = "";
 	// In slices, because `String.fromCharCode(...bytes)` on a whole chunk is an argument list long
@@ -676,10 +670,6 @@ function joined(parts: readonly Uint8Array[]): Uint8Array {
 /** Whether what came back reads as text: a zero byte in the first few kilobytes says it does not. */
 function readsAsText(bytes: Uint8Array): boolean {
 	return !bytes.subarray(0, 4096).includes(0);
-}
-
-function decode(bytes: Uint8Array): string {
-	return new TextDecoder().decode(bytes);
 }
 
 function isMarkdown(name: string): boolean {

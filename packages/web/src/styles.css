@@ -446,6 +446,36 @@
 	color: var(--text);
 }
 
+/*
+ * A child row with two things in it to reach: the port, and what is printing on it.
+ *
+ * The link is still the row. Opening what the agent built is what somebody came to this row for, and
+ * a link is hovered, copied and read before it is clicked — so the small target is the one wanted
+ * rarely, which is the log. It sits where every other row keeps its one fact, and it is always
+ * there: nothing else in this rail waits behind a pointer, and a disclosure that appears on hover is
+ * one nobody finds who did not already know it was there.
+ */
+.row-under.row-split {
+	display: flex;
+	padding-right: 0.5rem;
+}
+
+.row-under.row-split > .row-line {
+	flex: 1;
+	min-width: 0;
+}
+
+.row-tail {
+	flex: none;
+	padding: 0.1rem 0.4rem;
+	border-radius: 5px;
+}
+
+.row-tail:hover {
+	background: #ffffff14;
+	color: var(--text-strong);
+}
+
 .row-under:active {
 	scale: 0.995;
 }

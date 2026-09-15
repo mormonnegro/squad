@@ -132,6 +132,31 @@ export interface Slice {
 }
 
 /**
+ * What the server behind a served port is printing, and as much of it as one answer carries.
+ *
+ * Four states, and the screen says a different sentence for each: nothing is listening on that port;
+ * something is, and its output goes somewhere nobody can read behind its back; something is, and it
+ * is writing to a file; nothing is any more, but the file it was writing to is still there — which
+ * is where a server stands a second after it crashed, and the reason anybody opened this.
+ */
+export interface Printed {
+	readonly port: number;
+	readonly listening: boolean;
+	readonly pid?: number;
+	/** What it was started as, so a screen can say whose output it is showing. */
+	readonly cmd?: string;
+	/** Where the output goes: a path when that is a file, and what it is instead when it is not. */
+	readonly to?: string;
+	/** The file being read, absent when there is none to read. */
+	readonly at?: string;
+	readonly from: number;
+	readonly size: number;
+	readonly data: string;
+	/** The file is shorter than where the reader left off, so the server was started again. */
+	readonly restarted: boolean;
+}
+
+/**
  * Something outside this plane that gives an agent a turn.
  *
  * The secret is only ever on the one that comes back from making it. Everything read afterwards has
@@ -467,6 +492,17 @@ export class Plane {
 	async readFile(agentId: string, at: string, from = 0): Promise<Slice> {
 		const answer = await this.#ask({ op: "read-file", agentId, at, from });
 		return answer.slice as Slice;
+	}
+
+	/**
+	 * What is printing on one of its served ports, from a byte offset. `-1` is the end of it.
+	 *
+	 * The end by default because a log is read backwards: whoever opens one is looking for the last
+	 * thing that happened, and the first thing a dev server writes is a banner nobody came for.
+	 */
+	async printing(agentId: string, port: number, from = -1): Promise<Printed> {
+		const answer = await this.#ask({ op: "printing", agentId, port, from });
+		return answer.printed as Printed;
 	}
 
 	/**
