@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FileLink, folderSaid, linkedPath, pathOf, paths, useBox } from "./box.tsx";
-import { fenced } from "./tree.tsx";
+import { coloured, grammarOf } from "./code.tsx";
+import { drawsTree, fenced } from "./tree.tsx";
 
 /**
  * What the model wrote, as what it meant.
@@ -436,12 +437,25 @@ function saying(block: Block): string {
 	}
 }
 
+/**
+ * What is inside a fence, read by whoever should be reading it.
+ *
+ * A fence that said what it was written in gets read as that, the way it would anywhere else code is
+ * shown. A fence that said nothing is the half of them that is not code at all — a tree, a shell
+ * session, the tail of a log — and those stay exactly as they were: the language was never the
+ * question there, the files named in them were.
+ */
+function lit(code: string, language: string, base: string | undefined): ReactNode[] {
+	if (grammarOf(language) === undefined || drawsTree(code)) return fenced(code, base);
+	return coloured(code, language, base);
+}
+
 function Drawn({ block, base }: { block: Block; base: string | undefined }) {
 	switch (block.kind) {
 		case "fence":
 			return (
 				<pre className="md-fence" data-language={block.language || undefined}>
-					<code>{fenced(block.code, base)}</code>
+					<code>{lit(block.code, block.language, base)}</code>
 				</pre>
 			);
 		case "heading": {

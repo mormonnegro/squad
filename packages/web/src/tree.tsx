@@ -32,6 +32,17 @@ interface Held {
 }
 
 /**
+ * Whether what is in a fence is a drawing rather than code.
+ *
+ * Asked from outside because the answer decides who reads it: a tree is a picture of the box and is
+ * read as one, and colouring its connectors as if they were a language is how a picture stops being
+ * one.
+ */
+export function drawsTree(code: string): boolean {
+	return code.split("\n").some((line) => BRANCH.test(line));
+}
+
+/**
  * A fence, with everything in it that names a file turned into somewhere to go.
  *
  * Both halves of what is written in fences: a tree is walked as a tree, and everything else — a
@@ -39,7 +50,7 @@ interface Held {
  */
 export function fenced(code: string, base: string | undefined): ReactNode[] {
 	const lines = code.split("\n");
-	if (!lines.some((line) => BRANCH.test(line))) return paths(code, base);
+	if (!drawsTree(code)) return paths(code, base);
 
 	const out: ReactNode[] = [];
 	const stack: Held[] = [];

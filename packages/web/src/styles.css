@@ -1045,6 +1045,39 @@ ol.md-list {
 	color: var(--text);
 }
 
+/*
+ * Code, in colour.
+ *
+ * The one place on this console where a colour is not a status. Everywhere else green is up and red
+ * is bad news; inside a file they are what every editor and every diff on a screen has meant by them
+ * for thirty years, and a person reading a program reads that alphabet before they read a word. The
+ * palette is still this console's own five — GitHub's mapping, said in our colours rather than
+ * theirs, so a file here and a file there are the same file.
+ *
+ * Cyan is the hue deliberately missing. It is what may be pressed, and a block of code is already
+ * full of paths that may be: spending it on a keyword would be promising something to click on every
+ * second line.
+ */
+.code-comment {
+	color: var(--muted);
+}
+
+.code-string {
+	color: var(--green);
+}
+
+.code-word {
+	color: var(--red);
+}
+
+.code-number {
+	color: var(--amber);
+}
+
+.code-name {
+	color: var(--blue);
+}
+
 /* A table is a shape before it is words: the eye reads down a column to compare, so the rules run
    the way it is read and the figures sit against the edge they are compared on. Nothing is boxed in
    on four sides — a grid drawn around every cell is a grid the eye has to get out of first. */
@@ -1167,6 +1200,9 @@ ol.md-list {
 .said-body .md-path,
 pre .md-path {
 	text-decoration: none;
+	/* And in the colour of whatever it sits inside: a path written in a string is part of the string
+	   until the mouse is on it, not a grey word somebody dropped into the middle of one. */
+	color: inherit;
 }
 
 .md-fence .md-path:hover,

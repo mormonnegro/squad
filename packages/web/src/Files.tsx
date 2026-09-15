@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
-import { BoxIs, paths, useBox } from "./box.tsx";
+import { BoxIs, useBox } from "./box.tsx";
+import { coloured } from "./code.tsx";
 import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { FileEntry, Listing, Plane } from "./plane.ts";
@@ -527,9 +528,9 @@ interface Read {
  * One file, drawn as what it is.
  *
  * Markdown as the document it was written as, because half of what is in an agent's box is a note it
- * left itself and reading those as source is reading them twice. Everything else that is text as
- * text; a picture as a picture; and the rest said plainly rather than drawn as a wall of
- * replacement characters.
+ * left itself and reading those as source is reading them twice. Code as code, in colour, because
+ * the other half is a program and nobody reads one as a grey wall. A picture as a picture. Plain
+ * text as itself, and the rest said plainly rather than drawn as a wall of replacement characters.
  */
 function Document({
 	name,
@@ -604,7 +605,7 @@ function Document({
 				</div>
 			) : (
 				<pre className="overflow-x-auto rounded-lg bg-sunk px-4 py-3 font-mono text-[0.8rem] leading-relaxed shadow-[var(--shadow-border)]">
-					{paths(text, base)}
+					{coloured(text, name, base)}
 				</pre>
 			)}
 
