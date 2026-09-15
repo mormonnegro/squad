@@ -70,9 +70,40 @@ export function viewPage(agentId: string): string {
 	}
 	button:hover { background: #242a31; }
 	button[data-holding="yes"] { background: #1f4634; border-color: #2f6b4f; }
-	main { flex: 1; display: grid; place-items: center; overflow: auto; padding: 14px; }
-	.frame { position: relative; line-height: 0; }
-	img { max-width: 100%; border-radius: 8px; border: 1px solid #23262b; }
+	/*
+	 * The whole browser, scaled to whatever room there is, rather than the top of it.
+	 *
+	 * Width alone is not enough: this page is watched in a band over a conversation as often as in a
+	 * window of its own, and a picture held to the width of a short band is one whose bottom half —
+	 * where the buttons usually are — is below a fold that cannot be scrolled to without taking the
+	 * mouse away from the page.
+	 *
+	 * Flex rather than a centred grid, and that is the whole of why this works: a percentage height
+	 * resolves against a definite one, and a grid row that sizes itself to its content has none to
+	 * offer. The column from the body down to here has a height all the way, so max-height on the
+	 * picture means what it says.
+	 *
+	 * And no backticks in here, in any comment inside this string. Everything from the doctype down
+	 * is a template literal, so one of those ends it — which is a syntax error in a file whose whole
+	 * job is to be a string.
+	 */
+	main {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 14px;
+	}
+	img {
+		display: block;
+		max-width: 100%;
+		max-height: 100%;
+		object-fit: contain;
+		border-radius: 8px;
+		border: 1px solid #23262b;
+	}
 	.veil {
 		position: absolute;
 		inset: 0;
@@ -96,10 +127,8 @@ export function viewPage(agentId: string): string {
 	<button id="keyboard">Take the keyboard</button>
 </header>
 <main>
-	<div class="frame">
-		<img id="screen" width="${VIEWPORT.width}" height="${VIEWPORT.height}" alt="">
-		<div class="veil" id="veil">the agent is driving — take the keyboard to touch this page</div>
-	</div>
+	<img id="screen" width="${VIEWPORT.width}" height="${VIEWPORT.height}" alt="">
+	<div class="veil" id="veil">the agent is driving — take the keyboard to touch this page</div>
 </main>
 <script>
 (function () {
