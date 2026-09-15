@@ -1137,10 +1137,7 @@ export class ControlPlane {
 				for (const trouble of troubledServers(result.stderr)) {
 					this.#reportError(`${id} mcp`, new Error(trouble));
 				}
-				// Said as a failure because that is what it is to anyone who was waiting: an answer
-				// that is not coming. It is also what releases them — a `wake` still holding on for
-				// the rest of it would otherwise wait out its whole timeout for nothing.
-				if (result.stopped) this.#reportError(id, new Error("stopped"));
+				if (result.stopped) this.#reportStopped(id);
 			},
 			onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
 			onWake: (id, wake, answering) => this.#applyWake(id, wake, answering),
@@ -3778,6 +3775,32 @@ export class ControlPlane {
 		if (!this.#agents.some((agent) => agent.id === agentId)) return;
 		await this.#transcript.append(agentId, one).catch((error: Error) => {
 			this.#onError?.(`${agentId} transcript`, error);
+		});
+	}
+
+	/**
+	 * A turn somebody stopped, said as what it is in each of the two places it is heard.
+	 *
+	 * It goes out as a failure, because that is what it is to anything waiting on the answer: a
+	 * `wake` holding on for the rest of it is released by this and would otherwise wait out its whole
+	 * timeout for something that is not coming.
+	 *
+	 * In the conversation it is not a failure, and it used to be drawn as one — a red word under the
+	 * last thing the agent said. The person reading that is the person who pressed the button, and a
+	 * red word there reads as the agent having broken: something to go and look into, rather than the
+	 * thing they just asked for. What it says now is what happened and what it means for the answer
+	 * above it.
+	 */
+	#reportStopped(agentId: string): void {
+		const said = new Error("stopped");
+		this.#onError?.(agentId, said);
+		this.#emit({ kind: "error", context: agentId, message: said.message });
+		// The one case where they already know: the conversation this would go into has just been
+		// thrown away, and by the same hand.
+		if (this.#clearedMidTurn.has(agentId)) return;
+		void this.#record(agentId, {
+			from: "plane",
+			text: "Stopped. Whatever it had said is above; the rest of that turn is not coming.",
 		});
 	}
 

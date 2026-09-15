@@ -1524,8 +1524,14 @@ describe("a turn that was stopped", () => {
 		expect((await plane.transcripts()).scout).toMatchObject([
 			{ from: "operator", text: "escribime algo largo" },
 			{ from: "agent", text: "iba por la mit" },
-			{ from: "plane", text: "stopped" },
+			// Said plainly rather than in the red a failure is drawn in: whoever reads this is whoever
+			// pressed the button, and an agent that looks broken is something to go and look into.
+			{
+				from: "plane",
+				text: "Stopped. Whatever it had said is above; the rest of that turn is not coming.",
+			},
 		]);
+		expect((await plane.transcripts()).scout?.at(-1)).not.toHaveProperty("tone");
 	});
 
 	it("says there was nothing to stop when the agent is not taking a turn", () => {
