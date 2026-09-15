@@ -15,6 +15,10 @@ export {
 	shellScript,
 } from "./commands.ts";
 export { ConfigError, type LoadedConfig, loadConfig, parseConfig } from "./config.ts";
+// What a prompt calls the directory it is standing in, for the same reason and under the same
+// terms: both consoles have a `!` mode now, and a mode that named the same directory two ways
+// would be two modes.
+export { here } from "./console.ts";
 export {
 	ControlClient,
 	ControlError,

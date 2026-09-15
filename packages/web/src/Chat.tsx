@@ -6,6 +6,7 @@ import { Avatar } from "./avatar.tsx";
 import { BoxIs, paths } from "./box.tsx";
 import { type Command, completing, completions, isCommand, isShell } from "./commands.ts";
 import { nameOf } from "./face.ts";
+import { here } from "./here.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
 import { safeEnd } from "./safe-end.ts";
@@ -196,7 +197,7 @@ function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint
 		return { mark: <Avatar id={said.via ?? ""} size={34} />, tint: "inherit" };
 	}
 	if (said.from === "shell") {
-		return { mark: ">", tint: "var(--muted)" };
+		return { mark: ">", tint: "var(--violet)" };
 	}
 	return { mark: "◇", tint: "var(--cyan)" };
 }
@@ -288,6 +289,16 @@ export function Said({
 					? (said.via ?? "another agent")
 					: "squad";
 	const side = sideOf(said);
+	/*
+	 * A command you ran in the box, which is not a message to the agent.
+	 *
+	 * Marked here rather than stored marked, which is what the terminal console does with the same
+	 * line and for the same reason: the transcript keeps the words somebody typed, and how a
+	 * console draws them is the console's business. The bang is a mark and not a word, so it comes
+	 * off the front and the violet says what it was saying — the same violet the terminal console
+	 * prints the line in, and the colour the box itself wears while it is in that mode.
+	 */
+	const ran = said.from === "operator" && isShell(said.text);
 	const marked = said.via !== undefined || said.to !== undefined || said.at !== undefined;
 
 	return (
@@ -297,6 +308,7 @@ export function Said({
 			data-tone={said.tone}
 			data-side={side}
 			data-run={run}
+			data-ran={ran}
 		>
 			{side === "them" && !run && (
 				<span className="face" data-size="big" style={{ color: face.tint }} aria-hidden="true">
@@ -313,10 +325,14 @@ export function Said({
 				    in it is a glob. Everything else is written by something that writes markdown. */}
 				<div className="bubble" title={said.at === undefined ? undefined : full(said.at)}>
 					<BoxIs value={box}>
-						{said.from === "shell" ? (
+						{said.from === "shell" || ran ? (
 							// Not prose, and read for one thing only: a `!ls` answers in paths, and the whole
-							// point of typing it was to find out what is in there.
-							<div className="said-body">{paths(said.text, undefined)}</div>
+							// point of typing it was to find out what is in there. The command that asked is
+							// not prose either — a `*` in it is a glob and never emphasis — so the question
+							// and the answer are set in the same type.
+							<div className="said-body">
+								{paths(ran ? said.text.slice(1).trimStart() : said.text, undefined)}
+							</div>
 						) : (
 							<Markdown text={said.text} />
 						)}
@@ -541,9 +557,24 @@ function Composer({
 	const [draft, setDraft] = useState("");
 	const [pick, setPick] = useState(0);
 	const [cwd, setCwd] = useState<string | undefined>();
+	/**
+	 * Whether the box is in the sandbox.
+	 *
+	 * A mode rather than a character at the front of the line. `!ls` was a line that happened to
+	 * start with a bang: it had to be typed again for the next command, the bang was in the message
+	 * afterwards as though it were part of what was said, and nothing on the screen said you were
+	 * anywhere — you were always talking to the agent, sometimes with a bang.
+	 *
+	 * Now the bang is a door. It is the same key it always was, so nothing has to be unlearned, and
+	 * it opens on an empty box only: inside a line a bang is a bang. What is on the other side is a
+	 * prompt that stays — the mark says which directory, every line goes to the box, and the way
+	 * out is the key that was already emptying the line, one press past empty.
+	 */
+	const [shell, setShell] = useState(false);
 	const box = useRef<HTMLTextAreaElement>(null);
-	const menu: readonly Command[] = completions(draft);
-	const shell = isShell(draft);
+	// Nothing to complete in the sandbox: a `/` there is the root of a filesystem, not the front of
+	// a command this console knows the name of.
+	const menu: readonly Command[] = shell ? [] : completions(draft);
 
 	// Grows with what is in it, up to the ceiling the stylesheet sets. A box that scrolls at three
 	// lines hides the paragraph somebody is still writing.
@@ -576,8 +607,13 @@ function Composer({
 			 * What comes back is used for the one thing the feed does not carry: which directory the
 			 * next `!` line starts in.
 			 */
-			if (isShell(line)) {
-				setCwd((await plane.shell(agent.id, line.slice(1))).cwd);
+			// The box is in the sandbox, or the line says it is: a `!ls` pasted in whole is still a
+			// command, and the mode is a way of not typing the bang rather than the only way to mean
+			// it. In the mode nothing is read as a bang — a `/` there is a path.
+			if (shell) {
+				setCwd((await plane.shell(agent.id, line)).cwd);
+			} else if (isShell(line)) {
+				setCwd((await plane.shell(agent.id, line.slice(1).trimStart())).cwd);
 			} else if (isCommand(line)) {
 				await plane.command(agent.id, line);
 			} else {
@@ -625,12 +661,23 @@ function Composer({
 				</div>
 			)}
 			<div className="box" data-mode={shell ? "shell" : "say"}>
-				<span className="box-mark">{shell ? (cwd ?? "!") : ">"}</span>
+				{/* The prompt of the other console, to the character: a bang and the directory the next
+				    command will run in, shortened the way a prompt shortens one. Until the first command
+				    has come back there is nothing to name, and the bang stands on its own. */}
+				<span className="box-mark">
+					{shell ? (cwd === undefined ? "!" : `! ${here(cwd)}`) : ">"}
+				</span>
 				<textarea
 					ref={box}
 					rows={1}
 					value={draft}
-					placeholder={busy ? `${nameOf(agent.id)} is working — this will queue` : "Say something"}
+					placeholder={
+						shell
+							? `a command in ${nameOf(agent.id)}'s box — ⌫ leaves`
+							: busy
+								? `${nameOf(agent.id)} is working — this will queue`
+								: "Say something"
+					}
 					onChange={(event) => {
 						setDraft(event.target.value);
 						setPick(0);
@@ -639,6 +686,29 @@ function Composer({
 						field.style.height = `${field.scrollHeight}px`;
 					}}
 					onKeyDown={(event) => {
+						// The way in. Not a character here: at an empty box the bang is the door to the
+						// sandbox, and it is the same key the line used to start with. Anywhere else in a
+						// line it is what it looks like.
+						if (
+							event.key === "!" &&
+							draft.length === 0 &&
+							!shell &&
+							!event.metaKey &&
+							!event.ctrlKey &&
+							!event.altKey
+						) {
+							event.preventDefault();
+							setShell(true);
+							return;
+						}
+						// And the way out, by the key that was already deleting. Empty the line and press
+						// it once more and the mode goes the way the last character did — nothing new to
+						// learn, and no way to be stuck somewhere you did not mean to be.
+						if (event.key === "Backspace" && draft.length === 0 && shell) {
+							event.preventDefault();
+							setShell(false);
+							return;
+						}
 						// The key the terminal console stops a turn with, in the one place a hand already
 						// is. Only while there is something to stop: at any other moment it is a key
 						// pressed at nothing, and a box that swallowed it would be a box with a mode.

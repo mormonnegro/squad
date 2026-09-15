@@ -1,6 +1,7 @@
-import { COMMANDS as THEIRS } from "@squad/control-plane";
+import { here as THEIR_HERE, COMMANDS as THEIRS } from "@squad/control-plane";
 import { describe, expect, it } from "vitest";
 import { completing, completions, isCommand, isShell, COMMANDS as OURS } from "../src/commands.ts";
+import { here as OUR_HERE } from "../src/here.ts";
 
 // The browser cannot import the plane's table — it reaches for node:crypto on its first line — so
 // the menu is copied, and this is the whole of what stops the copy from drifting. A test in a node
@@ -66,5 +67,39 @@ describe("what return does with the menu open", () => {
 
 	it("sends when the menu is offering nothing at all", () => {
 		expect(completing("hola", undefined)).toBeUndefined();
+	});
+});
+
+/**
+ * The prompt of the other console, said the same way.
+ *
+ * Both boxes have a `!` mode now, and in both the mark is the directory the next command will run
+ * in. A person who has read one of those prompts has read the other; two spellings of the same
+ * directory would be two modes.
+ */
+describe("the directory a prompt is standing in", () => {
+	const WALKED = [
+		"/home/agent",
+		"/home/agent/workspace",
+		"/home/agent/workspace/test",
+		"/home/agent/.self",
+		"/tmp",
+		"/",
+		"/home/agent/workspace/a-repository-with-a-very-long-name/and/a/path/inside/it",
+		"/var/lib/something/quite/long/that/is/not/under/the/home/at/all",
+	];
+
+	it("says what the terminal console's prompt says", () => {
+		for (const cwd of WALKED) expect(OUR_HERE(cwd)).toBe(THEIR_HERE(cwd));
+	});
+
+	it("shortens the home to a tilde and takes the front off a long one", () => {
+		expect(OUR_HERE("/home/agent")).toBe("~");
+		expect(OUR_HERE("/home/agent/workspace/test")).toBe("~/workspace/test");
+		expect(OUR_HERE("/tmp")).toBe("/tmp");
+		// The end is where you are; the front is the part you already know, and it is what goes.
+		expect(OUR_HERE("/home/agent/workspace/one/two/three/four/five")).toBe(
+			"…one/two/three/four/five",
+		);
 	});
 });

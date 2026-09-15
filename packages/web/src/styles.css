@@ -22,6 +22,7 @@
 	--color-bad: #e0796f;
 	--color-here: #79c6dd;
 	--color-tool: #93a9ea;
+	--color-ran: #b79ae3;
 
 	--font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 	--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
@@ -56,6 +57,16 @@
 	--red: #e0796f;
 	--cyan: #79c6dd;
 	--blue: #93a9ea;
+	/*
+	 * What a command typed into the box is, from the moment the box goes into that mode to the
+	 * mark on the answer it printed.
+	 *
+	 * Magenta is what the terminal console prints an operator's `!` line in, and this is the same
+	 * exchange in the other window: the same colour, in this palette's key. It is the sixth colour
+	 * here and the only one that is not a status — green is up, amber is working, red is bad news,
+	 * cyan is you and blue is a tool. This one is a place: you are in the sandbox.
+	 */
+	--violet: #b79ae3;
 	/*
 	 * What a literal is drawn in: a path, an event name, a command, an id. And a link, which is the
 	 * other thing a sentence holds that is not a word.
@@ -1075,6 +1086,24 @@
 	max-width: 85%;
 	background: color-mix(in srgb, var(--cyan) 13%, var(--bg-raised));
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 22%, transparent);
+	color: var(--text-strong);
+}
+
+/*
+ * The command you ran, in the colour the box was wearing while you typed it.
+ *
+ * Not the cyan of everything else you say, because it was not said: it went to a machine and a
+ * machine printed back. The bang is off the front — it was the mark of a mode, and the mode is
+ * what the colour is now saying — and the words are in mono, because a `*` in a command is a glob
+ * and the answer under it is set in the same type.
+ */
+.said[data-ran="true"] .bubble {
+	background: color-mix(in srgb, var(--violet) 15%, var(--bg-raised));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--violet) 26%, transparent);
+}
+
+.said[data-ran="true"] .said-body {
+	font: 0.86rem / 1.6 var(--mono);
 	color: var(--text-strong);
 }
 
@@ -2126,8 +2155,28 @@ pre .md-path:hover {
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 12%, transparent);
 }
 
+/*
+ * The box, while it is in the sandbox.
+ *
+ * The one border on this screen that is not grey or cyan, because the one thing that must never
+ * be in doubt in this mode is that you are in it: what is typed here goes to a machine and runs.
+ * Said in the violet the command will be drawn in once it has run, and the ring on focus follows —
+ * a box that lit cyan when a hand arrived would take the mode off the screen at the exact moment
+ * somebody started typing into it.
+ */
 .box[data-mode="shell"] {
-	border-color: #6b4a86;
+	border-color: color-mix(in srgb, var(--violet) 45%, var(--line));
+}
+
+.box[data-mode="shell"]:focus-within {
+	border-color: color-mix(in srgb, var(--violet) 62%, var(--line));
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 14%, transparent);
+}
+
+/* The directory you are in, or the bang until the first command says which: the mark is the one
+   piece of the prompt that is always there, so it is where the mode is said in words. */
+.box[data-mode="shell"] .box-mark {
+	color: color-mix(in srgb, var(--violet) 75%, var(--muted));
 }
 
 .box-mark {
