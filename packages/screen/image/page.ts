@@ -37,12 +37,24 @@ export function viewPage(agentId: string): string {
 		border-bottom: 1px solid #23262b;
 		background: #121418;
 	}
+	form { flex: 1; display: flex; gap: 8px; min-width: 0; }
+	input {
+		flex: 1;
+		min-width: 0;
+		font: inherit;
+		padding: 6px 10px;
+		border-radius: 6px;
+		border: 1px solid #2f343b;
+		background: #0e1116;
+		color: #e6e6e6;
+	}
+	input:disabled { color: #7b828b; }
 	.who { font-weight: 600; }
 	.state { color: #9aa3ad; }
 	.state[data-holder="operator"] { color: #6ee7a8; }
 	.note {
-		flex: 1;
 		color: #ffd27f;
+		max-width: 28ch;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -77,6 +89,9 @@ export function viewPage(agentId: string): string {
 <header>
 	<span class="who">${agentId}</span>
 	<span class="state" id="state">the agent is driving</span>
+	<form id="go">
+		<input id="url" placeholder="Take the keyboard to go somewhere" spellcheck="false" disabled>
+	</form>
 	<span class="note" id="note"></span>
 	<button id="keyboard">Take the keyboard</button>
 </header>
@@ -93,6 +108,8 @@ export function viewPage(agentId: string): string {
 	var label = document.getElementById("state");
 	var note = document.getElementById("note");
 	var button = document.getElementById("keyboard");
+	var address = document.getElementById("url");
+	var go = document.getElementById("go");
 	var holding = false;
 
 	function show(state) {
@@ -103,6 +120,11 @@ export function viewPage(agentId: string): string {
 		button.textContent = holding ? "Give it back" : "Take the keyboard";
 		button.dataset.holding = holding ? "yes" : "no";
 		veil.hidden = holding;
+		address.disabled = !holding;
+		address.placeholder = holding ? "Where to?" : "Take the keyboard to go somewhere";
+		// Never while it is being typed into. The state is polled every couple of seconds, and an
+		// address bar that rewrote itself mid-URL would be one nobody could finish typing in.
+		if (document.activeElement !== address && state.url) address.value = state.url;
 	}
 
 	function post(path, body) {
@@ -115,6 +137,23 @@ export function viewPage(agentId: string): string {
 
 	button.addEventListener("click", function () {
 		post("keyboard", { hold: !holding }).then(show);
+	});
+
+	go.addEventListener("submit", function (event) {
+		event.preventDefault();
+		if (!holding) return;
+		var typed = address.value.trim();
+		if (typed === "") return;
+		// What a person types into an address bar is a hostname about as often as it is a URL, and
+		// the screen only opens http and https — so the scheme is added rather than refused.
+		if (!/^https?:///i.test(typed)) typed = "https://" + typed;
+		address.blur();
+		// A refusal goes where the agent's notes go rather than into a dialog: a modal in here would
+		// block every later request from this page, which is the one failure this view cannot recover
+		// from on its own.
+		post("open", { url: typed }).then(function (answer) {
+			if (answer && answer.refused) note.textContent = answer.refused;
+		});
 	});
 
 	// Where the pointer is on the page, not on the picture of it: the frame is drawn at whatever
@@ -148,6 +187,8 @@ export function viewPage(agentId: string): string {
 	// taken the keyboard expects to be able to type without clicking something first.
 	window.addEventListener("keydown", function (event) {
 		if (!holding) return;
+		// Typing in the address bar is typing here, not on the page.
+		if (document.activeElement === address) return;
 		if (event.metaKey || event.ctrlKey || event.altKey) return;
 		if (event.key === "F5" || event.key === "F12") return;
 		// A modifier on its own is a key the page never needed to be told about, and sending it is one

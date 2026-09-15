@@ -21,6 +21,27 @@ const caPath = join(pkiDir, "screen-itest-ca.crt");
 suite("a screen against a live daemon", () => {
 	const screens = new DockerScreens(engine, TEST_NETWORK, "squad-test", IMAGE);
 
+	/**
+	 * Waits for the line the screen prints when both its doors are open, and answers with the log.
+	 *
+	 * The log rather than a boolean, because what a caller does when this fails is read it: a browser
+	 * that will not start says why in there, and an assertion on a boolean would throw that away.
+	 */
+	async function upAgain(): Promise<string> {
+		const deadline = Date.now() + 120_000;
+		for (;;) {
+			const raw = await engine
+				.requestRaw(
+					"GET",
+					`/containers/${screenContainerName(AGENT_ID, "squad-test")}/logs?stdout=1&stderr=1`,
+				)
+				.catch(() => Buffer.alloc(0));
+			const log = raw.toString("utf8");
+			if (log.includes("verbs on") || Date.now() > deadline) return log;
+			await new Promise((resolve) => setTimeout(resolve, 1_000));
+		}
+	}
+
 	beforeAll(async () => {
 		await mkdir(pkiDir, { recursive: true });
 		await writeFile(caPath, "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n");
@@ -69,24 +90,7 @@ suite("a screen against a live daemon", () => {
 		// actually present at the proxy — whatever the configuration has since been edited to say.
 		expect(status?.proxyUrl).toBe("http://itest:tok@egress:8080");
 
-		// The browser takes a few seconds on a cold profile. What is being waited for is the line the
-		// screen prints when both its doors are open.
-		const deadline = Date.now() + 90_000;
-		let log = "";
-		while (Date.now() < deadline) {
-			const read = await screens.exec(AGENT_ID, ["sh", "-c", "true"]).catch(() => undefined);
-			void read;
-			const raw = await engine
-				.requestRaw(
-					"GET",
-					`/containers/${screenContainerName(AGENT_ID, "squad-test")}/logs?stdout=1&stderr=1`,
-				)
-				.catch(() => Buffer.alloc(0));
-			log = raw.toString("utf8");
-			if (log.includes("verbs on")) break;
-			await new Promise((resolve) => setTimeout(resolve, 1_000));
-		}
-		expect(log).toContain("verbs on");
+		expect(await upAgain()).toContain("verbs on");
 	}, 180_000);
 
 	it("refuses an agent that is not the one whose screen it is", async () => {
@@ -104,7 +108,19 @@ suite("a screen against a live daemon", () => {
 		expect(asked.stdout).toBe("403");
 	}, 60_000);
 
-	it("keeps the profile when the container goes, because the profile is the login", async () => {
+	/*
+	 * A screen's second life, which is the one that broke.
+	 *
+	 * Chromium marks a profile as in use with symlinks naming the host holding it, and a container's
+	 * host name is its id — so a replaced container finds its own profile locked by a machine that no
+	 * longer exists, tries to put a dialog about it on a screen it does not have, and exits. Then it
+	 * restarts, finds the same lock, and does it again. Every screen worked once and bricked on being
+	 * recreated, which the plane does on every image change and every `/screen off` and on again.
+	 *
+	 * So this waits for the browser rather than only checking that a file survived. The file
+	 * surviving was never the part in doubt.
+	 */
+	it("comes back with its login after the container is replaced", async () => {
 		await screens.exec(AGENT_ID, ["sh", "-c", "echo signed-in > /home/screen/profile/proof"]);
 		await screens.destroy(AGENT_ID);
 		expect(await screens.status(AGENT_ID)).toBeUndefined();
@@ -117,7 +133,8 @@ suite("a screen against a live daemon", () => {
 		await screens.start(AGENT_ID);
 		const read = await screens.exec(AGENT_ID, ["cat", "/home/screen/profile/proof"]);
 		expect(read.stdout.trim()).toBe("signed-in");
-	}, 120_000);
+		expect(await upAgain()).toContain("verbs on");
+	}, 180_000);
 
 	it("takes the profile only when it is asked to", async () => {
 		await screens.destroy(AGENT_ID, { discardProfile: true });

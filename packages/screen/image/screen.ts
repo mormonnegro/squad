@@ -4,7 +4,7 @@ import { readEgress, startForwarder } from "./forward.ts";
 import { refusedToAgent, refusedToOperator, TheKeyboard } from "./keyboard.ts";
 import { viewPage } from "./page.ts";
 import { presented, tokenIn } from "./token.ts";
-import { needsTheKeyboard, readAsked } from "./verbs.ts";
+import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
 
 /**
  * The program that is this container.
@@ -118,7 +118,32 @@ const view = http.createServer((request, response) => {
 		}
 
 		if (request.method === "GET" && path === "/state") {
-			json(response, 200, keyboard.state());
+			json(response, 200, { ...keyboard.state(), url: browser.where() });
+			return;
+		}
+
+		/*
+		 * The address bar.
+		 *
+		 * Missing from the first version of this, which made the whole feature unusable for the one
+		 * thing it exists for: an operator takes the keyboard on a blank page, and a blank page has
+		 * nothing to click. There was no way to get to the sign-in form except to ask the agent to
+		 * open it first, which is backwards — the agent asks for help precisely when it cannot.
+		 */
+		if (request.method === "POST" && path === "/open") {
+			if (keyboard.holder !== "operator") {
+				json(response, 409, { refused: refusedToOperator() });
+				return;
+			}
+			const asked = (await body(request)) as { url?: unknown };
+			const read = readUrl(typeof asked?.url === "string" ? asked.url : "");
+			if ("refused" in read) {
+				json(response, 400, read);
+				return;
+			}
+			await browser.does({ verb: "open", url: read.url });
+			keyboard.take();
+			json(response, 200, { url: browser.where() });
 			return;
 		}
 

@@ -1,3 +1,4 @@
+import http from "node:http";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
@@ -53,26 +54,47 @@ function token(): string | undefined {
 /** Read once: the proxy URL does not change under a running container, and neither does this. */
 const held = token();
 
-async function does(asked: Record<string, unknown>): Promise<readonly Block[]> {
-	let response: Response;
-	try {
-		response = await fetch(SCREEN_URL, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				...(held === undefined ? {} : { authorization: `Bearer ${held}` }),
+/**
+ * The request to the screen, sent with `node:http` rather than `fetch`, which is the whole point.
+ *
+ * `fetch` in here goes through the egress proxy — the runtime this extension is loaded into points
+ * it there, so that what the agent reaches is what the operator granted. That is right for the
+ * internet and exactly wrong for this: the screen is a container on the sandbox network, it is not
+ * a host anybody granted, and the proxy turns the request down. What came back was a tidy JSON
+ * refusal that an earlier version of this read as an empty success, so the agent was told its
+ * browser had opened a page and found nothing on it.
+ *
+ * `node:http` reads no proxy variable and has no global dispatcher to be pointed anywhere. It goes
+ * to the address it is given, which is a name on a network this container is already on.
+ */
+function does(asked: Record<string, unknown>): Promise<readonly Block[]> {
+	const payload = Buffer.from(JSON.stringify(asked), "utf8");
+	return new Promise((resolve) => {
+		const request = http.request(
+			SCREEN_URL,
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"content-length": String(payload.byteLength),
+					...(held === undefined ? {} : { authorization: `Bearer ${held}` }),
+				},
+				timeout: VERB_TIMEOUT_MS,
 			},
-			body: JSON.stringify(asked),
-			signal: AbortSignal.timeout(VERB_TIMEOUT_MS),
+			(response) => {
+				const chunks: Buffer[] = [];
+				response.on("data", (chunk: Buffer) => chunks.push(chunk));
+				response.on("end", () =>
+					resolve(answerOf(response.statusCode ?? 0, Buffer.concat(chunks).toString("utf8"))),
+				);
+			},
+		);
+		request.on("timeout", () => request.destroy(new Error("it took too long to answer")));
+		request.on("error", (error) => {
+			resolve([{ type: "text", text: unreachable(AGENT_ID, error.message) }]);
 		});
-	} catch (error) {
-		return [{ type: "text", text: unreachable(AGENT_ID, (error as Error).message) }];
-	}
-	try {
-		return answerOf(await response.json());
-	} catch {
-		return [{ type: "text", text: unreachable(AGENT_ID, `it answered ${response.status}`) }];
-	}
+		request.end(payload);
+	});
 }
 
 const REFS = [

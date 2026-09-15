@@ -2,8 +2,8 @@
  * What the agent's screen said, turned into what a tool result is made of.
  *
  * Its own file because it is the only part of the screen tools worth testing on its own: the rest
- * of the extension is a fetch and nine descriptions, and this is the piece that decides whether a
- * refusal reads as an error the agent can act on or as a stack trace it cannot.
+ * of the extension is one request and nine descriptions, and this is the piece that decides whether
+ * a refusal reads as something the agent can act on or as nothing at all.
  */
 
 export interface TextBlock {
@@ -23,27 +23,54 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function said(text: string): readonly Block[] {
+	return [{ type: "text", text }];
+}
+
 /**
  * The screen's answer as content blocks.
  *
- * A picture only ever arrives from `look`, and it arrives beside a line of text rather than alone:
- * an image with no words is a tool result that says nothing in a transcript being read back later,
- * and the line is where the page's address goes.
+ * The status is read before the body, and that is not fussiness — it is the whole lesson of the
+ * first afternoon this ran. An earlier version of this looked only for the fields it hoped for and
+ * said "Done." when it found none, so a 403 from the egress proxy — a perfectly good JSON object
+ * with `error` in it and no `text` — arrived at the model as success with nothing in it. Two agents
+ * spent a turn each reporting that their browser opened pages and showed them nothing, which is a
+ * sentence with no failure in it anywhere.
+ *
+ * So anything that is not a 2xx is a refusal, whatever shape it came in, and it is quoted rather
+ * than summarised: whoever reads it next knows more about that body than this function does.
  */
-export function answerOf(body: unknown): readonly Block[] {
-	if (!isRecord(body)) {
-		return [{ type: "text", text: "The screen answered with something that was not an answer." }];
+export function answerOf(status: number, raw: string): readonly Block[] {
+	let body: unknown;
+	try {
+		body = JSON.parse(raw);
+	} catch {
+		return said(
+			`The screen answered ${status} with something that was not JSON: ${raw.slice(0, 400)}`,
+		);
 	}
-	if (typeof body.refused === "string") return [{ type: "text", text: body.refused }];
+
+	const refused = isRecord(body) && typeof body.refused === "string" ? body.refused : undefined;
+	if (status < 200 || status >= 300) {
+		return said(refused ?? `The screen refused this with ${status}: ${raw.slice(0, 400)}`);
+	}
+	if (refused !== undefined) return said(refused);
+	if (!isRecord(body)) return said(`The screen answered with ${raw.slice(0, 400)}`);
 
 	const blocks: Block[] = [];
 	if (typeof body.text === "string" && body.text !== "") {
 		blocks.push({ type: "text", text: body.text });
 	}
+	// A picture only ever arrives from `look`, and it arrives beside a line of text rather than
+	// alone: an image with no words says nothing in a transcript read back later, and the line is
+	// where the page's address goes.
 	if (typeof body.image === "string" && body.image !== "") {
 		blocks.push({ type: "image", data: body.image, mimeType: "image/png" });
 	}
-	if (blocks.length === 0) blocks.push({ type: "text", text: "Done." });
+	// Never silently. An empty answer from a verb that should have described a page is a bug
+	// somewhere, and the agent is the one who finds out — so it is told that, rather than "Done."
+	if (blocks.length === 0)
+		return said(`The screen answered ${status} and said nothing: ${raw.slice(0, 400)}`);
 	return blocks;
 }
 

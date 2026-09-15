@@ -56,6 +56,14 @@ export class Browser {
 	#frame: string | undefined;
 	#onFrame: ((jpeg: string) => void) | undefined;
 	#casting = false;
+	/**
+	 * Where the browser is, kept from the navigations rather than asked for.
+	 *
+	 * The live view shows it in an address bar and asks for the state every couple of seconds, and a
+	 * round trip into the page for a string the browser already told us would be a question asked of
+	 * every viewer, forever, for something that changes when somebody clicks a link.
+	 */
+	#where = "about:blank";
 
 	/** Starts the browser and waits for it to answer, which is the slowest thing this container does. */
 	async start(): Promise<void> {
@@ -146,6 +154,15 @@ export class Browser {
 			sessionId,
 		);
 		cdp.on((event) => {
+			if (event.method === "Page.frameNavigated") {
+				const frame = event.params.frame as { url?: string; parentId?: string } | undefined;
+				// The top frame only. An advert in an iframe navigating is not the browser going
+				// somewhere, and an address bar that said so would be wrong most of the time.
+				if (frame?.parentId === undefined && typeof frame?.url === "string") {
+					this.#where = frame.url;
+				}
+				return;
+			}
 			if (event.method !== "Page.screencastFrame") return;
 			const data = event.params.data;
 			const ack = event.params.sessionId;
@@ -325,6 +342,11 @@ export class Browser {
 	async #settled(load?: Promise<void>): Promise<void> {
 		await (load ?? this.#loading());
 		await sleep(400);
+	}
+
+	/** Where the browser is, for the address bar on the operator's view. */
+	where(): string {
+		return this.#where;
 	}
 
 	/** The last frame the browser sent, for a viewer that has just arrived mid-stream. */

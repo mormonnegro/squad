@@ -27,4 +27,19 @@ if [ -r "${SQUAD_SCREEN_CA:-/etc/squad/ca.crt}" ]; then
 		echo "screen: the egress certificate would not import, so HTTPS pages will be refused by the browser" >&2
 fi
 
+# The lock the last browser left behind, which is the one thing standing between a profile that
+# survives and a screen that does.
+#
+# Chromium marks a profile as in use with three symlinks naming the host that holds it, and a
+# container's host name is its id — so every replaced container finds a profile locked by a machine
+# that no longer exists. What it does about that is not to carry on: it tries to put a dialog on
+# the screen saying the profile is in use, cannot find a display to put it on, and exits. The
+# container restarts, finds the same lock, and does it again, forever.
+#
+# Safe to clear, and only here: one browser uses this volume, and if this script is running then
+# whatever held that lock was replaced by the daemon before this container existed.
+rm -f "${SQUAD_SCREEN_PROFILE:-/home/screen/profile}/SingletonLock" \
+	"${SQUAD_SCREEN_PROFILE:-/home/screen/profile}/SingletonCookie" \
+	"${SQUAD_SCREEN_PROFILE:-/home/screen/profile}/SingletonSocket"
+
 exec node /usr/local/lib/squad/screen/screen.ts
