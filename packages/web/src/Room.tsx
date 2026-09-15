@@ -25,6 +25,7 @@ export function Room({
 	agents,
 	said,
 	live,
+	onFiles,
 	onGone,
 }: {
 	plane: Plane;
@@ -34,6 +35,8 @@ export function Room({
 	said: readonly Utterance[];
 	/** What each agent is doing, so a room of three says which of the three is working. */
 	live: Record<string, Live>;
+	/** Where a path named in here leads, which is into the box of whichever agent named it. */
+	onFiles: (agentId: string, path: string) => void;
 	/** The room is gone, so the pane has to be showing something else. */
 	onGone: () => void;
 }) {
@@ -171,7 +174,7 @@ export function Room({
 					{said.map((one, index) => (
 						// Append-only, and nothing in an utterance is unique. The position is the identity.
 						// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
-						<Said key={index} said={one} agentId={one.via ?? ""} />
+						<Said key={index} said={one} agentId={one.via ?? ""} onFiles={onFiles} />
 					))}
 					{working.map((id) => (
 						<article key={id} className="said" data-from="agent">

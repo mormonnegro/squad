@@ -1127,6 +1127,71 @@ ol.md-list {
 	text-decoration-color: currentColor;
 }
 
+/*
+ * A file the agent named, as a thing to press.
+ *
+ * Drawn as the links beside it rather than as a control: it goes somewhere, and where it goes is a
+ * screen of this console. A button underneath because that is what every other way into a folder in
+ * here already is — the rows of the files screen, the crumbs above them — and because what it opens
+ * is a pane rather than a page.
+ */
+.md-path {
+	display: inline;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	text-align: inherit;
+	color: var(--code);
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-decoration-color: color-mix(in srgb, var(--muted) 55%, transparent);
+	text-underline-offset: 3px;
+	transition: color 0.12s ease, text-decoration-color 0.12s ease;
+}
+
+.md-path:hover {
+	color: var(--text-strong);
+	text-decoration-color: currentColor;
+}
+
+/*
+ * Inside a fence, where the name is already set off by everything around it.
+ *
+ * A tree of twelve rows with twelve underlines in it is a tree nobody can read the shape of, and the
+ * shape is what a tree is for. The rule arrives under the mouse, which is when it is being asked.
+ */
+.md-fence .md-path,
+.said-body .md-path,
+pre .md-path {
+	text-decoration: none;
+}
+
+.md-fence .md-path:hover,
+.said-body .md-path:hover,
+pre .md-path:hover {
+	text-decoration: underline;
+	text-decoration-color: currentColor;
+	text-underline-offset: 2px;
+}
+
+/* Written inside backticks, where the box it is drawn in is already the thing that sets it apart. */
+.md-path-chip {
+	text-decoration: none;
+}
+
+.md-path-chip .md-code {
+	color: inherit;
+	transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.md-path-chip:hover .md-code {
+	color: var(--text-strong);
+	border-color: color-mix(in srgb, var(--code) 45%, var(--line-soft));
+}
+
 /* The plane speaking, and bad news, keep their colour through whatever they wrote it in. */
 .said[data-from="plane"] .md,
 .said[data-tone="bad"] .md {

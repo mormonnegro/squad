@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { FileLink, folderSaid, linkedPath, pathOf, paths, useBox } from "./box.tsx";
+import { fenced } from "./tree.tsx";
 
 /**
  * What the model wrote, as what it meant.
@@ -274,13 +276,16 @@ function opened(url: string, open: string, shut: string): boolean {
  * start of anything. Everything after that is scanned for the earliest mark rather than applied in
  * layers, which is what keeps `*` in prose from becoming emphasis three words later.
  */
-export function inline(text: string): ReactNode[] {
+export function inline(text: string, base?: string | undefined): ReactNode[] {
 	const out: ReactNode[] = [];
 	let plain = "";
 	let key = 0;
 
+	// What is left once the marks are out of it is prose, and a path an agent wrote is in there
+	// somewhere. Read here rather than in a pass of its own, because the two would disagree about
+	// the `_` in a filename: everything below has already decided what is a mark and what is a name.
 	const keep = (): void => {
-		if (plain.length > 0) out.push(plain);
+		if (plain.length > 0) out.push(...paths(plain, base, key++));
 		plain = "";
 	};
 
@@ -290,10 +295,20 @@ export function inline(text: string): ReactNode[] {
 		const code = /^`([^`]+)`/.exec(rest);
 		if (code !== null) {
 			keep();
+			const said = code[1] ?? "";
+			// Backticks are where an agent puts a path more often than not, and what is between a pair
+			// of them is the whole of it. It keeps the box they draw and becomes a thing to press.
+			const path = pathOf(said, base);
 			out.push(
-				<code className="md-code" key={key++}>
-					{code[1]}
-				</code>,
+				path === undefined ? (
+					<code className="md-code" key={key++}>
+						{said}
+					</code>
+				) : (
+					<FileLink key={key++} path={path} chip>
+						{said}
+					</FileLink>
+				),
 			);
 			i += code[0].length;
 			continue;
@@ -305,12 +320,18 @@ export function inline(text: string): ReactNode[] {
 			const href = link[2] ?? "";
 			const label = link[1] ?? "";
 			// An address this page will not open is drawn as what it was. The agent wrote it; that does
-			// not make it a thing to hand a browser.
+			// not make it a thing to hand a browser. Unless it is not an address at all but a file in
+			// the box, which is the one thing written here that this page can open itself.
+			const file = SAFE.test(href) ? undefined : linkedPath(href, base);
 			out.push(
 				SAFE.test(href) ? (
 					<a href={href} target="_blank" rel="noreferrer noopener" key={key++}>
 						{label}
 					</a>
+				) : file !== undefined ? (
+					<FileLink key={key++} path={file}>
+						{label}
+					</FileLink>
 				) : (
 					<span key={key++}>{link[0]}</span>
 				),
@@ -339,7 +360,7 @@ export function inline(text: string): ReactNode[] {
 			/^\*\*([^\n]+?)\*\*/.exec(rest) ?? (inWord(text, i) ? null : /^__([^\n]+?)__/.exec(rest));
 		if (strong !== null) {
 			keep();
-			out.push(<strong key={key++}>{inline(strong[1] ?? "")}</strong>);
+			out.push(<strong key={key++}>{inline(strong[1] ?? "", base)}</strong>);
 			i += strong[0].length;
 			continue;
 		}
@@ -350,7 +371,7 @@ export function inline(text: string): ReactNode[] {
 			/^\*([^*\n]+?)\*/.exec(rest) ?? (inWord(text, i) ? null : /^_([^_\n]+?)_/.exec(rest));
 		if (em !== null) {
 			keep();
-			out.push(<em key={key++}>{inline(em[1] ?? "")}</em>);
+			out.push(<em key={key++}>{inline(em[1] ?? "", base)}</em>);
 			i += em[0].length;
 			continue;
 		}
@@ -365,23 +386,62 @@ export function inline(text: string): ReactNode[] {
 
 /** One agent's message, drawn as what it wrote rather than as the characters it typed. */
 export function Markdown({ text }: { text: string }) {
+	const box = useBox();
 	return (
 		<div className="md">
-			{blocks(text).map((block, index) => (
+			{placed(blocks(text), box?.base).map(([block, base], index) => (
 				// Blocks have no identity of their own and the list is rebuilt whole on every change.
 				// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
-				<Drawn key={index} block={block} />
+				<Drawn key={index} block={block} base={base} />
 			))}
 		</div>
 	);
 }
 
-function Drawn({ block }: { block: Block }) {
+/**
+ * Each block with the folder the message had named by the time it reached it.
+ *
+ * Which is the whole of how a drawing of a workspace becomes the workspace. "Esto es lo que hay en
+ * `/home/agent/workspace`:" and then a tree of a dozen names, not one of which says where it is —
+ * because the sentence above it already did, and a person reads the two together. So the message is
+ * walked in order and what it has said so far is carried forward into what it says next. A message
+ * that has named nowhere carries nothing, and every bare name in it stays the name it was.
+ */
+export function placed(
+	said: readonly Block[],
+	from: string | undefined,
+): readonly (readonly [Block, string | undefined])[] {
+	let base = from;
+	const out: (readonly [Block, string | undefined])[] = [];
+	for (const block of said) {
+		out.push([block, base]);
+		base = folderSaid(saying(block), base) ?? base;
+	}
+	return out;
+}
+
+/** The prose of a block, which is where a message says where it is. Nothing, for the rest. */
+function saying(block: Block): string {
+	switch (block.kind) {
+		case "para":
+		case "quote":
+		case "heading":
+			return block.text;
+		case "list":
+			return block.items.join("\n");
+		default:
+			// A fence is what the sentence above it was about, and a table is columns of figures.
+			// Neither is a place saying where it is.
+			return "";
+	}
+}
+
+function Drawn({ block, base }: { block: Block; base: string | undefined }) {
 	switch (block.kind) {
 		case "fence":
 			return (
 				<pre className="md-fence" data-language={block.language || undefined}>
-					<code>{block.code}</code>
+					<code>{fenced(block.code, base)}</code>
 				</pre>
 			);
 		case "heading": {
@@ -389,25 +449,25 @@ function Drawn({ block }: { block: Block }) {
 			// small bold line, because a message is not a page and an `#` in one is a label.
 			return (
 				<div className="md-heading" data-depth={block.depth}>
-					{inline(block.text)}
+					{inline(block.text, base)}
 				</div>
 			);
 		}
 		case "quote":
-			return <blockquote className="md-quote">{inline(block.text)}</blockquote>;
+			return <blockquote className="md-quote">{inline(block.text, base)}</blockquote>;
 		case "list":
 			return block.ordered ? (
 				<ol className="md-list">
 					{block.items.map((item, index) => (
 						// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
-						<li key={index}>{inline(item)}</li>
+						<li key={index}>{inline(item, base)}</li>
 					))}
 				</ol>
 			) : (
 				<ul className="md-list">
 					{block.items.map((item, index) => (
 						// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
-						<li key={index}>{inline(item)}</li>
+						<li key={index}>{inline(item, base)}</li>
 					))}
 				</ul>
 			);
@@ -422,7 +482,7 @@ function Drawn({ block }: { block: Block }) {
 								{block.head.map((cell, index) => (
 									// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
 									<th key={index} data-lean={block.leans[index]}>
-										{inline(cell)}
+										{inline(cell, base)}
 									</th>
 								))}
 							</tr>
@@ -434,7 +494,7 @@ function Drawn({ block }: { block: Block }) {
 									{row.map((cell, index) => (
 										// biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
 										<td key={index} data-lean={block.leans[index]}>
-											{inline(cell)}
+											{inline(cell, base)}
 										</td>
 									))}
 								</tr>
@@ -444,6 +504,6 @@ function Drawn({ block }: { block: Block }) {
 				</div>
 			);
 		case "para":
-			return <p className="md-para">{inline(block.text)}</p>;
+			return <p className="md-para">{inline(block.text, base)}</p>;
 	}
 }

@@ -1,9 +1,11 @@
 import type { AgentSummary, Utterance } from "@squad/control-plane";
 import { FolderOpen, Settings2, Square, Terminal, User } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
 import { Avatar } from "./avatar.tsx";
+import { BoxIs, paths } from "./box.tsx";
 import { type Command, completing, completions, isCommand, isShell } from "./commands.ts";
+import { FILES_HOME } from "./Files.tsx";
 import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
@@ -28,8 +30,15 @@ export function Chat({
 	live: Live;
 	onLocal: (agentId: string, said: Utterance) => void;
 	onSetup: () => void;
-	/** What it has in its box: what it built, what it wrote down, what you left it. */
-	onFiles: () => void;
+	/**
+	 * What it has in its box: what it built, what it wrote down, what you left it.
+	 *
+	 * Takes the agent and the folder rather than neither, because the button in the header is no
+	 * longer the only way in here: every path in every message is one, and it opens the folder that
+	 * message named. The agent is an argument for the same reason a room needs it to be — what is
+	 * said in one is said by several, and a path in it leads into whichever of them wrote it.
+	 */
+	onFiles: (agentId: string, path: string) => void;
 }) {
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
@@ -79,7 +88,12 @@ export function Chat({
 					{/* Beside the settings because they are the two other rooms of the same agent: what it
 					    is set to, and what it has got. The conversation says what it did; this is where
 					    what it did ended up. */}
-					<button type="button" className="pane-gear" onClick={onFiles} title="Files">
+					<button
+						type="button"
+						className="pane-gear"
+						onClick={() => onFiles(agent.id, FILES_HOME)}
+						title="Files"
+					>
 						<FolderOpen className="size-3.5" />
 					</button>
 					<button type="button" className="pane-gear" onClick={onSetup} title="Settings">
@@ -98,11 +112,11 @@ export function Chat({
 						// Nothing in an utterance is unique — the same agent can say the same word twice in a
 						// row — and the list only ever grows at the end, so the position is the identity.
 						// biome-ignore lint/suspicious/noArrayIndexKey: append-only, and there is no id
-						<Said key={index} said={one} agentId={agent.id} />
+						<Said key={index} said={one} agentId={agent.id} onFiles={onFiles} />
 					))}
 
 					{(live.thinking || live.steps.length > 0 || live.text.length > 0) && (
-						<Turn agentId={agent.id} live={live} />
+						<Turn agentId={agent.id} live={live} onFiles={onFiles} />
 					)}
 
 					{agent.asking.map((host) => (
@@ -212,8 +226,32 @@ function markOf(said: Utterance, agentId: string): { mark: React.ReactNode; tint
  * agents each drawn as itself. A second copy of this for rooms would be a second answer to what a
  * message looks like, and the two would drift the first time either was touched.
  */
-export function Said({ said, agentId }: { said: Utterance; agentId: string }) {
+export function Said({
+	said,
+	agentId,
+	onFiles,
+}: {
+	said: Utterance;
+	agentId: string;
+	/**
+	 * Where a path in this message leads, or nothing on a screen with no box behind it.
+	 *
+	 * Whoever's face is beside the message is whose box it is. An agent writes about its own files
+	 * and a peer writing into this conversation writes about the ones in its own, which is the same
+	 * rule the face follows — so a path in a message from `ledger` opens `ledger`'s box, on whatever
+	 * screen the message is being read.
+	 */
+	onFiles?: (agentId: string, path: string) => void;
+}) {
 	const face = markOf(said, agentId);
+	const whose = said.from === "other" ? (said.via ?? agentId) : agentId;
+	const box = useMemo(
+		() =>
+			onFiles === undefined || whose === ""
+				? undefined
+				: { open: (path: string) => onFiles(whose, path) },
+		[onFiles, whose],
+	);
 	const who =
 		said.from === "operator"
 			? "You"
@@ -243,18 +281,36 @@ export function Said({ said, agentId }: { said: Utterance; agentId: string }) {
 				</div>
 				{/* The sandbox's own output is not prose: it is whatever the command printed, and a `*`
 				    in it is a glob. Everything else is written by something that writes markdown. */}
-				{said.from === "shell" ? (
-					<div className="said-body">{said.text}</div>
-				) : (
-					<Markdown text={said.text} />
-				)}
+				<BoxIs value={box}>
+					{said.from === "shell" ? (
+						// Not prose, and read for one thing only: a `!ls` answers in paths, and the whole
+						// point of typing it was to find out what is in there.
+						<div className="said-body">{paths(said.text, undefined)}</div>
+					) : (
+						<Markdown text={said.text} />
+					)}
+				</BoxIs>
 			</div>
 		</article>
 	);
 }
 
 /** The turn as it happens: what it is doing, and the answer arriving a piece at a time. */
-function Turn({ agentId, live }: { agentId: string; live: Live }) {
+function Turn({
+	agentId,
+	live,
+	onFiles,
+}: {
+	agentId: string;
+	live: Live;
+	onFiles: (agentId: string, path: string) => void;
+}) {
+	// An answer half arrived is still an answer, and the path it has already written is already the
+	// file it is about. Nothing waits for the turn to end.
+	const box = useMemo(
+		() => ({ open: (path: string) => onFiles(agentId, path) }),
+		[onFiles, agentId],
+	);
 	return (
 		<article className="said" data-from="agent">
 			<Avatar id={agentId} size={34} />
@@ -281,7 +337,11 @@ function Turn({ agentId, live }: { agentId: string; live: Live }) {
 				{/* Only as far as the marks have closed. Drawing an unclosed `**` eagerly puts two
 				    asterisks on screen that no later delta can take away, so the answer arrives a
 				    settled piece at a time rather than a character at a time. */}
-				{live.text.length > 0 && <Markdown text={live.text.slice(0, safeEnd(live.text))} />}
+				{live.text.length > 0 && (
+					<BoxIs value={box}>
+						<Markdown text={live.text.slice(0, safeEnd(live.text))} />
+					</BoxIs>
+				)}
 				{live.steps.length > 0 && (
 					<div className="steps">
 						{live.steps.slice(-8).map((step, index, shown) => (

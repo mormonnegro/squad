@@ -678,6 +678,7 @@ export function App() {
 						agents={agents}
 						said={talk[roomChannel(room.name)] ?? []}
 						live={live}
+						onFiles={openFiles}
 						onGone={() => show("none", null)}
 					/>
 				) : showing === "plugins" && plane !== undefined ? (
@@ -714,7 +715,7 @@ export function App() {
 						live={live[agent.id] ?? QUIET}
 						onLocal={local}
 						onSetup={() => openSetup(agent.id)}
-						onFiles={() => openFiles(agent.id, FILES_HOME)}
+						onFiles={openFiles}
 					/>
 				) : (
 					<Nothing onMake={() => setMaking(true)} />

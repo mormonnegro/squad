@@ -10,8 +10,9 @@ import {
 	Image,
 	RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
+import { BoxIs, paths, useBox } from "./box.tsx";
 import { nameOf } from "./face.ts";
 import { Markdown } from "./markdown.tsx";
 import type { FileEntry, Listing, Plane } from "./plane.ts";
@@ -138,6 +139,16 @@ export function Files({
 
 	/** Where a drop lands: the folder on screen, or the one holding the file on screen. */
 	const into = listing?.kind === "file" ? folderOf(where) : where;
+
+	/**
+	 * What a path inside the file being read leads to.
+	 *
+	 * A README written in a project is written from inside it: it says `data/latest.md` and means
+	 * the one beside it, not one at the top of the box. So the folder the document is in is what its
+	 * names are read against — which makes a note an agent left itself a way around what it wrote
+	 * about, rather than a description of it.
+	 */
+	const box = useMemo(() => ({ open: onWhere, base: folderOf(where) }), [onWhere, where]);
 
 	const leave = useCallback(
 		async (files: readonly globalThis.File[]): Promise<void> => {
@@ -332,15 +343,17 @@ export function Files({
 							reading…
 						</p>
 					) : listing?.kind === "file" ? (
-						<Document
-							name={nameOfPath(where)}
-							at={listing.at}
-							size={listing.size}
-							changedAt={listing.changedAt}
-							read={read}
-							saving={saving}
-							onSave={() => void save(where, nameOfPath(where))}
-						/>
+						<BoxIs value={box}>
+							<Document
+								name={nameOfPath(where)}
+								at={listing.at}
+								size={listing.size}
+								changedAt={listing.changedAt}
+								read={read}
+								saving={saving}
+								onSave={() => void save(where, nameOfPath(where))}
+							/>
+						</BoxIs>
 					) : listing?.kind === "dir" ? (
 						<Rows
 							listing={listing}
@@ -537,6 +550,7 @@ function Document({
 }) {
 	const [url, setUrl] = useState<string | undefined>();
 	const picture = read !== undefined && imageOf(name) !== undefined;
+	const base = useBox()?.base;
 
 	// An object URL is a handle on memory rather than a string, so it is made when the picture
 	// changes and given back when it is no longer on screen.
@@ -590,7 +604,7 @@ function Document({
 				</div>
 			) : (
 				<pre className="overflow-x-auto rounded-lg bg-sunk px-4 py-3 font-mono text-[0.8rem] leading-relaxed shadow-[var(--shadow-border)]">
-					{text}
+					{paths(text, base)}
 				</pre>
 			)}
 
