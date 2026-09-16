@@ -12,6 +12,7 @@ import {
 	SANDBOX_SEARCH_FILE,
 	SANDBOX_SEND_FILE,
 	SANDBOX_TEAM_FILE,
+	SANDBOX_VISION_FILE,
 	SANDBOX_WAKE_FILE,
 	SANDBOX_WORKSPACE_PATH,
 } from "@squad/sandbox";
@@ -22,6 +23,7 @@ import { type AgentStep, PiOutput } from "./pi-output.ts";
 import { type RepoStanding, reposPrompt } from "./repos.ts";
 import type { Search } from "./search.ts";
 import { parseSent, type Sent, type Teammate } from "./team.ts";
+import type { Vision } from "./vision.ts";
 
 /** The part of the sandbox manager a turn needs. Narrow so a test can stand in for Docker. */
 export interface TurnSandbox {
@@ -179,6 +181,9 @@ export interface PiTurnRunnerOptions {
 	/** Which provider the web_search tool goes through, asked again at the start of every turn. */
 	readonly search?: () => Promise<Search | undefined>;
 	readonly searchFile?: string;
+	/** Which model looks at pictures, asked again at the start of every turn. Often none. */
+	readonly vision?: () => Promise<Vision | undefined>;
+	readonly visionFile?: string;
 	/**
 	 * The repositories this agent holds, asked for again at the start of every turn so one given at
 	 * the console is in front of the agent on its next turn rather than its next container.
@@ -316,6 +321,8 @@ export class PiTurnRunner {
 	readonly #mcpFile: string;
 	readonly #search: (() => Promise<Search | undefined>) | undefined;
 	readonly #searchFile: string;
+	readonly #vision: (() => Promise<Vision | undefined>) | undefined;
+	readonly #visionFile: string;
 	readonly #team: ((agentId: string) => Promise<readonly Teammate[]>) | undefined;
 	readonly #teamFile: string;
 	readonly #sendFile: string;
@@ -342,6 +349,8 @@ export class PiTurnRunner {
 		this.#search = options.search;
 		this.#repos = options.repos;
 		this.#searchFile = options.searchFile ?? SANDBOX_SEARCH_FILE;
+		this.#vision = options.vision;
+		this.#visionFile = options.visionFile ?? SANDBOX_VISION_FILE;
 		this.#team = options.team;
 		this.#teamFile = options.teamFile ?? SANDBOX_TEAM_FILE;
 		this.#sendFile = options.sendFile ?? SANDBOX_SEND_FILE;
@@ -468,6 +477,7 @@ export class PiTurnRunner {
 		try {
 			await this.#putServers(agentId);
 			await this.#putSearch(agentId);
+			await this.#putVision(agentId);
 			await this.#putTeam(agentId);
 			const thinksWith = await this.#model?.(agentId);
 			const lessons = await this.#lessons(agentId);
@@ -594,6 +604,26 @@ export class PiTurnRunner {
 			.run(
 				agentId,
 				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#searchFile],
+				JSON.stringify(chosen),
+			)
+			.catch(() => undefined);
+	}
+
+	/**
+	 * Puts the model that looks at pictures where the extension will look, before pi starts.
+	 *
+	 * On the search provider's terms exactly, including the failure: a write that did not happen
+	 * leaves an agent whose `screen_look` hands the picture to its own model, which is what it did
+	 * before there was a second model to ask.
+	 */
+	async #putVision(agentId: string): Promise<void> {
+		if (this.#vision === undefined) return;
+		const chosen = await this.#vision().catch(() => undefined);
+		if (chosen === undefined) return;
+		await this.#sandbox
+			.run(
+				agentId,
+				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#visionFile],
 				JSON.stringify(chosen),
 			)
 			.catch(() => undefined);

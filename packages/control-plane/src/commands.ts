@@ -18,6 +18,7 @@ import type { ScreenStanding } from "./screens.ts";
 import type { Skill } from "./skills.ts";
 import type { Teammate } from "./team.ts";
 import type { Trigger } from "./triggers.ts";
+import { perLookUsd, type VisionOffer, type VisionSpec, type VisionStanding } from "./vision.ts";
 
 /** Where to send the operator, and where the answer is expected back. */
 export interface LoginPage {
@@ -158,6 +159,19 @@ export interface CommandContext {
 	 * do with its grants and not what its grants are.
 	 */
 	setScreen(on: boolean | null): Promise<ScreenStanding>;
+	/**
+	 * Which model looks at pictures for this plane, and every model that could.
+	 *
+	 * Plane-wide rather than per-agent, on the search provider's terms: which model does a job, what
+	 * it drives and what it costs are the operator's to decide once, and a per-agent version of this
+	 * would be four screens to keep in step for one question nobody asks twice.
+	 */
+	vision(): Promise<{
+		readonly using: VisionStanding | undefined;
+		readonly offers: readonly VisionOffer[];
+	}>;
+	/** Chooses one, or `null` to leave looking to whatever the agent itself thinks with. */
+	chooseVision(spec: VisionSpec | null): Promise<void>;
 	/** Whether anything is listening on that port inside the sandbox, asked of the sandbox. */
 	listening(port: number): Promise<boolean>;
 	/**
@@ -347,6 +361,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/screen",
 		takes: "[on|off|auto]",
 		does: "give it a browser of its own, and open the live view of it here",
+	},
+	{
+		name: "/vision",
+		takes: "[<provider> [<model>]|off]",
+		does: "which model looks at a screenshot for the agents, and what a look costs",
 	},
 	{
 		name: "/reach",
@@ -956,6 +975,101 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 	]
 		.filter((line, index, all) => !(line === "" && all[index - 1] === ""))
 		.join("\n");
+}
+
+/**
+ * What looking is, said once, above the table of who could do it.
+ *
+ * Worth saying at all because this is the one tool whose model is not the agent's, and the reason
+ * is not obvious: an agent thinks with something cheap, and there is no sense in choosing that
+ * model for the one turn a week where something has to be looked at.
+ */
+const LOOKING = [
+	"An agent reads a page as text and numbers, which is exact and costs almost nothing. Looking is",
+	"for what text cannot say — a chart, a map, a captcha, a page that reads as empty and is not.",
+	"",
+	"The picture goes to a model that can see, with the agent's question, and what comes back is",
+	"prose. The agent never holds an image, which is what makes this work with an agent thinking in",
+	"a model that cannot see at all — and is most of them. Left off, a screenshot is handed to the",
+	"agent's own model, which reads it or silently does not.",
+	"",
+	"Choosing here is the whole of setting it up: the host, the key and the price come with the",
+	"provider, and the proxy is told to pay for that one endpoint and nothing else on it.",
+].join("\n");
+
+/** A price as somebody deciding whether to turn this on needs to read it, which is not four decimals. */
+function aLook(usd: number): string {
+	if (usd >= 0.01) return `~$${usd.toFixed(2)} a look`;
+	if (usd >= 0.001) return `~$${usd.toFixed(3)} a look`;
+	return "under a tenth of a cent a look";
+}
+
+/**
+ * Which model looks at a screenshot, and what the alternatives would cost.
+ *
+ * A table rather than a sentence, because the question here has three halves at once: what is on,
+ * what else there is, and which of those this plane already holds a key for. A screen that answered
+ * only the first would send somebody to the keys screen to find out whether the second is even
+ * available to them.
+ */
+async function vision(words: readonly string[], context: CommandContext): Promise<string> {
+	const [said = "", named = ""] = words;
+
+	if (said === "off" || said === "none") {
+		await context.chooseVision(null);
+		return [
+			"Nothing looks at a screenshot for these agents now.",
+			"",
+			"screen_look still works: it hands the picture to whatever the agent itself thinks with,",
+			"which reads it or silently does not, depending on the model. /vision <provider> turns a",
+			"model back on.",
+		].join("\n");
+	}
+
+	if (said !== "") {
+		const offers = await context.vision();
+		const wanted = offers.offers.filter((one) => one.provider === said);
+		if (wanted.length === 0) {
+			const known = [...new Set(offers.offers.map((one) => one.provider))];
+			return `"${said}" is not a provider that looks here. There is ${known.join(", ")}.`;
+		}
+		if (named !== "" && !wanted.some((one) => one.model === named)) {
+			return `${said} looks with ${wanted.map((one) => one.model).join(", ")}, and not with "${named}".`;
+		}
+		await context.chooseVision(
+			named === "" ? { provider: said } : { provider: said, model: named },
+		);
+		const now = await context.vision();
+		const using = now.using;
+		if (using === undefined) return "That was not something this plane can look with.";
+		const cost = aLook(perLookUsd(using.rate));
+		const missing = using.held
+			? ""
+			: `\n\nNothing here holds ${using.keyEnv} yet, so a look will be refused at the proxy until this plane has it. /config models is where a key goes.`;
+		return `Looking goes to ${using.model} at ${using.provider}, from the next turn. ${cost}.${missing}`;
+	}
+
+	const { using, offers } = await context.vision();
+	const rows = offers.map(
+		(one) =>
+			[
+				`  ${one.using ? "▸ " : "  "}${one.provider} ${one.model}`,
+				`${one.held ? "key ✓" : `key ✗ (${one.keyEnv})`}   ${aLook(perLookUsd(one.rate))}`,
+			] as const,
+	);
+
+	return [
+		using === undefined
+			? "Nothing looks at a screenshot for these agents: screen_look hands the picture to whatever the agent itself thinks with."
+			: `Looking goes to ${using.model} at ${using.provider}${using.held ? "" : ` — though nothing here holds ${using.keyEnv}, so it will be refused at the proxy`}.`,
+		"",
+		laidOut(rows),
+		"",
+		"/vision openai turns one on, /vision openai gpt-5 names the model, /vision off leaves it to",
+		"the agent's own model.",
+		"",
+		LOOKING,
+	].join("\n");
 }
 
 /** The words `/plugins` reads as instructions, and therefore not names a plugin may be given. */
@@ -2085,6 +2199,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "model") return models(rest, context);
 	if (name === "serve") return serve(rest, context);
 	if (name === "screen") return screen(rest, context);
+	if (name === "vision") return vision(rest, context);
 	if (name === "telegram") return telegram(rest, context);
 	if (name === "email") return email(rest, context);
 	if (name === "repo") return repo(rest, context);

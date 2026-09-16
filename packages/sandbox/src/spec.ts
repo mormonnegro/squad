@@ -163,6 +163,16 @@ export const SANDBOX_CONSOLE_FILE = `${SANDBOX_HOME}/.run/console.json`;
 export const SANDBOX_SEND_FILE = `${SANDBOX_HOME}/.run/send.json`;
 
 /**
+ * Where the plane leaves the model that looks at pictures, read at the start of every turn.
+ *
+ * Beside the search provider and for its reasons, plus one of its own: looking is off until an
+ * operator turns it on, so the absence of this file is the answer for most planes rather than a
+ * failure. An agent that finds nothing here has a `screen_look` that hands the picture to its own
+ * model, which is what it did before there was a second model to ask.
+ */
+export const SANDBOX_VISION_FILE = `${SANDBOX_HOME}/.run/vision.json`;
+
+/**
  * Where the plane leaves the other agents this one may write to, read at the start of every turn.
  *
  * Beside the servers and the search provider, and for their reason: who an agent may write to is the
@@ -231,6 +241,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		SQUAD_WAKE_FILE: SANDBOX_WAKE_FILE,
 		SQUAD_MCP_FILE: SANDBOX_MCP_FILE,
 		SQUAD_SEARCH_FILE: SANDBOX_SEARCH_FILE,
+		SQUAD_VISION_FILE: SANDBOX_VISION_FILE,
 		SQUAD_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
 		SQUAD_SEND_FILE: SANDBOX_SEND_FILE,
 		SQUAD_TEAM_FILE: SANDBOX_TEAM_FILE,

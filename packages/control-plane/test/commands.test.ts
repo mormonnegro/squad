@@ -92,6 +92,9 @@ function context(
 		keyboard?: "agent" | "operator";
 		/** Whether the browser image is being built, which is what an empty screen usually waits on. */
 		building?: boolean;
+		/** Which model looks at pictures, and which provider keys this plane holds. */
+		looksWith?: { provider: string; model: string };
+		visionKeys?: readonly string[];
 		/** Whether the sandbox is too old to hold the tools that drive the browser. */
 		toolless?: boolean;
 	} = {},
@@ -122,6 +125,30 @@ function context(
 	};
 	/** Every screen decision that got as far as the plane, including the `null` that hands it back. */
 	const screened: (boolean | null)[] = [];
+	/** The model that looks, and every choice that got as far as the plane. */
+	const looking = { at: start.looksWith };
+	const looked: ({ provider: string; model?: string } | null)[] = [];
+	/** Two providers and two models each, which is enough shape to tell a table from a sentence. */
+	const OFFERED = [
+		{
+			provider: "openai",
+			model: "gpt-5-mini",
+			keyEnv: "OPENAI_API_KEY",
+			rate: { input: 0.25, output: 2 },
+		},
+		{
+			provider: "openai",
+			model: "gpt-5",
+			keyEnv: "OPENAI_API_KEY",
+			rate: { input: 1.25, output: 10 },
+		},
+		{
+			provider: "anthropic",
+			model: "claude-haiku-4-5",
+			keyEnv: "ANTHROPIC_API_KEY",
+			rate: { input: 1, output: 5 },
+		},
+	];
 	const bot = { held: start.bot };
 	/** Every token the command handed on, which is what tells a refusal apart from a typo caught early. */
 	const offered: string[] = [];
@@ -199,6 +226,8 @@ function context(
 		serving,
 		screen,
 		screened,
+		looking,
+		looked,
 		bot,
 		offered,
 		repos,
@@ -247,6 +276,35 @@ function context(
 				if (at === -1) return false;
 				serving.splice(at, 1);
 				return true;
+			},
+			vision: async () => ({
+				using:
+					looking.at === undefined
+						? undefined
+						: {
+								provider: looking.at.provider,
+								model: looking.at.model,
+								endpoint: "https://api.openai.com/v1/responses",
+								shape: "responses" as const,
+								keyEnv: "OPENAI_API_KEY",
+								headers: {},
+								rate: { input: 0.25, output: 2 },
+								chosen: true,
+								held: (start.visionKeys ?? ["OPENAI_API_KEY"]).includes("OPENAI_API_KEY"),
+								here: false,
+							},
+				offers: OFFERED.map((one) => ({
+					...one,
+					held: (start.visionKeys ?? ["OPENAI_API_KEY"]).includes(one.keyEnv),
+					using: looking.at?.provider === one.provider && looking.at?.model === one.model,
+				})),
+			}),
+			chooseVision: async (spec) => {
+				looked.push(spec);
+				looking.at =
+					spec === null
+						? undefined
+						: { provider: spec.provider, model: spec.model ?? "gpt-5-mini" };
 			},
 			screen: async () => ({
 				on: screen.on,
@@ -855,6 +913,56 @@ describe("/config", () => {
  * it into a listener. So what the answer says is mostly about where a link works and what it needs
  * before it does — an operator who reads this as "published" has been told the wrong thing.
  */
+describe("/vision", () => {
+	it("says nothing is looking, and what it would cost if something did", async () => {
+		const said = await runCommand("/vision", context({}).context);
+
+		expect(said).toContain("hands the picture to whatever the agent itself thinks with");
+		// The table answers the three halves of the question at once: what is on, what else there is,
+		// and which of those this plane already holds a key for.
+		expect(said).toContain("openai gpt-5-mini");
+		expect(said).toContain("key ✓");
+		expect(said).toContain("key ✗ (ANTHROPIC_API_KEY)");
+		expect(said).toMatch(/a look|cent a look/);
+	});
+
+	it("turns one on by naming a provider, and takes the provider's first model", async () => {
+		const plane = context({});
+		const said = await runCommand("/vision openai", plane.context);
+
+		expect(plane.looked).toEqual([{ provider: "openai" }]);
+		expect(said).toContain("Looking goes to gpt-5-mini at openai");
+	});
+
+	it("takes a model by name, and refuses one that provider does not have", async () => {
+		const plane = context({});
+		await runCommand("/vision openai gpt-5", plane.context);
+		expect(plane.looked).toEqual([{ provider: "openai", model: "gpt-5" }]);
+
+		const refused = await runCommand("/vision openai gpt-9", plane.context);
+		expect(refused).toContain("gpt-5-mini, gpt-5");
+	});
+
+	it("says which providers there are when the one named is not one", async () => {
+		const said = await runCommand("/vision mistral", context({}).context);
+		expect(said).toContain("openai, anthropic");
+	});
+
+	it("says what a look will meet when the key behind it is missing", async () => {
+		// The one failure that would otherwise be found at the proxy, mid-turn, by an agent.
+		const said = await runCommand("/vision anthropic", context({ visionKeys: [] }).context);
+		expect(said).toContain("OPENAI_API_KEY");
+	});
+
+	it("turns it off, and says what screen_look becomes", async () => {
+		const plane = context({ looksWith: { provider: "openai", model: "gpt-5-mini" } });
+		const said = await runCommand("/vision off", plane.context);
+
+		expect(plane.looked).toEqual([null]);
+		expect(said).toContain("screen_look still works");
+	});
+});
+
 describe("/screen", () => {
 	it("gives an agent a browser and hands back the link to watch it", async () => {
 		const plane = context({ agentId: "scout" });

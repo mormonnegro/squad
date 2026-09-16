@@ -54,6 +54,7 @@ COPY send.ts /usr/local/lib/squad/extensions/send.ts
 # container. Copied in always and handed to pi only when the agent has been given one, because an
 # image built with it missing would be an image where turning a screen on does nothing until the
 # next rebuild.
+COPY looking.ts /usr/local/lib/squad/extensions/looking.ts
 COPY screen-answer.ts /usr/local/lib/squad/extensions/screen-answer.ts
 COPY computer.ts /usr/local/lib/squad/extensions/computer.ts
 

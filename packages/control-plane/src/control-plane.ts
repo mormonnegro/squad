@@ -196,6 +196,15 @@ import {
 	type TurnRunner,
 	type WakeChange,
 } from "./turn.ts";
+import {
+	resolveVision,
+	VISION_PROVIDERS,
+	VisionChoice,
+	type VisionOffer,
+	type VisionSpec,
+	type VisionStanding,
+	visionGrant,
+} from "./vision.ts";
 
 export interface AgentConfig {
 	readonly id: string;
@@ -663,6 +672,8 @@ export class ControlPlane {
 	readonly #mcp: McpShelf;
 	/** Which provider the web_search tool goes through, when somebody has chosen one at the console. */
 	readonly #search: SearchChoice;
+	/** Which model looks at pictures, when an operator has decided that looking is worth paying for. */
+	readonly #vision: VisionChoice;
 	readonly #bots: TelegramBots;
 	readonly #mailbox: MailboxStore;
 	/**
@@ -772,6 +783,7 @@ export class ControlPlane {
 		this.#secrets = this.#keys;
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#search = new SearchChoice(join(this.#stateDir, "search.json"));
+		this.#vision = new VisionChoice(join(this.#stateDir, "vision.json"));
 		this.#bots = new TelegramBots(join(this.#stateDir, "telegram.json"));
 		this.#mailbox = new MailboxStore(join(this.#stateDir, "mailbox.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
@@ -1281,6 +1293,7 @@ export class ControlPlane {
 			...declared.map((grant) => ({ grant, origin: originOf(grant.id) })),
 			...(await this.#thinking(declared)).map((grant) => ({ grant, origin: "model" as const })),
 			...(await this.#searching(declared)).map((grant) => ({ grant, origin: "search" as const })),
+			...(await this.#looking(declared)).map((grant) => ({ grant, origin: "search" as const })),
 			...(await this.#reached(declared)).map((grant) => ({ grant, origin: "here" as const })),
 		];
 		return standing.map(({ grant, origin }) => {
@@ -2118,6 +2131,73 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Which model looks at pictures, filled in from the table, and whether this plane can pay for it.
+	 *
+	 * Nothing when nobody has chosen, which is the difference from searching: every plane searches,
+	 * and a plane that looks is one whose operator decided what looking is worth. An agent on a plane
+	 * with no vision model hands the picture to its own model, the way it always did.
+	 */
+	async vision(): Promise<VisionStanding | undefined> {
+		const chosen = await this.#vision.chosen();
+		if (chosen === undefined) return undefined;
+		const resolved = resolveVision(chosen);
+		// A stored choice this plane has since forgotten how to reach leaves looking off rather than
+		// leaving the screen with a provider it cannot name.
+		if (typeof resolved === "string") return undefined;
+		const key = await this.#secrets.resolve({ ref: resolved.keyEnv }).catch(() => undefined);
+		const here = await this.#keys.here();
+		return {
+			...resolved,
+			chosen: true,
+			held: key !== undefined && key.length > 0,
+			here: here.has(resolved.keyEnv),
+		};
+	}
+
+	/**
+	 * Every model that could do the looking, and whether this plane can pay for it.
+	 *
+	 * The whole table rather than the ones that are paid for, because the question somebody has at
+	 * this screen is not only "what can I turn on" but "what would I have to add" — and a provider
+	 * that is missing from the list because its key is missing is a provider nobody knows to want.
+	 */
+	async visionOffers(): Promise<readonly VisionOffer[]> {
+		const using = await this.vision();
+		const offers: VisionOffer[] = [];
+		for (const [provider, known] of Object.entries(VISION_PROVIDERS)) {
+			const key = await this.#secrets.resolve({ ref: known.keyEnv }).catch(() => undefined);
+			const held = key !== undefined && key.length > 0;
+			for (const model of known.models) {
+				offers.push({
+					provider,
+					model,
+					keyEnv: known.keyEnv,
+					held,
+					rate: known.rates[model] ?? { input: 0, output: 0 },
+					using: using?.provider === provider && using.model === model,
+				});
+			}
+		}
+		return offers;
+	}
+
+	/**
+	 * Chooses the model that looks, or `null` to stop looking with anything but the agent's own.
+	 *
+	 * Every agent's grants are written again afterwards, on the search choice's terms: the grant that
+	 * pays for looking is derived from this, and a choice that held in the sandbox while the proxy
+	 * refused it is the worst of the two halves being out of step.
+	 */
+	async chooseVision(spec: VisionSpec | null): Promise<void> {
+		if (spec !== null) {
+			const resolved = resolveVision(spec);
+			if (typeof resolved === "string") throw new Error(resolved);
+		}
+		await this.#vision.choose(spec);
+		await this.#reregisterAll();
+	}
+
+	/**
 	 * Points the search tool at another provider, or another of that provider's models.
 	 *
 	 * Every agent's grants are written again afterwards, because the grant that pays for searching is
@@ -2205,6 +2285,7 @@ export class ControlPlane {
 			...(await this.#holding(agentId)),
 			...(await this.#thinking(declared)),
 			...(await this.#searching(declared)),
+			...(await this.#looking(declared)),
 			...earned,
 			...(await this.#reached(declared)),
 		];
@@ -2386,6 +2467,16 @@ export class ControlPlane {
 		return [searchGrant(await this.search())].filter(
 			(grant) => !declared.some((own) => own.id === grant.id),
 		);
+	}
+
+	/**
+	 * The grant that pays for looking, when there is a model to look with. On the search grant's
+	 * terms, and absent entirely on a plane where nobody turned looking on — which is most of them.
+	 */
+	async #looking(declared: readonly Grant[]): Promise<readonly Grant[]> {
+		const vision = await this.vision();
+		if (vision === undefined) return [];
+		return [visionGrant(vision)].filter((grant) => !declared.some((own) => own.id === grant.id));
 	}
 
 	async #reached(declared: readonly Grant[]): Promise<readonly Grant[]> {
@@ -3026,6 +3117,8 @@ export class ControlPlane {
 			unserve: (port) => this.#served.close(agentId, port),
 			screen: () => this.screenStanding(agentId),
 			setScreen: (on) => this.setScreen(agentId, on),
+			vision: async () => ({ using: await this.vision(), offers: await this.visionOffers() }),
+			chooseVision: (spec) => this.chooseVision(spec),
 			listening: (port) => this.#listening(agentId, port),
 			// Asked of the same set the proxy will ask, so what the operator is told here is what the
 			// agent will actually meet — rather than a second opinion that can be right while the wire
@@ -3923,6 +4016,9 @@ export class ControlPlane {
 			// And again for the same reason: a search provider chosen at the console searches on the
 			// next turn rather than on the next container.
 			search: () => this.search(),
+			// And the model that looks, asked again each turn for the reason the search provider is: one
+			// chosen at the console reaches an agent that is already up, on its next turn.
+			vision: () => this.vision(),
 			// And the repositories, so one given at the console is in front of the agent on its next
 			// turn, with the branches it may push named before it tries one it may not.
 			repos: (agentId) => this.repos(agentId),

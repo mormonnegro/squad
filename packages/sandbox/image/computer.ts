@@ -1,6 +1,17 @@
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import {
+	askedOf,
+	type Looking,
+	readLooking,
+	refusedBy,
+	saidBy,
+	spentOn,
+	type Usage,
+} from "./looking.ts";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
 
 /**
@@ -97,6 +108,69 @@ function does(asked: Record<string, unknown>): Promise<readonly Block[]> {
 	});
 }
 
+/**
+ * The model that looks, when the operator has chosen one — and nothing at all when they have not.
+ *
+ * Read per call rather than once when pi started, because a turn is a process and this file is
+ * written before every turn by the plane that owns the choice.
+ */
+async function looking(): Promise<Looking | undefined> {
+	const path = process.env.SQUAD_VISION_FILE ?? "";
+	if (path.length === 0) return undefined;
+	try {
+		return readLooking(await readFile(path, "utf8"));
+	} catch {
+		// No file is the answer for most planes: looking is off until somebody turns it on.
+		return undefined;
+	}
+}
+
+/**
+ * curl rather than fetch, and the opposite reason from the screen's own door.
+ *
+ * This request is meant to leave the sandbox, so it has to go the way everything that leaves goes:
+ * through the egress proxy, which resolves the name, writes the key on, and refuses a host nobody
+ * granted. Node's fetch reads neither HTTPS_PROXY nor NODE_EXTRA_CA_CERTS and dies resolving the
+ * name; curl reads both and is in the image already. The body goes over stdin, because a screenshot
+ * is a megabyte of base64 and an argument is not.
+ */
+function post(
+	endpoint: string,
+	body: string,
+): Promise<{ readonly status: number; readonly body: string }> {
+	return new Promise((resolve, reject) => {
+		const curl = execFile(
+			"curl",
+			[
+				"-sS",
+				endpoint,
+				"-H",
+				"Content-Type: application/json",
+				"--data-binary",
+				"@-",
+				"-w",
+				"\n%{http_code}",
+			],
+			{ timeout: VERB_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
+			(failure, stdout, stderr) => {
+				if (failure !== null) {
+					reject(new Error(stderr.trim().length > 0 ? stderr.trim() : failure.message));
+					return;
+				}
+				const cut = stdout.lastIndexOf("\n");
+				resolve({ status: Number(stdout.slice(cut + 1)), body: stdout.slice(0, cut) });
+			},
+		);
+		curl.stdin?.end(body);
+	});
+}
+
+/** The picture out of what the screen answered, which is the one block that is not words. */
+function pictureIn(blocks: readonly Block[]): string | undefined {
+	for (const block of blocks) if (block.type === "image") return block.data;
+	return undefined;
+}
+
 const REFS = [
 	"Everything you act on is a ref: a number from the last read, like [7]. Refs belong to the read",
 	"they came from — after anything that changes the page, read it again and use the new numbers.",
@@ -153,27 +227,94 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
+	/*
+	 * Looking, which is the one tool here that may not be done by the agent's own model.
+	 *
+	 * Most agents think with something that cannot see at all, and handing such an agent an image is
+	 * a silent no-op: it goes out, nothing reads it, and the agent believes it has looked. So when
+	 * the operator has chosen a model that can see, the picture goes there with the question and
+	 * words come back — the same arrangement web_search has, and for the same reasons. It is paid
+	 * for once, too: an image in a tool result is sent again with every later call in the turn.
+	 */
 	pi.registerTool({
 		name: "screen_look",
 		label: "Look at the page",
 		description: [
-			"Take a picture of the page and look at it.",
+			"Have somebody look at the page and tell you what is on it.",
 			"",
 			"For what reading cannot tell you: a chart, a map, a photograph, a layout somebody asked you",
 			"about, a page that reads as nonsense and might be showing something else. It is not for",
-			"finding a button — reading tells you where the buttons are, exactly, and this only tells you",
-			"roughly.",
+			"finding a button — reading tells you where the buttons are, exactly, and this only roughly.",
 			"",
-			"A picture costs about as much as a page of text to look at, every time you look. Do not",
-			"take one after every click.",
+			"Ask for what you actually want to know. The picture is looked at by a model that can see,",
+			"and it does better with a question than with nothing: 'is there a captcha or a cookie wall",
+			"in the way?' gets you an answer, where a bare look gets you a description.",
+			"",
+			"It is billed to you, and it costs more than reading. Do not look after every click.",
 		].join("\n"),
-		promptSnippet: "Take a picture of the page, for what text cannot show",
+		promptSnippet: "Have the page looked at, for what its text cannot show",
 		promptGuidelines: [
 			"Look at the page only when the question is visual. Reading is cheaper and more precise for anything else.",
+			"When you look, say what you want to know. A question is answered; a bare look is described.",
 		],
-		parameters: Type.Object({}),
-		async execute() {
-			return { content: [...(await does({ verb: "look" }))], details: {} };
+		parameters: Type.Object({
+			about: Type.Optional(
+				Type.String({ description: "What you want to know about what is on the screen." }),
+			),
+		}),
+		async execute(_id, params) {
+			const { about } = params as { about?: string };
+			const blocks = await does({ verb: "look" });
+			const png = pictureIn(blocks);
+			const model = await looking();
+
+			// Nobody to ask, so the picture goes to whatever is reading this — which works when that
+			// model can see and is worth saying plainly when it cannot, because from in here there is
+			// no way to tell the two apart.
+			if (png === undefined || model === undefined) {
+				return {
+					content: [
+						...blocks,
+						{
+							type: "text" as const,
+							text: "This plane has no model set up to look at pictures, so the screenshot is above for your own model to read. If you cannot read images, say so in your answer: your operator turns one on at the console, under /config vision.",
+						},
+					],
+					details: {},
+				};
+			}
+
+			const { status, body } = await post(model.endpoint, askedOf(model, about ?? "", png));
+			let answer: unknown;
+			try {
+				answer = JSON.parse(body);
+			} catch {
+				// A proxy that refused the host answers in its own words rather than in the API's, and
+				// this is where that arrives: it is the reason the looking did not happen.
+				throw new Error(`Looking failed (HTTP ${status}): ${body.slice(0, 400)}`);
+			}
+			if (status !== 200) {
+				throw new Error(`Looking failed (HTTP ${status}): ${refusedBy(answer, body)}`);
+			}
+			const said = saidBy(model, answer);
+			if (said.length === 0) {
+				throw new Error("The model that looks came back with nothing to say about the screen.");
+			}
+
+			// The address above the description, because a paragraph about a page is worth much less
+			// without the page it is about.
+			const where = blocks.find((block) => block.type === "text");
+			const usage: Usage = spentOn(model, answer);
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `${where !== undefined && where.type === "text" ? `${where.text}\n\n` : ""}${said}`,
+					},
+				],
+				details: {},
+				usage,
+			};
 		},
 	});
 
