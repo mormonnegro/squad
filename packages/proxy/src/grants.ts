@@ -61,6 +61,26 @@ export interface Grant {
 	 * passed, and passed only to the refs listed.
 	 */
 	readonly git?: GitScope;
+	/**
+	 * Set when this host is to be tunnelled rather than opened.
+	 *
+	 * Everything else here goes through a certificate this plane issues for the host it was asked
+	 * for: the proxy terminates the TLS, reads the request, writes a credential onto it and passes it
+	 * on. That is what makes an audit line possible and what makes injection possible, and it is why
+	 * a sandbox never gets raw TCP to anywhere.
+	 *
+	 * It is also what a browser cannot survive on some of the web. The handshake a site sees then is
+	 * this proxy's and not the browser's, while the user agent says a browser — and the systems that
+	 * decide whether a connection is a person compare exactly those two things. A real Chrome behind
+	 * this looks, to them, like a script wearing Chrome's name.
+	 *
+	 * So a host can be marked for a straight tunnel: the grant is still checked, the connection is
+	 * still audited as having been opened, and from the 200 onwards the bytes are the browser's own.
+	 * What is given up is the rest of that audit line — the plane knows the host and not the path —
+	 * and any injection on it, which is why it is never the default and never derived: an operator
+	 * says it, host by host, about hosts they are only ever reading.
+	 */
+	readonly tunnel?: boolean;
 }
 
 export type GrantDecision =
@@ -201,6 +221,28 @@ export class GrantSet {
 	allowsHost(host: string): boolean {
 		const normalized = normalizeHost(host);
 		return this.grants.some((grant) => hostMatches(grant.host, normalized));
+	}
+
+	/**
+	 * Whether this host is piped rather than read: asked for by one grant, and refused by none.
+	 *
+	 * One asking is enough, because the thing that makes a host tunnelled is an operator naming it —
+	 * and a plane with a blanket `*` open would otherwise never tunnel anything, since that grant
+	 * matches every host and asks for nothing. That was the first rule here and it was wrong in the
+	 * only configuration anybody has.
+	 *
+	 * What does veto it is a credential. A grant that exists to have a key written onto requests for
+	 * that host cannot be satisfied by a pipe — nothing can be written onto bytes nobody reads — so a
+	 * host carrying one is never tunnelled, whatever else is said about it. Which is the rule worth
+	 * having: the cost of piping is the audit, and the thing that must not be quietly lost is a
+	 * credential that stops being attached.
+	 */
+	tunnels(host: string): boolean {
+		const normalized = normalizeHost(host);
+		const matched = this.grants.filter((grant) => hostMatches(grant.host, normalized));
+		if (matched.length === 0) return false;
+		if (matched.some((grant) => grant.injection.kind !== "none")) return false;
+		return matched.some((grant) => grant.tunnel === true);
 	}
 
 	resolve(request: RequestDescriptor): GrantDecision {

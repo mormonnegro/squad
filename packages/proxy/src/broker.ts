@@ -1,6 +1,6 @@
 import http from "node:http";
 import https from "node:https";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 import tls from "node:tls";
 import type { CertificateAuthority } from "./ca.ts";
 import { pushRefusal, readPushHead, refMatches } from "./git.ts";
@@ -16,7 +16,17 @@ export interface AuditEntry {
 	/** Normalized path with the query string removed, so injected query credentials never land here. */
 	readonly path: string;
 	readonly outcome: "allowed" | "denied" | "error";
-	readonly reason?: DenyReason | "unauthenticated" | "missing_secret" | "upstream_error";
+	/**
+	 * Why, when there is a why. `tunnelled` is the one that is not a complaint: it says this line is
+	 * the whole of what was seen, because the operator asked for that host to be piped rather than
+	 * opened, and there is no path to write down.
+	 */
+	readonly reason?:
+		| DenyReason
+		| "unauthenticated"
+		| "missing_secret"
+		| "upstream_error"
+		| "tunnelled";
 	readonly grantId?: string | undefined;
 	readonly status?: number | undefined;
 	/** The refs a push was for, read off its body, which is the line worth having when it went wrong. */
@@ -189,6 +199,36 @@ export class EgressBroker {
 				reason: "no_matching_host",
 			});
 			socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+			return;
+		}
+
+		/*
+		 * A host the operator asked to be tunnelled rather than opened.
+		 *
+		 * The grant was checked above like any other, and the opening is audited like any other. What
+		 * changes is everything after the 200: the bytes are the browser's own TLS, end to end, and
+		 * this proxy is a pipe. Nothing can be injected on a pipe and nothing can be read off one,
+		 * which is the whole cost — and the reason it is asked for host by host rather than assumed.
+		 */
+		const straight = grants.tunnels(normalizedHost);
+		if (straight) {
+			this.audit({
+				at: new Date().toISOString(),
+				agentId,
+				host: normalizedHost,
+				method: "CONNECT",
+				path: "/",
+				outcome: "allowed",
+				reason: "tunnelled",
+			});
+			const upstream = net.connect(port, normalizedHost, () => {
+				socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+				if (head.length > 0) upstream.write(head);
+				socket.pipe(upstream);
+				upstream.pipe(socket);
+			});
+			upstream.on("error", () => socket.destroy());
+			socket.on("error", () => upstream.destroy());
 			return;
 		}
 

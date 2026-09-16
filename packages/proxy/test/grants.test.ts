@@ -200,3 +200,57 @@ describe("a grant on every host", () => {
 		expect(decision.allow && decision.grant.id).toBe("docs");
 	});
 });
+
+/*
+ * A host that is piped rather than opened.
+ *
+ * Everything else here goes through a certificate this plane issues, which is what makes an audit
+ * line and an injected credential possible — and is also what a browser cannot survive on some of
+ * the web: the handshake a site sees is then the proxy's while the user agent says a browser, and
+ * the systems that decide whether a connection is a person compare exactly those two things.
+ */
+describe("hosts that are tunnelled rather than read", () => {
+	const set = (...grants: Grant[]) => new GrantSet(grants);
+	const plain = (host: string, tunnel?: boolean): Grant => ({
+		id: host,
+		host,
+		injection: { kind: "none" },
+		...(tunnel === undefined ? {} : { tunnel }),
+	});
+
+	it("is off unless the grant says so", () => {
+		expect(set(plain("example.com")).tunnels("example.com")).toBe(false);
+	});
+
+	it("is on for a host whose grant asks for it", () => {
+		expect(set(plain("example.com", true)).tunnels("example.com")).toBe(true);
+	});
+
+	it("follows a wildcard, because a site is not one host", () => {
+		// The page is on one name and the script that decides whether you are a person is on another
+		// under the same domain. Tunnelling only the first is tunnelling the half nobody measures.
+		expect(set(plain("*.example.com", true)).tunnels("www.example.com")).toBe(true);
+	});
+
+	it("is not defeated by a blanket grant that asks for nothing", () => {
+		// The rule was `every` first, and that was wrong in the only configuration anybody has: a plane
+		// with `*` open matches every host with a grant that says nothing about tunnelling, so nothing
+		// could ever be tunnelled. One grant asking is what makes a host tunnelled.
+		expect(set(plain("*"), plain("*.example.com", true)).tunnels("www.example.com")).toBe(true);
+	});
+
+	it("refuses a host that is supposed to carry a credential", () => {
+		// The one thing a pipe cannot do is have a key written onto it, and a credential that quietly
+		// stops being attached is worse than an audit line that is coarse.
+		const paid: Grant = {
+			id: "paid",
+			host: "example.com",
+			injection: { kind: "bearer", token: { ref: "KEY" } },
+		};
+		expect(set(plain("example.com", true), paid).tunnels("example.com")).toBe(false);
+	});
+
+	it("is not something a host nobody granted can ask for", () => {
+		expect(set(plain("example.com", true)).tunnels("elsewhere.com")).toBe(false);
+	});
+});

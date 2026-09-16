@@ -42,6 +42,13 @@ services:
       # plane that has not: nothing is opened either way, but a connection nobody asked for is one
       # nobody chose.
       SQUAD_RELAY: ${SQUAD_RELAY:-}
+      # Where this deployment is, as far as an agent's browser is concerned. Handed to the screen
+      # containers, which have no way of knowing: a browser whose language and clock disagree with
+      # the address it is coming from is not lying about being a browser, but it is inconsistent —
+      # and inconsistency is what the systems that refuse these connections measure. Left out, the
+      # browser keeps Chromium's own defaults, which is better than a guess about somebody's country.
+      TZ: ${TZ:-}
+      SQUAD_SCREEN_LANG: ${SQUAD_SCREEN_LANG:-}
     ports:
       # Published on the same number on both sides on purpose. These ports are written into things
       # the plane hands out — a redirect URI, the address `squad web` prints — so a container port

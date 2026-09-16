@@ -111,6 +111,26 @@ agents:
         injection:
           kind: none
 
+      # A host that is piped rather than opened, which is the one thing a grant can ask for that
+      # gives something up. Everything else goes through a certificate this plane issues for the
+      # host: the proxy reads the request, can write a credential onto it, and writes down the path
+      # it went to. That is also what a browser cannot survive on part of the web — the handshake a
+      # site sees is then the proxy's while the user agent says a browser, and the systems that
+      # decide whether a connection is a person compare exactly those two things.
+      #
+      # Marked here, host by host, because of what it costs: the audit line says the host and no
+      # path, nothing can be injected on it, and what goes down the pipe is whatever the agent puts
+      # there rather than HTTPS this plane has read. Worth it for a site an agent only browses; not
+      # worth it for anything it is given a key to.
+      #
+      # A wildcard, because a site is not one host: the page is on one name and the script that
+      # decides whether you are a person is usually on another under the same domain.
+      - id: airline
+        host: "*.aerolineas.com.ar"
+        tunnel: true
+        injection:
+          kind: none
+
     # GitHub repositories it holds, each with the branches it may push. Four words that become three
     # grants — the repository with the push scope on it, the API for reading, the API for pull
     # requests alone for writing — spent with the token in GITHUB_TOKEN, which the agent never sees.

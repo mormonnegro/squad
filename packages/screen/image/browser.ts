@@ -18,6 +18,34 @@ const PROFILE = process.env.SQUAD_SCREEN_PROFILE ?? "/home/screen/profile";
 const PROXY = `http://127.0.0.1:${process.env.SQUAD_SCREEN_PROXY_PORT ?? 7182}`;
 
 /**
+ * What the browser says it is, and where it says it is from.
+ *
+ * Not a disguise. This is a real Chromium, driven by a person's agent on their behalf, and left to
+ * itself it announces `HeadlessChrome` in its user agent and in its client hints — a word half the
+ * web treats as a reason to refuse before looking at anything else. What it is is Chromium; what it
+ * is not is a different browser, and nothing here claims to be one.
+ *
+ * The language and the time zone are the other half of the same honesty: a browser buying a flight
+ * from Buenos Aires that says `en-US` and answers in UTC is not lying about being a browser, but it
+ * is inconsistent with everything else about the connection, and inconsistency is what these systems
+ * actually measure. Both come from the deployment, because the plane cannot know where its operator
+ * is and guessing would be worse than the default.
+ */
+/**
+ * A plain list — `es-AR,es,en` — and not a weighted one.
+ *
+ * Chromium takes this string for both the header and `navigator.languages`, and given the weighted
+ * form it splits on commas and reports `es;q=0.9` as a language a person reads. Which is a stranger
+ * thing for a page to find than any of what this setting is here to fix.
+ */
+const LANGUAGES = (process.env.SQUAD_SCREEN_LANG ?? "en-US,en")
+	.split(",")
+	.map((one) => one.split(";")[0]?.trim() ?? "")
+	.filter((one) => one !== "")
+	.join(",");
+const TIMEZONE = process.env.TZ ?? "";
+
+/**
  * Where the browser waits, served by this program on the operator's own door.
  *
  * Loopback, which Chromium reaches directly: its proxy bypasses localhost, so this one page is the
@@ -157,6 +185,8 @@ export class Browser {
 				// disguise — the browser is one — but the operator signing in here is a person, and a
 				// login refused for automation is refused to them.
 				"--disable-blink-features=AutomationControlled",
+				`--lang=${LANGUAGES.split(",")[0]}`,
+				`--accept-lang=${LANGUAGES}`,
 				// A page of our own rather than `about:blank`, which is a white rectangle the size of a
 				// browser — and a white rectangle is what a page that failed to load looks like. It was
 				// the first thing anybody saw of a screen they had just turned on.
@@ -312,6 +342,65 @@ export class Browser {
 			{ ...VIEWPORT, deviceScaleFactor: 1, mobile: false },
 			sessionId,
 		);
+		await this.#presentAs(sessionId);
+	}
+
+	/**
+	 * Says what this browser is, per tab, because that is the only place it can be said.
+	 *
+	 * Per session rather than once at launch: `--user-agent` reaches `navigator.userAgent` and leaves
+	 * the client hints — `Sec-CH-UA` — saying `HeadlessChrome` underneath, which is worse than saying
+	 * it in one place, because a header and a script disagreeing is itself the signal. So both are set
+	 * together, here, for every tab as it is attached.
+	 *
+	 * The version comes off the browser rather than out of a constant, so this keeps telling the truth
+	 * through an image rebuild that moves Chromium.
+	 */
+	async #presentAs(sessionId: string): Promise<void> {
+		const cdp = this.#need();
+		const { result } = await cdp
+			.send<{ result: { value?: string } }>(
+				"Runtime.evaluate",
+				{ expression: "navigator.userAgent", returnByValue: true },
+				sessionId,
+			)
+			.catch(() => ({ result: { value: undefined } }));
+		const said = result.value ?? "";
+		// The one word that is not true of this browser: it is Chromium, and it is headless, and only
+		// the first of those is something a website is entitled to refuse.
+		const userAgent = said.replace("HeadlessChrome/", "Chrome/");
+		const version = /Chrome\/(\d+)/.exec(userAgent)?.[1] ?? "";
+
+		await cdp
+			.send(
+				"Network.setUserAgentOverride",
+				{
+					userAgent,
+					acceptLanguage: LANGUAGES,
+					userAgentMetadata: {
+						// Chromium, which is what it is. The brand list a headless build ships says
+						// HeadlessChrome beside it, and that is the entry being dropped rather than replaced.
+						brands: [
+							{ brand: "Chromium", version },
+							{ brand: "Not_A Brand", version: "24" },
+						],
+						fullVersion: version,
+						platform: "Linux",
+						platformVersion: "",
+						architecture: "x86",
+						model: "",
+						mobile: false,
+					},
+				},
+				sessionId,
+			)
+			.catch(() => undefined);
+
+		if (TIMEZONE !== "") {
+			await cdp
+				.send("Emulation.setTimezoneOverride", { timezoneId: TIMEZONE }, sessionId)
+				.catch(() => undefined);
+		}
 	}
 
 	/** Watches a tab: the picture, the address bar, and wherever the operator's own clicks land. */

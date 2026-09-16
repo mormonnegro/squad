@@ -126,6 +126,10 @@ export interface ScreenSpec {
 	readonly caCertHostPath: string;
 	readonly memoryBytes?: number;
 	readonly nanoCpus?: number;
+	/** What the browser says it reads, e.g. `es-AR,es;q=0.9,en;q=0.8`. The plane's, not a guess. */
+	readonly lang?: string;
+	/** What clock it keeps, e.g. `America/Argentina/Buenos_Aires`. */
+	readonly timezone?: string;
 }
 
 /**
@@ -144,6 +148,17 @@ export function buildScreenEnv(spec: ScreenSpec): string[] {
 		// Read by our own forwarder rather than by anything that speaks HTTP here: the credential is
 		// in this URL, and what it is for is being written onto requests Chromium makes without it.
 		SQUAD_EGRESS_PROXY: spec.proxyUrl,
+		/*
+		 * Where the operator is, as far as the browser is concerned.
+		 *
+		 * Passed through from the plane rather than decided here, because nothing in a container knows
+		 * what time zone its operator keeps or what language they buy things in — and a browser whose
+		 * language and clock disagree with the address it is coming from is not lying about being a
+		 * browser, but it is inconsistent, and inconsistency is what the systems that refuse these
+		 * connections actually measure.
+		 */
+		...(spec.lang === undefined ? {} : { SQUAD_SCREEN_LANG: spec.lang }),
+		...(spec.timezone === undefined ? {} : { TZ: spec.timezone }),
 		// For the screen server itself, which fetches nothing off the machine but is a Node process in
 		// a container with no route out, and would otherwise hang rather than fail if it ever tried.
 		HTTP_PROXY: spec.proxyUrl,

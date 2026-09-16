@@ -3692,7 +3692,16 @@ export class ControlPlane {
 				this.#buildScreenImage(agentId);
 				return;
 			}
-			await this.screens.create({ agentId, proxyUrl, caCertHostPath: this.caCertPath });
+			await this.screens.create({
+				agentId,
+				proxyUrl,
+				caCertHostPath: this.caCertPath,
+				// Handed down from this process's own environment, which is where a deployment says where
+				// it is: compose passes TZ and SQUAD_SCREEN_LANG through, and an install that says neither
+				// gets a browser with Chromium's own defaults rather than a guess about its operator.
+				...(process.env.SQUAD_SCREEN_LANG ? { lang: process.env.SQUAD_SCREEN_LANG } : {}),
+				...(process.env.TZ ? { timezone: process.env.TZ } : {}),
+			});
 		}
 		await this.screens.start(agentId);
 		await this.#served.open(agentId, SCREEN_VIEW_PORT);
