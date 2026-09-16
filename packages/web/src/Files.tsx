@@ -7,10 +7,14 @@ import {
 	File,
 	FileText,
 	Folder,
+	FolderOpen,
 	Image,
 	LayoutGrid,
 	List,
+	MoreVertical,
+	Pencil,
 	RefreshCw,
+	Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
@@ -18,9 +22,11 @@ import { BoxIs, useBox } from "./box.tsx";
 import { bytesOf, decode } from "./bytes.ts";
 import { coloured } from "./code.tsx";
 import { nameOf } from "./face.ts";
+import { Modal } from "./Modal.tsx";
 import { Markdown } from "./markdown.tsx";
 import type { FileEntry, Listing, Plane } from "./plane.ts";
 import { Spin } from "./spin.tsx";
+import { Menu, MenuContent, MenuGroup, MenuItem, MenuSeparator, MenuTrigger } from "./ui/menu.tsx";
 
 /**
  * What an agent has in its box, as a place rather than as a command.
@@ -127,6 +133,9 @@ export function Files({
 	const [drops, setDrops] = useState<readonly Drop[]>([]);
 	const [dragging, setDragging] = useState(false);
 	const [saving, setSaving] = useState(false);
+	/** The one that has been asked about but not yet deleted, and where it is. */
+	const [asked, setAsked] = useState<{ entry: FileEntry; at: string } | undefined>();
+	const [going, setGoing] = useState(false);
 	const picker = useRef<HTMLInputElement>(null);
 	/**
 	 * How deep the drag is.
@@ -233,6 +242,48 @@ export function Files({
 			}
 		},
 		[plane, agent.id],
+	);
+
+	/**
+	 * A new name for one of them, said to be taken or not.
+	 *
+	 * The folder is asked again rather than patched here: a rename inside a box that is being written
+	 * to can land beside a file that appeared while the name was being typed, and a listing edited on
+	 * this side would be a listing that is right about one row and stale about the rest.
+	 */
+	const rename = useCallback(
+		async (from: string, to: string): Promise<boolean> => {
+			const at = where === "" ? from : `${where}/${from}`;
+			const onto = where === "" ? to : `${where}/${to}`;
+			try {
+				await plane.moveFile(agent.id, at, onto);
+				setWhy(undefined);
+				await look(false);
+				return true;
+			} catch (error) {
+				setWhy((error as Error).message);
+				return false;
+			}
+		},
+		[plane, agent.id, where, look],
+	);
+
+	const remove = useCallback(
+		async (at: string): Promise<void> => {
+			setGoing(true);
+			try {
+				await plane.removeFile(agent.id, at);
+				setWhy(undefined);
+				setAsked(undefined);
+				await look(false);
+			} catch (error) {
+				setWhy((error as Error).message);
+				setAsked(undefined);
+			} finally {
+				setGoing(false);
+			}
+		},
+		[plane, agent.id, look],
 	);
 
 	const landed = drops.filter((one) => one.why === undefined && one.sent >= one.size);
@@ -395,6 +446,7 @@ export function Files({
 						</BoxIs>
 					) : listing?.kind === "dir" ? (
 						<Inside
+							key={where}
 							listing={listing}
 							where={where}
 							dots={dots}
@@ -402,9 +454,22 @@ export function Files({
 							onDots={() => setDots(!dots)}
 							onWhere={onWhere}
 							onLeave={() => picker.current?.click()}
+							onRename={rename}
+							onDelete={(entry, at) => setAsked({ entry, at })}
+							onSave={(entry, at) => void save(at, entry.name)}
 						/>
 					) : null}
 				</div>
+
+				{asked !== undefined && (
+					<Sure
+						entry={asked.entry}
+						at={asked.at}
+						going={going}
+						onSure={() => void remove(asked.at)}
+						onNever={() => setAsked(undefined)}
+					/>
+				)}
 
 				{dragging && (
 					<div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center bg-ground/70">
@@ -418,6 +483,67 @@ export function Files({
 				)}
 			</div>
 		</>
+	);
+}
+
+/**
+ * The one question asked before anything is thrown away, answered by one key.
+ *
+ * Modal, and the answer is Enter: a delete that is confirmed by finding a small red word somewhere
+ * on a screen is a delete that gets confirmed by accident. Nobody is asked to type the name back —
+ * that teaches a person to copy it out of the sentence above the box, which proves nothing about
+ * whether they meant it.
+ *
+ * What it says is what is true: there is no bin in that container, and a folder goes with what is
+ * under it.
+ */
+function Sure({
+	entry,
+	at,
+	going,
+	onSure,
+	onNever,
+}: {
+	entry: FileEntry;
+	at: string;
+	going: boolean;
+	onSure: () => void;
+	onNever: () => void;
+}) {
+	return (
+		<Modal wide title={`Delete ${entry.name}?`} onClose={onNever}>
+			<p className="text-[0.9rem] text-said">
+				{entry.kind === "dir" ? (
+					<>
+						<code>~/{at}</code> goes, and everything in it with it.
+					</>
+				) : (
+					<>
+						<code>~/{at}</code> — {sized(entry.size)}, last changed {when(entry.changedAt)}.
+					</>
+				)}{" "}
+				There is no bin in there to take it back out of.
+			</p>
+			<div className="mt-4 flex items-center gap-2">
+				{/* Focused on purpose: the key that answers a modal is Enter, and this is the answer. */}
+				<button
+					type="button"
+					className="pill"
+					data-no="true"
+					disabled={going}
+					// biome-ignore lint/a11y/noAutofocus: a question with one key has to have the key land on it
+					autoFocus
+					onClick={onSure}
+				>
+					{going ? <Spin /> : <Trash2 className="size-3.5" />}
+					delete it
+				</button>
+				<button type="button" className="pill" disabled={going} onClick={onNever}>
+					keep it
+				</button>
+				<span className="text-[0.78rem] text-muted">↩ deletes · esc keeps it</span>
+			</div>
+		</Modal>
 	);
 }
 
@@ -457,6 +583,20 @@ function Crumbs({ where, onWhere }: { where: string; onWhere: (path: string) => 
 	);
 }
 
+/**
+ * What can be done to one of the things in a folder.
+ *
+ * Handed down as one object rather than as four props for the reason a menu is one menu: each of
+ * these is offered in three places — the menu, a key, and the pointer — and a screen where a key
+ * does one of them and the menu does the others is a screen with two answers to one question.
+ */
+interface Doing {
+	readonly open: (entry: FileEntry) => void;
+	readonly rename: (entry: FileEntry) => void;
+	readonly remove: (entry: FileEntry) => void;
+	readonly save: (entry: FileEntry) => void;
+}
+
 /** What is in a folder, drawn in whichever shape was asked for, and what to say when there is none. */
 function Inside({
 	listing,
@@ -466,6 +606,9 @@ function Inside({
 	onDots,
 	onWhere,
 	onLeave,
+	onRename,
+	onDelete,
+	onSave,
 }: {
 	listing: Extract<Listing, { kind: "dir" }>;
 	where: string;
@@ -474,21 +617,85 @@ function Inside({
 	onDots: () => void;
 	onWhere: (path: string) => void;
 	onLeave: () => void;
+	/** Whether the new name took, so the thing that now has it can be the one that is lit. */
+	onRename: (from: string, to: string) => Promise<boolean>;
+	onDelete: (entry: FileEntry, at: string) => void;
+	onSave: (entry: FileEntry, at: string) => void;
 }) {
 	const shown = listing.entries.filter((one) => dots || !one.name.startsWith("."));
 	/** How many names in here start with a dot, whether they are being shown or not. */
 	const dotted = listing.entries.filter((one) => one.name.startsWith(".")).length;
 	/** The folder holding this one, or nothing at the top of the box, where there is no up. */
 	const up = where === "" ? undefined : folderOf(where);
-	const open = (name: string): void => onWhere(where === "" ? name : `${where}/${name}`);
+	/** The one that is lit, and the one being given a new name. Both are a name in this folder. */
+	const [picked, setPicked] = useState<string | undefined>();
+	const [renaming, setRenaming] = useState<string | undefined>();
+	const tiles = view === "tiles";
+
+	const pathOf = (name: string): string => (where === "" ? name : `${where}/${name}`);
+	const doing: Doing = {
+		open: (entry) => onWhere(pathOf(entry.name)),
+		rename: (entry) => setRenaming(entry.name),
+		remove: (entry) => onDelete(entry, pathOf(entry.name)),
+		save: (entry) => onSave(entry, pathOf(entry.name)),
+	};
 
 	return (
 		<div className="flex flex-col">
-			{view === "tiles" ? (
-				<Tiles shown={shown} up={up} onWhere={onWhere} onOpen={open} />
-			) : (
-				<Rows shown={shown} up={up} onWhere={onWhere} onOpen={open} />
-			)}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: the keys walk what is inside it, which is what has the focus */}
+			<div
+				className={tiles ? "tiles" : "-mx-2 flex flex-col"}
+				onKeyDown={walk}
+				// The ground between the things is a place to let go of the one that is picked, which is
+				// what clicking the wallpaper does on every desktop there has ever been.
+				onClick={(event) => {
+					if (event.target === event.currentTarget) setPicked(undefined);
+				}}
+			>
+				{up !== undefined && (
+					// Walked with the arrows like everything else in here, and opened by the same key: it
+					// is the first thing in the folder in every file manager, not a control beside it.
+					<button
+						type="button"
+						data-item
+						className="tile"
+						data-as={tiles ? "tile" : "row"}
+						title="the folder this one is in"
+						onClick={() => onWhere(up)}
+					>
+						<CornerLeftUp
+							className={`${tiles ? "size-9" : "size-4"} text-muted`}
+							strokeWidth={tiles ? 1.25 : 2}
+						/>
+						<span className="tile-name text-muted">..</span>
+					</button>
+				)}
+				{shown.map((one) =>
+					renaming === one.name ? (
+						<Naming
+							key={one.name}
+							entry={one}
+							view={view}
+							onDone={(to) => {
+								setRenaming(undefined);
+								if (to === one.name) return;
+								void onRename(one.name, to).then((took) => {
+									if (took) setPicked(to);
+								});
+							}}
+						/>
+					) : (
+						<Thing
+							key={one.name}
+							entry={one}
+							view={view}
+							on={picked === one.name}
+							doing={doing}
+							onPick={() => setPicked(one.name)}
+						/>
+					),
+				)}
+			</div>
 
 			{shown.length === 0 && (
 				<div className="flex flex-col items-start gap-2 py-6">
@@ -530,12 +737,242 @@ function Inside({
 }
 
 /**
+ * The arrows, walking whatever is drawn.
+ *
+ * Measured off the shape on the screen rather than off the data: how many things are in a row is a
+ * fact about how wide the pane was dragged, and the browser has already worked it out. Everything
+ * on the first row shares its top, so counting those is counting the columns — which in the list is
+ * one, and makes ↑↓ the same key in both views without either of them knowing the other exists.
+ */
+function walk(event: React.KeyboardEvent<HTMLDivElement>): void {
+	const key = event.key;
+	if (key !== "ArrowRight" && key !== "ArrowLeft" && key !== "ArrowDown" && key !== "ArrowUp") {
+		return;
+	}
+	const things = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-item]"));
+	const at = things.indexOf(document.activeElement as HTMLElement);
+	if (at === -1) return;
+	event.preventDefault();
+	const first = things[0];
+	const columns =
+		first === undefined ? 1 : things.filter((one) => one.offsetTop === first.offsetTop).length;
+	const step =
+		key === "ArrowRight" ? 1 : key === "ArrowLeft" ? -1 : key === "ArrowDown" ? columns : -columns;
+	things[Math.min(things.length - 1, Math.max(0, at + step))]?.focus();
+}
+
+/**
+ * One thing in the box, and everything that can be done to it.
+ *
+ * Something that behaves like a button rather than a button, because a thing in a file manager
+ * holds a control of its own — the one that opens its menu — and a button inside a button is
+ * neither of them.
+ *
+ * Clicked once it is picked and clicked twice it opens, which is what every desktop does and what a
+ * person about to rename something expects. Where there is no pointer to hover with there is no
+ * double click either, so on a touch screen the first tap opens it.
+ */
+function Thing({
+	entry,
+	view,
+	on,
+	doing,
+	onPick,
+}: {
+	entry: FileEntry;
+	view: View;
+	on: boolean;
+	doing: Doing;
+	onPick: () => void;
+}) {
+	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
+	const tiles = view === "tiles";
+	const [menu, setMenu] = useState(false);
+
+	return (
+		// biome-ignore lint/a11y/useSemanticElements: it holds the button that opens its own menu, so it cannot be one
+		<div
+			data-item
+			role="button"
+			tabIndex={0}
+			aria-label={entry.name}
+			className="tile"
+			data-as={tiles ? "tile" : "row"}
+			data-on={on}
+			title={entry.name}
+			onFocus={onPick}
+			onClick={() => {
+				// A screen with no pointer has no second click to wait for.
+				if (window.matchMedia("(hover: none)").matches) doing.open(entry);
+				else onPick();
+			}}
+			onDoubleClick={() => doing.open(entry)}
+			onContextMenu={(event) => {
+				event.preventDefault();
+				onPick();
+				setMenu(true);
+			}}
+			onKeyDown={(event) => {
+				// Backspace as well as Delete, because half the keyboards this is read on call the one
+				// key by the other name. Both of them ask before anything goes.
+				if (event.key === "Enter") doing.open(entry);
+				else if (event.key === "F2") doing.rename(entry);
+				else if (event.key === "Delete" || event.key === "Backspace") doing.remove(entry);
+				else if (event.key === "Escape") event.currentTarget.blur();
+				else return;
+				event.preventDefault();
+			}}
+		>
+			<Glyph
+				className={`${tiles ? "size-9" : "size-4"} ${entry.kind === "dir" ? "text-here" : "text-muted"}`}
+				strokeWidth={tiles ? 1.25 : 2}
+			/>
+			<span className="tile-name">
+				{entry.name}
+				{entry.link === true && <span className="text-muted"> →</span>}
+			</span>
+			{!tiles && (
+				<>
+					<span className="w-20 text-right font-mono text-[0.78rem] text-muted tabular-nums">
+						{entry.kind === "dir" ? "" : sized(entry.size)}
+					</span>
+					<span className="hidden w-24 text-right text-[0.78rem] text-muted sm:block">
+						{when(entry.changedAt)}
+					</span>
+				</>
+			)}
+
+			{/* The door a mouse finds without being told about the right button, and the same menu. */}
+			<Menu open={menu} onOpenChange={setMenu}>
+				<MenuTrigger asChild>
+					<button
+						type="button"
+						className="tile-more"
+						title={`what can be done to ${entry.name}`}
+						onClick={(event) => event.stopPropagation()}
+						onDoubleClick={(event) => event.stopPropagation()}
+					>
+						<MoreVertical className="size-3.5" />
+					</button>
+				</MenuTrigger>
+				<MenuContent align="end" collisionPadding={8} className="min-w-[13rem]">
+					<MenuGroup>
+						<MenuItem onSelect={() => doing.open(entry)}>
+							{entry.kind === "dir" ? (
+								<FolderOpen className="size-4 flex-none text-muted" />
+							) : (
+								<FileText className="size-4 flex-none text-muted" />
+							)}
+							{entry.kind === "dir" ? "Open" : "Read it"}
+							<Says says="↩" />
+						</MenuItem>
+						<MenuItem onSelect={() => doing.rename(entry)}>
+							<Pencil className="size-4 flex-none text-muted" />
+							Rename
+							<Says says="F2" />
+						</MenuItem>
+						{entry.kind === "file" && (
+							<MenuItem onSelect={() => doing.save(entry)}>
+								<Download className="size-4 flex-none text-muted" />
+								Save it
+							</MenuItem>
+						)}
+					</MenuGroup>
+					<MenuSeparator />
+					<MenuGroup>
+						<MenuItem
+							className="text-bad data-[highlighted]:text-bad"
+							onSelect={() => doing.remove(entry)}
+						>
+							<Trash2 className="size-4 flex-none" />
+							Delete
+							<Says says="⌫" />
+						</MenuItem>
+					</MenuGroup>
+				</MenuContent>
+			</Menu>
+		</div>
+	);
+}
+
+/** The key that does the same thing as the row it is on, said where a desktop says it. */
+function Says({ says }: { says: string }) {
+	return <span className="ml-auto pl-4 font-mono text-[0.75rem] text-muted">{says}</span>;
+}
+
+/**
+ * The name, changed where it is read.
+ *
+ * In place rather than in a dialog, because a rename is done to the thing on the screen and a box
+ * in the middle of the window is done to an abstraction. The stem is selected and the extension is
+ * not, for the reason every file manager does that: `.png` is not the part being changed, and a
+ * name typed over one is a file the browser has stopped knowing what to do with.
+ */
+function Naming({
+	entry,
+	view,
+	onDone,
+}: {
+	entry: FileEntry;
+	view: View;
+	onDone: (to: string) => void;
+}) {
+	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
+	const tiles = view === "tiles";
+	const [text, setText] = useState(entry.name);
+	const box = useRef<HTMLInputElement>(null);
+	/** Enter takes this off the screen, and the blur on the way out would answer the same twice. */
+	const said = useRef(false);
+
+	useEffect(() => {
+		const input = box.current;
+		if (input === null) return;
+		input.focus();
+		const dot = entry.name.lastIndexOf(".");
+		input.setSelectionRange(0, dot > 0 ? dot : entry.name.length);
+	}, [entry.name]);
+
+	const done = (to: string): void => {
+		if (said.current) return;
+		said.current = true;
+		onDone(to.trim() === "" ? entry.name : to.trim());
+	};
+
+	return (
+		<div className="tile" data-as={tiles ? "tile" : "row"} data-on="true">
+			<Glyph
+				className={`${tiles ? "size-9" : "size-4"} ${entry.kind === "dir" ? "text-here" : "text-muted"}`}
+				strokeWidth={tiles ? 1.25 : 2}
+			/>
+			<input
+				ref={box}
+				className="tile-name naming"
+				value={text}
+				spellCheck={false}
+				autoComplete="off"
+				onChange={(event) => setText(event.target.value)}
+				onBlur={() => done(text)}
+				onKeyDown={(event) => {
+					// Kept off the things behind it, which walk on the arrows and delete on backspace —
+					// both of which are what a caret in a box is for.
+					event.stopPropagation();
+					if (event.key === "Enter") done(text);
+					else if (event.key === "Escape") done(entry.name);
+					else return;
+					event.preventDefault();
+				}}
+			/>
+		</div>
+	);
+}
+
+/**
  * The names that start with a dot, said and switched in the same words.
  *
- * This used to be a pill up in the toolbar beside the places, which is where a setting goes and this
- * is not one: it is a fact about the folder you are looking at — there are two more things in here —
- * and the way to see them is to press the sentence that says so. One control fewer over every folder
- * in the box, and the count is in the line that was already going to be printed.
+ * This used to be a pill up in the toolbar beside the places, which is where a setting goes and
+ * this is not one: it is a fact about the folder you are looking at — there are two more things in
+ * here — and the way to see them is to press the sentence that says so. One control fewer over
+ * every folder in the box, and the count is in a line that was going to be printed anyway.
  */
 function Dotted({ count, dots, onDots }: { count: number; dots: boolean; onDots: () => void }) {
 	return (
@@ -545,122 +982,6 @@ function Dotted({ count, dots, onDots }: { count: number; dots: boolean; onDots:
 			onClick={onDots}
 		>
 			{dots ? `${count} starting with a dot, shown.` : `${count} more starting with a dot.`}
-		</button>
-	);
-}
-
-/**
- * The folder as a desktop: what is in it, each one an icon with its name under it.
- *
- * Folders before files, which is the order the plane already answers in and the one every file
- * manager sorts in — and nothing said about it, because a folder is drawn as a folder and that is
- * the whole of what a heading over them would have added. No size and no date either: this view is
- * for finding the one you meant, and the list beside it is for comparing them.
- */
-function Tiles({
-	shown,
-	up,
-	onWhere,
-	onOpen,
-}: {
-	shown: readonly FileEntry[];
-	up: string | undefined;
-	onWhere: (path: string) => void;
-	onOpen: (name: string) => void;
-}) {
-	return (
-		<div className="tiles">
-			{up !== undefined && (
-				<button
-					type="button"
-					className="tile"
-					title="the folder this one is in"
-					onClick={() => onWhere(up)}
-				>
-					<CornerLeftUp className="size-9 text-muted" strokeWidth={1.25} />
-					<span className="tile-name text-muted">..</span>
-				</button>
-			)}
-			{shown.map((one) => (
-				<Tile key={one.name} entry={one} onOpen={() => onOpen(one.name)} />
-			))}
-		</div>
-	);
-}
-
-/** One thing in the box: what it is, and what it is called. */
-function Tile({ entry, onOpen }: { entry: FileEntry; onOpen: () => void }) {
-	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
-	return (
-		// The whole name under the pointer, because two lines of tile is not always the whole of it.
-		<button type="button" className="tile" title={entry.name} onClick={onOpen}>
-			{/* Drawn light and large: at this size a hairline glyph is the icon, not a diagram of one. */}
-			<Glyph
-				className={`size-9 ${entry.kind === "dir" ? "text-here" : "text-muted"}`}
-				strokeWidth={1.25}
-			/>
-			<span className="tile-name">
-				{entry.name}
-				{entry.link === true && <span className="text-muted"> →</span>}
-			</span>
-		</button>
-	);
-}
-
-/** The same folder as a column, for when the sizes and the dates are the thing being compared. */
-function Rows({
-	shown,
-	up,
-	onWhere,
-	onOpen,
-}: {
-	shown: readonly FileEntry[];
-	up: string | undefined;
-	onWhere: (path: string) => void;
-	onOpen: (name: string) => void;
-}) {
-	return (
-		// The padding hangs outside the column, so a row's glyph starts on the same left edge as the
-		// path above it and the tiles the other view draws.
-		<div className="-mx-2.5 flex flex-col">
-			{up !== undefined && (
-				<button
-					type="button"
-					className="flex items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-muted hover:bg-white/5"
-					onClick={() => onWhere(up)}
-				>
-					<CornerLeftUp className="size-4" />
-					<span className="flex-1 font-mono text-[0.88rem]">..</span>
-				</button>
-			)}
-
-			{shown.map((one) => (
-				<Row key={one.name} entry={one} onOpen={() => onOpen(one.name)} />
-			))}
-		</div>
-	);
-}
-
-function Row({ entry, onOpen }: { entry: FileEntry; onOpen: () => void }) {
-	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
-	return (
-		<button
-			type="button"
-			className="flex items-center gap-3 rounded-md px-2.5 py-1.5 text-left hover:bg-white/5"
-			onClick={onOpen}
-		>
-			<Glyph className={`size-4 ${entry.kind === "dir" ? "text-here" : "text-muted"}`} />
-			<span className="flex-1 truncate font-mono text-[0.88rem]">
-				{entry.name}
-				{entry.kind === "dir" && "/"}
-				{entry.link === true && <span className="text-muted"> →</span>}
-			</span>
-			<span className="w-20 text-right font-mono text-[0.78rem] text-muted tabular-nums">
-				{entry.kind === "dir" ? "" : sized(entry.size)}
-			</span>
-			<span className="hidden w-24 text-right text-[0.78rem] text-muted sm:block">
-				{when(entry.changedAt)}
-			</span>
 		</button>
 	);
 }

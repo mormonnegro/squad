@@ -557,6 +557,23 @@ export class Plane {
 		return { size: wrote?.size ?? 0, done: wrote?.done ?? last };
 	}
 
+	/**
+	 * Gives one of its files another name, which is also how one is moved: `to` is a path in the
+	 * same box.
+	 *
+	 * Nothing is written over. A name that is already taken comes back as a refusal in those words,
+	 * because the reason anybody renames a file is that they are looking at the folder it is in.
+	 */
+	async moveFile(agentId: string, at: string, to: string): Promise<string> {
+		const answer = await this.#ask({ op: "move-file", agentId, at, to });
+		return (answer.moved as { at?: string } | undefined)?.at ?? to;
+	}
+
+	/** Deletes one of its files, or a folder and everything under it. It does not come back. */
+	async removeFile(agentId: string, at: string): Promise<void> {
+		await this.#ask({ op: "remove-file", agentId, at });
+	}
+
 	async create(agentId: string): Promise<AgentSummary> {
 		const answer = await this.#ask({ op: "create", agentId });
 		return answer.agent as AgentSummary;

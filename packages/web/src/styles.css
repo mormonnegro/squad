@@ -2735,7 +2735,7 @@ pre .md-path:hover {
 	opacity: 0.5;
 }
 
-/* ── what is in the box, as tiles rather than as rows ────────────────── */
+/* ── what is in the box, and what can be done to it ──────────────────── */
 
 /*
  * A folder drawn the way a desktop draws one: the icon, and its name under it.
@@ -2761,8 +2761,13 @@ pre .md-path:hover {
  * Nothing is drawn until the pointer is on it — a card behind every name would put sixty ruled
  * rectangles on a screen whose whole content is twelve words. The shape that appears under the
  * cursor is what says this one is the one, the way it does on a desktop.
+ *
+ * The same class in both views, with `data-as` turning it on its side: what is picked, what has
+ * focus, and where the menu hangs are one set of rules either way, and a tile that behaved one way
+ * in a grid and another in a list would be two things a person has to learn.
  */
 .tile {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -2772,13 +2777,39 @@ pre .md-path:hover {
 	border-radius: 8px;
 	background: transparent;
 	text-align: center;
+	cursor: default;
 	transition-property: background, scale;
 	transition-duration: 0.12s, 150ms;
 	transition-timing-function: ease, ease-out;
 }
 
+/* On its side: the same thing as a row of a list, with its size and its date in columns. */
+.tile[data-as="row"] {
+	flex-direction: row;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.35rem 0.5rem;
+	border-radius: 6px;
+	text-align: left;
+}
+
 .tile:hover {
 	background: #ffffff0a;
+}
+
+/*
+ * The one that is picked, which is the one the keys are about.
+ *
+ * The accent rather than another grey: a selection has to be visible from across the pane, and
+ * "which one is lit" is the question every key on this screen is answered against.
+ */
+.tile[data-on="true"] {
+	background: color-mix(in srgb, var(--cyan) 14%, transparent);
+}
+
+.tile:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 70%, transparent);
 }
 
 /*
@@ -2801,7 +2832,78 @@ pre .md-path:hover {
 	overflow: hidden;
 }
 
-.tile:hover .tile-name {
+/* In a row it takes the width and ends in an ellipsis: the columns beside it are the point. */
+.tile[data-as="row"] .tile-name {
+	flex: 1;
+	width: auto;
+	display: block;
+	font-size: 0.88rem;
+	text-align: left;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.tile:hover .tile-name,
+.tile[data-on="true"] .tile-name {
+	color: var(--text-strong);
+}
+
+/*
+ * The name while it is being changed, in the place where it is read.
+ *
+ * The same box as the name it replaces, ruled in the accent so it is obvious which one is open: a
+ * rename that looks like the rest of the screen is a rename people type into the wrong thing.
+ */
+.naming {
+	display: block;
+	border-radius: 4px;
+	padding: 0.05rem 0.25rem;
+	background: var(--bg-code);
+	color: var(--text-strong);
+	text-align: center;
+	outline: 1px solid color-mix(in srgb, var(--cyan) 70%, transparent);
+	white-space: nowrap;
+}
+
+.tile[data-as="row"] .naming {
+	text-align: left;
+}
+
+/*
+ * The door to what can be done to this one, for whoever does not think to press the right button.
+ *
+ * Quiet until the thing is under the pointer or picked, which is the rule every file manager and
+ * every mail client uses for the same control: a column of these showing at rest would be a column
+ * of small dark marks down a screen that is meant to read as names.
+ */
+.tile-more {
+	position: absolute;
+	top: 0.2rem;
+	right: 0.2rem;
+	display: flex;
+	padding: 0.25rem;
+	border-radius: 6px;
+	color: var(--muted);
+	opacity: 0;
+	transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+/* In a row it is the last column rather than a corner, and it keeps its place whether it shows or not. */
+.tile[data-as="row"] .tile-more {
+	position: static;
+	flex: none;
+}
+
+.tile:hover .tile-more,
+.tile[data-on="true"] .tile-more,
+.tile:focus-within .tile-more,
+.tile-more[data-state="open"] {
+	opacity: 1;
+}
+
+.tile-more:hover,
+.tile-more[data-state="open"] {
+	background: #ffffff12;
 	color: var(--text-strong);
 }
 
