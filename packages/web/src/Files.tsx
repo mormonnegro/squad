@@ -8,9 +8,11 @@ import {
 	FileText,
 	Folder,
 	Image,
+	LayoutGrid,
+	List,
 	RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { BoxIs, useBox } from "./box.tsx";
 import { bytesOf, decode } from "./bytes.ts";
@@ -62,6 +64,36 @@ const UP_CHUNK = 128 * 1024;
 /** How often an open folder is asked for again. It is being written to while it is being read. */
 const LOOK_MS = 5_000;
 
+/**
+ * Which shape a folder is drawn in, and where the answer is kept.
+ *
+ * Tiles first, because a box is looked at rather than read: what is in here is a handful of projects
+ * and the odd screenshot, and the question is almost always which one rather than how big. The list
+ * is the other view every file manager has, kept for the day the sizes and the dates are the point
+ * — and remembered, because a view is a preference and nobody picks one twice.
+ */
+type View = "tiles" | "rows";
+
+const VIEW_KEY = "squad.files.view";
+
+function rememberedView(): View {
+	try {
+		return window.localStorage.getItem(VIEW_KEY) === "rows" ? "rows" : "tiles";
+	} catch {
+		// A browser with storage turned off. The view is a convenience and the screen works without
+		// having been told, so this is not worth saying anything about.
+		return "tiles";
+	}
+}
+
+function rememberView(view: View): void {
+	try {
+		window.localStorage.setItem(VIEW_KEY, view);
+	} catch {
+		// As above.
+	}
+}
+
 /** One file on its way into the box, and what became of it. */
 interface Drop {
 	readonly name: string;
@@ -90,6 +122,7 @@ export function Files({
 	const [read, setRead] = useState<Read | undefined>();
 	const [why, setWhy] = useState<string | undefined>();
 	const [dots, setDots] = useState(false);
+	const [view, setView] = useState<View>(rememberedView);
 	const [drops, setDrops] = useState<readonly Drop[]>([]);
 	const [dragging, setDragging] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -255,6 +288,24 @@ export function Files({
 							</button>
 						))}
 						<span className="flex-1" />
+						{/* The one button that says what pressing it does rather than where you are, which is
+						    how Drive and Explorer both put this: the icon is the other view. */}
+						<button
+							type="button"
+							className="pill"
+							title={view === "tiles" ? "as a list" : "as tiles"}
+							onClick={() => {
+								const next = view === "tiles" ? "rows" : "tiles";
+								setView(next);
+								rememberView(next);
+							}}
+						>
+							{view === "tiles" ? (
+								<List className="size-3.5" />
+							) : (
+								<LayoutGrid className="size-3.5" />
+							)}
+						</button>
 						<button
 							type="button"
 							className="pill"
@@ -357,10 +408,11 @@ export function Files({
 							/>
 						</BoxIs>
 					) : listing?.kind === "dir" ? (
-						<Rows
+						<Inside
 							listing={listing}
 							where={where}
 							dots={dots}
+							view={view}
 							onWhere={onWhere}
 							onLeave={() => picker.current?.click()}
 						/>
@@ -418,46 +470,38 @@ function Crumbs({ where, onWhere }: { where: string; onWhere: (path: string) => 
 	);
 }
 
-/** What is in a folder: the rows, and what to say when there are none. */
-function Rows({
+/** What is in a folder, drawn in whichever shape was asked for, and what to say when there is none. */
+function Inside({
 	listing,
 	where,
 	dots,
+	view,
 	onWhere,
 	onLeave,
 }: {
 	listing: Extract<Listing, { kind: "dir" }>;
 	where: string;
 	dots: boolean;
+	view: View;
 	onWhere: (path: string) => void;
 	onLeave: () => void;
 }) {
 	const shown = listing.entries.filter((one) => dots || !one.name.startsWith("."));
 	const hidden = listing.entries.length - shown.length;
+	/** The folder holding this one, or nothing at the top of the box, where there is no up. */
+	const up = where === "" ? undefined : folderOf(where);
+	const open = (name: string): void => onWhere(where === "" ? name : `${where}/${name}`);
 
 	return (
-		<div className="-mx-2.5 flex flex-col">
-			{where !== "" && (
-				<button
-					type="button"
-					className="flex items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-muted hover:bg-white/5"
-					onClick={() => onWhere(folderOf(where))}
-				>
-					<CornerLeftUp className="size-4" />
-					<span className="flex-1 font-mono text-[0.88rem]">..</span>
-				</button>
+		<div className="flex flex-col">
+			{view === "tiles" ? (
+				<Tiles shown={shown} up={up} onWhere={onWhere} onOpen={open} />
+			) : (
+				<Rows shown={shown} up={up} onWhere={onWhere} onOpen={open} />
 			)}
 
-			{shown.map((one) => (
-				<Row
-					key={one.name}
-					entry={one}
-					onOpen={() => onWhere(where === "" ? one.name : `${where}/${one.name}`)}
-				/>
-			))}
-
 			{shown.length === 0 && (
-				<div className="flex flex-col items-start gap-2 px-2.5 py-6">
+				<div className="flex flex-col items-start gap-2 py-6">
 					<p className="text-[0.9rem] text-muted">
 						{listing.entries.length === 0
 							? "Nothing in here yet."
@@ -470,7 +514,7 @@ function Rows({
 				</div>
 			)}
 
-			<div className="mt-3 flex items-center gap-3 px-2.5 text-[0.78rem] text-muted">
+			<div className="mt-3 flex items-center gap-3 text-[0.78rem] text-muted">
 				{listing.entries.length < listing.total && (
 					<span>
 						{listing.entries.length} of {listing.total} — the rest is past what a list is for.
@@ -489,6 +533,119 @@ function Rows({
 					</span>
 				)}
 			</div>
+		</div>
+	);
+}
+
+/**
+ * The folder as a shelf of things.
+ *
+ * Folders before files, under their own labels, because that is the order every file manager sorts
+ * in and the one the plane already answers in — and because in here the two are different questions:
+ * the folders are the work, the files are what was left lying beside it. The labels only go up when
+ * both are there; a heading over the only kind of thing on the screen is a heading that says nothing.
+ */
+function Tiles({
+	shown,
+	up,
+	onWhere,
+	onOpen,
+}: {
+	shown: readonly FileEntry[];
+	up: string | undefined;
+	onWhere: (path: string) => void;
+	onOpen: (name: string) => void;
+}) {
+	const folders = shown.filter((one) => one.kind === "dir");
+	const files = shown.filter((one) => one.kind !== "dir");
+	const split = folders.length > 0 && files.length > 0;
+	const groups = split
+		? [
+				{ label: "folders", entries: folders },
+				{ label: "files", entries: files },
+			]
+		: [{ label: undefined, entries: shown }];
+
+	return (
+		<div className="flex flex-col gap-2">
+			{groups.map((group, index) => (
+				<Fragment key={group.label ?? "all"}>
+					{group.label !== undefined && <div className="shelf-label">{group.label}</div>}
+					<div className="tiles">
+						{index === 0 && up !== undefined && (
+							<button
+								type="button"
+								className="tile"
+								data-up="true"
+								title="the folder this one is in"
+								onClick={() => onWhere(up)}
+							>
+								<CornerLeftUp className="size-6 text-muted" />
+								<span className="tile-name text-muted">..</span>
+								<span className="tile-fact">{up === "" ? "~" : `~/${up}`}</span>
+							</button>
+						)}
+						{group.entries.map((one) => (
+							<Tile key={one.name} entry={one} onOpen={() => onOpen(one.name)} />
+						))}
+					</div>
+				</Fragment>
+			))}
+		</div>
+	);
+}
+
+/** One thing in the box: what it is, what it is called, and what is known about it. */
+function Tile({ entry, onOpen }: { entry: FileEntry; onOpen: () => void }) {
+	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
+	return (
+		// The whole name under the pointer, because two lines of tile is not always the whole of it.
+		<button type="button" className="tile" title={entry.name} onClick={onOpen}>
+			<Glyph className={`size-6 ${entry.kind === "dir" ? "text-here" : "text-muted"}`} />
+			<span className="tile-name">
+				{entry.name}
+				{entry.kind === "dir" && "/"}
+				{entry.link === true && <span className="text-muted"> →</span>}
+			</span>
+			<span className="tile-fact">
+				{entry.kind === "dir"
+					? when(entry.changedAt)
+					: `${sized(entry.size)} · ${when(entry.changedAt)}`}
+			</span>
+		</button>
+	);
+}
+
+/** The same folder as a column, for when the sizes and the dates are the thing being compared. */
+function Rows({
+	shown,
+	up,
+	onWhere,
+	onOpen,
+}: {
+	shown: readonly FileEntry[];
+	up: string | undefined;
+	onWhere: (path: string) => void;
+	onOpen: (name: string) => void;
+}) {
+	return (
+		// The padding hangs outside the column, so a row's glyph starts on the same left edge as the
+		// path above it and the tiles the other view draws.
+		<div className="-mx-2.5 flex flex-col">
+			{up !== undefined && (
+				<button
+					type="button"
+					className="flex items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-muted hover:bg-white/5"
+					onClick={() => onWhere(up)}
+				>
+					<CornerLeftUp className="size-4" />
+					<span className="flex-1 font-mono text-[0.88rem]">..</span>
+				</button>
+			)}
+
+			{shown.map((one) => (
+				<Row key={one.name} entry={one} onOpen={() => onOpen(one.name)} />
+			))}
 		</div>
 	);
 }

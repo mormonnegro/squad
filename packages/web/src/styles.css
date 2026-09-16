@@ -2735,6 +2735,93 @@ pre .md-path:hover {
 	opacity: 0.5;
 }
 
+/* ── what is in the box, as tiles rather than as rows ────────────────── */
+
+/*
+ * A folder drawn the way every file manager a person has already used draws one.
+ *
+ * A list is the right shape for a log and the wrong one for a box of things. Three folders down the
+ * left of a pane this wide is a screen that is nine tenths empty and still asks to be read downward
+ * for a name that would have been recognised by its shape; tiles put twenty of them where six rows
+ * were, which is why Explorer, Finder and Drive all open in this view and keep the list for the day
+ * you want the sizes in a column.
+ *
+ * `auto-fill` rather than a count, because this pane is dragged: a tile is a size and the row holds
+ * as many as fit, instead of four stretched boxes in a wide window and four squeezed ones in a
+ * narrow one.
+ */
+.tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+	gap: 0.6rem;
+}
+
+/*
+ * One thing in the box: what it is, what it is called, and what is known about it.
+ *
+ * The glyph above the name rather than beside it, because that is the half of the tile the eye
+ * lands on first — a folder is told from a file across the pane without reading either. The grid
+ * stretches every tile in a row to the tallest, so the fact goes on the floor of the card: without
+ * it a one-line name and a two-line one put their sizes on different lines and the row reads ragged.
+ */
+.tile {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.45rem;
+	min-width: 0;
+	padding: 0.8rem 0.85rem;
+	border-radius: 10px;
+	background: var(--bg-raised);
+	/* A ring rather than a border, like every other card here: depth is not structure. */
+	box-shadow: var(--shadow-border);
+	text-align: left;
+	transition-property: box-shadow, background, scale;
+	transition-duration: 0.15s, 0.12s, 150ms;
+	transition-timing-function: ease-out, ease, ease-out;
+}
+
+.tile:hover {
+	box-shadow: var(--shadow-border-hover);
+	background: #ffffff05;
+}
+
+/* The way out is not a thing in the box: the same shape, with nothing filled in behind it. */
+.tile[data-up="true"] {
+	background: transparent;
+}
+
+/*
+ * The name, over two lines and no more.
+ *
+ * Long ones are the rule in here rather than the exception — what an agent saves itself is a subject
+ * and a timestamp — and a tile that grew to hold one would make every tile in its row that tall.
+ * Two lines, cut, and the whole of it under the pointer. Mono, because these are paths: the thing
+ * that tells `data-01.json` from `data-O1.json` is the font it is set in.
+ */
+.tile-name {
+	width: 100%;
+	font: 0.83rem / 1.45 var(--mono);
+	color: var(--text-strong);
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
+}
+
+/* A size and an age, in the sentence font: they are what is beside the name, not part of it. */
+.tile-fact {
+	margin-top: auto;
+	max-width: 100%;
+	font: 0.72rem var(--sans);
+	color: var(--muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
 /*
  * A control shaped like something to press, rather than like a cell.
  *
@@ -2778,6 +2865,7 @@ pre .md-path:hover {
 .box-stop:active,
 .plug:active:not(:disabled),
 .plug-row:active:not(:disabled),
+.tile:active,
 .switch:active:not(:disabled),
 .address button:active:not(:disabled),
 .pane-back:active,
