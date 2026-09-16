@@ -68,7 +68,10 @@ interface Tab {
 	readonly number: number;
 	readonly title: string;
 	readonly url: string;
+	/** The one the agent is driving. */
 	readonly here: boolean;
+	/** The one on the screen, which is the same until somebody goes to look at another. */
+	readonly seen?: boolean;
 }
 
 interface Standing {
@@ -99,6 +102,20 @@ export function Screen({ agentId }: { agentId: string }) {
 	const [width, setWidth] = useState<number | undefined>(remembered);
 	const [dragging, setDragging] = useState(false);
 	const column = useRef<HTMLElement>(null);
+	/**
+	 * Which attempt at the picture this is, and whether one has arrived.
+	 *
+	 * A stream of JPEGs in an `<img>` is a connection held open, and an `<img>` whose connection ends
+	 * does not try again: it stops, with the last frame still on the screen or with nothing at all if
+	 * none had come. Every deploy of the plane ends it, and so does the browser's container being
+	 * replaced — after which the picture is dead until somebody reloads the whole console, which is
+	 * not a thing anybody should have to know.
+	 *
+	 * The number is part of the address, so raising it asks again rather than reading a cache.
+	 */
+	const [attempt, setAttempt] = useState(0);
+	const [arrived, setArrived] = useState(false);
+	const wasReachable = useRef(true);
 	const [standing, setStanding] = useState<Standing>({ holder: "agent" });
 	const [typed, setTyped] = useState("");
 	const picture = useRef<HTMLImageElement>(null);
@@ -124,7 +141,16 @@ export function Screen({ agentId }: { agentId: string }) {
 		let reading = true;
 		const look = async () => {
 			const answer = await fetch(at("state")).catch(() => undefined);
-			if (!reading || answer === undefined || !answer.ok) return;
+			const reachable = answer !== undefined && answer.ok;
+			// The screen coming back is the moment to ask for the picture again: whatever ended that
+			// stream — a plane redeployed, a browser container replaced — ended this too, and out here
+			// it is the only signal that says so.
+			if (reading && reachable && !wasReachable.current) {
+				setArrived(false);
+				setAttempt((one) => one + 1);
+			}
+			wasReachable.current = reachable;
+			if (!reading || answer === undefined || !reachable) return;
 			const said = (await answer.json().catch(() => undefined)) as Standing | undefined;
 			if (reading && said !== undefined) setStanding(said);
 		};
@@ -379,12 +405,11 @@ export function Screen({ agentId }: { agentId: string }) {
 							<button
 								key={tab.number}
 								type="button"
-								disabled={!holding}
-								title={`${tab.title || "(untitled)"}\n${tab.url}`}
+								title={`${tab.title || "(untitled)"}\n${tab.url}${tab.here ? "\n\nthe agent is working on this one" : ""}`}
 								className={`max-w-[14rem] flex-none truncate rounded-md border px-2 py-0.5 text-[0.7rem] ${
-									tab.here
+									(tab.seen ?? tab.here)
 										? "border-line bg-raised text-say"
-										: "border-transparent text-muted hover:text-say disabled:hover:text-muted"
+										: "border-transparent text-muted hover:text-say"
 								}`}
 								onClick={() =>
 									void fetch(at("tab"), {
@@ -394,6 +419,9 @@ export function Screen({ agentId }: { agentId: string }) {
 									}).catch(() => undefined)
 								}
 							>
+								{/* A dot on the one the agent is driving, so going to look at another does not
+								    lose track of where it is working. */}
+								{tab.here && <span className="mr-1 text-up">•</span>}
 								{tab.title || tab.url.replace(/^https?:\/\//, "")}
 							</button>
 						))}
@@ -426,10 +454,18 @@ export function Screen({ agentId }: { agentId: string }) {
 					<figure className="relative m-0 max-h-full min-h-0 self-start leading-none">
 						<img
 							ref={picture}
-							// Keyed by the agent alone: changing this address restarts the stream, and a stream
-							// restarted on every render is a browser encoding a fresh keyframe forever.
-							key={agentId}
-							src={at("frames")}
+							// Keyed by the agent and the attempt and by nothing else: changing this address
+							// restarts the stream, and a stream restarted on every render is a browser
+							// encoding a fresh keyframe forever.
+							key={`${agentId}:${attempt}`}
+							src={`${at("frames")}?n=${attempt}`}
+							onLoad={() => setArrived(true)}
+							// A stream that ended is not an error anybody can do anything about, so it is not
+							// said out loud: it is asked for again, once, after a moment.
+							onError={() => {
+								setArrived(false);
+								window.setTimeout(() => setAttempt((one) => one + 1), 1_500);
+							}}
 							alt={`what ${agentId}'s browser is showing`}
 							className="max-h-full max-w-full rounded-md border border-line object-contain"
 							onMouseDown={(event) => {
@@ -448,7 +484,12 @@ export function Screen({ agentId }: { agentId: string }) {
 						{/* Along the bottom of the picture rather than across the middle of it: it is a note
 				    about the page, and the part somebody is trying to read is the one place it cannot
 				    go. Inside the figure, so it stays with the picture rather than with the column. */}
-						{!holding && (
+						{!arrived && (
+							<figcaption className="pointer-events-none absolute inset-0 flex items-center justify-center text-[0.75rem] text-muted">
+								waiting for the picture…
+							</figcaption>
+						)}
+						{arrived && !holding && (
 							<figcaption className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
 								<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
 									the agent is driving — take the keyboard to touch this page

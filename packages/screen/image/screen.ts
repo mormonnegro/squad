@@ -129,15 +129,18 @@ const view = http.createServer((request, response) => {
 			return;
 		}
 
-		/** The operator moving between tabs, which is the browser moving and so wants the keyboard. */
+		/*
+		 * The operator going to look at another tab, which needs no keyboard.
+		 *
+		 * It used to take the agent along, so it was gated behind the keyboard the way every other
+		 * thing that moves the browser is — and what that looked like from the console was a row of
+		 * tabs that would not open. Looking is not touching: this moves the picture and where the
+		 * operator's own clicks land, and the agent goes on driving the tab it was driving.
+		 */
 		if (request.method === "POST" && path === "/tab") {
-			if (keyboard.holder !== "operator") {
-				json(response, 409, { refused: refusedToOperator() });
-				return;
-			}
 			const asked = (await body(request)) as { tab?: unknown };
 			const wanted = typeof asked?.tab === "number" ? asked.tab : 0;
-			if (!(await browser.toTab(wanted))) {
+			if (!(await browser.watchTab(wanted))) {
 				json(response, 404, { refused: `There is no tab ${wanted}.` });
 				return;
 			}

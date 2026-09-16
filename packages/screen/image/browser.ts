@@ -62,6 +62,17 @@ export class Browser {
 	 * blocked you.
 	 */
 	#target = "";
+	/**
+	 * The tab being watched, which is not always the tab being driven.
+	 *
+	 * Two of them because looking is not touching. An operator who wants to see what is on the other
+	 * tab should not have to take the keyboard to look, and looking should not move the agent off the
+	 * page it is halfway through — which is the whole thing tabs were added to protect. So the
+	 * picture, the address bar and the operator's own clicks follow this one, the agent's verbs follow
+	 * the other, and the two are the same until somebody says otherwise.
+	 */
+	#seen = "";
+	#seenSession = "";
 	#frame: string | undefined;
 	/**
 	 * Everybody watching, which is more than one more often than it looks.
@@ -220,8 +231,9 @@ export class Browser {
 		cdp.on((event) => {
 			if (event.method === "Page.frameNavigated") {
 				const frame = event.params.frame as { url?: string; parentId?: string } | undefined;
-				// The top frame only. An advert in an iframe navigating is not the browser going
-				// somewhere, and an address bar that said so would be wrong most of the time.
+				// The top frame of the tab being watched. An advert in an iframe navigating is not the
+				// browser going somewhere, and neither is a tab nobody is looking at.
+				if (event.sessionId !== this.#seenSession) return;
 				if (frame?.parentId === undefined && typeof frame?.url === "string") {
 					this.#where = frame.url;
 				}
@@ -267,7 +279,9 @@ export class Browser {
 		}
 		this.#target = targetId;
 		this.#session = sessionId;
-		if (typeof url === "string" && url !== "") this.#where = url;
+		// The agent moving takes the watcher along: what somebody watching a screen wants to see is
+		// what the agent is doing, unless they have just said otherwise by going to a tab themselves.
+		await this.#see(targetId, sessionId, url);
 		await cdp.send("Page.enable", {}, sessionId);
 		await cdp.send("Runtime.enable", {}, sessionId);
 		await cdp.send(
@@ -275,7 +289,38 @@ export class Browser {
 			{ ...VIEWPORT, deviceScaleFactor: 1, mobile: false },
 			sessionId,
 		);
+	}
+
+	/** Watches a tab: the picture, the address bar, and wherever the operator's own clicks land. */
+	async #see(targetId: string, sessionId: string, url?: string): Promise<void> {
+		if (this.#seen === targetId) return;
+		const cdp = this.#need();
+		if (this.#seenSession !== "" && this.#watching.size > 0) {
+			await cdp.send("Page.stopScreencast", {}, this.#seenSession).catch(() => {});
+		}
+		this.#seen = targetId;
+		this.#seenSession = sessionId;
+		if (typeof url === "string" && url !== "") this.#where = url;
 		if (this.#watching.size > 0) await this.#cast();
+	}
+
+	/**
+	 * The operator going to a tab to look at it, which moves nothing the agent is doing.
+	 *
+	 * Its own way in rather than the agent's, and that is the point: switching used to be the same
+	 * act for both, so the console disabled it unless you held the keyboard — and what that looked
+	 * like was a row of tabs that would not open.
+	 */
+	async watchTab(number: number): Promise<boolean> {
+		const wanted = (await this.tabs())[number - 1];
+		const id = this.#knownTabs[number - 1];
+		if (wanted === undefined || id === undefined) return false;
+		const { sessionId } = await this.#need().send<{ sessionId: string }>("Target.attachToTarget", {
+			targetId: id,
+			flatten: true,
+		});
+		await this.#see(id, sessionId, wanted.url);
+		return true;
 	}
 
 	/**
@@ -284,7 +329,9 @@ export class Browser {
 	 * The title and address come from the browser rather than from anything remembered here, because
 	 * a tab that has navigated since it was opened is still that tab and is no longer that page.
 	 */
-	async tabs(): Promise<readonly { number: number; title: string; url: string; here: boolean }[]> {
+	async tabs(): Promise<
+		readonly { number: number; title: string; url: string; here: boolean; seen: boolean }[]
+	> {
 		const { targetInfos } = await this.#need().send<{
 			targetInfos: readonly { targetId: string; type: string; url?: string; title?: string }[];
 		}>("Target.getTargets");
@@ -299,7 +346,10 @@ export class Browser {
 			number: at + 1,
 			title: pages.get(id)?.title ?? "",
 			url: pages.get(id)?.url ?? "",
+			// What the agent is driving, which is what its own listing means by "here".
 			here: id === this.#target,
+			// And what is on the screen, which is the same tab until somebody goes to look at another.
+			seen: id === this.#seen,
 		}));
 	}
 
@@ -367,7 +417,7 @@ export class Browser {
 					maxHeight: VIEWPORT.height,
 					everyNthFrame: 1,
 				},
-				this.#session,
+				this.#seenSession,
 			)
 			.catch(() => undefined);
 	}
@@ -415,12 +465,12 @@ export class Browser {
 		return true;
 	}
 
-	async #press(key: string): Promise<void> {
+	async #press(key: string, session = this.#session): Promise<void> {
 		const cdp = this.#need();
 		const code = KEY_CODES[key] ?? 0;
 		const common = { key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
-		await cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...common }, this.#session);
-		await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...common }, this.#session);
+		await cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...common }, session);
+		await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...common }, session);
 	}
 
 	/** Everything the agent asked for, once the door has decided it may ask for it. */
@@ -588,7 +638,7 @@ export class Browser {
 		const { data } = await this.#need().send<{ data: string }>(
 			"Page.captureScreenshot",
 			{ format: "jpeg", quality: 70 },
-			this.#session,
+			this.#seenSession,
 		);
 		return data;
 	}
@@ -600,10 +650,14 @@ export class Browser {
 	 * JPEG of every animation frame on the page, forever, on a machine that is also running agents.
 	 */
 	watch(onFrame: (jpeg: string) => void): () => void {
-		// Started when the first viewer arrives and stopped when the last one goes, rather than on
-		// every arrival and departure: what is being turned off is a browser encoding a JPEG of every
-		// animation frame on the page, forever, on a machine that is also running agents.
-		if (this.#watching.size === 0) void this.#cast();
+		// Started on every arrival and stopped only when the last viewer goes.
+		//
+		// Asked for again rather than only when the set was empty, because "the set is not empty" is
+		// not the same as "the screencast is running": a viewer whose connection died without its
+		// close being noticed leaves a name in the set, and the next person to open the screen then
+		// gets one still frame and nothing after it. Starting twice costs a keyframe; not starting
+		// costs the feature.
+		void this.#cast();
 		this.#watching.add(onFrame);
 		return () => {
 			if (!this.#watching.delete(onFrame) || this.#watching.size > 0) return;
@@ -613,7 +667,12 @@ export class Browser {
 		};
 	}
 
-	/** The operator's mouse, in page coordinates the viewer has already scaled. */
+	/**
+	 * The operator's mouse, in page coordinates the viewer has already scaled.
+	 *
+	 * On the tab they are looking at rather than the one the agent is driving, because those can
+	 * differ now and what somebody clicks is what they can see.
+	 */
 	async pointer(type: string, x: number, y: number): Promise<void> {
 		const cdp = this.#need();
 		await cdp.send(
@@ -624,7 +683,7 @@ export class Browser {
 				y: Math.round(y),
 				...(type === "mouseMoved" ? {} : { button: "left", clickCount: 1 }),
 			},
-			this.#session,
+			this.#seenSession,
 		);
 	}
 
@@ -632,7 +691,7 @@ export class Browser {
 		await this.#need().send(
 			"Input.dispatchMouseEvent",
 			{ type: "mouseWheel", x: Math.round(x), y: Math.round(y), deltaX: 0, deltaY },
-			this.#session,
+			this.#seenSession,
 		);
 	}
 
@@ -645,9 +704,9 @@ export class Browser {
 	 */
 	async typed(key: string): Promise<void> {
 		if (key.length === 1) {
-			await this.#need().send("Input.insertText", { text: key }, this.#session);
+			await this.#need().send("Input.insertText", { text: key }, this.#seenSession);
 			return;
 		}
-		await this.#press(key);
+		await this.#press(key, this.#seenSession);
 	}
 }
