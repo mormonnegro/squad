@@ -259,6 +259,39 @@ export interface Wire {
 	door?(path: string, init?: RequestInit): Promise<unknown>;
 }
 
+/** One model a tool could use, and whether this plane holds the key that pays for it. */
+export interface ToolOffer {
+	readonly provider: string;
+	readonly model: string;
+	readonly keyEnv: string;
+	readonly held: boolean;
+	readonly rate: { readonly input: number; readonly output: number };
+	readonly using: boolean;
+}
+
+/** What is doing a job now, and everything that could. Undefined for a tool nobody turned on. */
+export interface ToolStanding {
+	readonly using:
+		| {
+				readonly provider: string;
+				readonly model: string;
+				readonly keyEnv: string;
+				readonly held: boolean;
+		  }
+		| undefined;
+	readonly offers: readonly ToolOffer[];
+}
+
+export interface Tools {
+	readonly search: ToolStanding;
+	readonly vision: ToolStanding;
+}
+
+const EMPTY_TOOLS: Tools = {
+	search: { using: undefined, offers: [] },
+	vision: { using: undefined, offers: [] },
+};
+
 export interface Session {
 	post(line: string): Promise<void>;
 	close(): void;
@@ -712,6 +745,28 @@ export class Plane {
 	async models(): Promise<readonly ModelStanding[]> {
 		const answer = await this.#ask({ op: "models" });
 		return (answer.models as ModelStanding[] | undefined) ?? [];
+	}
+
+	/**
+	 * Both tools that have a model behind them, and every model either of them could use.
+	 *
+	 * One question rather than two, because one screen draws both: searching and looking are the same
+	 * kind of thing — a job done somewhere else by a model the operator picks, paid for with a key no
+	 * agent ever sees — and asking twice would draw half the screen a moment early.
+	 */
+	async tools(): Promise<Tools> {
+		const answer = await this.#ask({ op: "tools" });
+		return (answer.tools as Tools | undefined) ?? EMPTY_TOOLS;
+	}
+
+	/** Points the searching at a provider, or at another of that provider's models. */
+	async chooseSearch(spec: { provider: string; model?: string }): Promise<void> {
+		await this.#ask({ op: "set-search", spec });
+	}
+
+	/** Points the looking at a model, or `null` to leave it to whatever each agent thinks with. */
+	async chooseVision(spec: { provider: string; model?: string } | null): Promise<void> {
+		await this.#ask({ op: "set-vision", spec });
 	}
 
 	/** Every key this plane could be given, and whether it is holding one. Never the values. */

@@ -21,6 +21,7 @@ import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Skill } from "./skills.ts";
 import type { Utterance } from "./transcript.ts";
 import type { Trigger } from "./triggers.ts";
+import type { VisionOffer, VisionSpec, VisionStanding } from "./vision.ts";
 
 export const CONTROL_SOCKET_FILE = "control.sock";
 
@@ -303,6 +304,19 @@ export type ControlRequest =
 	 * same reason: it derives a grant every agent gets, so only the operator's socket may say it.
 	 */
 	| { readonly id: string; readonly op: "set-search"; readonly spec: SearchSpec }
+	/**
+	 * Both tools that have a model behind them, and every model either could use.
+	 *
+	 * One op rather than two, because one screen draws both: searching and looking are the same kind
+	 * of thing — a job done somewhere else, by a model the operator picks, paid for with a key the
+	 * agents never see — and a screen that asked twice would draw half of itself a moment early.
+	 */
+	| { readonly id: string; readonly op: "tools" }
+	/**
+	 * Points the looking at a model, or at nothing. The same widening as pointing the search
+	 * somewhere, and here for the same reason: it derives a grant every agent gets.
+	 */
+	| { readonly id: string; readonly op: "set-vision"; readonly spec: VisionSpec | null }
 	/** Every server on the shelf, with who holds it — the plane's list rather than an agent's. */
 	| { readonly id: string; readonly op: "servers" }
 	/**
@@ -495,6 +509,21 @@ export type ControlResponse =
 	  }
 	| { readonly id: string; readonly ok: true; readonly catalog: Catalog }
 	| { readonly id: string; readonly ok: true; readonly search: SearchStanding }
+	/** Both tools that have a model behind them, as one screen needs them. */
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly tools: {
+				readonly search: {
+					readonly using: SearchStanding;
+					readonly offers: readonly VisionOffer[];
+				};
+				readonly vision: {
+					readonly using: VisionStanding | undefined;
+					readonly offers: readonly VisionOffer[];
+				};
+			};
+	  }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
 	| {
 			readonly id: string;
@@ -953,6 +982,24 @@ export class ControlServer {
 			} else if (request.op === "set-search") {
 				await this.#plane.chooseSearch(request.spec);
 				this.#write(socket, { id: request.id, ok: true, text: request.spec.provider });
+			} else if (request.op === "tools") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					tools: {
+						search: {
+							using: await this.#plane.search(),
+							offers: await this.#plane.searchOffers(),
+						},
+						vision: {
+							using: await this.#plane.vision(),
+							offers: await this.#plane.visionOffers(),
+						},
+					},
+				});
+			} else if (request.op === "set-vision") {
+				await this.#plane.chooseVision(request.spec);
+				this.#write(socket, { id: request.id, ok: true, text: request.spec?.provider ?? "off" });
 			} else if (request.op === "servers") {
 				this.#write(socket, { id: request.id, ok: true, servers: await this.#plane.servers() });
 			} else if (request.op === "add-server") {

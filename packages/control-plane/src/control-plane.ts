@@ -2182,6 +2182,34 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Every provider that could do the searching, on the vision offers' terms.
+	 *
+	 * Written for the screen rather than for the socket: a console drawing both tools needs the same
+	 * three facts about each of them — what is on, what else there is, and which of those this plane
+	 * holds a key for — and working that out from a table the browser cannot import is the plane's
+	 * job rather than the browser's.
+	 */
+	async searchOffers(): Promise<readonly VisionOffer[]> {
+		const using = await this.search();
+		const offers: VisionOffer[] = [];
+		for (const [provider, known] of Object.entries(SEARCH_PROVIDERS)) {
+			const key = await this.#secrets.resolve({ ref: known.keyEnv }).catch(() => undefined);
+			const held = key !== undefined && key.length > 0;
+			for (const model of known.models) {
+				offers.push({
+					provider,
+					model,
+					keyEnv: known.keyEnv,
+					held,
+					rate: known.rates[model] ?? { input: 0, output: 0 },
+					using: using.provider === provider && using.model === model,
+				});
+			}
+		}
+		return offers;
+	}
+
+	/**
 	 * Chooses the model that looks, or `null` to stop looking with anything but the agent's own.
 	 *
 	 * Every agent's grants are written again afterwards, on the search choice's terms: the grant that

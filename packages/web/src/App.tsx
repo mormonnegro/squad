@@ -8,6 +8,7 @@ import {
 	MessageSquare,
 	Monitor,
 	Settings2,
+	Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
@@ -28,6 +29,7 @@ import { hasScreen, SCREEN_VIEW_PORT } from "./Screen.tsx";
 import { Setup } from "./Setup.tsx";
 import { ServedIs, useServedAt, useServedLinks } from "./served.tsx";
 import { Spin } from "./spin.tsx";
+import { Tools } from "./Tools.tsx";
 import { until } from "./until.ts";
 
 /** How often the agent list is asked for. What the console uses, for the same reason. */
@@ -55,6 +57,7 @@ const TASKS_MS = 15_000;
 const PLACES = {
 	"/plugins": "plugins",
 	"/repos": "repos",
+	"/abilities": "abilities",
 	"/keys": "keys",
 } as const;
 
@@ -178,7 +181,7 @@ export function App() {
 	 * pointing at several.
 	 */
 	const [showing, setShowing] = useState<
-		"none" | "keys" | "plugins" | "repos" | "devices" | "first-key"
+		"none" | "keys" | "plugins" | "repos" | "abilities" | "devices" | "first-key"
 	>(() => placeAt(window.location.pathname));
 	/**
 	 * Whether the selected agent's own settings are the thing on screen.
@@ -626,6 +629,21 @@ export function App() {
 							</span>
 							<span className="row-name">Repositories</span>
 						</button>
+						{/* Beside the plugins and the repositories because it is the same kind of row: a thing
+						    the whole plane has, rather than a thing one agent has. What an agent may reach is
+						    per agent; what model does the searching and the looking is not. */}
+						<button
+							type="button"
+							className="rail-screen"
+							data-here={showing === "abilities"}
+							disabled={plane === undefined}
+							onClick={() => show("abilities")}
+						>
+							<span className="row-icon">
+								<Wrench className="size-4" />
+							</span>
+							<span className="row-name">Abilities</span>
+						</button>
 
 						<div className="rail-group">Agents</div>
 						{agents.map((one) => (
@@ -758,6 +776,8 @@ export function App() {
 							onFiles={openFiles}
 							onGone={() => show("none", null)}
 						/>
+					) : showing === "abilities" && plane !== undefined ? (
+						<Tools plane={plane} />
 					) : showing === "plugins" && plane !== undefined ? (
 						<Plugins plane={plane} agents={agents} />
 					) : showing === "repos" && plane !== undefined ? (
