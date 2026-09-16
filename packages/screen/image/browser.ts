@@ -13,6 +13,19 @@ import { type Asked, MOST_TABS, tooManyTabs } from "./verbs.ts";
  */
 export const VIEWPORT = { width: 1280, height: 800 } as const;
 
+/**
+ * What a click costs in time, which is the point of it costing anything.
+ *
+ * A hand cannot press and release in zero milliseconds and a pointer cannot arrive without crossing
+ * the distance, and a site that measures either of those is measuring something true. Jittered
+ * because a constant is a fingerprint too: the same interval, exact to the millisecond, on every
+ * click for ever is a stranger signal than a fast one.
+ */
+const MOVE_STEPS = 6;
+const MOVE_STEP_MS = 12;
+const DOWN_MS = 55;
+const DOWN_JITTER_MS = 70;
+
 const DEBUG_PORT = Number(process.env.SQUAD_SCREEN_DEBUG_PORT ?? 9222);
 const PROFILE = process.env.SQUAD_SCREEN_PROFILE ?? "/home/screen/profile";
 const PROXY = `http://127.0.0.1:${process.env.SQUAD_SCREEN_PROXY_PORT ?? 7182}`;
@@ -151,6 +164,13 @@ export class Browser {
 	 * later, and the order the debugging protocol lists targets in is nobody's promise.
 	 */
 	#knownTabs: string[] = [];
+	/**
+	 * Where the pointer is, so that the next click starts from where the last one left it.
+	 *
+	 * A page watching the mouse sees a journey rather than a teleport, which is both what a hover
+	 * handler needs and what a site deciding whether this is a person is looking at.
+	 */
+	#pointer: { x: number; y: number } = { x: 0, y: 0 };
 
 	/** Starts the browser and waits for it to answer, which is the slowest thing this container does. */
 	async start(): Promise<void> {
@@ -339,7 +359,28 @@ export class Browser {
 		await cdp.send("Runtime.enable", {}, sessionId);
 		await cdp.send(
 			"Emulation.setDeviceMetricsOverride",
-			{ ...VIEWPORT, deviceScaleFactor: 1, mobile: false },
+			{
+				...VIEWPORT,
+				deviceScaleFactor: 1,
+				mobile: false,
+				/*
+				 * The display this window is on, said as well as the window, because leaving it out left
+				 * the two contradicting each other.
+				 *
+				 * Overriding the metrics moves `innerWidth` and leaves `screen.width` at the headless
+				 * default of 800×600 — so the page saw a 1280×800 window open on an 800×600 display, which
+				 * is not a thing that can happen on any machine. A window larger than its own screen is one
+				 * of the first things a site checks when it is deciding whether a visitor is a person, and
+				 * it was our own override putting it there.
+				 *
+				 * The same numbers, which is what is actually true here: there is no desktop in this
+				 * container, so the window is the display.
+				 */
+				screenWidth: VIEWPORT.width,
+				screenHeight: VIEWPORT.height,
+				positionX: 0,
+				positionY: 0,
+			},
 			sessionId,
 		);
 		await this.#presentAs(sessionId);
@@ -555,11 +596,60 @@ export class Browser {
 		return read;
 	}
 
+	/**
+	 * A click, with the pointer arriving at the thing before it presses it.
+	 *
+	 * It used to be two events at one instant and nothing before them: no movement anywhere on the
+	 * page, press and release in the same millisecond, at coordinates the pointer had never been to.
+	 * That is wrong twice over.
+	 *
+	 * It is wrong about the web, first. A widget that arms on hover is never armed — the element gets
+	 * no `mousemove`, no `mouseover`, no `mouseenter` — and the click lands on something that had not
+	 * finished becoming clickable. That is a whole class of "I pressed it and nothing happened".
+	 *
+	 * And it is wrong about who is driving. A ticketing site turned this browser away and printed its
+	 * reasons, the first of which was that the visitor clicks at a superhuman speed. It was right: a
+	 * hand cannot press and release a mouse button in zero milliseconds, and a pointer cannot arrive
+	 * somewhere without crossing the distance. Neither of those is a disguise — the operator watching
+	 * this screen is a person, and what got refused was their browser.
+	 */
 	async #clickAt(x: number, y: number): Promise<void> {
 		const cdp = this.#need();
-		const where = { x: Math.round(x), y: Math.round(y), button: "left", clickCount: 1 };
+		const to = { x: Math.round(x), y: Math.round(y) };
+		await this.#moveTo(to.x, to.y);
+		const where = { ...to, button: "left", clickCount: 1 };
 		await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...where }, this.#session);
+		// How long a finger is down. Short, and never the same twice: a constant is a fingerprint of
+		// its own, and this one would be exact to the millisecond on every click for ever.
+		await sleep(DOWN_MS + Math.floor(Math.random() * DOWN_JITTER_MS));
 		await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...where }, this.#session);
+		this.#pointer = to;
+	}
+
+	/**
+	 * The pointer crossing the page, in the few steps a page needs to see to believe it moved.
+	 *
+	 * Not a simulation of a human arm — a straight line in half a dozen hops, which is enough for the
+	 * hover handlers to fire in order and enough that the journey took a plausible moment. Anything
+	 * more elaborate would be spending a page load's worth of time drawing a curve nobody sees.
+	 */
+	async #moveTo(x: number, y: number): Promise<void> {
+		const cdp = this.#need();
+		const from = this.#pointer;
+		for (let step = 1; step <= MOVE_STEPS; step++) {
+			const part = step / MOVE_STEPS;
+			await cdp.send(
+				"Input.dispatchMouseEvent",
+				{
+					type: "mouseMoved",
+					x: Math.round(from.x + (x - from.x) * part),
+					y: Math.round(from.y + (y - from.y) * part),
+				},
+				this.#session,
+			);
+			await sleep(MOVE_STEP_MS);
+		}
+		this.#pointer = { x, y };
 	}
 
 	/**
