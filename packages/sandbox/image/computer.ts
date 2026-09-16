@@ -307,6 +307,14 @@ export default function (pi: ExtensionAPI): void {
 			"does not restore any of that: it was made by clicking, and the clicks are gone.",
 			"",
 			"http and https only. It is not a way to read files.",
+			...(points === undefined
+				? []
+				: [
+						"",
+						"What comes back is where you landed and what the page says. The numbered list of",
+						"things on it is not included and you do not need it: click and type by naming what you",
+						"want. screen_read is there for the times you do.",
+					]),
 		].join("\n"),
 		promptSnippet: "Open a page in your own browser, and read what is on it",
 		parameters: Type.Object({
@@ -314,7 +322,12 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			const { url } = params as { url: string };
-			return { content: [...(await does({ verb: "open", url }))], details: {} };
+			// Where things can be named, the numbered list is not sent unasked. It is the biggest thing
+			// that would arrive in this conversation, it arrives again with every later call, and an
+			// agent that names what it wants is never going to use a line of it.
+			const asked =
+				points === undefined ? { verb: "open", url } : { verb: "open", url, brief: true };
+			return { content: [...(await does(asked))], details: {} };
 		},
 	});
 
@@ -327,20 +340,40 @@ export default function (pi: ExtensionAPI): void {
 			"",
 			`${REFS}`,
 			"",
-			"This is the cheap one and the one to use by default. Reading a page costs a fraction of",
-			"looking at it and is exact, because you act on numbered elements rather than on coordinates",
-			"you guessed from a picture.",
+			...(points === undefined
+				? [
+						"This is the cheap one and the one to use by default. Reading a page costs a fraction of",
+						"looking at it and is exact, because you act on numbered elements rather than on",
+						"coordinates you guessed from a picture.",
+					]
+				: [
+						"This is the expensive one, and it is not how you click things here. A page of two hundred",
+						"numbered rows is the biggest thing in this conversation and it is sent again with every",
+						"call you make afterwards — and you are not going to use the numbers, because you can",
+						"name what you want instead.",
+						"",
+						"Read when the numbers are the point: something would not take a description, a click came",
+						"back saying it was not clearly one thing, or you want to know everything a page offers",
+						"rather than press one of them.",
+					]),
 			"",
 			"A row that says `div` is not a mistake. The list is what a person could press, which is more",
 			"than what the markup declares: a card built out of bare divs with the handler bound in",
 			"script is on it, found by the hand the browser draws over it. Click those the same way.",
 		].join("\n"),
 		promptSnippet: "Read the page your browser is on, as text and numbered elements",
-		promptGuidelines: [
-			"Read the page rather than looking at it, unless the thing you need is genuinely visual.",
-			"Read again after every click, and use the refs from the newest read.",
-			"If what you want is not in the list, read the page again after scrolling to it: an element with no size and nothing drawn is left out, and a list that has just been opened or filtered is a different list.",
-		],
+		promptGuidelines:
+			points === undefined
+				? [
+						"Read the page rather than looking at it, unless the thing you need is genuinely visual.",
+						"Read again after every click, and use the refs from the newest read.",
+						"If what you want is not in the list, read the page again after scrolling to it: an element with no size and nothing drawn is left out, and a list that has just been opened or filtered is a different list.",
+					]
+				: [
+						"Do not read the page in order to click something. Name the thing in screen_click or screen_type and skip the read entirely — one call instead of two, and none of the list in this conversation.",
+						"Read when a described click came back saying it was not clearly one thing, or when you want to know everything a page offers rather than press one of them.",
+						"If what you want is not there, scroll to it and act again: an element with no size and nothing drawn is not on the page yet, and a list that has just been filtered is a different list.",
+					],
 		parameters: Type.Object({}),
 		async execute() {
 			return { content: [...(await does({ verb: "read" }))], details: {} };
@@ -447,10 +480,10 @@ export default function (pi: ExtensionAPI): void {
 			...(points === undefined
 				? ["Say which one by its number.", "", REFS]
 				: [
-						'Say which one by describing it — `what: "the Continue button"` — and you do not have',
-						"to read the page first: something small and fast is handed the page and picks the",
-						"element out of it. That is the quick way and it is the one to use: a read is the",
-						"biggest thing you will put in this conversation, and every later call carries it again.",
+						'Describe it — `what: "the Continue button"` — and do not read the page first. Something',
+						"small and fast is handed the page and finds the element for you. This is the way to",
+						"click here: a read is the biggest thing you will put in this conversation, every later",
+						"call carries it again, and you do not need a single one of its numbers.",
 						"",
 						"The page that comes back after a described click is where you are and what it says,",
 						"without the numbered list — you did not use the numbers to get here and you do not need",
@@ -471,19 +504,26 @@ export default function (pi: ExtensionAPI): void {
 					],
 				}),
 		parameters: Type.Object({
-			ref: Type.Optional(
-				Type.Integer({ description: "The number from the last read, without the brackets." }),
-			),
+			// Named first, because the order a schema is written in is the order it is read in, and
+			// this is the one to reach for.
 			...(points === undefined
 				? {}
 				: {
 						what: Type.Optional(
 							Type.String({
 								description:
-									'The thing to click, described as it reads on screen: "the Continue button", "the second result", "the cookie banner\'s Accept".',
+									'What to click, described as it reads on screen: "the Continue button", "the second result", "the cheapest flight". Use this. It saves reading the page.',
 							}),
 						),
 					}),
+			ref: Type.Optional(
+				Type.Integer({
+					description:
+						points === undefined
+							? "The number from the last read, without the brackets."
+							: "The number from a read, if you have one. Only needed for things a description would not tell apart.",
+				}),
+			),
 		}),
 		async execute(_id, params) {
 			const { ref, what } = params as { ref?: number; what?: string };
@@ -539,19 +579,19 @@ export default function (pi: ExtensionAPI): void {
 		],
 		parameters: Type.Object({
 			text: Type.String({ description: "What to put in." }),
-			ref: Type.Optional(
-				Type.Integer({ description: "The field, by its number from the last read." }),
-			),
 			...(points === undefined
 				? {}
 				: {
 						what: Type.Optional(
 							Type.String({
 								description:
-									'The field, described as it reads on screen: "the search box", "the email field".',
+									'The field, described as it reads on screen: "the search box", "the email field". Use this. It saves reading the page.',
 							}),
 						),
 					}),
+			ref: Type.Optional(
+				Type.Integer({ description: "The field, by its number from a read, if you have one." }),
+			),
 			enter: Type.Optional(Type.Boolean({ description: "Press Enter afterwards." })),
 		}),
 		async execute(_id, params) {

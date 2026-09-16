@@ -692,8 +692,7 @@ export class Browser {
 				const load = this.#loading();
 				await this.#need().send("Page.navigate", { url: asked.url }, this.#session);
 				await this.#settled(load);
-				const outline = await this.#outline();
-				return { text: pageForAgent(outline) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "read":
 				return { text: pageForAgent(await this.#outline()) };

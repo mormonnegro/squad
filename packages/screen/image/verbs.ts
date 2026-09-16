@@ -171,7 +171,7 @@ export function readAsked(body: unknown): Asked | Refused {
 			if (typeof body.url !== "string") return { refused: "open takes a url." };
 			const read = readUrl(body.url);
 			if ("refused" in read) return read;
-			return { verb: "open", url: read.url };
+			return { verb: "open", url: read.url, ...(body.brief === true ? { brief: true } : {}) };
 		}
 		case "outline":
 			return { verb: "outline" };
