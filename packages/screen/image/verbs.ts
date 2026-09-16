@@ -38,6 +38,16 @@ export const VERBS = [
 	"tab",
 	"tab_open",
 	"tab_close",
+	/*
+	 * Being signed in somewhere, which is the one verb whose answer the agent may not see.
+	 *
+	 * It names a host and nothing else: not a vault, not an entry, not a field. What it gets back is
+	 * a sentence about the boxes on the page. The credential is read inside this container by a CLI
+	 * holding a token the sandbox has no path to, and it goes into the page as keystrokes — so there
+	 * is no request an agent can make here that answers with a password, because nothing answers with
+	 * one.
+	 */
+	"login",
 ] as const;
 
 export type Verb = (typeof VERBS)[number];
@@ -175,6 +185,17 @@ export function readAsked(body: unknown): Asked | Refused {
 		}
 		case "outline":
 			return { verb: "outline" };
+		// A host, or none for the page it is already on — which is the usual case, because what makes
+		// an agent ask is a sign-in form in front of it.
+		case "login": {
+			const url = body.url;
+			if (url !== undefined && typeof url !== "string") {
+				return {
+					refused: "login takes the site to sign into, or nothing for the page you are on.",
+				};
+			}
+			return { verb: "login", ...(typeof url === "string" && url !== "" ? { url } : {}) };
+		}
 		case "click": {
 			const ref = body.ref;
 			if (typeof ref !== "number" || !Number.isInteger(ref) || ref < 1) {

@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import http from "node:http";
 import { Browser } from "./browser.ts";
 import { readEgress, startForwarder } from "./forward.ts";
 import { refusedToAgent, refusedToOperator, TheKeyboard } from "./keyboard.ts";
+import { credentialIn, hostOf, itemFor, type VaultItem } from "./logins.ts";
 import { startPage, viewPage } from "./page.ts";
 import { presented, tokenIn } from "./token.ts";
 import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
@@ -25,6 +27,20 @@ const PROXY_PORT = Number(process.env.SQUAD_SCREEN_PROXY_PORT ?? 7182);
 
 const keyboard = new TheKeyboard();
 const browser = new Browser();
+
+/**
+ * The sites this agent's operator has opened for it, pushed in by the plane.
+ *
+ * Held here and decided by the plane, which is where every other permission on this deployment is
+ * decided. The agent knocks with a host and this is what the door is checked against — so an agent
+ * that has been talked into signing into somewhere gets a refusal rather than a session, and the
+ * list it cannot read is the list it cannot grow.
+ *
+ * In memory rather than on the profile volume: the plane pushes it when the screen starts and every
+ * time it changes, so a copy that outlived a restart would be a permission the console thinks it
+ * took back.
+ */
+let opened: readonly string[] = [];
 
 /**
  * The one agent whose screen this is, as a secret rather than as a name.
@@ -78,6 +94,29 @@ const verbs = http.createServer((request, response) => {
 		}
 		if (asked.verb === "ask") {
 			json(response, 200, { text: sawTheNote(keyboard.ask(asked.note ?? "").note) });
+			return;
+		}
+		/*
+		 * The agent asking to be signed in somewhere, which is a host and never an entry.
+		 *
+		 * It cannot name a vault item, cannot ask what is in the vault, and gets back a sentence about
+		 * the boxes on the page rather than anything that was typed into them. And it only works for a
+		 * site its operator opened: the refusal names what to do about it, because an agent stuck at a
+		 * login with no way to say so is an agent that starts guessing passwords.
+		 */
+		if (asked.verb === "login") {
+			const where = hostOf(asked.url ?? browser.where());
+			if (!opened.includes(where)) {
+				json(response, 200, {
+					text: [
+						`Your operator has not opened ${where} for you, so nothing was filled in.`,
+						"Ask them with screen_ask — they open the site once at the console, and after that",
+						"you can sign in here yourself whenever the session runs out.",
+					].join(" "),
+				});
+				return;
+			}
+			json(response, 200, { text: await signIn(where) });
 			return;
 		}
 		if (needsTheKeyboard(asked.verb) && keyboard.holder === "operator") {
@@ -222,6 +261,36 @@ const view = http.createServer((request, response) => {
 			return;
 		}
 
+		/*
+		 * The sites this agent may sign into, as the plane last said them.
+		 *
+		 * On the operator's door, which is the plane's tunnel, because that is the one way in here
+		 * that the agent has no route to. A list pushed over the agent's own door would be a list the
+		 * agent could push.
+		 */
+		if (request.method === "POST" && path === "/logins") {
+			const asked = (await body(request)) as { hosts?: unknown };
+			opened = Array.isArray(asked?.hosts)
+				? asked.hosts.filter((host): host is string => typeof host === "string").map(hostOf)
+				: [];
+			json(response, 200, { hosts: opened });
+			return;
+		}
+
+		/*
+		 * Signing in, asked for by the operator: the button beside the keyboard.
+		 *
+		 * No list is checked here and none should be. The list exists to bound what the agent may ask
+		 * for by itself; this is the person whose vault it is, pressing a button on their own screen.
+		 */
+		if (request.method === "POST" && path === "/fill") {
+			const asked = (await body(request)) as { host?: unknown };
+			const where =
+				typeof asked?.host === "string" && asked.host !== "" ? asked.host : browser.where();
+			json(response, 200, { text: await signIn(where) });
+			return;
+		}
+
 		if (request.method === "GET" && path === "/frames") {
 			await frames(response);
 			return;
@@ -230,6 +299,61 @@ const view = http.createServer((request, response) => {
 		json(response, 404, { refused: "nothing there" });
 	})().catch(() => json(response, 500, { refused: "the screen failed" }));
 });
+
+/**
+ * The vault, read by a CLI that holds the token this container was given.
+ *
+ * `op` rather than the REST API because a service account token is what it takes either way, and the
+ * CLI is the thing 1Password keeps working. Nothing is cached: a password read once and kept would
+ * be a password this process could be made to say, and the whole point is that it cannot.
+ */
+async function op(args: readonly string[]): Promise<string | undefined> {
+	return new Promise((resolve) => {
+		execFile("op", [...args], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, (failure, out) => {
+			resolve(failure === null ? out : undefined);
+		});
+	});
+}
+
+/** Whether there is a vault to read at all, which is two different things to be missing. */
+async function noVault(): Promise<string | undefined> {
+	if ((process.env.OP_SERVICE_ACCOUNT_TOKEN ?? "") === "") {
+		return "No vault is connected to this browser. Your operator connects one at the console, under Abilities.";
+	}
+	if ((await op(["--version"])) === undefined) {
+		return "This browser was built without the 1Password CLI in it — the image could not fetch it. Rebuilding the screen picks it up.";
+	}
+	return undefined;
+}
+
+/**
+ * Everything a sign-in is, from a host: find the entry, read it, put it in the boxes.
+ *
+ * Each step answers in a sentence when it cannot go on, because every one of them is something the
+ * person reading is expected to do something about — connect a vault, add an entry, say which of two
+ * accounts, open the page the form is actually on.
+ */
+async function signIn(where: string): Promise<string> {
+	const host = hostOf(where);
+	const without = await noVault();
+	if (without !== undefined) return without;
+	const listed = await op(["item", "list", "--format", "json"]);
+	if (listed === undefined)
+		return "The vault would not open. The token this browser holds may have been taken back.";
+	let items: VaultItem[];
+	try {
+		items = JSON.parse(listed) as VaultItem[];
+	} catch {
+		return "The vault answered something this screen could not read.";
+	}
+	const item = itemFor(host, items);
+	if (typeof item === "string") return item;
+	const got = await op(["item", "get", item.id, "--format", "json", "--reveal"]);
+	if (got === undefined) return `The vault would not hand over ${item.title}.`;
+	const credential = credentialIn(got);
+	if (typeof credential === "string") return credential;
+	return browser.fill(credential);
+}
 
 async function operated(event: Record<string, unknown>): Promise<void> {
 	const x = Number(event.x ?? 0);

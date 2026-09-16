@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { Cdp } from "./cdp.ts";
+import { type Credential, FORM_SCRIPT, filledSaid, readForm, type Spot } from "./logins.ts";
 import {
 	boxScript,
 	OUTLINE_SCRIPT,
@@ -674,12 +675,50 @@ export class Browser {
 		return true;
 	}
 
-	async #press(key: string, session = this.#session): Promise<void> {
+	async #press(key: string, options: { modifiers?: number; session?: string } = {}): Promise<void> {
 		const cdp = this.#need();
+		const session = options.session ?? this.#session;
 		const code = KEY_CODES[key] ?? 0;
-		const common = { key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
+		const common = {
+			key,
+			windowsVirtualKeyCode: code,
+			nativeVirtualKeyCode: code,
+			...(options.modifiers === undefined ? {} : { modifiers: options.modifiers }),
+		};
 		await cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...common }, session);
 		await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...common }, session);
+	}
+
+	/**
+	 * Fills a sign-in form with what came out of the vault, without any of it passing through a verb.
+	 *
+	 * Here rather than in the verbs on purpose: this is the one thing this browser does that the
+	 * agent may ask for and may not see. It takes a credential, puts it in the boxes, and answers
+	 * with a sentence about the boxes — so there is no shape of request that returns a password,
+	 * because nothing in here ever returns one.
+	 *
+	 * Typed rather than set: a value written into `input.value` from a script is a value half the
+	 * sign-in forms on the web never notice, because what they are listening for is somebody typing.
+	 */
+	async fill(credential: Credential): Promise<string> {
+		const form = readForm(await this.#evaluate(FORM_SCRIPT));
+		if (form === undefined) return "The page could not say what is on it.";
+		const cdp = this.#need();
+		const put = async (spot: Spot | undefined, value: string | undefined): Promise<void> => {
+			if (spot === undefined || value === undefined) return;
+			await this.#clickAt(spot.at.x, spot.at.y);
+			// Whatever was in there goes first: a box a browser filled in from its own history is a box
+			// that ends up holding both.
+			if (spot.filled) {
+				await this.#press("a", { modifiers: 2 });
+				await this.#press("Delete");
+			}
+			await cdp.send("Input.insertText", { text: value }, this.#session);
+		};
+		await put(form.username, credential.username);
+		await put(form.password, credential.password);
+		await put(form.code, credential.otp);
+		return filledSaid(form, credential);
 	}
 
 	/** Everything the agent asked for, once the door has decided it may ask for it. */
@@ -694,6 +733,11 @@ export class Browser {
 				await this.#settled(load);
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
+			// Answered at the door rather than here: signing in reads a vault this class has no token
+			// for, and the door has already turned away an agent that may not ask. Present so that the
+			// list of verbs and the list of things that can be done stay the same list.
+			case "login":
+				return { text: "Signing in is answered at the door." };
 			case "read":
 				return { text: pageForAgent(await this.#outline()) };
 			// The same page as data, for whatever is choosing a ref on the agent's behalf. Nothing
@@ -927,7 +971,7 @@ export class Browser {
 			await this.#need().send("Input.insertText", { text: key }, this.#seenSession);
 			return;
 		}
-		await this.#press(key, this.#seenSession);
+		await this.#press(key, { session: this.#seenSession });
 	}
 }
 
