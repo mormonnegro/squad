@@ -98,6 +98,7 @@ import {
 	carriedBy,
 	type GrantStanding,
 	originOf,
+	PipedHosts,
 	reachId,
 	readHost,
 } from "./grants.ts";
@@ -643,6 +644,8 @@ export class ControlPlane {
 	readonly #addedModels: AddedModels;
 	/** The hosts opened at the console, on top of the ones the file grants every agent. */
 	readonly #addedGrants: AddedGrants;
+	/** The hosts this plane pipes rather than reads, for the browsers that cannot survive being read. */
+	readonly #piped: PipedHosts;
 	readonly #addedTeam: TeamEdges;
 	/** What an agent must be asked about before it goes out, and the messages waiting on an answer. */
 	readonly #gates: Gates;
@@ -767,6 +770,7 @@ export class ControlPlane {
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
+		this.#piped = new PipedHosts(join(this.#stateDir, "piped-hosts.json"));
 		this.#addedTeam = new TeamEdges(join(this.#stateDir, "added-team.json"));
 		this.#gates = new Gates(join(this.#stateDir, "gates.json"));
 		this.#triggers = new Triggers(join(this.#stateDir, "triggers.json"));
@@ -1294,6 +1298,7 @@ export class ControlPlane {
 			...(await this.#thinking(declared)).map((grant) => ({ grant, origin: "model" as const })),
 			...(await this.#searching(declared)).map((grant) => ({ grant, origin: "search" as const })),
 			...(await this.#looking(declared)).map((grant) => ({ grant, origin: "search" as const })),
+			...(await this.#pipedThrough(declared)).map((grant) => ({ grant, origin: "here" as const })),
 			...(await this.#reached(declared)).map((grant) => ({ grant, origin: "here" as const })),
 		];
 		return standing.map(({ grant, origin }) => {
@@ -2314,6 +2319,7 @@ export class ControlPlane {
 			...(await this.#thinking(declared)),
 			...(await this.#searching(declared)),
 			...(await this.#looking(declared)),
+			...(await this.#pipedThrough(declared)),
 			...earned,
 			...(await this.#reached(declared)),
 		];
@@ -2511,6 +2517,36 @@ export class ControlPlane {
 		return (await this.#addedGrants.all()).filter(
 			(grant) => !declared.some((own) => own.id === grant.id),
 		);
+	}
+
+	/**
+	 * The hosts opened and piped, which is one row doing both.
+	 *
+	 * Ahead of the reached ones in the list, because a host on both lists is one somebody asked to be
+	 * piped after opening it, and the piping is the later decision.
+	 */
+	async #pipedThrough(declared: readonly Grant[]): Promise<readonly Grant[]> {
+		return (await this.#piped.all()).filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
+	}
+
+	/** The hosts this plane pipes, and whether one was added or was already there. */
+	async piped(): Promise<readonly string[]> {
+		return this.#piped.hosts();
+	}
+
+	/**
+	 * Opens a host and pipes it, or stops piping one.
+	 *
+	 * Every agent's grants are written again afterwards, on the search choice's terms: what the proxy
+	 * holds and what the console says have to move together, and a host that was piped in one and read
+	 * in the other is the worst of the two halves being out of step.
+	 */
+	async pipe(host: string, on: boolean): Promise<boolean> {
+		const changed = on ? (await this.#piped.add(host), true) : await this.#piped.drop(host);
+		if (changed) await this.#reregisterAll();
+		return changed;
 	}
 
 	/**
@@ -3147,6 +3183,8 @@ export class ControlPlane {
 			setScreen: (on) => this.setScreen(agentId, on),
 			vision: async () => ({ using: await this.vision(), offers: await this.visionOffers() }),
 			chooseVision: (spec) => this.chooseVision(spec),
+			piped: () => this.piped(),
+			pipe: (host, on) => this.pipe(host, on),
 			listening: (port) => this.#listening(agentId, port),
 			// Asked of the same set the proxy will ask, so what the operator is told here is what the
 			// agent will actually meet — rather than a second opinion that can be right while the wire

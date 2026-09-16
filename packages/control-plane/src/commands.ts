@@ -172,6 +172,10 @@ export interface CommandContext {
 	}>;
 	/** Chooses one, or `null` to leave looking to whatever the agent itself thinks with. */
 	chooseVision(spec: VisionSpec | null): Promise<void>;
+	/** The hosts this plane pipes rather than reads, which is the plane's list and not an agent's. */
+	piped(): Promise<readonly string[]>;
+	/** Opens a host and pipes it, or stops piping one. Answers whether anything changed. */
+	pipe(host: string, on: boolean): Promise<boolean>;
 	/** Whether anything is listening on that port inside the sandbox, asked of the sandbox. */
 	listening(port: number): Promise<boolean>;
 	/**
@@ -361,6 +365,11 @@ export const COMMANDS: readonly Command[] = [
 		name: "/screen",
 		takes: "[on|off|auto]",
 		does: "give it a browser of its own, and open the live view of it here",
+	},
+	{
+		name: "/pipe",
+		takes: "[<host>|off <host>]",
+		does: "sites read end to end by the browser, rather than opened and read here",
 	},
 	{
 		name: "/vision",
@@ -975,6 +984,88 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 	]
 		.filter((line, index, all) => !(line === "" && all[index - 1] === ""))
 		.join("\n");
+}
+
+/**
+ * What piping a host gives up, said where somebody is about to give it up.
+ *
+ * The one thing on this console that trades a security property for a working feature, so the trade
+ * is written out rather than implied: what is lost is the path on the audit line and the ability to
+ * put a credential on that host, and what is bought is a browser that works on the part of the web
+ * that measures TLS handshakes.
+ */
+const PIPING = [
+	"Everything an agent reaches goes through a certificate this plane issues for the host: the proxy",
+	"reads the request, can write a credential onto it, and writes down where it went. That is what",
+	"the audit line is made of, and it is why a sandbox never has a raw connection to anywhere.",
+	"",
+	"It is also why some sites refuse the browser. What they see is this plane's handshake under a",
+	"browser's name, and comparing those two is how they decide a connection is not a person. A piped",
+	"host is read end to end by the browser itself, so what arrives is Chrome's own handshake.",
+	"",
+	"What it costs: the audit line for that host says the host and no path, nothing can be injected on",
+	"it, and what goes down it is whatever the agent puts there rather than HTTPS this plane has read.",
+	"Worth it for a site an agent only browses. Never for one it has a key to — a host carrying a",
+	"credential is refused this whatever else is said about it.",
+].join("\n");
+
+/**
+ * The sites read end to end by the browser rather than opened and read here.
+ *
+ * Its own command rather than a flag on `/reach`, because it is a different decision: opening a host
+ * says an agent may go there, and this says nobody here will look at what it did when it did. One of
+ * those is answered with a key press while somebody is mid-turn; the other is worth typing out.
+ */
+async function pipe(words: readonly string[], context: CommandContext): Promise<string> {
+	const [said = "", named = ""] = words;
+
+	if (said === "off" || said === "stop") {
+		const read = readHost(named);
+		if ("refused" in read) return `/pipe off takes ${read.refused}.`;
+		if (!(await context.pipe(read.host, false))) return `${read.host} was not being piped.`;
+		return `${read.host} is read here again, from the next turn: the path is back on the audit line, and a browser on that site is back to presenting this plane's handshake under its own name.`;
+	}
+
+	if (said !== "") {
+		const read = readHost(said);
+		if ("refused" in read) return `/pipe takes ${read.refused}.`;
+		await context.pipe(read.host, true);
+		return [
+			`${read.host} is open and piped, from the next turn.`,
+			"",
+			// The thing somebody gets wrong once: a site is not one host, and the script that decides
+			// whether you are a person is usually not on the name in the address bar.
+			read.host === "*"
+				? "That is the whole web. Every host an agent reaches is now a pipe, except the ones carrying a credential — a model, a search, a repository — which are read here as they always were, because a key cannot be written onto bytes nobody reads. What is given up is the path on every other audit line, and the guarantee that what leaves a sandbox is HTTPS this plane has read rather than whatever the agent put on the wire."
+				: read.host.startsWith("*.")
+					? ""
+					: `If it still refuses, try *.${read.host.replace(/^www\./, "")} — a site is not one host, and the script that decides whether you are a person is usually on another name under the same domain.`,
+			"",
+			PIPING,
+		]
+			.filter((line, at, all) => !(line === "" && all[at - 1] === ""))
+			.join("\n");
+	}
+
+	const hosts = await context.piped();
+	if (hosts.length === 0) {
+		return [
+			"Nothing is piped: every host is opened and read here.",
+			"",
+			"/pipe www.example.com opens one and pipes it, for a site that refuses the browser.",
+			"",
+			PIPING,
+		].join("\n");
+	}
+	return [
+		"Read end to end by the browser, not by this plane:",
+		"",
+		...hosts.map((host) => `  ${host}`),
+		"",
+		`/pipe off ${hosts[0]} puts one back.`,
+		"",
+		PIPING,
+	].join("\n");
 }
 
 /**
@@ -2200,6 +2291,7 @@ export async function runCommand(line: string, context: CommandContext): Promise
 	if (name === "serve") return serve(rest, context);
 	if (name === "screen") return screen(rest, context);
 	if (name === "vision") return vision(rest, context);
+	if (name === "pipe") return pipe(rest, context);
 	if (name === "telegram") return telegram(rest, context);
 	if (name === "email") return email(rest, context);
 	if (name === "repo") return repo(rest, context);

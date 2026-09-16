@@ -68,6 +68,28 @@ export function reachGrant(host: string): Grant {
 	return { id: reachId(host), host, injection: { kind: "none" } };
 }
 
+/** Namespaced like the rest, so a host that is piped is one row and never two. */
+export function pipeId(host: string): string {
+	return `pipe:${host}`;
+}
+
+/**
+ * A host opened and piped rather than opened and read.
+ *
+ * The same shape as a reach grant with one word more, and the word costs something: what goes down a
+ * pipe is not read here, so the audit line for it says the host and no path, and nothing can be
+ * written onto it. Which is why this shape, like the reach grant's, cannot express a credential —
+ * a key that stopped being attached without anybody noticing is the failure worth making impossible
+ * rather than checking for.
+ *
+ * What it buys is a browser that works on the part of the web that measures TLS handshakes. Behind
+ * an intercepting proxy, a real Chrome presents this plane's handshake under Chrome's name, and the
+ * systems airlines and banks buy compare exactly those two things.
+ */
+export function pipeGrant(host: string): Grant {
+	return { id: pipeId(host), host, injection: { kind: "none" }, tunnel: true };
+}
+
 /**
  * Takes a host out of whatever was pasted, because what a person has to hand is a URL.
  *
@@ -130,6 +152,73 @@ export class AddedGrants {
 	}
 
 	/** True when there was one to drop, so the console can tell a typo from a host that is gone. */
+	async drop(host: string): Promise<boolean> {
+		return await this.#serialize(async () => {
+			const all = await this.#read();
+			const left = all.filter((other) => other !== host);
+			if (left.length === all.length) return false;
+			await this.#write(left);
+			return true;
+		});
+	}
+
+	async #read(): Promise<string[]> {
+		try {
+			const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
+			if (!Array.isArray(parsed)) return [];
+			return parsed.filter((entry): entry is string => typeof entry === "string");
+		} catch {
+			return [];
+		}
+	}
+
+	async #write(all: readonly string[]): Promise<void> {
+		await mkdir(dirname(this.#path), { recursive: true });
+		const temporary = `${this.#path}.${process.pid}.tmp`;
+		await writeFile(temporary, `${JSON.stringify(all, null, "\t")}\n`, "utf8");
+		await rename(temporary, this.#path);
+	}
+
+	#serialize<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.#tail.then(operation, operation);
+		this.#tail = result.catch(() => {});
+		return result;
+	}
+}
+
+/**
+ * The hosts this plane pipes rather than reads, kept the way the opened ones are.
+ *
+ * A second list rather than a flag on the first, because they are two different decisions and only
+ * one of them is reversible without thinking: opening a host is a grant, and piping one is a grant
+ * plus giving up the record of what was asked for on it. A list somebody has to add to on purpose is
+ * the right shape for the second.
+ */
+export class PipedHosts {
+	readonly #path: string;
+	#tail: Promise<unknown> = Promise.resolve();
+
+	constructor(path: string) {
+		this.#path = path;
+	}
+
+	async hosts(): Promise<readonly string[]> {
+		return await this.#serialize(() => this.#read());
+	}
+
+	/** Grants, because a host that is piped is also a host that is open: one row does both. */
+	async all(): Promise<readonly Grant[]> {
+		return (await this.hosts()).map(pipeGrant);
+	}
+
+	async add(host: string): Promise<void> {
+		await this.#serialize(async () => {
+			const all = (await this.#read()).filter((other) => other !== host);
+			all.push(host);
+			await this.#write(all);
+		});
+	}
+
 	async drop(host: string): Promise<boolean> {
 		return await this.#serialize(async () => {
 			const all = await this.#read();

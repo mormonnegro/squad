@@ -94,6 +94,8 @@ function context(
 		building?: boolean;
 		/** Which model looks at pictures, and which provider keys this plane holds. */
 		looksWith?: { provider: string; model: string };
+		/** The hosts this plane pipes rather than reads. */
+		piped?: readonly string[];
 		visionKeys?: readonly string[];
 		/** Whether the sandbox is too old to hold the tools that drive the browser. */
 		toolless?: boolean;
@@ -125,6 +127,8 @@ function context(
 	};
 	/** Every screen decision that got as far as the plane, including the `null` that hands it back. */
 	const screened: (boolean | null)[] = [];
+	/** The hosts piped, and every change that got as far as the plane. */
+	const piped = [...(start.piped ?? [])];
 	/** The model that looks, and every choice that got as far as the plane. */
 	const looking = { at: start.looksWith };
 	const looked: ({ provider: string; model?: string } | null)[] = [];
@@ -228,6 +232,7 @@ function context(
 		screened,
 		looking,
 		looked,
+		piped,
 		bot,
 		offered,
 		repos,
@@ -275,6 +280,17 @@ function context(
 				const at = serving.findIndex((one) => one.port === port);
 				if (at === -1) return false;
 				serving.splice(at, 1);
+				return true;
+			},
+			piped: async () => piped,
+			pipe: async (host: string, on: boolean) => {
+				const at = piped.indexOf(host);
+				if (on) {
+					if (at === -1) piped.push(host);
+					return true;
+				}
+				if (at === -1) return false;
+				piped.splice(at, 1);
 				return true;
 			},
 			vision: async () => ({
@@ -913,6 +929,65 @@ describe("/config", () => {
  * it into a listener. So what the answer says is mostly about where a link works and what it needs
  * before it does — an operator who reads this as "published" has been told the wrong thing.
  */
+describe("/pipe", () => {
+	it("says nothing is piped, and what piping would be for", async () => {
+		const said = await runCommand("/pipe", context({}).context);
+
+		expect(said).toContain("every host is opened and read here");
+		// The trade is written out where somebody is about to make it, because it is the one thing on
+		// this console that gives up a security property for a working feature.
+		expect(said).toContain("no path");
+		expect(said).toContain("Never for one it has a key to");
+	});
+
+	it("opens a host and pipes it in one go", async () => {
+		const plane = context({});
+		const said = await runCommand("/pipe www.flylevel.com", plane.context);
+
+		expect(plane.piped).toEqual(["www.flylevel.com"]);
+		expect(said).toContain("open and piped");
+	});
+
+	it("suggests the wildcard, because a site is not one host", async () => {
+		// The mistake somebody makes once: the page is on the name in the address bar and the script
+		// that decides whether you are a person is on another under the same domain.
+		const said = await runCommand("/pipe www.flylevel.com", context({}).context);
+		expect(said).toContain("*.flylevel.com");
+	});
+
+	it("says what piping the whole web means, rather than suggesting a wildcard of a wildcard", async () => {
+		const said = await runCommand("/pipe *", context({}).context);
+
+		expect(said).toContain("That is the whole web");
+		// The two halves of what is left: keys still work, and everything else stops being read.
+		expect(said).toContain("carrying a credential");
+		expect(said).not.toContain("*.*");
+	});
+
+	it("takes a host out of a pasted URL", async () => {
+		const plane = context({});
+		await runCommand(
+			"/pipe https://www.flylevel.com/Flight/ExternalSelect?k=EZEMAD",
+			plane.context,
+		);
+		expect(plane.piped).toEqual(["www.flylevel.com"]);
+	});
+
+	it("puts one back, and says what comes back with it", async () => {
+		const plane = context({ piped: ["www.flylevel.com"] });
+		const said = await runCommand("/pipe off www.flylevel.com", plane.context);
+
+		expect(plane.piped).toEqual([]);
+		expect(said).toContain("path is back on the audit line");
+	});
+
+	it("says so when there was nothing to put back", async () => {
+		expect(await runCommand("/pipe off nowhere.com", context({}).context)).toContain(
+			"was not being piped",
+		);
+	});
+});
+
 describe("/vision", () => {
 	it("says nothing is looking, and what it would cost if something did", async () => {
 		const said = await runCommand("/vision", context({}).context);

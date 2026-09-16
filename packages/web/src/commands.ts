@@ -40,6 +40,11 @@ export const COMMANDS: readonly Command[] = [
 		does: "give it a browser of its own, and open the live view of it here",
 	},
 	{
+		name: "/pipe",
+		takes: "[<host>|off <host>]",
+		does: "sites read end to end by the browser, rather than opened and read here",
+	},
+	{
 		name: "/vision",
 		takes: "[<provider> [<model>]|off]",
 		does: "which model looks at a screenshot for the agents, and what a look costs",
