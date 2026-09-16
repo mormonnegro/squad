@@ -38,14 +38,15 @@ import { Spin } from "./spin.tsx";
  * a bill for saying hello.
  */
 
-/** The three places worth a name of their own, and what each one is. */
-const PLACES = [
-	{ path: "workspace", name: "workspace", says: "what it has built" },
-	{ path: "workspace/inbox", name: "inbox", says: "what you have left it" },
-	{ path: ".self", name: "self", says: "its soul, its skills, what it remembers" },
-] as const;
-
-/** Where the workspace starts, which is where the folder button in a conversation opens. */
+/**
+ * Where the workspace starts, which is where the folder button in a conversation opens.
+ *
+ * A row of pills above the path used to offer three of these — the workspace, the inbox inside it,
+ * and `.self`, where an agent keeps its soul and its skills. Two of the three were never pressed:
+ * the inbox is a folder in the workspace and is opened by pointing at it like any other, and
+ * nobody goes to read a soul from a file manager. What is left is a path and the things in it,
+ * which is what the screen was for.
+ */
 export const FILES_HOME = "workspace";
 
 /**
@@ -274,47 +275,34 @@ export function Files({
 				}}
 			>
 				<div className="mx-auto flex w-full max-w-[62rem] flex-col gap-4">
+					{/* Where you are, and what can be done here: one row, the way a file manager puts it. */}
 					<div className="flex flex-wrap items-center gap-1.5">
-						{PLACES.map((place) => (
-							<button
-								key={place.path}
-								type="button"
-								className="pill"
-								data-yes={placeOf(where) === place.path}
-								title={place.says}
-								onClick={() => onWhere(place.path)}
-							>
-								{place.name}
-							</button>
-						))}
+						<Crumbs where={where} onWhere={onWhere} />
 						<span className="flex-1" />
 						{/* The one button that says what pressing it does rather than where you are, which is
-						    how Drive and Explorer both put this: the icon is the other view. */}
-						<button
-							type="button"
-							className="pill"
-							title={view === "tiles" ? "as a list" : "as tiles"}
-							onClick={() => {
-								const next = view === "tiles" ? "rows" : "tiles";
-								setView(next);
-								rememberView(next);
-							}}
-						>
-							{view === "tiles" ? (
-								<List className="size-3.5" />
-							) : (
-								<LayoutGrid className="size-3.5" />
-							)}
-						</button>
-						<button
-							type="button"
-							className="pill"
-							data-yes={dots}
-							title="the names that start with a dot"
-							onClick={() => setDots(!dots)}
-						>
-							dotfiles
-						</button>
+						    how Drive and Explorer both put this: the icon is the other view. Not over a
+						    document, where there is no folder for it to be about. */}
+						{listing?.kind !== "file" && (
+							<button
+								type="button"
+								className="pill"
+								title={view === "tiles" ? "as a list" : "as tiles"}
+								onClick={() => {
+									const next = view === "tiles" ? "rows" : "tiles";
+									setView(next);
+									rememberView(next);
+								}}
+							>
+								{view === "tiles" ? (
+									<List className="size-3.5" />
+								) : (
+									<LayoutGrid className="size-3.5" />
+								)}
+							</button>
+						)}
+						{/* A folder asks itself again every few seconds; a file on screen never does, because
+						    re-reading one under the reader scrolls the document out from under them. This is
+						    the way to ask for that one. */}
 						<button
 							type="button"
 							className="pill"
@@ -343,8 +331,6 @@ export function Files({
 							}}
 						/>
 					</div>
-
-					<Crumbs where={where} onWhere={onWhere} />
 
 					{why !== undefined && <p className="why">{why}</p>}
 
@@ -413,6 +399,7 @@ export function Files({
 							where={where}
 							dots={dots}
 							view={view}
+							onDots={() => setDots(!dots)}
 							onWhere={onWhere}
 							onLeave={() => picker.current?.click()}
 						/>
@@ -440,7 +427,7 @@ function Crumbs({ where, onWhere }: { where: string; onWhere: (path: string) => 
 	return (
 		// The padding hangs outside the column, so the path starts on the same line as the pills above
 		// it and the rows below: one left edge down the screen rather than three that nearly agree.
-		<div className="-mx-1 flex flex-wrap items-center gap-1 font-mono text-[0.85rem]">
+		<div className="-ml-1 flex flex-wrap items-center gap-1 font-mono text-[0.85rem]">
 			<button
 				type="button"
 				className="rounded px-1 py-0.5 text-muted hover:bg-white/5 hover:text-said"
@@ -476,6 +463,7 @@ function Inside({
 	where,
 	dots,
 	view,
+	onDots,
 	onWhere,
 	onLeave,
 }: {
@@ -483,11 +471,13 @@ function Inside({
 	where: string;
 	dots: boolean;
 	view: View;
+	onDots: () => void;
 	onWhere: (path: string) => void;
 	onLeave: () => void;
 }) {
 	const shown = listing.entries.filter((one) => dots || !one.name.startsWith("."));
-	const hidden = listing.entries.length - shown.length;
+	/** How many names in here start with a dot, whether they are being shown or not. */
+	const dotted = listing.entries.filter((one) => one.name.startsWith(".")).length;
 	/** The folder holding this one, or nothing at the top of the box, where there is no up. */
 	const up = where === "" ? undefined : folderOf(where);
 	const open = (name: string): void => onWhere(where === "" ? name : `${where}/${name}`);
@@ -503,9 +493,11 @@ function Inside({
 			{shown.length === 0 && (
 				<div className="flex flex-col items-start gap-2 py-6">
 					<p className="text-[0.9rem] text-muted">
-						{listing.entries.length === 0
-							? "Nothing in here yet."
-							: `Nothing but ${hidden} name${hidden === 1 ? "" : "s"} starting with a dot.`}
+						{listing.entries.length === 0 ? (
+							"Nothing in here yet."
+						) : (
+							<Dotted count={dotted} dots={dots} onDots={onDots} />
+						)}
 					</p>
 					<button type="button" className="pill" onClick={onLeave}>
 						<ArrowUpFromLine className="size-3.5" />
@@ -514,13 +506,13 @@ function Inside({
 				</div>
 			)}
 
-			<div className="mt-3 flex items-center gap-3 text-[0.78rem] text-muted">
+			<div className="mt-3 flex flex-wrap items-center gap-3 text-[0.78rem] text-muted">
 				{listing.entries.length < listing.total && (
 					<span>
 						{listing.entries.length} of {listing.total} — the rest is past what a list is for.
 					</span>
 				)}
-				{hidden > 0 && shown.length > 0 && <span>{hidden} more starting with a dot.</span>}
+				{dotted > 0 && shown.length > 0 && <Dotted count={dotted} dots={dots} onDots={onDots} />}
 				{/*
 				 * The one thing about this screen that would otherwise be found out the hard way: the
 				 * agent is told every turn to keep the top of its workspace clear, so a file left loose
@@ -534,6 +526,26 @@ function Inside({
 				)}
 			</div>
 		</div>
+	);
+}
+
+/**
+ * The names that start with a dot, said and switched in the same words.
+ *
+ * This used to be a pill up in the toolbar beside the places, which is where a setting goes and this
+ * is not one: it is a fact about the folder you are looking at — there are two more things in here —
+ * and the way to see them is to press the sentence that says so. One control fewer over every folder
+ * in the box, and the count is in the line that was already going to be printed.
+ */
+function Dotted({ count, dots, onDots }: { count: number; dots: boolean; onDots: () => void }) {
+	return (
+		<button
+			type="button"
+			className="underline decoration-muted/40 underline-offset-[3px] hover:text-said hover:decoration-current"
+			onClick={onDots}
+		>
+			{dots ? `${count} starting with a dot, shown.` : `${count} more starting with a dot.`}
+		</button>
 	);
 }
 
@@ -829,13 +841,6 @@ function glyphOf(name: string): typeof File {
 	)
 		? FileText
 		: File;
-}
-
-/** Which of the named places a path is in, for the row of them at the top. */
-function placeOf(where: string): string | undefined {
-	return PLACES.map((one) => one.path)
-		.filter((path) => where === path || where.startsWith(`${path}/`))
-		.sort((a, b) => b.length - a.length)[0];
 }
 
 function folderOf(path: string): string {
