@@ -364,4 +364,60 @@ describe("PiOutput", () => {
 
 		expect(out.failure).toBeUndefined();
 	});
+
+	/*
+	 * The one that cost a turn. A message came back `terminated` three minutes into a turn, pi retried
+	 * on its own, and the agent went on working for another two and a half — reading a page, clicking
+	 * through a checkout, writing down what it had learned. Then the turn was thrown away at the end
+	 * as having got no answer: the answer discarded, a single red row shown with no reply under it,
+	 * and the events left queued so the whole thing ran again at the same cost.
+	 */
+	it("is not a failure when the model stumbled and then answered", () => {
+		const { steps, out } = stepping();
+
+		out.push(
+			emitted({
+				type: "message_end",
+				message: { role: "assistant", stopReason: "error", errorMessage: "terminated" },
+			}),
+		);
+		expect(out.failure).toBe("terminated");
+
+		out.push(emitted({ type: "message_end", message: { role: "assistant", stopReason: "stop" } }));
+
+		expect(out.failure).toBeUndefined();
+		// Still on the record, though, and still drawn in red: the stumble happened, and a turn that
+		// took five minutes because the model dropped a call is worth being able to see afterwards.
+		expect(steps).toHaveLength(1);
+		expect(steps[0]?.failed).toBe(true);
+	});
+
+	it("is a failure when the last word the model had was the refusal", () => {
+		const out = new PiOutput();
+
+		out.push(emitted({ type: "message_end", message: { role: "assistant", stopReason: "stop" } }));
+		out.push(
+			emitted({
+				type: "message_end",
+				message: { role: "assistant", stopReason: "error", errorMessage: "rate limited" },
+			}),
+		);
+
+		expect(out.failure).toBe("rate limited");
+	});
+
+	it("is not undone by somebody else's message ending", () => {
+		// Only the model answering clears it. A tool result landing is not the model having answered.
+		const out = new PiOutput();
+
+		out.push(
+			emitted({
+				type: "message_end",
+				message: { role: "assistant", stopReason: "error", errorMessage: "terminated" },
+			}),
+		);
+		out.push(emitted({ type: "message_end", message: { role: "user", stopReason: "stop" } }));
+
+		expect(out.failure).toBe("terminated");
+	});
 });

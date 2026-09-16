@@ -118,6 +118,11 @@ export class PiOutput {
 	 * A model that refuses — an expired key, a rate limit, a host the proxy would not let through —
 	 * is reported inside the stream and leaves pi exiting zero. Unnoticed, a denied agent is one that
 	 * said nothing, and the operator is left reading an empty reply for the reason.
+	 *
+	 * It is about the last word the model had and not about every word it had. A turn where one
+	 * message came back `terminated` and pi retried and the agent then worked for another two minutes
+	 * is a turn that was answered, and calling it a failure threw away the answer and took the whole
+	 * turn again at the same cost.
 	 */
 	get failure(): string | undefined {
 		return this.#failure;
@@ -258,7 +263,25 @@ export class PiOutput {
 		this.#cost += message.usage?.cost?.total ?? 0;
 
 		const stopReason = message.stopReason;
-		if (stopReason !== "error" && stopReason !== "aborted") return;
+		if (stopReason !== "error" && stopReason !== "aborted") {
+			/*
+			 * A message that ended cleanly is the model having answered, and it undoes a failure
+			 * recorded earlier in the same turn.
+			 *
+			 * Without this the flag was sticky, and stickiness cost a whole turn's work. One message in
+			 * a three-minute turn came back `terminated`; pi retried on its own, the agent went on
+			 * working for another two and a half minutes — reading a page, clicking through a checkout,
+			 * writing down what it had learned — and then the turn was thrown away at the end as having
+			 * got no answer. The answer was discarded, the operator was shown a single red row with no
+			 * reply under it, and because a thrown turn leaves its events queued the whole thing was
+			 * taken again from the top, at the same cost.
+			 *
+			 * The question this flag exists to answer is whether the model ever answered, not whether it
+			 * ever stumbled. The stumble is still on the record as a failed step, where it belongs.
+			 */
+			this.#failure = undefined;
+			return;
+		}
 		this.#failure = message.errorMessage ?? stopReason;
 		this.#step({
 			action: "model",
