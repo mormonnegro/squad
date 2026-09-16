@@ -1465,15 +1465,29 @@ pre .md-path:hover {
 	color: var(--muted);
 }
 
+/*
+ * What the step is, which on a failed row is the half that must survive.
+ *
+ * Both halves used to shrink together, weighted by how long each one was — so the longer one won,
+ * and the longer one is always the dump. A row that failed after `ls -la workspace; ls -la inbox`
+ * read `lo…  ✗ total 28 drwxr-xr-x 6 agent agent 4096 …`: three hundred characters of a directory
+ * listing, and nothing left saying which of the turn's steps this was. The one line in a turn worth
+ * finding was the one line you could not identify.
+ */
 .step-say {
+	flex: 0 1 auto;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-/* The reason it failed, which is the one thing on these rows still worth having verbatim. */
+/* The reason it failed, which is the one thing on these rows still worth having verbatim. Basis
+   zero, so it asks for the room that is left rather than for the room it would like: the name keeps
+   its width and this takes the rest. The floor is so that a long name still leaves a stub of the
+   reason rather than none — and the whole of both is a hover away, on the row's title. */
 .step-why {
-	flex: 0 1 auto;
+	flex: 1 1 0;
+	min-width: 6rem;
 	overflow: hidden;
 	font: 0.76rem var(--mono);
 	text-overflow: ellipsis;
