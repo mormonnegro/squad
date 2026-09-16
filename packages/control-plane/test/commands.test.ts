@@ -322,10 +322,9 @@ function context(
 						? undefined
 						: { provider: spec.provider, model: spec.model ?? "gpt-5-mini" };
 			},
-			// Pointing is off in here and nothing under test asks about it: these two are the shape the
+			// Pointing is off in here and nothing under test asks about it: this is the shape the
 			// context has, so that a command that never mentions it still type-checks.
 			pointing: async () => ({ using: undefined, offers: [] }),
-			choosePointing: async () => {},
 			screen: async () => ({
 				on: screen.on,
 				running: screen.running,

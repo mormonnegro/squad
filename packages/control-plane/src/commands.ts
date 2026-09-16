@@ -5,7 +5,7 @@ import { GATES, type Gate, gateSaid, isGate } from "./gates.ts";
 import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
-import type { PointingOffer, PointingSpec, PointingStanding } from "./pointing.ts";
+import type { PointingOffer, PointingStanding } from "./pointing.ts";
 import { type Served, servedPath, unservable } from "./ports.ts";
 import {
 	looksLikeGithubToken,
@@ -183,8 +183,7 @@ export interface CommandContext {
 		readonly using: PointingStanding | undefined;
 		readonly offers: readonly PointingOffer[];
 	}>;
-	/** Chooses one, or `null` to go back to reading a page and naming one of its numbers. */
-	choosePointing(spec: PointingSpec | null): Promise<void>;
+
 	/** The hosts this plane pipes rather than reads, which is the plane's list and not an agent's. */
 	piped(): Promise<readonly string[]>;
 	/** Opens a host and pipes it, or stops piping one. Answers whether anything changed. */

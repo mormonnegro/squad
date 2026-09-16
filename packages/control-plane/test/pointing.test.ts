@@ -1,24 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+	DEFAULT_POINTING,
 	POINTING_PROVIDERS,
-	PointingChoice,
 	perPointUsd,
 	pointingGrant,
 	resolvePointing,
 } from "../src/pointing.ts";
-
-let root: string;
-
-beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), "squad-pointing-"));
-});
-
-afterEach(() => {
-	rmSync(root, { recursive: true, force: true });
-});
 
 describe("which model points", () => {
 	it("fills in the model, the endpoint and the price from the table", () => {
@@ -77,28 +64,12 @@ describe("the grant it derives", () => {
 	});
 });
 
-describe("what the operator chose", () => {
-	it("is nothing at all until somebody chooses", async () => {
-		const choice = new PointingChoice(join(root, "pointing.json"));
+describe("what turns it on", () => {
+	/** The key is the switch, so what it points with has to be settled without anybody choosing. */
+	it("points with the one provider there is, without being asked", () => {
+		const resolved = resolvePointing(DEFAULT_POINTING);
 
-		expect(await choice.chosen()).toBeUndefined();
-	});
-
-	it("keeps a choice, and reads it back", async () => {
-		const choice = new PointingChoice(join(root, "pointing.json"));
-
-		await choice.choose({ provider: "typesafe", model: "jev-1.12" });
-
-		expect(await choice.chosen()).toEqual({ provider: "typesafe", model: "jev-1.12" });
-	});
-
-	/** Turning it off is a decision and is written down as one, not a file that went missing. */
-	it("reads a turned-off plane as nobody having chosen", async () => {
-		const choice = new PointingChoice(join(root, "deep", "pointing.json"));
-		await choice.choose({ provider: "typesafe" });
-
-		await choice.choose(null);
-
-		expect(await choice.chosen()).toBeUndefined();
+		expect(typeof resolved === "string" ? "" : resolved.provider).toBe("typesafe");
+		expect(typeof resolved === "string" ? "" : resolved.keyEnv).toBe("TYPESAFE_API_KEY");
 	});
 });

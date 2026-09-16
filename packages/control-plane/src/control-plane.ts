@@ -138,11 +138,10 @@ import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./plugins.ts";
 import {
+	DEFAULT_POINTING,
 	POINTING_PROVIDERS,
 	type Pointing,
-	PointingChoice,
 	type PointingOffer,
-	type PointingSpec,
 	type PointingStanding,
 	pointingGrant,
 	resolvePointing,
@@ -720,7 +719,6 @@ export class ControlPlane {
 	readonly #search: SearchChoice;
 	/** Which model looks at pictures, when an operator has decided that looking is worth paying for. */
 	readonly #vision: VisionChoice;
-	readonly #pointing: PointingChoice;
 	readonly #bots: TelegramBots;
 	readonly #mailbox: MailboxStore;
 	/**
@@ -870,7 +868,6 @@ export class ControlPlane {
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#search = new SearchChoice(join(this.#stateDir, "search.json"));
 		this.#vision = new VisionChoice(join(this.#stateDir, "vision.json"));
-		this.#pointing = new PointingChoice(join(this.#stateDir, "pointing.json"));
 		this.#bots = new TelegramBots(join(this.#stateDir, "telegram.json"));
 		this.#mailbox = new MailboxStore(join(this.#stateDir, "mailbox.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
@@ -2275,8 +2272,21 @@ export class ControlPlane {
 		const searching = Object.values(SEARCH_PROVIDERS).some(
 			(provider) => provider.keyEnv === keyEnv,
 		);
-		if (!thinking && !searching) throw new Error(`${keyEnv} is not a provider key`);
+		/*
+		 * And the one that points, which is the only key on this plane that is also a switch.
+		 *
+		 * Searching and looking are chosen and then paid for; pointing is one provider answering one
+		 * kind of question, so there was nothing to choose and the key is the whole of the decision.
+		 * Which means the grant it derives appears and disappears with the key, and every agent's
+		 * grants have to be written again — otherwise the tool arrives in the sandbox on the next turn
+		 * and is refused at the proxy, which is the worst of the two halves being out of step.
+		 */
+		const pointing = Object.values(POINTING_PROVIDERS).some(
+			(provider) => provider.keyEnv === keyEnv,
+		);
+		if (!thinking && !searching && !pointing) throw new Error(`${keyEnv} is not a provider key`);
 		await this.#keys.keep(keyEnv, value.trim());
+		if (pointing) await this.#reregisterAll();
 	}
 
 	/** Where searching goes, filled in from the table, and whether this plane can pay for it. */
@@ -2395,26 +2405,21 @@ export class ControlPlane {
 	}
 
 	/**
-	 * Which model points at things on a page, filled in from the table, and whether it can be paid.
+	 * Which model points at things on a page, and whether this plane holds the key that pays for it.
 	 *
-	 * Nothing when nobody has chosen, like looking. An agent on a plane that does not point works a
-	 * page the way it always did: read it, and name one of the numbers that came back.
+	 * The key is the switch. Nothing else is set, so nothing else is asked: a plane with the key
+	 * points, a plane without it works a page the way it always did — read it, and name one of the
+	 * numbers that came back.
 	 */
 	async pointing(): Promise<PointingStanding | undefined> {
-		const chosen = await this.#pointing.chosen();
-		if (chosen === undefined) return undefined;
-		const resolved = resolvePointing(chosen);
-		// A stored choice this plane has since forgotten how to reach leaves pointing off rather than
-		// leaving the screen with a provider it cannot name.
+		const resolved = resolvePointing(DEFAULT_POINTING);
+		// A provider this plane has since forgotten how to reach leaves pointing off rather than
+		// leaving the screen with something it cannot name.
 		if (typeof resolved === "string") return undefined;
 		const key = await this.#secrets.resolve({ ref: resolved.keyEnv }).catch(() => undefined);
+		if (key === undefined || key.length === 0) return undefined;
 		const here = await this.#keys.here();
-		return {
-			...resolved,
-			chosen: true,
-			held: key !== undefined && key.length > 0,
-			here: here.has(resolved.keyEnv),
-		};
+		return { ...resolved, held: true, here: here.has(resolved.keyEnv) };
 	}
 
 	/** Every model that could do the pointing, on the vision offers' terms and for their reasons. */
@@ -2436,16 +2441,6 @@ export class ControlPlane {
 			}
 		}
 		return offers;
-	}
-
-	/** Chooses the model that points, or `null` to go back to reading a page and naming a number. */
-	async choosePointing(spec: PointingSpec | null): Promise<void> {
-		if (spec !== null) {
-			const resolved = resolvePointing(spec);
-			if (typeof resolved === "string") throw new Error(resolved);
-		}
-		await this.#pointing.choose(spec);
-		await this.#reregisterAll();
 	}
 
 	/**
@@ -3418,7 +3413,6 @@ export class ControlPlane {
 				using: await this.pointing(),
 				offers: await this.pointingOffers(),
 			}),
-			choosePointing: (spec) => this.choosePointing(spec),
 			piped: () => this.piped(),
 			pipe: (host, on) => this.pipe(host, on),
 			listening: (port) => this.#listening(agentId, port),

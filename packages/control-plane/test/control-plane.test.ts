@@ -451,6 +451,26 @@ describe("a host opened at the console", () => {
 	const listed = async (plane: ControlPlane, host: string) =>
 		(await plane.grants()).find((grant) => grant.host === host);
 
+	/**
+	 * The one key on this plane that is also a switch: the grant it derives appears with it, so an
+	 * agent's next turn can reach the one endpoint that answers which thing on a page was named.
+	 */
+	it("opens the pointing endpoint the moment the key is there, and closes it when it goes", async () => {
+		const plane = planeWith();
+		expect(await listed(plane, "api.typesafe.ai")).toBeUndefined();
+
+		await plane.setKey("TYPESAFE_API_KEY", "ts-typed");
+
+		expect(await listed(plane, "api.typesafe.ai")).toMatchObject({
+			id: "pointing:typesafe",
+			methods: ["POST"],
+		});
+
+		await plane.setKey("TYPESAFE_API_KEY", "");
+
+		expect(await listed(plane, "api.typesafe.ai")).toBeUndefined();
+	});
+
 	it("joins the ones the file declared, on one list", async () => {
 		const plane = planeWith();
 

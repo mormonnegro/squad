@@ -1,6 +1,6 @@
 import { Check, Eye, MousePointerClick, Search, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Plane, ToolOffer, Tools as ToolsAnswer } from "./plane.ts";
+import type { Plane, ToolOffer, ToolStanding, Tools as ToolsAnswer } from "./plane.ts";
 import { Spin } from "./spin.tsx";
 
 /**
@@ -114,19 +114,11 @@ export function Tools({ plane }: { plane: Plane }) {
 								}
 							/>
 
-							<Ability
-								icon={<MousePointerClick className="size-3.5" />}
-								title="Pointing"
-								says="An agent works a page by reading it — every button and box on it, numbered — and then naming a number. That list is most of what a browsing turn costs, and it is carried for the rest of the turn. Pointing lets it name the thing instead: the page goes to a classifier that answers in a tenth of a second with which element it is, and the agent never sees the list. Unsure, nothing is pressed and the agent reads the page as before."
-								offers={tools.pointing.offers}
+							<Pointing
+								standing={tools.pointing}
 								busy={busy}
-								what="pointing"
-								off={tools.pointing.using === undefined}
-								onOff={() => void run("pointing:off", () => plane.choosePointing(null))}
-								onUse={(offer) =>
-									void run(`pointing:${offer.provider}:${offer.model}`, () =>
-										plane.choosePointing({ provider: offer.provider, model: offer.model }),
-									)
+								onKey={(value) =>
+									void run("pointing:key", () => plane.setKey("TYPESAFE_API_KEY", value))
 								}
 							/>
 						</>
@@ -156,6 +148,113 @@ function each(rate: { input: number; output: number }, what: What): string {
 
 /** The three jobs on this screen, which is what the cost line and the busy key are keyed on. */
 type What = "search" | "vision" | "pointing";
+
+/**
+ * The third one, which is a key rather than a choice.
+ *
+ * The two above it are a decision — which model looks, which model searches — and a key to pay for
+ * whichever was decided. This is one provider answering one kind of question at one price, so there
+ * is nothing to decide and a list of one to pick from would be a question asked for the symmetry of
+ * it. The key is the switch: paste it and agents can name things on a page, take it out and they go
+ * back to reading the page for its numbers.
+ */
+function Pointing({
+	standing,
+	busy,
+	onKey,
+}: {
+	standing: ToolStanding;
+	busy: string | undefined;
+	onKey: (value: string) => void;
+}) {
+	const [typed, setTyped] = useState("");
+	const on = standing.using !== undefined;
+	const offer = standing.offers[0];
+
+	return (
+		<section className="section">
+			<div className="section-head">
+				<h2 className="section-title">
+					<span className="mr-2 inline-flex text-muted">
+						<MousePointerClick className="size-3.5" />
+					</span>
+					Pointing
+					{!on && <span className="tally">off</span>}
+				</h2>
+				<p className="section-says">
+					An agent works a page by reading it — every button and box on it, numbered — and then
+					naming a number. That list is most of what a browsing turn costs, and it is carried for
+					the rest of the turn. With this on it can name the thing instead: the page goes to a
+					classifier that answers in about a tenth of a second with which element it is, and the
+					agent never sees the list. Unsure, nothing is pressed and it reads the page as before.
+				</p>
+			</div>
+
+			<div
+				className={`flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 ${
+					on ? "border-up/40 bg-up/5" : "border-line"
+				}`}
+			>
+				<span className="w-4 flex-none text-up">{on && <Check className="size-3.5" />}</span>
+				<span className="min-w-0 flex-1 truncate">
+					<span className="text-said">{standing.using?.model ?? offer?.model ?? "jev-latest"}</span>
+					<span className="ml-2 text-[0.8rem] text-muted">
+						{standing.using?.provider ?? offer?.provider ?? "typesafe"}
+					</span>
+				</span>
+				<span className="flex-none text-[0.78rem] text-muted">
+					{offer === undefined ? "" : each(offer.rate, "pointing")}
+				</span>
+				{on ? (
+					<button
+						type="button"
+						className="flex-none rounded-md border border-line px-2.5 py-1 text-[0.78rem] hover:text-say disabled:text-muted"
+						disabled={busy !== undefined}
+						onClick={() => onKey("")}
+					>
+						{busy === "pointing:key" ? <Spin /> : "forget the key"}
+					</button>
+				) : (
+					<form
+						className="flex flex-none items-center gap-2"
+						onSubmit={(event) => {
+							event.preventDefault();
+							if (typed.trim() === "") return;
+							onKey(typed.trim());
+							setTyped("");
+						}}
+					>
+						{/* Nothing here ever shows a key. The plane answers with whether it holds one and
+						    never with the value, which is why this is a box to type into and not a field
+						    with something in it. */}
+						<input
+							className="field w-56"
+							type="password"
+							autoComplete="off"
+							spellCheck={false}
+							placeholder="TYPESAFE_API_KEY…"
+							value={typed}
+							onChange={(event) => setTyped(event.target.value)}
+						/>
+						<button
+							type="submit"
+							className="flex-none rounded-md border border-line px-2.5 py-1 text-[0.78rem] hover:text-say disabled:text-muted"
+							disabled={typed.trim() === "" || busy !== undefined}
+						>
+							{busy === "pointing:key" ? <Spin /> : "turn it on"}
+						</button>
+					</form>
+				)}
+			</div>
+
+			<p className="section-says">
+				One key from <code>console.typesafe.ai</code> and this is on. It is the whole of the switch:
+				no agent ever holds it — the request leaves the sandbox with no credential and is given one
+				on its way out, at that one endpoint and nowhere else.
+			</p>
+		</section>
+	);
+}
 
 function Ability({
 	icon,

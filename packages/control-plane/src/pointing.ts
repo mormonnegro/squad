@@ -23,6 +23,11 @@ import type { Rate } from "./search.ts";
  *
  * When the answer comes back unsure, nothing is pressed. The agent is handed the page it would have
  * read anyway and picks a number itself, which is the turn there was before this existed.
+ *
+ * It is on when the key is there and off when it is not, and there is nothing else to set. The two
+ * abilities beside this one are a choice between providers, so they have a screen to choose on; this
+ * is one provider answering one kind of question, and an operator who pasted the key has already
+ * said everything there was to say. Taking the key out is how it goes off again.
  */
 
 export interface PointingProvider {
@@ -59,6 +64,15 @@ export interface PointingSpec {
 	readonly provider: string;
 	readonly model?: string;
 }
+
+/**
+ * The one that is used when nobody said which, which is every plane that has the key.
+ *
+ * There is no choosing here and that is the design: one provider answers this kind of question at
+ * this price, and a screen that made an operator pick it out of a list of one would be a screen
+ * asking a question to look like the two above it.
+ */
+export const DEFAULT_POINTING: PointingSpec = { provider: "typesafe" };
 
 /** A pointing model as everything downstream needs it, with the table's half filled in. */
 export interface Pointing {
@@ -110,10 +124,14 @@ export function pointingGrant(pointing: Pointing): Grant {
 	};
 }
 
-/** Pointing as the abilities screen has it: what it would be, and whether this plane can pay. */
+/**
+ * Pointing as the abilities screen has it: what it would be, and whether this plane holds the key.
+ *
+ * `held` is the whole of whether it is on. Unlike looking, there is nothing else to decide — a key
+ * for this API buys one thing, and an operator who has pasted it has said what they wanted. So the
+ * switch is the key, and turning it off is taking the key back out.
+ */
 export interface PointingStanding extends Pointing {
-	/** Whether anybody chose it. Like looking, pointing is off until somebody turns it on. */
-	readonly chosen: boolean;
 	readonly held: boolean;
 	/** Whether the key is this plane's own file rather than the environment it was started with. */
 	readonly here: boolean;
@@ -139,52 +157,4 @@ export interface PointingOffer {
  */
 export function perPointUsd(rate: Rate): number {
 	return (4000 * rate.input) / 1e6 + (20 * rate.output) / 1e6;
-}
-
-/**
- * Which model this plane points with, kept beside the operator's file rather than in it.
- *
- * Off until somebody chooses, like looking: a plane that points is one whose operator decided that
- * a second provider is worth having, and the screen works without it exactly as it did before.
- */
-export class PointingChoice {
-	readonly #path: string;
-	#tail: Promise<unknown> = Promise.resolve();
-
-	constructor(path: string) {
-		this.#path = path;
-	}
-
-	async chosen(): Promise<PointingSpec | undefined> {
-		return this.#serialize(() => this.#read());
-	}
-
-	async choose(spec: PointingSpec | null): Promise<void> {
-		await this.#serialize(async () => {
-			await mkdir(dirname(this.#path), { recursive: true });
-			const temporary = `${this.#path}.${process.pid}.tmp`;
-			// `null` is pointing turned off, which is a decision and is written down as one: a file that
-			// is simply absent is a plane nobody has asked yet.
-			await writeFile(temporary, `${JSON.stringify(spec, null, "\t")}\n`, "utf8");
-			await rename(temporary, this.#path);
-		});
-	}
-
-	async #read(): Promise<PointingSpec | undefined> {
-		try {
-			const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
-			if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
-			const { provider, model } = parsed as Partial<PointingSpec>;
-			if (typeof provider !== "string") return undefined;
-			return typeof model === "string" ? { provider, model } : { provider };
-		} catch {
-			return undefined;
-		}
-	}
-
-	#serialize<T>(operation: () => Promise<T>): Promise<T> {
-		const result = this.#tail.then(operation, operation);
-		this.#tail = result.catch(() => {});
-		return result;
-	}
 }
