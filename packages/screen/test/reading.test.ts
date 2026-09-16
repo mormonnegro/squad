@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boxScript, pageForAgent, readOutline } from "../image/reading.ts";
+import { boxScript, OUTLINE_SCRIPT, pageForAgent, readOutline } from "../image/reading.ts";
 
 describe("reading a page back", () => {
 	it("takes what the page said about itself", () => {
@@ -56,5 +56,206 @@ describe("finding a numbered element", () => {
 
 	it("scrolls it into view first, because an element off screen has no place to be clicked", () => {
 		expect(boxScript(1)).toContain("scrollIntoView");
+	});
+});
+
+/*
+ * The script itself, run against a page.
+ *
+ * Worth the stub because this is the one piece of the screen whose correctness is not a matter of
+ * shape: what ends up in the list is what the agent can do to the page, and everything that is not
+ * in it is work handed back. The DOM here is only what the script actually touches — enough to tell
+ * a card from the span inside it, which is the whole of the rule.
+ */
+interface Fake {
+	readonly tag: string;
+	readonly cursor?: string;
+	readonly href?: string;
+	readonly role?: string;
+	readonly text?: string;
+	readonly kids?: readonly Fake[];
+	readonly hidden?: boolean;
+}
+
+interface Node {
+	tagName: string;
+	parentElement: Node | null;
+	innerText: string;
+	kids: Node[];
+	cursor: string;
+	hidden: boolean;
+	href?: string;
+	role?: string;
+	getAttribute(name: string): string | null;
+	getBoundingClientRect(): { width: number; height: number };
+	closest(selector: string): Node | null;
+	querySelector(selector: string): Node | null;
+	querySelectorAll(selector: string): Node[];
+}
+
+/** Only the two shapes WANTED actually asks about in these tests: a link, and anything with a role. */
+function declared(node: Node): boolean {
+	return (node.href !== undefined && node.tagName === "A") || node.role === "button";
+}
+
+function build(spec: Fake, parent: Node | null): Node {
+	const node: Node = {
+		tagName: spec.tag.toUpperCase(),
+		parentElement: parent,
+		innerText: spec.text ?? "",
+		kids: [],
+		cursor: spec.cursor ?? "default",
+		hidden: spec.hidden === true,
+		...(spec.href === undefined ? {} : { href: spec.href }),
+		...(spec.role === undefined ? {} : { role: spec.role }),
+		getAttribute: () => null,
+		getBoundingClientRect: () =>
+			spec.hidden === true ? { width: 0, height: 0 } : { width: 80, height: 20 },
+		closest(): Node | null {
+			for (let up = node.parentElement; up !== null; up = up.parentElement) {
+				if (declared(up)) return up;
+			}
+			return null;
+		},
+		querySelector(): Node | null {
+			return node.querySelectorAll("").find((one) => one !== node && declared(one)) ?? null;
+		},
+		querySelectorAll(): Node[] {
+			const all: Node[] = [];
+			const walk = (one: Node): void => {
+				all.push(one);
+				for (const kid of one.kids) walk(kid);
+			};
+			walk(node);
+			return all;
+		},
+	};
+	node.kids = (spec.kids ?? []).map((kid) => build(kid, node));
+	// The cursor is inherited, which is the fact the rule turns on.
+	if (spec.cursor === undefined && parent !== null) node.cursor = parent.cursor;
+	return node;
+}
+
+function outlineOf(spec: Fake): { rows: string[] } {
+	const root = build(spec, null);
+	const all = root.querySelectorAll("*").slice(1);
+	const context = {
+		window: {} as Record<string, unknown>,
+		document: {
+			title: "T",
+			body: { innerText: "" },
+			querySelectorAll: (selector: string) =>
+				selector === "*" ? all : all.filter((one) => declared(one)),
+		},
+		location: { href: "https://example.com/" },
+		getComputedStyle: (node: Node) => ({
+			cursor: node.cursor,
+			visibility: node.hidden ? "hidden" : "visible",
+			display: "block",
+			opacity: "1",
+		}),
+		JSON,
+		String,
+		Number,
+		Set,
+	};
+	// The script is a string because it is sent over CDP to run in somebody else's page. Running it
+	// here is the only way to test what it actually does rather than what it looks like.
+	const run = new Function(...Object.keys(context), `return ${OUTLINE_SCRIPT};`);
+	return JSON.parse(run(...Object.values(context)) as string) as { rows: string[] };
+}
+
+describe("what the page offers the agent", () => {
+	it("still names the things a page declares", () => {
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [{ tag: "a", href: "/in", text: "Sign in" }],
+		});
+
+		expect(rows).toEqual(['[1] a "Sign in"']);
+	});
+
+	/*
+	 * The one this was rewritten for. A ticketing site's sector rows are bare divs with the handler
+	 * bound in script — nothing in the markup says they can be pressed, and the only thing that does
+	 * is the hand the browser is drawing over them.
+	 */
+	it("names a card that says nothing but is drawn under a hand", () => {
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [{ tag: "div", cursor: "pointer", text: "CAMPO GENERAL Desde $ 95.000" }],
+		});
+
+		expect(rows).toEqual(['[1] div "CAMPO GENERAL Desde $ 95.000"']);
+	});
+
+	it("names the card and not the four pieces of it", () => {
+		// The cursor is inherited, so every span inside the card has the hand too. Offering them all
+		// would be the same row four times at four sizes.
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [
+				{
+					tag: "div",
+					cursor: "pointer",
+					text: "CAMPO GENERAL Desde $ 95.000",
+					kids: [
+						{ tag: "h5", text: "CAMPO GENERAL" },
+						{ tag: "span", text: "Desde $ 95.000" },
+					],
+				},
+			],
+		});
+
+		expect(rows).toEqual(['[1] div "CAMPO GENERAL Desde $ 95.000"']);
+	});
+
+	it("keeps the link rather than the box painted around it", () => {
+		// Both are pressable and they do the same thing. The declared one is the better name, and two
+		// rows for one target is a list that reads as two targets.
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [
+				{
+					tag: "div",
+					cursor: "pointer",
+					text: "Read more",
+					kids: [{ tag: "a", href: "/post", text: "Read more" }],
+				},
+			],
+		});
+
+		expect(rows).toEqual(['[1] a "Read more"']);
+	});
+
+	it("keeps them in the order they are on the page", () => {
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [
+				{ tag: "a", href: "/top", text: "Skip" },
+				{ tag: "div", cursor: "pointer", text: "PIT" },
+				{ tag: "a", href: "/foot", text: "Privacidad" },
+			],
+		});
+
+		expect(rows).toEqual(['[1] a "Skip"', '[2] div "PIT"', '[3] a "Privacidad"']);
+	});
+
+	it("leaves out what nobody can see, hand or no hand", () => {
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [{ tag: "div", cursor: "pointer", text: "hidden thing", hidden: true }],
+		});
+
+		expect(rows).toEqual([]);
+	});
+
+	it("leaves out the ordinary page, which is drawn under an arrow", () => {
+		const { rows } = outlineOf({
+			tag: "body",
+			kids: [{ tag: "p", text: "just some words", kids: [{ tag: "span", text: "more words" }] }],
+		});
+
+		expect(rows).toEqual([]);
 	});
 });

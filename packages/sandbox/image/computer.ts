@@ -233,11 +233,16 @@ export default function (pi: ExtensionAPI): void {
 			"This is the cheap one and the one to use by default. Reading a page costs a fraction of",
 			"looking at it and is exact, because you act on numbered elements rather than on coordinates",
 			"you guessed from a picture.",
+			"",
+			"A row that says `div` is not a mistake. The list is what a person could press, which is more",
+			"than what the markup declares: a card built out of bare divs with the handler bound in",
+			"script is on it, found by the hand the browser draws over it. Click those the same way.",
 		].join("\n"),
 		promptSnippet: "Read the page your browser is on, as text and numbered elements",
 		promptGuidelines: [
 			"Read the page rather than looking at it, unless the thing you need is genuinely visual.",
 			"Read again after every click, and use the refs from the newest read.",
+			"If what you want is not in the list, read the page again after scrolling to it: an element with no size and nothing drawn is left out, and a list that has just been opened or filtered is a different list.",
 		],
 		parameters: Type.Object({}),
 		async execute() {

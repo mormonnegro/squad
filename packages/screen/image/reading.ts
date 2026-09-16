@@ -9,6 +9,14 @@
  *
  * So looking is the escalation and reading is the habit. `look` exists for the pages this cannot
  * describe — a canvas, a map, a chart, an image somebody asked about — and costs what it costs.
+ *
+ * What the list is built from is the other half, and it was wrong in a way that had nothing to do
+ * with looking. A whitelist of semantic elements — links, buttons, anything with a role — is a list
+ * of what a page *declares* is interactive, and half the web declares nothing. A ticketing site put
+ * its seven sector rows in bare divs: no href, no role, no tabindex, not even an onclick attribute,
+ * the handler bound in script. They were the only things on the page worth pressing and they were
+ * the only things not on the list, so the agent read the page, found nothing to click, tried the URL
+ * directly, found an app that answers every address with the same page, and handed the work back.
  */
 
 /**
@@ -22,7 +30,6 @@
 export const OUTLINE_SCRIPT = `(() => {
 	const refs = [];
 	window.__squadRefs = refs;
-	const seen = new Set();
 	const rows = [];
 	const clean = (value) => String(value ?? "").replace(/\\s+/g, " ").trim().slice(0, 120);
 	const named = (el) =>
@@ -46,10 +53,9 @@ export const OUTLINE_SCRIPT = `(() => {
 		if (el.type === "password") return "\u2022\u2022\u2022";
 		return clean(el.value);
 	};
-	const shown = (el) => {
+	const shown = (el, style) => {
 		const box = el.getBoundingClientRect();
 		if (box.width === 0 || box.height === 0) return false;
-		const style = getComputedStyle(el);
 		return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0.05;
 	};
 	const WANTED = [
@@ -69,9 +75,27 @@ export const OUTLINE_SCRIPT = `(() => {
 		"[role=textbox]",
 		"[role=combobox]",
 	].join(",");
-	for (const el of document.querySelectorAll(WANTED)) {
-		if (seen.has(el) || !shown(el) || el.disabled === true) continue;
-		seen.add(el);
+	const declared = new Set(document.querySelectorAll(WANTED));
+	// Every element the browser is drawing a hand over, filled in as the walk goes. The walk is in
+	// document order, so a parent is always in here before its children are asked about.
+	const hands = new Set();
+	for (const el of document.querySelectorAll("*")) {
+		const style = getComputedStyle(el);
+		const hand = style.cursor === "pointer";
+		if (hand) hands.add(el);
+		if (!declared.has(el)) {
+			// Nothing about this element says press me, in markup or in paint.
+			if (!hand) continue;
+			// The cursor is inherited, so everything inside a clickable card also has the hand. The
+			// outermost one is the thing that was built to be pressed; its parts are not four more
+			// buttons, and offering them as four would be the list saying the same thing four times.
+			if (hands.has(el.parentElement)) continue;
+			// Inside a link or a button, or wrapped around one. Either way the declared element is the
+			// better thing to name, and naming both is the same row twice at two sizes.
+			if (el.closest(WANTED) !== null) continue;
+			if (el.querySelector(WANTED) !== null) continue;
+		}
+		if (el.disabled === true || !shown(el, style)) continue;
 		refs.push(el);
 		const tag = el.tagName.toLowerCase();
 		const kind = tag === "input" ? "input " + (el.type || "text") : tag;
