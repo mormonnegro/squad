@@ -12,7 +12,7 @@ import {
 	List,
 	RefreshCw,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./avatar.tsx";
 import { BoxIs, useBox } from "./box.tsx";
 import { bytesOf, decode } from "./bytes.ts";
@@ -538,12 +538,12 @@ function Inside({
 }
 
 /**
- * The folder as a shelf of things.
+ * The folder as a desktop: what is in it, each one an icon with its name under it.
  *
- * Folders before files, under their own labels, because that is the order every file manager sorts
- * in and the one the plane already answers in — and because in here the two are different questions:
- * the folders are the work, the files are what was left lying beside it. The labels only go up when
- * both are there; a heading over the only kind of thing on the screen is a heading that says nothing.
+ * Folders before files, which is the order the plane already answers in and the one every file
+ * manager sorts in — and nothing said about it, because a folder is drawn as a folder and that is
+ * the whole of what a heading over them would have added. No size and no date either: this view is
+ * for finding the one you meant, and the list beside it is for comparing them.
  */
 function Tiles({
 	shown,
@@ -556,61 +556,40 @@ function Tiles({
 	onWhere: (path: string) => void;
 	onOpen: (name: string) => void;
 }) {
-	const folders = shown.filter((one) => one.kind === "dir");
-	const files = shown.filter((one) => one.kind !== "dir");
-	const split = folders.length > 0 && files.length > 0;
-	const groups = split
-		? [
-				{ label: "folders", entries: folders },
-				{ label: "files", entries: files },
-			]
-		: [{ label: undefined, entries: shown }];
-
 	return (
-		<div className="flex flex-col gap-2">
-			{groups.map((group, index) => (
-				<Fragment key={group.label ?? "all"}>
-					{group.label !== undefined && <div className="shelf-label">{group.label}</div>}
-					<div className="tiles">
-						{index === 0 && up !== undefined && (
-							<button
-								type="button"
-								className="tile"
-								data-up="true"
-								title="the folder this one is in"
-								onClick={() => onWhere(up)}
-							>
-								<CornerLeftUp className="size-6 text-muted" />
-								<span className="tile-name text-muted">..</span>
-								<span className="tile-fact">{up === "" ? "~" : `~/${up}`}</span>
-							</button>
-						)}
-						{group.entries.map((one) => (
-							<Tile key={one.name} entry={one} onOpen={() => onOpen(one.name)} />
-						))}
-					</div>
-				</Fragment>
+		<div className="tiles">
+			{up !== undefined && (
+				<button
+					type="button"
+					className="tile"
+					title="the folder this one is in"
+					onClick={() => onWhere(up)}
+				>
+					<CornerLeftUp className="size-9 text-muted" strokeWidth={1.25} />
+					<span className="tile-name text-muted">..</span>
+				</button>
+			)}
+			{shown.map((one) => (
+				<Tile key={one.name} entry={one} onOpen={() => onOpen(one.name)} />
 			))}
 		</div>
 	);
 }
 
-/** One thing in the box: what it is, what it is called, and what is known about it. */
+/** One thing in the box: what it is, and what it is called. */
 function Tile({ entry, onOpen }: { entry: FileEntry; onOpen: () => void }) {
 	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
 	return (
 		// The whole name under the pointer, because two lines of tile is not always the whole of it.
 		<button type="button" className="tile" title={entry.name} onClick={onOpen}>
-			<Glyph className={`size-6 ${entry.kind === "dir" ? "text-here" : "text-muted"}`} />
+			{/* Drawn light and large: at this size a hairline glyph is the icon, not a diagram of one. */}
+			<Glyph
+				className={`size-9 ${entry.kind === "dir" ? "text-here" : "text-muted"}`}
+				strokeWidth={1.25}
+			/>
 			<span className="tile-name">
 				{entry.name}
-				{entry.kind === "dir" && "/"}
 				{entry.link === true && <span className="text-muted"> →</span>}
-			</span>
-			<span className="tile-fact">
-				{entry.kind === "dir"
-					? when(entry.changedAt)
-					: `${sized(entry.size)} · ${when(entry.changedAt)}`}
 			</span>
 		</button>
 	);
