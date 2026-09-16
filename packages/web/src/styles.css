@@ -1581,6 +1581,57 @@ pre .md-path:hover {
 }
 
 /*
+ * The browser, framed by whose hands it is under.
+ *
+ * The header already says it in a word and that was not enough: somebody who has just pressed "take
+ * the keyboard" is about to click on a page an agent was driving a second ago, and what they need
+ * before they do is the page itself looking different. Green, because that is the colour the button
+ * turns when it is held, and the two have to agree at a glance.
+ */
+.screen-stage[data-yours="true"] {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 45%, transparent);
+	background: color-mix(in srgb, var(--green) 4%, var(--color-ground));
+}
+
+/*
+ * The agent's own question, which belongs to the agent's message and not to the pane.
+ *
+ * The three cards above this one are the plane stopping to ask something, and they stand clear of
+ * the conversation because they are not part of it. This one is part of it: the question is the line
+ * directly above, in the agent's voice, and the answers are the rest of that sentence. Drawn across
+ * the pane it read as the console interrupting — a banner about the agent, where what it is meant to
+ * be is the agent asking — so it sits in the agent's column, under its face, shaped like what it
+ * follows.
+ *
+ * Wide enough for its widest answer and no wider, for the reason a bubble is: a card the width of
+ * the column with two short options in it is a dialog box, and a dialog box is a thing that has
+ * interrupted you rather than a thing somebody said.
+ */
+.asked {
+	width: fit-content;
+	max-width: 100%;
+	min-width: 0;
+	box-shadow: var(--shadow-border);
+	border-left: 2px solid var(--amber);
+	background: var(--bg-raised);
+	border-radius: 12px;
+	padding: 0.75rem 0.9rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+	margin-top: 0.35rem;
+}
+
+.asked .ask-what {
+	font-size: 0.88rem;
+	color: var(--muted);
+}
+
+.asked .ask-what strong {
+	color: var(--text-strong);
+}
+
+/*
  * An answer the agent wrote for you, which is a different object from a key.
  *
  * A key is `y open` — one character, pressable from the keyboard, named after the letter that

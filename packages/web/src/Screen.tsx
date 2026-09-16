@@ -111,6 +111,22 @@ export async function takeTheKeyboard(agentId: string): Promise<void> {
 	}).catch(() => undefined);
 }
 
+/**
+ * Hands it back, from somewhere that is not this panel.
+ *
+ * The other half of taking it. An agent that asked for a pair of hands gets them back when the
+ * question is answered — pressing one of its options is the moment the hand-off is over, and a
+ * keyboard left held after that is the agent locked out of its own screen by somebody who has
+ * already finished with it.
+ */
+export async function giveTheKeyboardBack(agentId: string): Promise<void> {
+	await fetch(`/screen/${encodeURIComponent(agentId)}/keyboard`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ hold: false }),
+	}).catch(() => undefined);
+}
+
 export function Screen({
 	agentId,
 	open,
@@ -468,7 +484,12 @@ export function Screen({
 					// Against the top rather than the middle of the column: the picture belongs under the
 					// address bar that says where it is, and a browser floating in the vertical centre of a tall
 					// column with a gap over it reads as something that failed to load.
-					className="relative flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
+					// Whose hands the page is under, said by the frame around it rather than only by the
+					// word on a button in the header. Somebody who has just taken the keyboard is about to
+					// click on a page an agent was driving a second ago, and the one thing they need to be
+					// sure of before they do is that it is theirs.
+					data-yours={holding}
+					className="screen-stage relative flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
 					onKeyDown={(event) => {
 						if (!holding) return;
 						if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -514,11 +535,19 @@ export function Screen({
 						{/* Along the bottom of the picture rather than across the middle of it: it is a note
 				    about the page, and the part somebody is trying to read is the one place it cannot
 				    go. Inside the figure, so it stays with the picture rather than with the column. */}
-						{arrived && !holding && (
+						{arrived && (
 							<figcaption className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-								<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
-									the agent is driving — take the keyboard to touch this page
-								</span>
+								{holding ? (
+									// Said in the colour the button in the header turns, so the two agree at a
+									// glance: this page is yours until you give it back or walk away from it.
+									<span className="rounded-full border border-up/40 bg-ground/90 px-3 py-1 text-[0.72rem] text-up">
+										you have the keyboard — the agent is waiting
+									</span>
+								) : (
+									<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
+										the agent is driving — take the keyboard to touch this page
+									</span>
+								)}
 							</figcaption>
 						)}
 					</figure>
