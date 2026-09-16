@@ -64,10 +64,18 @@ function remember(width: number): void {
 	}
 }
 
+interface Tab {
+	readonly number: number;
+	readonly title: string;
+	readonly url: string;
+	readonly here: boolean;
+}
+
 interface Standing {
 	readonly holder: "agent" | "operator";
 	readonly url?: string;
 	readonly note?: string;
+	readonly tabs?: readonly Tab[];
 }
 
 /**
@@ -356,6 +364,41 @@ export function Screen({ agentId }: { agentId: string }) {
 						/>
 					</form>
 				</div>
+
+				{/*
+				 * The tabs, when there is more than one.
+				 *
+				 * Drawn for the reason a browser draws them: a page that opened somewhere else has not
+				 * vanished, and without a strip saying so the agent looking something up in a second tab
+				 * looks, from out here, exactly like the agent having wandered off. One tab needs no strip
+				 * — a row that is always there and usually says nothing is a row nobody reads.
+				 */}
+				{(standing.tabs?.length ?? 0) > 1 && (
+					<div className="flex gap-1 overflow-x-auto px-3 pb-2">
+						{standing.tabs?.map((tab) => (
+							<button
+								key={tab.number}
+								type="button"
+								disabled={!holding}
+								title={`${tab.title || "(untitled)"}\n${tab.url}`}
+								className={`max-w-[14rem] flex-none truncate rounded-md border px-2 py-0.5 text-[0.7rem] ${
+									tab.here
+										? "border-line bg-raised text-say"
+										: "border-transparent text-muted hover:text-say disabled:hover:text-muted"
+								}`}
+								onClick={() =>
+									void fetch(at("tab"), {
+										method: "POST",
+										headers: { "content-type": "application/json" },
+										body: JSON.stringify({ tab: tab.number }),
+									}).catch(() => undefined)
+								}
+							>
+								{tab.title || tab.url.replace(/^https?:\/\//, "")}
+							</button>
+						))}
+					</div>
+				)}
 
 				{/* Focusable, so that typing goes to the page only once somebody has clicked on it. The
 			    alternative — listening on the window — is a console where every keystroke meant for the

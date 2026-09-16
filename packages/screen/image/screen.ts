@@ -118,7 +118,31 @@ const view = http.createServer((request, response) => {
 		}
 
 		if (request.method === "GET" && path === "/state") {
-			json(response, 200, { ...keyboard.state(), url: browser.where() });
+			// The tabs come with it rather than on a door of their own: whoever is drawing this is
+			// drawing a browser, and a browser with no tab strip is one where a page that opened
+			// somewhere else has simply vanished.
+			json(response, 200, {
+				...keyboard.state(),
+				url: browser.where(),
+				tabs: await browser.tabs().catch(() => []),
+			});
+			return;
+		}
+
+		/** The operator moving between tabs, which is the browser moving and so wants the keyboard. */
+		if (request.method === "POST" && path === "/tab") {
+			if (keyboard.holder !== "operator") {
+				json(response, 409, { refused: refusedToOperator() });
+				return;
+			}
+			const asked = (await body(request)) as { tab?: unknown };
+			const wanted = typeof asked?.tab === "number" ? asked.tab : 0;
+			if (!(await browser.toTab(wanted))) {
+				json(response, 404, { refused: `There is no tab ${wanted}.` });
+				return;
+			}
+			keyboard.stillThere();
+			json(response, 200, { url: browser.where() });
 			return;
 		}
 

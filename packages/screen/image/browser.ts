@@ -84,6 +84,14 @@ export class Browser {
 	#where = "about:blank";
 	/** One attachment at a time, because the events that ask for one arrive in bursts. */
 	#following: Promise<void> = Promise.resolve();
+	/**
+	 * The tabs, in the order they were opened, which is the order they are numbered in.
+	 *
+	 * Kept rather than asked for, because the numbers have to mean the same thing between one call
+	 * and the next: an agent told that its search is tab 1 has to find its search at tab 1 a minute
+	 * later, and the order the debugging protocol lists targets in is nobody's promise.
+	 */
+	#knownTabs: string[] = [];
 
 	/** Starts the browser and waits for it to answer, which is the slowest thing this container does. */
 	async start(): Promise<void> {
@@ -161,17 +169,39 @@ export class Browser {
 		await cdp.send("Target.setDiscoverTargets", { discover: true });
 		cdp.on((event) => {
 			const info = event.params.targetInfo as
-				| { targetId?: string; type?: string; url?: string }
+				| { targetId?: string; type?: string; url?: string; title?: string }
 				| undefined;
-			if (event.method === "Target.targetCreated" || event.method === "Target.targetInfoChanged") {
+
+			/*
+			 * A tab that has just been opened, which is the only kind worth going to on its own.
+			 *
+			 * Created and changed used to be treated the same, and that was wrong in a way that only
+			 * shows up once there is more than one tab: `targetInfoChanged` fires every time any page
+			 * settles its title or its address, so a tab loading in the background would take the
+			 * agent off the page it was working on. A click that opens a tab brings it to the front,
+			 * the way a browser does; a background tab finishing its business does not.
+			 */
+			if (event.method === "Target.targetCreated") {
 				if (info?.type !== "page" || info.targetId === undefined) return;
-				// The newest page is the one a person would be looking at: a tab opened by a click comes
-				// to the front, and this is the same rule with none of the chrome around it.
-				if (info.targetId !== this.#target) void this.#follow(info.targetId, info.url);
+				this.#knownTabs.push(info.targetId);
+				void this.#follow(info.targetId, info.url);
 				return;
 			}
+
+			if (event.method === "Target.targetInfoChanged") {
+				if (info?.type !== "page" || info.targetId === undefined) return;
+				if (!this.#knownTabs.includes(info.targetId)) this.#knownTabs.push(info.targetId);
+				if (info.targetId === this.#target && typeof info.url === "string" && info.url !== "") {
+					this.#where = info.url;
+				}
+				return;
+			}
+
 			if (event.method === "Target.targetDestroyed") {
 				const gone = event.params.targetId;
+				if (typeof gone === "string") {
+					this.#knownTabs = this.#knownTabs.filter((one) => one !== gone);
+				}
 				if (gone !== this.#target) return;
 				// Whatever is left, which after a checkout tab is closed is the page it was opened from.
 				void this.#lastPage();
@@ -182,6 +212,7 @@ export class Browser {
 			targetInfos: readonly { targetId: string; type: string; url?: string }[];
 		}>("Target.getTargets");
 		const pages = targetInfos.filter((target) => target.type === "page");
+		this.#knownTabs = pages.map((page) => page.targetId);
 		const page = pages[pages.length - 1];
 		if (page === undefined) throw new Error("chromium opened no page to drive");
 		await this.#follow(page.targetId, page.url);
@@ -245,6 +276,74 @@ export class Browser {
 			sessionId,
 		);
 		if (this.#watching.size > 0) await this.#cast();
+	}
+
+	/**
+	 * The tabs, as the agent and the operator both see them.
+	 *
+	 * The title and address come from the browser rather than from anything remembered here, because
+	 * a tab that has navigated since it was opened is still that tab and is no longer that page.
+	 */
+	async tabs(): Promise<readonly { number: number; title: string; url: string; here: boolean }[]> {
+		const { targetInfos } = await this.#need().send<{
+			targetInfos: readonly { targetId: string; type: string; url?: string; title?: string }[];
+		}>("Target.getTargets");
+		const pages = new Map(
+			targetInfos.filter((one) => one.type === "page").map((one) => [one.targetId, one]),
+		);
+		// The kept order, minus whatever has gone, plus anything that appeared without an event.
+		const order = this.#knownTabs.filter((id) => pages.has(id));
+		for (const id of pages.keys()) if (!order.includes(id)) order.push(id);
+		this.#knownTabs = order;
+		return order.map((id, at) => ({
+			number: at + 1,
+			title: pages.get(id)?.title ?? "",
+			url: pages.get(id)?.url ?? "",
+			here: id === this.#target,
+		}));
+	}
+
+	/** A page opened beside the one being worked on, rather than instead of it. */
+	async openTab(url: string): Promise<void> {
+		const { targetId } = await this.#need().send<{ targetId: string }>("Target.createTarget", {
+			url,
+		});
+		if (!this.#knownTabs.includes(targetId)) this.#knownTabs.push(targetId);
+		await this.#follow(targetId, url);
+		await this.#settled();
+	}
+
+	/** Back to one of them, by the number it was listed as. Answers whether there was one. */
+	async toTab(number: number): Promise<boolean> {
+		const wanted = (await this.tabs())[number - 1];
+		const id = this.#knownTabs[number - 1];
+		if (wanted === undefined || id === undefined) return false;
+		await this.#follow(id, wanted.url);
+		return true;
+	}
+
+	/** Closes one. The browser is left with at least one page, because a browser with none is gone. */
+	async closeTab(number: number): Promise<boolean> {
+		const open = await this.tabs();
+		if (open.length <= 1) return false;
+		const id = this.#knownTabs[number - 1];
+		if (id === undefined) return false;
+		await this.#need().send("Target.closeTarget", { targetId: id });
+		this.#knownTabs = this.#knownTabs.filter((one) => one !== id);
+		// Chrome answers the close before the tab is gone, and the list is read from the browser
+		// rather than remembered — so asked a moment too early it finds the tab still open and puts
+		// it back, and what the agent sees is a tab it just closed still sitting there.
+		const deadline = Date.now() + 2_000;
+		while (Date.now() < deadline && (await this.#pageIds()).includes(id)) await sleep(100);
+		if (id === this.#target) await this.#lastPage();
+		return true;
+	}
+
+	async #pageIds(): Promise<readonly string[]> {
+		const { targetInfos } = await this.#need().send<{
+			targetInfos: readonly { targetId: string; type: string }[];
+		}>("Target.getTargets");
+		return targetInfos.filter((one) => one.type === "page").map((one) => one.targetId);
 	}
 
 	/** Back to whichever page is left, after the one being driven was closed. */
@@ -402,6 +501,45 @@ export class Browser {
 					this.#session,
 				);
 				await this.#settled();
+				return { text: pageForAgent(await this.#outline()) };
+			}
+			case "tabs": {
+				const open = await this.tabs();
+				return {
+					text: [
+						"Tabs open:",
+						...open.map(
+							(one) =>
+								`[${one.number}]${one.here ? " (you are here)" : ""} ${one.title || "(untitled)"} — ${one.url}`,
+						),
+						"",
+						"tab_open keeps the page you are on and opens another beside it. tab goes back to one.",
+					].join("\n"),
+				};
+			}
+			case "tab_open": {
+				await this.openTab(asked.url ?? "about:blank");
+				const outline = await this.#outline();
+				return {
+					text: [
+						`Opened in a new tab. The page you were on is still where you left it — tabs lists them, tab ${(await this.tabs()).length - 1} or thereabouts is the one you came from.`,
+						"",
+						pageForAgent(outline),
+					].join("\n"),
+				};
+			}
+			case "tab": {
+				if (!(await this.toTab(asked.tab ?? 0))) {
+					return { text: `There is no tab ${asked.tab}. Ask for tabs to see which there are.` };
+				}
+				return { text: pageForAgent(await this.#outline()) };
+			}
+			case "tab_close": {
+				if (!(await this.closeTab(asked.tab ?? 0))) {
+					return {
+						text: `Nothing closed. Either there is no tab ${asked.tab}, or it is the only one open — a browser with no pages is a browser that has gone.`,
+					};
+				}
 				return { text: pageForAgent(await this.#outline()) };
 			}
 			case "ask":

@@ -73,6 +73,29 @@ describe("reading what the agent asked for", () => {
 	});
 });
 
+describe("tabs", () => {
+	it("opens one at an address, checked like any other", () => {
+		expect(readAsked({ verb: "tab_open", url: "https://example.com/" })).toEqual({
+			verb: "tab_open",
+			url: "https://example.com/",
+		});
+		// The same door as `open`, and the same thing behind it: a new tab at a file:// URL would read
+		// the profile this whole arrangement keeps out of reach.
+		expect(readAsked({ verb: "tab_open", url: "file:///etc/passwd" })).toHaveProperty("refused");
+	});
+
+	it("goes to one by its number, and says where the numbers come from", () => {
+		expect(readAsked({ verb: "tab", tab: 2 })).toEqual({ verb: "tab", tab: 2 });
+		const refused = readAsked({ verb: "tab" }) as { refused: string };
+		expect(refused.refused).toContain("tabs");
+	});
+
+	it("closes one by its number", () => {
+		expect(readAsked({ verb: "tab_close", tab: 3 })).toEqual({ verb: "tab_close", tab: 3 });
+		expect(readAsked({ verb: "tab_close", tab: 0 })).toHaveProperty("refused");
+	});
+});
+
 describe("which verbs the keyboard stands in the way of", () => {
 	it("lets the agent go on watching while somebody else drives", () => {
 		// Watching is exactly what it should be doing while an operator signs in, so that the turn
@@ -80,6 +103,15 @@ describe("which verbs the keyboard stands in the way of", () => {
 		expect(needsTheKeyboard("read")).toBe(false);
 		expect(needsTheKeyboard("look")).toBe(false);
 		expect(needsTheKeyboard("ask")).toBe(false);
+	});
+
+	it("lets the agent see which tabs are open while somebody else drives", () => {
+		// Listing them changes nothing and says where things are, like reading a page. Going to one,
+		// opening one and closing one are the browser moving under somebody's hands.
+		expect(needsTheKeyboard("tabs")).toBe(false);
+		expect(needsTheKeyboard("tab")).toBe(true);
+		expect(needsTheKeyboard("tab_open")).toBe(true);
+		expect(needsTheKeyboard("tab_close")).toBe(true);
 	});
 
 	it("stops everything that touches the page", () => {

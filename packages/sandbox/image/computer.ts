@@ -113,6 +113,10 @@ export default function (pi: ExtensionAPI): void {
 			"keeps its cookies between turns, so a site you were logged into last week is a site you are",
 			"logged into now — check by opening it, rather than by asking.",
 			"",
+			"This replaces the page you are on. If you are partway through something — a form filled in,",
+			"a result selected, a checkout started — use screen_tab_open instead and keep it. Going back",
+			"does not restore any of that: it was made by clicking, and the clicks are gone.",
+			"",
 			"http and https only. It is not a way to read files.",
 		].join("\n"),
 		promptSnippet: "Open a page in your own browser, and read what is on it",
@@ -283,6 +287,87 @@ export default function (pi: ExtensionAPI): void {
 	 * drive it, and all that was missing was the agent being able to say so on the screen they would
 	 * be looking at.
 	 */
+	/*
+	 * Tabs, which exist because the work is not one page at a time.
+	 *
+	 * Halfway through a booking an agent needs to go and read what a fare includes — and doing that
+	 * on the page it was working on costs the page. A search with a flight selected on it does not
+	 * come back by going back: the state was built by clicking, and the click is gone. What that
+	 * looks like from the outside is an agent that was nearly finished and started over.
+	 */
+	pi.registerTool({
+		name: "screen_tab_open",
+		label: "Open in a new tab",
+		description: [
+			"Open a page in a new tab, keeping the one you are on exactly where it is.",
+			"",
+			"This is how you look something up in the middle of something else: a fare's baggage rules,",
+			"a price somewhere else, what a form field means. The page you were working on is still",
+			"there, with whatever you had filled in and selected on it, and screen_tab takes you back.",
+			"",
+			"Use it rather than screen_open whenever you are partway through anything. Going back does",
+			"not undo a form or restore a selection — that state was made by clicking, and the clicks",
+			"are gone.",
+		].join("\n"),
+		promptSnippet: "Look something up in a new tab, without losing the page you are on",
+		promptGuidelines: [
+			"When you are partway through a form, a search or a checkout and need to look something else up, use screen_tab_open rather than screen_open. Navigating away loses the page.",
+		],
+		parameters: Type.Object({
+			url: Type.String({ description: "The whole address, with https:// on the front." }),
+		}),
+		async execute(_id, params) {
+			const { url } = params as { url: string };
+			return { content: [...(await does({ verb: "tab_open", url }))], details: {} };
+		},
+	});
+
+	pi.registerTool({
+		name: "screen_tabs",
+		label: "List the tabs",
+		description:
+			"Every tab this browser has open, numbered, with the one you are on marked. Cheap, and never refused — it changes nothing.",
+		promptSnippet: "See which tabs are open and which one you are on",
+		parameters: Type.Object({}),
+		async execute() {
+			return { content: [...(await does({ verb: "tabs" }))], details: {} };
+		},
+	});
+
+	pi.registerTool({
+		name: "screen_tab",
+		label: "Go to a tab",
+		description: [
+			"Go back to one of the open tabs, by its number from screen_tabs.",
+			"",
+			"The page is as you left it. This is the other half of screen_tab_open: look something up,",
+			"then come back to the thing you were partway through.",
+		].join("\n"),
+		promptSnippet: "Go back to a tab you left open",
+		parameters: Type.Object({
+			tab: Type.Integer({ description: "The number from screen_tabs." }),
+		}),
+		async execute(_id, params) {
+			const { tab } = params as { tab: number };
+			return { content: [...(await does({ verb: "tab", tab }))], details: {} };
+		},
+	});
+
+	pi.registerTool({
+		name: "screen_tab_close",
+		label: "Close a tab",
+		description:
+			"Close one of the tabs, by its number from screen_tabs. Tidying up after a look-up. The last tab cannot be closed — a browser with no pages is a browser that has gone.",
+		promptSnippet: "Close a tab you are finished with",
+		parameters: Type.Object({
+			tab: Type.Integer({ description: "The number from screen_tabs." }),
+		}),
+		async execute(_id, params) {
+			const { tab } = params as { tab: number };
+			return { content: [...(await does({ verb: "tab_close", tab }))], details: {} };
+		},
+	});
+
 	pi.registerTool({
 		name: "screen_ask",
 		label: "Ask the operator to take the screen",

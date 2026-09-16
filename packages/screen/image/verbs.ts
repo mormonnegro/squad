@@ -21,6 +21,14 @@ export const VERBS = [
 	"scroll",
 	"back",
 	"ask",
+	// Tabs, because the work an agent does on the web is not one page at a time. Halfway through a
+	// booking it needs to go and read what a fare includes, and doing that on the page it was
+	// working on costs the page: a search with a flight selected on it does not come back by going
+	// back. These four are what let it look something up and return to exactly where it was.
+	"tabs",
+	"tab",
+	"tab_open",
+	"tab_close",
 ] as const;
 
 export type Verb = (typeof VERBS)[number];
@@ -36,6 +44,8 @@ export interface Asked {
 	readonly note?: string;
 	/** Whether to press Enter after typing, which is one turn instead of two for every search box. */
 	readonly enter?: boolean;
+	/** Which tab, by the number the last listing gave it. */
+	readonly tab?: number;
 }
 
 export interface Refused {
@@ -158,6 +168,22 @@ export function readAsked(body: unknown): Asked | Refused {
 			}
 			return { verb: "scroll", to: to as "up" | "down" | "top" | "bottom" };
 		}
+		case "tab_open": {
+			if (typeof body.url !== "string") return { refused: "tab_open takes a url." };
+			const read = readUrl(body.url);
+			if ("refused" in read) return read;
+			return { verb: "tab_open", url: read.url };
+		}
+		case "tab":
+		case "tab_close": {
+			const tab = body.tab;
+			if (typeof tab !== "number" || !Number.isInteger(tab) || tab < 1) {
+				return {
+					refused: `${verb} takes a tab number, which is one of the numbers from tabs. Ask for tabs first.`,
+				};
+			}
+			return { verb: verb as Verb, tab };
+		}
 		case "ask": {
 			if (typeof body.note !== "string" || body.note.trim() === "") {
 				return {
@@ -180,5 +206,8 @@ export function readAsked(body: unknown): Asked | Refused {
  * the turn after the operator lets go begins by looking at where they left it.
  */
 export function needsTheKeyboard(verb: Verb): boolean {
-	return verb !== "read" && verb !== "look" && verb !== "ask";
+	// Listing the tabs is reading, like reading a page: it changes nothing and says where things
+	// are. Going to one, opening one and closing one are all the browser moving under somebody's
+	// hands, so they wait their turn like every other thing that touches it.
+	return verb !== "read" && verb !== "look" && verb !== "ask" && verb !== "tabs";
 }
