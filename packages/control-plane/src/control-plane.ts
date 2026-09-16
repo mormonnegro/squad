@@ -339,6 +339,14 @@ export interface ControlPlaneOptions {
 	readonly onTurn?: (agentId: string, result: TurnResult) => void;
 }
 
+/**
+ * How much of a running turn is kept for whoever opens a console in the middle of it.
+ *
+ * The same eight rows the pane draws, because that is the whole purpose: what is kept is what a
+ * reader arriving late can be shown, and keeping more would be keeping it for nobody.
+ */
+const KEPT_STEPS = 8;
+
 /** Everything worth watching from outside, in one shape so a subscriber can render a single feed. */
 export type PlaneEvent =
 	| { readonly kind: "audit"; readonly entry: AuditEntry }
@@ -386,7 +394,19 @@ export type PlaneEvent =
 	 * The console needs this said outright. A turn nobody in the room asked for — a schedule, a
 	 * webhook, an agent waking itself — looks exactly like one that never happened otherwise.
 	 */
-	| { readonly kind: "thinking"; readonly agentId: string }
+	| {
+			readonly kind: "thinking";
+			readonly agentId: string;
+			/**
+			 * When it began, which is not always now.
+			 *
+			 * A console that opens mid-turn is caught up with this event, and a clock started at the
+			 * moment it arrived would tell that console the turn is four seconds old when it is four
+			 * minutes old — which, for a reader deciding whether to wait or to stop it, is the one
+			 * number that matters said wrong.
+			 */
+			readonly at?: string;
+	  }
 	/** Something an agent did inside its sandbox, reported while the turn is still running. */
 	| { readonly kind: "step"; readonly agentId: string; readonly step: AgentStep }
 	/**
@@ -759,6 +779,20 @@ export class ControlPlane {
 	 */
 	readonly #questions = new Map<string, readonly Question[]>();
 	/**
+	 * The turn each agent is taking right now, as the console would have drawn it.
+	 *
+	 * Kept because a turn's progress only ever existed as events, and events are only ever seen by
+	 * whoever was watching when they happened. Reload the page mid-turn and the console came back
+	 * with no idea that anything was running: an idle-looking agent, a box saying "Say something",
+	 * and no stop button — while the agent went on working and the next line typed silently queued
+	 * behind it. What is true of an agent has to be answerable to somebody who has just arrived,
+	 * not only to somebody who never left.
+	 *
+	 * Bounded the way the pane that draws it is bounded: the last few steps and the answer as far as
+	 * it has been written, which is exactly what a console holds for itself and no more.
+	 */
+	readonly #inFlight = new Map<string, { readonly at: string; steps: AgentStep[]; text: string }>();
+	/**
 	 * What is true for the turn each agent is taking right now: who its operator named in it, and how
 	 * far the message that woke it had already travelled.
 	 *
@@ -963,9 +997,22 @@ export class ControlPlane {
 		return this.#stateDir;
 	}
 
-	/** Subscribes to everything the plane does. Returns the unsubscribe. */
+	/**
+	 * Subscribes to everything the plane does. Returns the unsubscribe.
+	 *
+	 * The new subscriber is caught up first, on the turns that are running as it arrives: the moment
+	 * each began, the steps it has taken and the answer as far as it is written. Replayed rather than
+	 * offered as a separate question, because then nothing downstream has to know this happened — a
+	 * console draws a turn it joined late exactly as it draws one it watched from the start, and the
+	 * three ways a turn ends still end it.
+	 */
 	observe(listener: (event: PlaneEvent) => void): () => void {
 		this.#watchers.add(listener);
+		for (const [agentId, turn] of this.#inFlight) {
+			listener({ kind: "thinking", agentId, at: turn.at });
+			for (const step of turn.steps) listener({ kind: "step", agentId, step });
+			if (turn.text.length > 0) listener({ kind: "say", agentId, text: turn.text });
+		}
 		return () => this.#watchers.delete(listener);
 	}
 
@@ -1159,8 +1206,11 @@ export class ControlPlane {
 			// The router, with a door in front of it. An answer that would leave in the operator's name
 			// stops here when they have said it should, and waits where they will see it.
 			router: { send: (reply) => this.#sendOut(reply) },
-			onStart: (id) => this.#emit({ kind: "thinking", agentId: id }),
+			onStart: (id) => this.#began(id),
 			onTurn: (id, result, to) => {
+				// Before anything else: from here on there is no turn in flight, so a console opening in
+				// the next millisecond is not caught up onto one that has finished.
+				this.#inFlight.delete(id);
 				this.#onTurn?.(id, result);
 				this.#emit({ kind: "turn", agentId: id, result });
 				void this.#spend.record(id, result.costUsd);
@@ -1186,7 +1236,11 @@ export class ControlPlane {
 				}
 				if (result.stopped) this.#reportStopped(id);
 			},
-			onSay: (id, text) => this.#emit({ kind: "say", agentId: id, text }),
+			onSay: (id, text) => {
+				const turn = this.#inFlight.get(id);
+				if (turn !== undefined) turn.text += text;
+				this.#emit({ kind: "say", agentId: id, text });
+			},
 			onWake: (id, wake, answering) => this.#applyWake(id, wake, answering),
 			onAsked: (id, asked) => this.#applyAsked(id, asked),
 			onSent: (id, sent) => this.#applySent(id, sent),
@@ -1221,6 +1275,10 @@ export class ControlPlane {
 				// Gone the moment the turn is, so a door opened by a mention closes with the sentence that
 				// opened it, and the next turn counts its hops from whatever wakes it.
 				this.#turn.delete(agentId);
+				// However it ended, and this is the one that has to be in a finally: a turn that threw
+				// never reaches onTurn, and a record left behind would catch every console that opened
+				// afterwards up onto a turn that died an hour ago.
+				this.#inFlight.delete(agentId);
 				// However the turn ended, it has nothing further to hand in, so the next line to arrive
 				// belongs to the conversation starting here rather than to any that was thrown away.
 				this.#clearedMidTurn.delete(agentId);
@@ -3995,6 +4053,20 @@ export class ControlPlane {
 	}
 
 	/**
+	 * A turn beginning: said out loud, and written down for whoever is not here yet.
+	 *
+	 * The writing down is the whole of what makes a reloaded console honest. Everything a turn does
+	 * arrives as events, and events reach whoever was subscribed at the time — so the record of what
+	 * is happening right now lived only in the browsers that happened to be open, and closing one
+	 * threw away the only copy.
+	 */
+	#began(agentId: string): void {
+		const at = new Date().toISOString();
+		this.#inFlight.set(agentId, { at, steps: [], text: "" });
+		this.#emit({ kind: "thinking", agentId, at });
+	}
+
+	/**
 	 * Puts a line in the conversation: out to whoever is watching now, and down for whoever opens a
 	 * console later.
 	 *
@@ -4152,7 +4224,13 @@ export class ControlPlane {
 
 		const runner = new PiTurnRunner({
 			sandbox: this.sandboxes,
-			onStep: (agentId, step) => this.#emit({ kind: "step", agentId, step }),
+			onStep: (agentId, step) => {
+				const turn = this.#inFlight.get(agentId);
+				// The tail, because that is the part a pane has room for and the part still worth reading:
+				// a turn four hundred steps deep is not four hundred things somebody arriving wants.
+				if (turn !== undefined) turn.steps = [...turn.steps, step].slice(-KEPT_STEPS);
+				this.#emit({ kind: "step", agentId, step });
+			},
 			// Asked again each turn rather than read once here, so a server added from the console
 			// reaches an agent that is already up on its next turn, without recreating anything.
 			servers: (agentId) => this.#serversFor(agentId),

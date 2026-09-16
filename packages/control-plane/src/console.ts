@@ -2767,7 +2767,15 @@ export function App({
 				// where it belongs — said while that was being written, heard once it was done.
 				setTalk((prev) => append(prev, event.agentId, ...saidBy(queue.current, event.agentId)));
 				hold(without(queue.current, event.agentId));
-				setBusy((prev) => new Map(prev).set(event.agentId, Date.now()));
+				// When the turn began rather than when this event arrived, because they are not the same
+				// moment for a console that has only just connected: the plane catches a new subscriber up
+				// on the turns already running, and a clock started here would call a four-minute turn four
+				// seconds old — to a reader deciding whether to wait or to stop it, the one number that
+				// matters, said wrong.
+				const began = event.at === undefined ? Date.now() : Date.parse(event.at);
+				setBusy((prev) =>
+					new Map(prev).set(event.agentId, Number.isFinite(began) ? began : Date.now()),
+				);
 				setStep((prev) => without(prev, event.agentId));
 			} else if (event.kind === "step") {
 				// Only the latest is kept. There is one line for this, and what a turn did four tools ago

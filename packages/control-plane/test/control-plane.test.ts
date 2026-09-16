@@ -8,6 +8,7 @@ import type { NewAgentEvent } from "@squad/events";
 import { EnvSecretStore } from "@squad/proxy";
 import type { ExecResult } from "@squad/sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PlaneEvent } from "../src/control-plane.ts";
 import {
 	type AgentConfig,
 	ControlPlane,
@@ -2420,5 +2421,146 @@ describe("what an agent asks its operator", () => {
 		const summary = (await plane.agents()).find((agent) => agent.id === "scout");
 		expect(summary?.questions).toHaveLength(1);
 		expect(summary?.asking).toEqual([]);
+	});
+});
+
+/*
+ * A console that arrives in the middle of a turn.
+ *
+ * Everything a turn does while it runs exists only as events, and an event reaches whoever happened
+ * to be subscribed when it was emitted. So the record of what is happening right now lived in the
+ * browsers that were open, and closing one threw away the only copy: reload the page mid-turn and
+ * the console came back showing an idle agent, a box saying "Say something" and no stop button,
+ * while the agent went on working and the next line typed queued silently behind it.
+ */
+describe("catching up a watcher that was not there", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "squad-catchup-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	/** A turn that runs until it is let go, so that "in the middle of one" is a thing a test can be. */
+	const held = (): {
+		runner: TurnRunner;
+		started: Promise<void>;
+		finish: (text: string) => void;
+	} => {
+		let running: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			running = resolve;
+		});
+		let end: (result: TurnResult) => void = () => {};
+		return {
+			started,
+			finish: (text) => end({ text, exitCode: 0, stderr: "", ms: 1, tokens: 0, costUsd: 0 }),
+			runner: {
+				async run(_agentId, _prompt, onText) {
+					running();
+					return new Promise<TurnResult>((resolve) => {
+						end = resolve;
+						onText?.("voy por la mitad");
+					});
+				},
+			},
+		};
+	};
+
+	const ask = async (plane: ControlPlane): Promise<void> => {
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "buscame vuelos",
+		});
+	};
+
+	it("tells it a turn is running, and since when", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner, started, finish } = held();
+		await plane.attach("scout", runner);
+		void ask(plane);
+		await started;
+
+		const seen: PlaneEvent[] = [];
+		plane.observe((event) => seen.push(event));
+
+		const thinking = seen.find((event) => event.kind === "thinking");
+		expect(thinking?.kind === "thinking" && thinking.agentId).toBe("scout");
+		// The moment it began, not the moment this watcher arrived: a clock started on arrival calls a
+		// four-minute turn four seconds old, which is the one number a reader deciding whether to wait
+		// or to stop it actually reads.
+		expect(thinking?.kind === "thinking" && typeof thinking.at).toBe("string");
+
+		finish("listo");
+		await plane.bus.drain();
+	});
+
+	it("hands over the answer as far as it has been written", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner, started, finish } = held();
+		await plane.attach("scout", runner);
+		void ask(plane);
+		await started;
+
+		const seen: PlaneEvent[] = [];
+		plane.observe((event) => seen.push(event));
+
+		const said = seen.find((event) => event.kind === "say");
+		expect(said?.kind === "say" && said.text).toBe("voy por la mitad");
+
+		finish("listo");
+		await plane.bus.drain();
+	});
+
+	it("says nothing at all when nothing is running", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const seen: PlaneEvent[] = [];
+		plane.observe((event) => seen.push(event));
+
+		expect(seen).toEqual([]);
+	});
+
+	/*
+	 * The half that has to be in a finally.
+	 *
+	 * A turn that threw never reaches the place a finished turn is written down, and a record left
+	 * behind would catch every console that opened afterwards up onto a turn that died an hour ago —
+	 * a permanent spinner over an agent doing nothing, with a stop button that stops nothing.
+	 */
+	it("stops saying so once the turn is over", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		const { runner, started, finish } = held();
+		await plane.attach("scout", runner);
+		void ask(plane);
+		await started;
+		finish("listo");
+		await plane.bus.drain();
+
+		const seen: PlaneEvent[] = [];
+		plane.observe((event) => seen.push(event));
+
+		expect(seen).toEqual([]);
+	});
+
+	it("stops saying so when the turn threw instead of finishing", async () => {
+		const plane = new ControlPlane({ agents: [{ id: "scout" }], stateDir });
+		await plane.attach("scout", {
+			async run() {
+				throw new Error("pi died");
+			},
+		});
+		await ask(plane);
+		await plane.bus.drain();
+
+		const seen: PlaneEvent[] = [];
+		plane.observe((event) => seen.push(event));
+
+		expect(seen).toEqual([]);
 	});
 });
