@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { Cdp } from "./cdp.ts";
 import { boxScript, OUTLINE_SCRIPT, type Outline, pageForAgent, readOutline } from "./reading.ts";
-import type { Asked } from "./verbs.ts";
+import { type Asked, MOST_TABS, tooManyTabs } from "./verbs.ts";
 
 /**
  * The size everything here agrees on.
@@ -568,11 +568,19 @@ export class Browser {
 				};
 			}
 			case "tab_open": {
+				// Counted here rather than trusted to the description above it: what stops a browser
+				// from filling a machine is a number, not advice.
+				const already = await this.tabs();
+				if (already.length >= MOST_TABS) return { text: tooManyTabs(already) };
 				await this.openTab(asked.url ?? "about:blank");
 				const outline = await this.#outline();
+				const now = await this.tabs();
+				const from = now.find((one) => one.here === false && one.seen === false) ?? now[0];
 				return {
 					text: [
-						`Opened in a new tab. The page you were on is still where you left it — tabs lists them, tab ${(await this.tabs()).length - 1} or thereabouts is the one you came from.`,
+						`Opened in a new tab. The page you were on is still where you left it, at tab ${from?.number ?? 1}.`,
+						"",
+						`Close this one with screen_tab_close as soon as you have what you came for. ${now.length} of ${MOST_TABS} tabs are open, and every one of them is a whole page held in memory.`,
 						"",
 						pageForAgent(outline),
 					].join("\n"),

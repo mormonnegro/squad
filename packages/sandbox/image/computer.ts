@@ -308,10 +308,16 @@ export default function (pi: ExtensionAPI): void {
 			"Use it rather than screen_open whenever you are partway through anything. Going back does",
 			"not undo a form or restore a selection — that state was made by clicking, and the clicks",
 			"are gone.",
+			"",
+			"Work in one tab. Open a second only when you are partway through something and have to go",
+			"and find something out — and close it with screen_tab_close the moment you have the answer.",
+			"A tab left open is a whole page held in memory for as long as it is open, on a machine that",
+			"is also running the other agents, and this browser will refuse to open more than three.",
 		].join("\n"),
 		promptSnippet: "Look something up in a new tab, without losing the page you are on",
 		promptGuidelines: [
-			"When you are partway through a form, a search or a checkout and need to look something else up, use screen_tab_open rather than screen_open. Navigating away loses the page.",
+			"Work in one tab. Open a second only when you are partway through something and have to look something else up — never as a way of keeping pages around.",
+			"Close a look-up tab with screen_tab_close as soon as you have the answer. Every tab open costs memory on a machine that is also running the other agents.",
 		],
 		parameters: Type.Object({
 			url: Type.String({ description: "The whole address, with https:// on the front." }),
@@ -356,9 +362,19 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "screen_tab_close",
 		label: "Close a tab",
-		description:
-			"Close one of the tabs, by its number from screen_tabs. Tidying up after a look-up. The last tab cannot be closed — a browser with no pages is a browser that has gone.",
+		description: [
+			"Close one of the tabs, by its number from screen_tabs.",
+			"",
+			"The other half of screen_tab_open, and not an optional one: you close the tab you looked",
+			"something up in as soon as you have the answer, the way you would close it yourself. Leaving",
+			"it open holds a whole page in memory for nothing, and this browser will not open a fourth.",
+			"",
+			"The last tab cannot be closed — a browser with no pages is a browser that has gone.",
+		].join("\n"),
 		promptSnippet: "Close a tab you are finished with",
+		promptGuidelines: [
+			"After looking something up in a second tab, go back to the one you were working in and close the one you opened. Do not accumulate tabs.",
+		],
 		parameters: Type.Object({
 			tab: Type.Integer({ description: "The number from screen_tabs." }),
 		}),

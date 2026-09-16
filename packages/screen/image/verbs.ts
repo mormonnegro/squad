@@ -55,6 +55,34 @@ export interface Refused {
 const SCROLLS = new Set(["up", "down", "top", "bottom"]);
 
 /**
+ * The most tabs this browser will open on the agent's say-so.
+ *
+ * A number rather than a rule in a description, because a description is advice and this is
+ * memory: every open tab is a renderer process holding a whole page, and a measured one runs to
+ * about half a gigabyte. Three agents with a screen apiece on a small machine is already the whole
+ * of it, and an agent that opens a tab per thing it wonders about would take the machine down
+ * rather than work slowly.
+ *
+ * Three, which is the shape of the work: the page being worked on, something a site opened by
+ * itself — a checkout, a sign-in — and one to go and look something up in. A fourth is not a
+ * different kind of work, it is the last one not having been closed.
+ */
+export const MOST_TABS = 3;
+
+/** What the agent is told when it asks for one too many, which names what to do about it. */
+export function tooManyTabs(open: readonly { number: number; url: string }[]): string {
+	return [
+		`This browser already has ${open.length} tabs open, which is as many as it holds.`,
+		"",
+		...open.map((one) => `  [${one.number}] ${one.url}`),
+		"",
+		"Close one you are finished with — screen_tab_close takes the number — and open this then.",
+		"Every tab open is a whole page held in memory, which is why there is a limit at all: a tab",
+		"you looked something up in an hour ago is costing as much as the one you are working on.",
+	].join("\n");
+}
+
+/**
  * Keys a page can be sent, named rather than coded.
  *
  * A list rather than anything typeable, because this is for the keys that do something — submitting,

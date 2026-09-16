@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { presented, tokenIn } from "../image/token.ts";
-import { needsTheKeyboard, readAsked, readUrl } from "../image/verbs.ts";
+import { MOST_TABS, needsTheKeyboard, readAsked, readUrl, tooManyTabs } from "../image/verbs.ts";
 
 describe("what the browser will open", () => {
 	it("opens http and https", () => {
@@ -93,6 +93,32 @@ describe("tabs", () => {
 	it("closes one by its number", () => {
 		expect(readAsked({ verb: "tab_close", tab: 3 })).toEqual({ verb: "tab_close", tab: 3 });
 		expect(readAsked({ verb: "tab_close", tab: 0 })).toHaveProperty("refused");
+	});
+});
+
+describe("how many tabs a browser will hold", () => {
+	/*
+	 * A number rather than a sentence in a tool description, because a description is advice and this
+	 * is memory: a tab is a renderer process holding a whole page, and a measured one runs to about
+	 * half a gigabyte. An agent that opened one per thing it wondered about would take the machine
+	 * down rather than work slowly.
+	 */
+	it("holds enough for the shape of the work and not more", () => {
+		// The page being worked on, something a site opened by itself, and one to look something up
+		// in. A fourth is not a different kind of work — it is the last one not having been closed.
+		expect(MOST_TABS).toBe(3);
+	});
+
+	it("names what is open and what to do about it, rather than only refusing", () => {
+		const said = tooManyTabs([
+			{ number: 1, url: "https://example.com/checkout" },
+			{ number: 2, url: "https://example.com/terms" },
+			{ number: 3, url: "https://example.com/help" },
+		]);
+		// Whoever reads this can act on it: which tabs there are, and the words that close one.
+		expect(said).toContain("https://example.com/terms");
+		expect(said).toContain("screen_tab_close");
+		expect(said).toContain("memory");
 	});
 });
 
