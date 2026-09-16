@@ -15,6 +15,28 @@ describe("plainly", () => {
 		);
 	});
 
+	/**
+	 * The browser, where the words are the whole of what a person watching can see — and where they
+	 * also say which way the agent worked, by being different rather than by explaining.
+	 */
+	it("says what the browser is doing, and whether it named the thing or counted to it", () => {
+		expect(plainly("screen_open", { url: "https://www.google.com/travel/flights" }).say).toBe(
+			"opening google.com",
+		);
+		expect(plainly("screen_read", {}).say).toBe("reading the page");
+		expect(plainly("screen_click", { what: "the Continue button" }).say).toBe(
+			"clicking “the Continue button”",
+		);
+		expect(plainly("screen_click", { ref: 7 }).say).toBe("clicking [7]");
+		expect(plainly("screen_type", { what: "the search box", text: "Madrid" }).say).toBe(
+			"typing into “the search box”: “Madrid”",
+		);
+		expect(plainly("screen_type", { ref: 3, text: "Madrid" }).say).toBe(
+			"typing into [3]: “Madrid”",
+		);
+		expect(plainly("screen_ask", { note: "…" }).say).toBe("asking you to take the keyboard");
+	});
+
 	it("reads a shell line for what it does, past what it says", () => {
 		// `cd /tmp && node …` is a turn spent running node. A phrase about changing directory would be
 		// the one true thing on the row and also the only useless one.

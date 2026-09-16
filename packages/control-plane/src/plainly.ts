@@ -62,6 +62,56 @@ export function plainly(action: string, args: unknown): InWords {
 		case "ls":
 		case "list":
 			return { say: `looking through ${leaf(path) || "the files"}`, sources: [] };
+		/*
+		 * The browser, which is the one set of tools where the words are the whole of what a person
+		 * watching can see. A turn on a booking site is twenty of these in a row, and until now every
+		 * one of them read "using screen click" — three identical lines under an agent that had just
+		 * filled in a form, chosen a flight and opened a checkout.
+		 *
+		 * The click and the field say which way the agent worked: a phrase is a thing it named and
+		 * something small and fast found for it, and a number is a page it read and counted through.
+		 * Nothing here says "pointing" — the difference is visible in what the line says, which is
+		 * the only place a person was going to look for it.
+		 */
+		case "screen_open":
+			return url.startsWith("http")
+				? { say: `opening ${named([url])}`, sources: [url] }
+				: { say: "opening a page", sources: [] };
+		case "screen_read":
+			return { say: "reading the page", sources: [] };
+		case "screen_look":
+			return { say: "looking at the page", sources: [] };
+		case "screen_click":
+			return {
+				say: on(has, "clicking", "clicking something on the page"),
+				sources: [],
+			};
+		case "screen_type": {
+			const typed = text(has, "text");
+			const into = on(has, "typing into", "typing on the page");
+			return {
+				say: typed.length === 0 ? into : `${into}: ${quoted(typed)}`,
+				sources: [],
+			};
+		}
+		case "screen_key":
+			return { say: `pressing ${text(has, "key") || "a key"}`, sources: [] };
+		case "screen_scroll":
+			return { say: `scrolling ${text(has, "to") || "the page"}`, sources: [] };
+		case "screen_back":
+			return { say: "going back a page", sources: [] };
+		case "screen_tab_open":
+			return url.startsWith("http")
+				? { say: `opening ${named([url])} in another tab`, sources: [url] }
+				: { say: "opening another tab", sources: [] };
+		case "screen_tabs":
+			return { say: "looking at its tabs", sources: [] };
+		case "screen_tab":
+			return { say: "going back to another tab", sources: [] };
+		case "screen_tab_close":
+			return { say: "closing a tab", sources: [] };
+		case "screen_ask":
+			return { say: "asking you to take the keyboard", sources: [] };
 		case "web_search":
 			return { say: `searching the web for ${quoted(text(has, "query"))}`, sources: [] };
 		case "remember":
@@ -288,6 +338,21 @@ function when(seconds: unknown): string {
 function leaf(path: string): string {
 	const parts = path.split("/").filter((part) => part.length > 0);
 	return parts[parts.length - 1] ?? "";
+}
+
+/**
+ * What a call to the browser is about: the thing it named, or the number it counted to.
+ *
+ * The one place in here where the words say which of two ways the agent worked, and they say it by
+ * being different rather than by explaining. `clicking “the Continue button”` is a description the
+ * agent handed over and something else turned into an element; `clicking [7]` is a page it read and
+ * a row it picked out itself.
+ */
+function on(has: Record<string, unknown>, doing: string, otherwise: string): string {
+	const what = text(has, "what").trim();
+	if (what.length > 0) return `${doing} ${quoted(what)}`;
+	const ref = has.ref;
+	return typeof ref === "number" ? `${doing} [${ref}]` : otherwise;
 }
 
 function quoted(said: string): string {
