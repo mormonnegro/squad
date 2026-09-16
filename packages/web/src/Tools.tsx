@@ -1,4 +1,4 @@
-import { Check, Eye, Search, Wrench } from "lucide-react";
+import { Check, Eye, MousePointerClick, Search, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { Plane, ToolOffer, Tools as ToolsAnswer } from "./plane.ts";
 import { Spin } from "./spin.tsx";
@@ -57,6 +57,7 @@ export function Tools({ plane }: { plane: Plane }) {
 				<span className="pane-title">Abilities</span>
 				<div className="pane-facts">
 					<span>{tools?.vision.using === undefined ? "looking off" : "looking on"}</span>
+					<span>{tools?.pointing.using === undefined ? "pointing off" : "pointing on"}</span>
 				</div>
 			</header>
 
@@ -65,11 +66,11 @@ export function Tools({ plane }: { plane: Plane }) {
 					<div className="page-head">
 						<h1 className="page-title">Abilities</h1>
 						<p className="page-says">
-							Two things an agent cannot do with the model it thinks with. Each of them is done
-							somewhere else by a model you pick here, paid for with a key the agents never hold,
-							and answered in words. Choosing is the whole of setting one up: the host, the key and
-							the price come with the provider, and the proxy is told to pay for that one endpoint
-							and nothing else on it.
+							Three things an agent's own model does badly, dearly or not at all. Each of them is
+							done somewhere else by a model you pick here, paid for with a key the agents never
+							hold. Choosing is the whole of setting one up: the host, the key and the price come
+							with the provider, and the proxy is told to pay for that one endpoint and nothing else
+							on it.
 						</p>
 					</div>
 
@@ -112,6 +113,22 @@ export function Tools({ plane }: { plane: Plane }) {
 									)
 								}
 							/>
+
+							<Ability
+								icon={<MousePointerClick className="size-3.5" />}
+								title="Pointing"
+								says="An agent works a page by reading it — every button and box on it, numbered — and then naming a number. That list is most of what a browsing turn costs, and it is carried for the rest of the turn. Pointing lets it name the thing instead: the page goes to a classifier that answers in a tenth of a second with which element it is, and the agent never sees the list. Unsure, nothing is pressed and the agent reads the page as before."
+								offers={tools.pointing.offers}
+								busy={busy}
+								what="pointing"
+								off={tools.pointing.using === undefined}
+								onOff={() => void run("pointing:off", () => plane.choosePointing(null))}
+								onUse={(offer) =>
+									void run(`pointing:${offer.provider}:${offer.model}`, () =>
+										plane.choosePointing({ provider: offer.provider, model: offer.model }),
+									)
+								}
+							/>
 						</>
 					)}
 				</div>
@@ -126,15 +143,19 @@ export function Tools({ plane }: { plane: Plane }) {
  * Rounded hard and rounded up. What this has to do is tell a tenth of a cent from three cents,
  * because that is the decision being made — not reconcile a bill, which the spending line does.
  */
-function each(rate: { input: number; output: number }, what: "search" | "vision"): string {
+function each(rate: { input: number; output: number }, what: What): string {
 	// A screenshot is about seventeen hundred tokens however a provider counts them; a search reads
-	// a few pages. Both answer in a few hundred.
+	// a few pages; a page handed over to be pointed at is about four thousand. The first two answer
+	// in a few hundred tokens and the third answers with a number.
 	const input = what === "vision" ? 1700 : 4000;
-	const usd = (input * rate.input) / 1e6 + (300 * rate.output) / 1e6;
+	const usd = (input * rate.input) / 1e6 + ((what === "pointing" ? 20 : 300) * rate.output) / 1e6;
 	if (usd >= 0.01) return `~$${usd.toFixed(2)} each`;
 	if (usd >= 0.001) return `~$${usd.toFixed(3)} each`;
 	return "under a tenth of a cent";
 }
+
+/** The three jobs on this screen, which is what the cost line and the busy key are keyed on. */
+type What = "search" | "vision" | "pointing";
 
 function Ability({
 	icon,
@@ -152,8 +173,8 @@ function Ability({
 	says: string;
 	offers: readonly ToolOffer[];
 	busy: string | undefined;
-	what: "search" | "vision";
-	/** Only looking can be off. Every plane searches, and there is no row for not searching. */
+	what: What;
+	/** Searching cannot be off: every plane searches, and there is no row for not searching. */
 	off?: boolean;
 	onOff?: () => void;
 	onUse: (offer: ToolOffer) => void;

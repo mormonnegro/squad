@@ -15,6 +15,7 @@ import type { MailStanding } from "./mailbox.ts";
 import type { McpServer, ServerStanding } from "./mcp.ts";
 import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./models.ts";
 import type { Plugin } from "./plugins.ts";
+import type { PointingOffer, PointingSpec, PointingStanding } from "./pointing.ts";
 import type { RepoOffer } from "./repos.ts";
 import type { Room } from "./rooms.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
@@ -337,6 +338,8 @@ export type ControlRequest =
 	 * somewhere, and here for the same reason: it derives a grant every agent gets.
 	 */
 	| { readonly id: string; readonly op: "set-vision"; readonly spec: VisionSpec | null }
+	/** Points the pointing at a model, or at nothing. A grant every agent gets, like the other two. */
+	| { readonly id: string; readonly op: "set-pointing"; readonly spec: PointingSpec | null }
 	/** Every server on the shelf, with who holds it — the plane's list rather than an agent's. */
 	| { readonly id: string; readonly op: "servers" }
 	/**
@@ -541,6 +544,10 @@ export type ControlResponse =
 				readonly vision: {
 					readonly using: VisionStanding | undefined;
 					readonly offers: readonly VisionOffer[];
+				};
+				readonly pointing: {
+					readonly using: PointingStanding | undefined;
+					readonly offers: readonly PointingOffer[];
 				};
 			};
 	  }
@@ -1035,10 +1042,17 @@ export class ControlServer {
 							using: await this.#plane.vision(),
 							offers: await this.#plane.visionOffers(),
 						},
+						pointing: {
+							using: await this.#plane.pointing(),
+							offers: await this.#plane.pointingOffers(),
+						},
 					},
 				});
 			} else if (request.op === "set-vision") {
 				await this.#plane.chooseVision(request.spec);
+				this.#write(socket, { id: request.id, ok: true, text: request.spec?.provider ?? "off" });
+			} else if (request.op === "set-pointing") {
+				await this.#plane.choosePointing(request.spec);
 				this.#write(socket, { id: request.id, ok: true, text: request.spec?.provider ?? "off" });
 			} else if (request.op === "servers") {
 				this.#write(socket, { id: request.id, ok: true, servers: await this.#plane.servers() });

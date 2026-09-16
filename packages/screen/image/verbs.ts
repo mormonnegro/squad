@@ -14,6 +14,15 @@
 export const VERBS = [
 	"open",
 	"read",
+	/*
+	 * The same read as data rather than as prose, for whoever is choosing on the agent's behalf.
+	 *
+	 * Not a tool the agent has: it is what the extension asks for when the agent has named the thing
+	 * it wants instead of numbering it, so that something small and fast can be handed the rows as
+	 * options and hand a number back. Prose is for a model that is reading; this is for one that is
+	 * choosing.
+	 */
+	"outline",
 	"look",
 	"click",
 	"type",
@@ -44,6 +53,14 @@ export interface Asked {
 	readonly note?: string;
 	/** Whether to press Enter after typing, which is one turn instead of two for every search box. */
 	readonly enter?: boolean;
+	/**
+	 * Whether to answer with the page and not its numbered rows.
+	 *
+	 * Asked for by the half of this that acts on a named thing rather than on a ref: an agent that
+	 * never uses a number is an agent carrying two hundred rows of them through the rest of its turn
+	 * for nothing. The numbers stay one `read` away.
+	 */
+	readonly brief?: boolean;
 	/** Which tab, by the number the last listing gave it. */
 	readonly tab?: number;
 }
@@ -156,6 +173,8 @@ export function readAsked(body: unknown): Asked | Refused {
 			if ("refused" in read) return read;
 			return { verb: "open", url: read.url };
 		}
+		case "outline":
+			return { verb: "outline" };
 		case "click": {
 			const ref = body.ref;
 			if (typeof ref !== "number" || !Number.isInteger(ref) || ref < 1) {
@@ -164,7 +183,7 @@ export function readAsked(body: unknown): Asked | Refused {
 						"click takes a ref, which is one of the numbers from the last read. Read the page first: the numbers are only good for the page they came off.",
 				};
 			}
-			return { verb: "click", ref };
+			return { verb: "click", ref, ...(body.brief === true ? { brief: true } : {}) };
 		}
 		case "type": {
 			if (typeof body.text !== "string" || body.text === "") {
@@ -181,6 +200,7 @@ export function readAsked(body: unknown): Asked | Refused {
 				text: body.text,
 				...(typeof ref === "number" ? { ref } : {}),
 				...(body.enter === true ? { enter: true } : {}),
+				...(body.brief === true ? { brief: true } : {}),
 			};
 		}
 		case "key": {
@@ -237,5 +257,7 @@ export function needsTheKeyboard(verb: Verb): boolean {
 	// Listing the tabs is reading, like reading a page: it changes nothing and says where things
 	// are. Going to one, opening one and closing one are all the browser moving under somebody's
 	// hands, so they wait their turn like every other thing that touches it.
-	return verb !== "read" && verb !== "look" && verb !== "ask" && verb !== "tabs";
+	return (
+		verb !== "read" && verb !== "outline" && verb !== "look" && verb !== "ask" && verb !== "tabs"
+	);
 }

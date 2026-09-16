@@ -137,6 +137,16 @@ import { LoginDesk, loginRedirect } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./plugins.ts";
+import {
+	POINTING_PROVIDERS,
+	type Pointing,
+	PointingChoice,
+	type PointingOffer,
+	type PointingSpec,
+	type PointingStanding,
+	pointingGrant,
+	resolvePointing,
+} from "./pointing.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import { type Question, StandingQuestions } from "./questions.ts";
 import {
@@ -710,6 +720,7 @@ export class ControlPlane {
 	readonly #search: SearchChoice;
 	/** Which model looks at pictures, when an operator has decided that looking is worth paying for. */
 	readonly #vision: VisionChoice;
+	readonly #pointing: PointingChoice;
 	readonly #bots: TelegramBots;
 	readonly #mailbox: MailboxStore;
 	/**
@@ -859,6 +870,7 @@ export class ControlPlane {
 		this.#mcp = new McpShelf(join(this.#stateDir, "mcp.json"));
 		this.#search = new SearchChoice(join(this.#stateDir, "search.json"));
 		this.#vision = new VisionChoice(join(this.#stateDir, "vision.json"));
+		this.#pointing = new PointingChoice(join(this.#stateDir, "pointing.json"));
 		this.#bots = new TelegramBots(join(this.#stateDir, "telegram.json"));
 		this.#mailbox = new MailboxStore(join(this.#stateDir, "mailbox.json"));
 		this.#logins = new OAuthLogins(join(this.#stateDir, "oauth.json"));
@@ -1402,6 +1414,7 @@ export class ControlPlane {
 			...(await this.#thinking(declared)).map((grant) => ({ grant, origin: "model" as const })),
 			...(await this.#searching(declared)).map((grant) => ({ grant, origin: "search" as const })),
 			...(await this.#looking(declared)).map((grant) => ({ grant, origin: "search" as const })),
+			...(await this.#pointingAt(declared)).map((grant) => ({ grant, origin: "search" as const })),
 			...(await this.#pipedThrough(declared)).map((grant) => ({ grant, origin: "here" as const })),
 			...(await this.#reached(declared)).map((grant) => ({ grant, origin: "here" as const })),
 		];
@@ -2382,6 +2395,60 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Which model points at things on a page, filled in from the table, and whether it can be paid.
+	 *
+	 * Nothing when nobody has chosen, like looking. An agent on a plane that does not point works a
+	 * page the way it always did: read it, and name one of the numbers that came back.
+	 */
+	async pointing(): Promise<PointingStanding | undefined> {
+		const chosen = await this.#pointing.chosen();
+		if (chosen === undefined) return undefined;
+		const resolved = resolvePointing(chosen);
+		// A stored choice this plane has since forgotten how to reach leaves pointing off rather than
+		// leaving the screen with a provider it cannot name.
+		if (typeof resolved === "string") return undefined;
+		const key = await this.#secrets.resolve({ ref: resolved.keyEnv }).catch(() => undefined);
+		const here = await this.#keys.here();
+		return {
+			...resolved,
+			chosen: true,
+			held: key !== undefined && key.length > 0,
+			here: here.has(resolved.keyEnv),
+		};
+	}
+
+	/** Every model that could do the pointing, on the vision offers' terms and for their reasons. */
+	async pointingOffers(): Promise<readonly PointingOffer[]> {
+		const using = await this.pointing();
+		const offers: PointingOffer[] = [];
+		for (const [provider, known] of Object.entries(POINTING_PROVIDERS)) {
+			const key = await this.#secrets.resolve({ ref: known.keyEnv }).catch(() => undefined);
+			const held = key !== undefined && key.length > 0;
+			for (const model of known.models) {
+				offers.push({
+					provider,
+					model,
+					keyEnv: known.keyEnv,
+					held,
+					rate: known.rates[model] ?? { input: 0, output: 0 },
+					using: using?.provider === provider && using.model === model,
+				});
+			}
+		}
+		return offers;
+	}
+
+	/** Chooses the model that points, or `null` to go back to reading a page and naming a number. */
+	async choosePointing(spec: PointingSpec | null): Promise<void> {
+		if (spec !== null) {
+			const resolved = resolvePointing(spec);
+			if (typeof resolved === "string") throw new Error(resolved);
+		}
+		await this.#pointing.choose(spec);
+		await this.#reregisterAll();
+	}
+
+	/**
 	 * Points the search tool at another provider, or another of that provider's models.
 	 *
 	 * Every agent's grants are written again afterwards, because the grant that pays for searching is
@@ -2470,6 +2537,7 @@ export class ControlPlane {
 			...(await this.#thinking(declared)),
 			...(await this.#searching(declared)),
 			...(await this.#looking(declared)),
+			...(await this.#pointingAt(declared)),
 			...(await this.#pipedThrough(declared)),
 			...earned,
 			...(await this.#reached(declared)),
@@ -2662,6 +2730,18 @@ export class ControlPlane {
 		const vision = await this.vision();
 		if (vision === undefined) return [];
 		return [visionGrant(vision)].filter((grant) => !declared.some((own) => own.id === grant.id));
+	}
+
+	/**
+	 * The grant that pays for pointing, when there is a model to point with. Absent on a plane where
+	 * nobody turned it on, which is most of them.
+	 */
+	async #pointingAt(declared: readonly Grant[]): Promise<readonly Grant[]> {
+		const pointing = await this.pointing();
+		if (pointing === undefined) return [];
+		return [pointingGrant(pointing)].filter(
+			(grant) => !declared.some((own) => own.id === grant.id),
+		);
 	}
 
 	async #reached(declared: readonly Grant[]): Promise<readonly Grant[]> {
@@ -3334,6 +3414,11 @@ export class ControlPlane {
 			setScreen: (on) => this.setScreen(agentId, on),
 			vision: async () => ({ using: await this.vision(), offers: await this.visionOffers() }),
 			chooseVision: (spec) => this.chooseVision(spec),
+			pointing: async () => ({
+				using: await this.pointing(),
+				offers: await this.pointingOffers(),
+			}),
+			choosePointing: (spec) => this.choosePointing(spec),
 			piped: () => this.piped(),
 			pipe: (host, on) => this.pipe(host, on),
 			listening: (port) => this.#listening(agentId, port),
@@ -4333,6 +4418,9 @@ export class ControlPlane {
 			// And the model that looks, asked again each turn for the reason the search provider is: one
 			// chosen at the console reaches an agent that is already up, on its next turn.
 			vision: () => this.vision(),
+			// And the model that points, for the same reason again: it is read off a file written into
+			// the sandbox before pi starts, so a choice made at the console is in the next turn.
+			pointing: () => this.pointing(),
 			// And the repositories, so one given at the console is in front of the agent on its next
 			// turn, with the branches it may push named before it tries one it may not.
 			repos: (agentId) => this.repos(agentId),

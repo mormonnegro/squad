@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -12,6 +13,16 @@ import {
 	spentOn,
 	type Usage,
 } from "./looking.ts";
+import {
+	askedAbout,
+	type Outline,
+	type Pointing,
+	pickedIn,
+	readOutline,
+	readPointing,
+	refusedBy as refusedPointing,
+	spentOn as spentPointing,
+} from "./pointing.ts";
 import { alreadyAsked, askFor, holding, keep } from "./question.ts";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
 
@@ -189,12 +200,98 @@ function pictureIn(blocks: readonly Block[]): string | undefined {
 	return undefined;
 }
 
+/**
+ * The model that points, when the operator has chosen one — and nothing at all when they have not.
+ *
+ * Read per call, like the model that looks, because the file is written by the plane before every
+ * turn. Read once more at registration as well, because whether it is there decides whether these
+ * tools say they can be told what to press rather than which number to press: a parameter offered
+ * on a plane that cannot answer it is a turn spent finding that out.
+ */
+function pointing(): Pointing | undefined {
+	const path = process.env.SQUAD_POINTING_FILE ?? "";
+	if (path.length === 0) return undefined;
+	try {
+		return readPointing(readFileSync(path, "utf8"));
+	} catch {
+		// No file is the answer for most planes: pointing is off until somebody turns it on.
+		return undefined;
+	}
+}
+
+/** The text of whatever the screen answered with, which for `outline` is the page as data. */
+function textIn(blocks: readonly Block[]): string | undefined {
+	for (const block of blocks) if (block.type === "text") return block.text;
+	return undefined;
+}
+
+/**
+ * The page, and which numbered thing on it is the one that was named.
+ *
+ * Everything here happens between two containers and a classifier: the browser hands over the page
+ * as data, the classifier picks a row, and the number goes back to the browser. None of it passes
+ * through the model driving the turn, which is the whole point — what that model asked for was "the
+ * Continue button", and what it gets back is the page after the Continue button was pressed.
+ */
+async function pointAt(
+	model: Pointing,
+	what: string,
+): Promise<
+	{ readonly ref: number; readonly usage: Usage } | { readonly why: string; readonly usage?: Usage }
+> {
+	const outline: Outline | undefined = readOutline(textIn(await does({ verb: "outline" })));
+	if (outline === undefined) return { why: "The browser could not say what is on the page." };
+	if (outline.rows.length === 0)
+		return { why: "Nothing on this page can be clicked or typed into." };
+
+	const { status, body } = await post(model.endpoint, askedAbout(model, what, outline));
+	let answer: unknown;
+	try {
+		answer = JSON.parse(body);
+	} catch {
+		// A proxy that refused the host answers in its own words rather than in the API's, and this
+		// is where that arrives: it is the reason the pointing did not happen.
+		return { why: `Pointing failed (HTTP ${status}): ${body.slice(0, 200)}` };
+	}
+	if (status !== 200) {
+		return { why: `Pointing failed (HTTP ${status}): ${refusedPointing(answer, body)}` };
+	}
+	const usage = spentPointing(model, answer);
+	const picked = pickedIn(answer);
+	if (picked === undefined) {
+		return { why: `Nothing on this page is clearly "${what}".`, usage };
+	}
+	return { ref: picked.ref, usage };
+}
+
+/**
+ * What to hand back when the pointing did not land: the page, and why it is being shown.
+ *
+ * The turn there was before any of this existed. Reading the page is what the agent would have done
+ * to find the ref itself, so the unsure answer costs it one read rather than a refusal and a
+ * second call.
+ */
+async function insteadRead(why: string, usage: Usage | undefined) {
+	return {
+		content: [
+			{ type: "text" as const, text: `${why} Here is the page — use one of these numbers.` },
+			...(await does({ verb: "read" })),
+		],
+		details: {},
+		...(usage === undefined ? {} : { usage }),
+	};
+}
+
 const REFS = [
 	"Everything you act on is a ref: a number from the last read, like [7]. Refs belong to the read",
 	"they came from — after anything that changes the page, read it again and use the new numbers.",
 ].join(" ");
 
 export default function (pi: ExtensionAPI): void {
+	// Whether this plane points, asked once here: it decides what these tools say they take, and a
+	// tool description is written when it is registered rather than when it is called.
+	const points = pointing();
+
 	pi.registerTool({
 		name: "screen_open",
 		label: "Open a page",
@@ -344,13 +441,73 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "screen_click",
 		label: "Click",
-		description: ["Click one of the numbered things on the page.", "", REFS].join("\n"),
-		promptSnippet: "Click a numbered element on the page",
+		description: [
+			"Click something on the page.",
+			"",
+			...(points === undefined
+				? ["Say which one by its number.", "", REFS]
+				: [
+						'Say which one by describing it — `what: "the Continue button"` — and you do not have',
+						"to read the page first: something small and fast is handed the page and picks the",
+						"element out of it. That is the quick way and it is the one to use: a read is the",
+						"biggest thing you will put in this conversation, and every later call carries it again.",
+						"",
+						"The page that comes back after a described click is where you are and what it says,",
+						"without the numbered list — you did not use the numbers to get here and you do not need",
+						"them to go on. Read the page when you want them.",
+						"",
+						"If the description is not clearly one thing on the page, nothing is clicked and you get",
+						"the page to pick from. So describe it as it reads on screen.",
+						"",
+						`Or say which one by its number. ${REFS}`,
+					]),
+		].join("\n"),
+		promptSnippet: "Click something on the page, by name or by number",
+		...(points === undefined
+			? {}
+			: {
+					promptGuidelines: [
+						'Click by naming the thing — what: "the Continue button" — rather than by reading the page and using a ref. It is one call instead of two and keeps the page\'s element list out of this conversation.',
+					],
+				}),
 		parameters: Type.Object({
-			ref: Type.Integer({ description: "The number from the last read, without the brackets." }),
+			ref: Type.Optional(
+				Type.Integer({ description: "The number from the last read, without the brackets." }),
+			),
+			...(points === undefined
+				? {}
+				: {
+						what: Type.Optional(
+							Type.String({
+								description:
+									'The thing to click, described as it reads on screen: "the Continue button", "the second result", "the cookie banner\'s Accept".',
+							}),
+						),
+					}),
 		}),
 		async execute(_id, params) {
-			const { ref } = params as { ref: number };
+			const { ref, what } = params as { ref?: number; what?: string };
+			const model = pointing();
+			if (what !== undefined && what.trim() !== "" && model !== undefined) {
+				const found = await pointAt(model, what.trim());
+				if ("why" in found) return insteadRead(found.why, found.usage);
+				return {
+					content: [...(await does({ verb: "click", ref: found.ref, brief: true }))],
+					details: {},
+					usage: found.usage,
+				};
+			}
+			if (ref === undefined) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "Say which one: a ref from the last read, or what it is called on the page.",
+						},
+					],
+					details: {},
+				};
+			}
 			return { content: [...(await does({ verb: "click", ref }))], details: {} };
 		},
 	});
@@ -363,6 +520,14 @@ export default function (pi: ExtensionAPI): void {
 			"",
 			"Name the field by its ref, or leave it out to type wherever the cursor already is. Set enter",
 			"to submit straight after, which is one call instead of two for a search box.",
+			...(points === undefined
+				? []
+				: [
+						"",
+						'Or describe the field — what: "the search box" — and skip the read: something small and',
+						"fast is handed the page and finds it. Nothing is typed if the description is not clearly",
+						"one field on the page; you get the page to pick from instead.",
+					]),
 			"",
 			"Never type a password, a card number or a one-time code. You do not have them, and a page",
 			"asking for one is a page to hand over: use screen_ask, and your operator will come and type",
@@ -377,10 +542,43 @@ export default function (pi: ExtensionAPI): void {
 			ref: Type.Optional(
 				Type.Integer({ description: "The field, by its number from the last read." }),
 			),
+			...(points === undefined
+				? {}
+				: {
+						what: Type.Optional(
+							Type.String({
+								description:
+									'The field, described as it reads on screen: "the search box", "the email field".',
+							}),
+						),
+					}),
 			enter: Type.Optional(Type.Boolean({ description: "Press Enter afterwards." })),
 		}),
 		async execute(_id, params) {
-			const { text, ref, enter } = params as { text: string; ref?: number; enter?: boolean };
+			const { text, ref, what, enter } = params as {
+				text: string;
+				ref?: number;
+				what?: string;
+				enter?: boolean;
+			};
+			const model = pointing();
+			if (what !== undefined && what.trim() !== "" && model !== undefined) {
+				const found = await pointAt(model, what.trim());
+				if ("why" in found) return insteadRead(found.why, found.usage);
+				return {
+					content: [
+						...(await does({
+							verb: "type",
+							text,
+							ref: found.ref,
+							brief: true,
+							...(enter === true ? { enter: true } : {}),
+						})),
+					],
+					details: {},
+					usage: found.usage,
+				};
+			}
 			return {
 				content: [
 					...(await does({

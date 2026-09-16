@@ -5,6 +5,7 @@ import { GATES, type Gate, gateSaid, isGate } from "./gates.ts";
 import { readHost } from "./grants.ts";
 import { hostOf, type McpServer, type NamedServer, readName, readServer, written } from "./mcp.ts";
 import type { Model, ModelStanding } from "./models.ts";
+import type { PointingOffer, PointingSpec, PointingStanding } from "./pointing.ts";
 import { type Served, servedPath, unservable } from "./ports.ts";
 import {
 	looksLikeGithubToken,
@@ -172,6 +173,18 @@ export interface CommandContext {
 	}>;
 	/** Chooses one, or `null` to leave looking to whatever the agent itself thinks with. */
 	chooseVision(spec: VisionSpec | null): Promise<void>;
+	/**
+	 * Which model points at things on a page for this plane, and every model that could.
+	 *
+	 * Beside the other two because it is the same kind of decision: a job an agent's own model does
+	 * badly or dearly, done somewhere else by one the operator picks once.
+	 */
+	pointing(): Promise<{
+		readonly using: PointingStanding | undefined;
+		readonly offers: readonly PointingOffer[];
+	}>;
+	/** Chooses one, or `null` to go back to reading a page and naming one of its numbers. */
+	choosePointing(spec: PointingSpec | null): Promise<void>;
 	/** The hosts this plane pipes rather than reads, which is the plane's list and not an agent's. */
 	piped(): Promise<readonly string[]>;
 	/** Opens a host and pipes it, or stops piping one. Answers whether anything changed. */

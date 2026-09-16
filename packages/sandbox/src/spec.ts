@@ -194,6 +194,9 @@ export const SANDBOX_SEND_FILE = `${SANDBOX_HOME}/.run/send.json`;
  */
 export const SANDBOX_VISION_FILE = `${SANDBOX_HOME}/.run/vision.json`;
 
+/** Where the model that points at things on a page is named, written before every turn. */
+export const SANDBOX_POINTING_FILE = `${SANDBOX_HOME}/.run/pointing.json`;
+
 /**
  * Where the plane leaves the other agents this one may write to, read at the start of every turn.
  *
@@ -264,6 +267,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		SQUAD_MCP_FILE: SANDBOX_MCP_FILE,
 		SQUAD_SEARCH_FILE: SANDBOX_SEARCH_FILE,
 		SQUAD_VISION_FILE: SANDBOX_VISION_FILE,
+		SQUAD_POINTING_FILE: SANDBOX_POINTING_FILE,
 		SQUAD_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
 		SQUAD_ASK_FILE: SANDBOX_ASK_FILE,
 		SQUAD_SEND_FILE: SANDBOX_SEND_FILE,

@@ -175,3 +175,26 @@ export function pageForAgent(outline: Outline): string {
 		"Refs belong to this read. Read again after anything that changes the page, and use the new numbers.",
 	].join("\n");
 }
+
+/**
+ * The page for an agent that named what it wanted rather than numbering it.
+ *
+ * The same page without the list of refs, which is the whole saving. A reading is mostly that list
+ * — two hundred rows of button, link, input — and it is in the transcript for the rest of the turn,
+ * sent again with every later call. An agent that acts by naming the thing never uses a number, so
+ * every one of those rows is a token spent on an answer to a question it is not going to ask.
+ *
+ * What is left is where it is and what it says, which is what the next sentence of the work is
+ * written from. The numbers are one `read` away and said to be.
+ */
+export function pageBriefly(outline: Outline): string {
+	return [
+		`${outline.title || "(untitled)"} — ${outline.url}`,
+		"",
+		outline.text === "" ? "The page has no text." : ["What it says:", outline.text].join("\n"),
+		"",
+		outline.rows.length === 0
+			? "Nothing on this page can be clicked or typed into."
+			: `${outline.rows.length} things on it can be clicked or typed into. Name the one you want, or read the page to get their numbers.`,
+	].join("\n");
+}

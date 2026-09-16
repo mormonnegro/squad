@@ -10,6 +10,7 @@ import {
 	SANDBOX_INBOX_PATH,
 	SANDBOX_LESSONS_FILE,
 	SANDBOX_MCP_FILE,
+	SANDBOX_POINTING_FILE,
 	SANDBOX_SEARCH_FILE,
 	SANDBOX_SEND_FILE,
 	SANDBOX_TEAM_FILE,
@@ -21,6 +22,7 @@ import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
+import type { Pointing } from "./pointing.ts";
 import { parseQuestions, type Question } from "./questions.ts";
 import { type RepoStanding, reposPrompt } from "./repos.ts";
 import type { Search } from "./search.ts";
@@ -196,6 +198,9 @@ export interface PiTurnRunnerOptions {
 	/** Which model looks at pictures, asked again at the start of every turn. Often none. */
 	readonly vision?: () => Promise<Vision | undefined>;
 	readonly visionFile?: string;
+	/** Which model points at things on a page, asked again at the start of every turn. Often none. */
+	readonly pointing?: () => Promise<Pointing | undefined>;
+	readonly pointingFile?: string;
 	/**
 	 * The repositories this agent holds, asked for again at the start of every turn so one given at
 	 * the console is in front of the agent on its next turn rather than its next container.
@@ -336,6 +341,8 @@ export class PiTurnRunner {
 	readonly #searchFile: string;
 	readonly #vision: (() => Promise<Vision | undefined>) | undefined;
 	readonly #visionFile: string;
+	readonly #pointing: (() => Promise<Pointing | undefined>) | undefined;
+	readonly #pointingFile: string;
 	readonly #team: ((agentId: string) => Promise<readonly Teammate[]>) | undefined;
 	readonly #teamFile: string;
 	readonly #sendFile: string;
@@ -365,6 +372,8 @@ export class PiTurnRunner {
 		this.#searchFile = options.searchFile ?? SANDBOX_SEARCH_FILE;
 		this.#vision = options.vision;
 		this.#visionFile = options.visionFile ?? SANDBOX_VISION_FILE;
+		this.#pointing = options.pointing;
+		this.#pointingFile = options.pointingFile ?? SANDBOX_POINTING_FILE;
 		this.#team = options.team;
 		this.#teamFile = options.teamFile ?? SANDBOX_TEAM_FILE;
 		this.#sendFile = options.sendFile ?? SANDBOX_SEND_FILE;
@@ -492,6 +501,7 @@ export class PiTurnRunner {
 			await this.#putServers(agentId);
 			await this.#putSearch(agentId);
 			await this.#putVision(agentId);
+			await this.#putPointing(agentId);
 			await this.#putTeam(agentId);
 			const thinksWith = await this.#model?.(agentId);
 			const lessons = await this.#lessons(agentId);
@@ -645,6 +655,26 @@ export class PiTurnRunner {
 			.run(
 				agentId,
 				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#visionFile],
+				JSON.stringify(chosen),
+			)
+			.catch(() => undefined);
+	}
+
+	/**
+	 * Puts the model that points where the extension will look, before pi starts.
+	 *
+	 * On the vision file's terms and for its reasons: the choice is the plane's, it changes at the
+	 * console between turns, and a copy the agent kept would be a copy it could edit. A failed write
+	 * leaves the turn to happen with no pointing at all, which is the turn there was before it.
+	 */
+	async #putPointing(agentId: string): Promise<void> {
+		if (this.#pointing === undefined) return;
+		const chosen = await this.#pointing().catch(() => undefined);
+		if (chosen === undefined) return;
+		await this.#sandbox
+			.run(
+				agentId,
+				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#pointingFile],
 				JSON.stringify(chosen),
 			)
 			.catch(() => undefined);

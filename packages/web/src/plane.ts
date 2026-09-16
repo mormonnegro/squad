@@ -285,11 +285,13 @@ export interface ToolStanding {
 export interface Tools {
 	readonly search: ToolStanding;
 	readonly vision: ToolStanding;
+	readonly pointing: ToolStanding;
 }
 
 const EMPTY_TOOLS: Tools = {
 	search: { using: undefined, offers: [] },
 	vision: { using: undefined, offers: [] },
+	pointing: { using: undefined, offers: [] },
 };
 
 export interface Session {
@@ -784,6 +786,11 @@ export class Plane {
 	/** Points the looking at a model, or `null` to leave it to whatever each agent thinks with. */
 	async chooseVision(spec: { provider: string; model?: string } | null): Promise<void> {
 		await this.#ask({ op: "set-vision", spec });
+	}
+
+	/** Points the pointing at a model, or `null` to go back to reading a page for its numbers. */
+	async choosePointing(spec: { provider: string; model?: string } | null): Promise<void> {
+		await this.#ask({ op: "set-pointing", spec });
 	}
 
 	/** Every key this plane could be given, and whether it is holding one. Never the values. */

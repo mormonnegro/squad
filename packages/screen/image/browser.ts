@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import { Cdp } from "./cdp.ts";
-import { boxScript, OUTLINE_SCRIPT, type Outline, pageForAgent, readOutline } from "./reading.ts";
+import {
+	boxScript,
+	OUTLINE_SCRIPT,
+	type Outline,
+	pageBriefly,
+	pageForAgent,
+	readOutline,
+} from "./reading.ts";
 import { type Asked, MOST_TABS, tooManyTabs } from "./verbs.ts";
 
 /**
@@ -690,6 +697,10 @@ export class Browser {
 			}
 			case "read":
 				return { text: pageForAgent(await this.#outline()) };
+			// The same page as data, for whatever is choosing a ref on the agent's behalf. Nothing
+			// reads this: it is parsed.
+			case "outline":
+				return { text: JSON.stringify(await this.#outline()) };
 			case "look": {
 				const { data } = await this.#need().send<{ data: string }>(
 					"Page.captureScreenshot",
@@ -711,7 +722,7 @@ export class Browser {
 					};
 				}
 				await this.#settled(load);
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "type": {
 				if (asked.ref !== undefined && !(await this.#clickRef(asked.ref))) {
@@ -722,7 +733,7 @@ export class Browser {
 					await this.#press("Enter");
 					await this.#settled();
 				}
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "key": {
 				await this.#press(asked.key ?? "Enter");
@@ -919,4 +930,9 @@ export class Browser {
 		}
 		await this.#press(key, this.#seenSession);
 	}
+}
+
+/** The page as the caller asked for it: the whole reading, or it without the numbers. */
+function said(outline: Outline, brief: boolean): string {
+	return brief ? pageBriefly(outline) : pageForAgent(outline);
 }
