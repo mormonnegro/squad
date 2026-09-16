@@ -38,6 +38,11 @@ RUN chmod 755 /usr/local/bin/keep
 # written once and is the agent's from then on, so anything shipped into it could never be fixed.
 # The first six are imported by the extensions below rather than registered themselves, which is what
 # lets them be tested: none reaches for pi or typebox, so vitest can load them outside the image.
+#
+# Every file an extension imports has to be named here. A list is the only thing Docker offers and a
+# missing line is not a missing feature: an import that resolves to nothing takes the whole extension
+# down with it, so an agent whose screen tools were all in one file loses all of them at once. The
+# test beside this one walks the imports and fails when a file is not on this list.
 COPY http-reply.ts /usr/local/lib/squad/extensions/http-reply.ts
 COPY appointment.ts /usr/local/lib/squad/extensions/appointment.ts
 COPY commands.ts /usr/local/lib/squad/extensions/commands.ts
@@ -57,6 +62,7 @@ COPY ask.ts /usr/local/lib/squad/extensions/ask.ts
 # image built with it missing would be an image where turning a screen on does nothing until the
 # next rebuild.
 COPY looking.ts /usr/local/lib/squad/extensions/looking.ts
+COPY pointing.ts /usr/local/lib/squad/extensions/pointing.ts
 COPY screen-answer.ts /usr/local/lib/squad/extensions/screen-answer.ts
 COPY computer.ts /usr/local/lib/squad/extensions/computer.ts
 
