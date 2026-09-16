@@ -2413,6 +2413,46 @@ describe("what an agent asks its operator", () => {
 		expect(await asked(plane)).toEqual([fare]);
 	});
 
+	/*
+	 * The one of the four an agent waits on that a restart must not drop.
+	 *
+	 * A host it could not reach is asked about again the moment it is refused again — the agent is the
+	 * thing that knows whether it still needs it, and it finds out by trying. A question has no such
+	 * second chance: nothing makes an agent ask twice, so a card lost to a restart is an agent waiting
+	 * forever for an answer nobody can give it.
+	 */
+	it("is still there after the plane has been restarted", async () => {
+		const first = new ControlPlane({ agents: [scout], stateDir });
+		await first.attach("scout", putting(fare));
+		await said(first);
+
+		// Ports of its own, because two planes in one process would otherwise fight over the defaults —
+		// and zero is "whichever is free", which is the only answer a test can give.
+		const second = new ControlPlane({ agents: [scout], stateDir, webhookPort: 0, proxyPort: 0 });
+		await second.start();
+		try {
+			expect(await asked(second)).toEqual([fare]);
+		} finally {
+			await second.stop();
+		}
+	});
+
+	it("is gone from disk too, once it is answered", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+		await plane.attach("scout", putting());
+		await said(plane, { body: "Comfort $793" });
+
+		const second = new ControlPlane({ agents: [scout], stateDir, webhookPort: 0, proxyPort: 0 });
+		await second.start();
+		try {
+			expect(await asked(second)).toEqual([]);
+		} finally {
+			await second.stop();
+		}
+	});
+
 	it("says the agent is waiting on somebody, the way a host it cannot reach does", async () => {
 		const plane = new ControlPlane({ agents: [scout], stateDir });
 		await plane.attach("scout", putting(fare));

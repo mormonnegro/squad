@@ -1,3 +1,6 @@
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
 /**
  * A question an agent has put to its operator, and the answers it wrote for them to press.
  *
@@ -85,4 +88,83 @@ export function parseQuestions(text: string): readonly Question[] | undefined {
 		.map(readOne)
 		.filter((one): one is Question => one !== undefined)
 		.slice(0, MOST_QUESTIONS);
+}
+
+/**
+ * The questions each agent has standing, on disk.
+ *
+ * The only one of the four things an agent waits on that has to survive a restart, and the reason is
+ * what happens if it does not. A host an agent could not reach is asked about again the moment it is
+ * refused again — the agent is the thing that knows whether it still needs it, and it finds out by
+ * trying. A question has no such second chance: nothing makes an agent ask twice, so a card dropped
+ * by a restart is an agent waiting forever for an answer nobody can give it, and an operator who
+ * watched the thing they were about to press disappear.
+ *
+ * Kept beside the other things a console decided rather than in the operator's file, on the same
+ * terms as every one of them: the file is theirs, and a plane that wrote to it would be rewriting
+ * the one document they read to find out what they had agreed to.
+ */
+export class StandingQuestions {
+	readonly #path: string;
+	#tail: Promise<unknown> = Promise.resolve();
+
+	constructor(path: string) {
+		this.#path = path;
+	}
+
+	async all(): Promise<Record<string, readonly Question[]>> {
+		return await this.#serialize(() => this.#read());
+	}
+
+	async of(agentId: string): Promise<readonly Question[]> {
+		return await this.#serialize(async () => (await this.#read())[agentId] ?? []);
+	}
+
+	/** Replaces whatever this agent had, which is what a turn that asked something does to a card. */
+	async put(agentId: string, questions: readonly Question[]): Promise<void> {
+		await this.#serialize(async () => {
+			await this.#write({ ...(await this.#read()), [agentId]: [...questions] });
+		});
+	}
+
+	async forget(agentId: string): Promise<void> {
+		await this.#serialize(async () => {
+			const { [agentId]: _gone, ...left } = await this.#read();
+			await this.#write(left);
+		});
+	}
+
+	async #read(): Promise<Record<string, Question[]>> {
+		try {
+			const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
+			if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+			const all: Record<string, Question[]> = {};
+			for (const [agentId, held] of Object.entries(parsed as Record<string, unknown>)) {
+				// Read on the way in the way a turn's file is read, because it is the same shape and the
+				// same question: nothing that cannot be answered by pressing something belongs on a card.
+				const kept = parseQuestions(JSON.stringify(held));
+				if (kept !== undefined && kept.length > 0) all[agentId] = [...kept];
+			}
+			return all;
+		} catch {
+			return {};
+		}
+	}
+
+	async #write(all: Record<string, readonly Question[]>): Promise<void> {
+		const kept = Object.fromEntries(Object.entries(all).filter(([, held]) => held.length > 0));
+		await mkdir(dirname(this.#path), { recursive: true });
+		const temporary = `${this.#path}.${process.pid}.tmp`;
+		await writeFile(temporary, `${JSON.stringify(kept, null, "\t")}\n`, {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+		await rename(temporary, this.#path);
+	}
+
+	#serialize<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.#tail.then(operation, operation);
+		this.#tail = result.catch(() => {});
+		return result;
+	}
 }

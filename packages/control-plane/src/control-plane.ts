@@ -135,7 +135,7 @@ import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./plugins.ts";
 import { type Served, ServedPorts } from "./ports.ts";
-import type { Question } from "./questions.ts";
+import { type Question, StandingQuestions } from "./questions.ts";
 import {
 	checkRepo,
 	GITHUB_TOKEN_ENV,
@@ -779,6 +779,16 @@ export class ControlPlane {
 	 */
 	readonly #questions = new Map<string, readonly Question[]>();
 	/**
+	 * The same, on disk, because this is the one of the four that a restart must not drop.
+	 *
+	 * A host an agent could not reach is asked about again the moment it is refused again: the agent
+	 * is the thing that knows whether it still needs it, and it finds out by trying. A question has no
+	 * such second chance — nothing makes an agent ask twice — so a card lost to a restart is an agent
+	 * waiting forever for an answer nobody can give it, and an operator who watched the thing they
+	 * were about to press disappear.
+	 */
+	readonly #standing: StandingQuestions;
+	/**
 	 * The turn each agent is taking right now, as the console would have drawn it.
 	 *
 	 * Kept because a turn's progress only ever existed as events, and events are only ever seen by
@@ -828,6 +838,7 @@ export class ControlPlane {
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
 		this.#piped = new PipedHosts(join(this.#stateDir, "piped-hosts.json"));
+		this.#standing = new StandingQuestions(join(this.#stateDir, "questions.json"));
 		this.#addedTeam = new TeamEdges(join(this.#stateDir, "added-team.json"));
 		this.#gates = new Gates(join(this.#stateDir, "gates.json"));
 		this.#triggers = new Triggers(join(this.#stateDir, "triggers.json"));
@@ -882,7 +893,7 @@ export class ControlPlane {
 				// typing past the card is another, and both of them end the question. Nothing else does:
 				// a webhook, a schedule or the agent waking itself leaves the card standing, because the
 				// person it was addressed to has still not seen it.
-				if (event.trust === "operator" && !isOwnNote(event)) this.#questions.delete(event.agentId);
+				if (event.trust === "operator" && !isOwnNote(event)) this.#forgetQuestions(event.agentId);
 			},
 		});
 		this.scheduler = new Scheduler({
@@ -1181,7 +1192,7 @@ export class ControlPlane {
 			// What it had to be asked about goes with the name, like every other thing decided here.
 			await this.#gates.forget(agentId);
 			this.#sending.delete(agentId);
-			this.#questions.delete(agentId);
+			this.#forgetQuestions(agentId);
 			// The doors into it go with it. A trigger left standing would be an address on somebody
 			// else's dashboard pointing at an agent this plane no longer has.
 			for (const name of await this.#triggers.forget(agentId)) this.webhooks.drop(name);
@@ -1513,6 +1524,13 @@ export class ControlPlane {
 		return this.#questions.get(agentId) ?? [];
 	}
 
+	/** Takes a card down, here and on disk, which are one act however many places hold it. */
+	#forgetQuestions(agentId: string): void {
+		if (!this.#questions.has(agentId)) return;
+		this.#questions.delete(agentId);
+		void this.#standing.forget(agentId).catch(() => undefined);
+	}
+
 	/**
 	 * Puts up what a turn asked, replacing whatever was there.
 	 *
@@ -1524,6 +1542,7 @@ export class ControlPlane {
 	async #applyQuestions(agentId: string, questions: readonly Question[]): Promise<void> {
 		if (questions.length === 0) return;
 		this.#questions.set(agentId, questions);
+		await this.#standing.put(agentId, questions).catch(() => undefined);
 		// Written into the conversation as well as held, and this is the half that lasts. What is held
 		// is a thing to press, and it goes the moment somebody presses it; what is written is what was
 		// asked, which is still worth having tomorrow — otherwise the record reads "Comfort $793" in
@@ -4175,6 +4194,12 @@ export class ControlPlane {
 		}
 		const mailbox = await this.#mailbox.get();
 		if (mailbox !== undefined) this.email.set(mailbox);
+
+		// The cards that were on the screen when this process last stopped, back before anything can be
+		// said to an agent: a question survives a restart because nothing makes an agent ask it twice.
+		for (const [agentId, held] of Object.entries(await this.#standing.all())) {
+			if (this.#agents.some((agent) => agent.id === agentId)) this.#questions.set(agentId, held);
+		}
 
 		for (const agent of this.#agents) await this.#startAgent(agent);
 
