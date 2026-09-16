@@ -17,6 +17,15 @@ const DEBUG_PORT = Number(process.env.SQUAD_SCREEN_DEBUG_PORT ?? 9222);
 const PROFILE = process.env.SQUAD_SCREEN_PROFILE ?? "/home/screen/profile";
 const PROXY = `http://127.0.0.1:${process.env.SQUAD_SCREEN_PROXY_PORT ?? 7182}`;
 
+/**
+ * Where the browser waits, served by this program on the operator's own door.
+ *
+ * Loopback, which Chromium reaches directly: its proxy bypasses localhost, so this one page is the
+ * only thing it ever loads that does not go out through the egress proxy — and there is nothing out
+ * there to go and get.
+ */
+export const START_PAGE = `http://127.0.0.1:${process.env.SQUAD_SCREEN_VIEW_PORT ?? 7180}/start`;
+
 /** What a verb did, in the two shapes a tool result can take. */
 export interface Did {
 	readonly text: string;
@@ -39,6 +48,17 @@ const KEY_CODES: Readonly<Record<string, number>> = {
 	Home: 36,
 	End: 35,
 };
+
+/**
+ * An address as it should be read, which for the browser's own start page is no address at all.
+ *
+ * That page is this program's, served on loopback inside this container, and its address is a
+ * number nobody typed and nobody can use. Shown in the bar it is noise that looks like somewhere
+ * the agent went; left empty, the bar says what is true — nothing is open.
+ */
+function shown(url: string): string {
+	return url === START_PAGE ? "" : url;
+}
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -92,7 +112,7 @@ export class Browser {
 	 * round trip into the page for a string the browser already told us would be a question asked of
 	 * every viewer, forever, for something that changes when somebody clicks a link.
 	 */
-	#where = "about:blank";
+	#where = START_PAGE;
 	/** One attachment at a time, because the events that ask for one arrive in bursts. */
 	#following: Promise<void> = Promise.resolve();
 	/**
@@ -137,7 +157,10 @@ export class Browser {
 				// disguise — the browser is one — but the operator signing in here is a person, and a
 				// login refused for automation is refused to them.
 				"--disable-blink-features=AutomationControlled",
-				"about:blank",
+				// A page of our own rather than `about:blank`, which is a white rectangle the size of a
+				// browser — and a white rectangle is what a page that failed to load looks like. It was
+				// the first thing anybody saw of a screen they had just turned on.
+				START_PAGE,
 			],
 			{ stdio: ["ignore", "inherit", "inherit"] },
 		);
@@ -345,7 +368,7 @@ export class Browser {
 		return order.map((id, at) => ({
 			number: at + 1,
 			title: pages.get(id)?.title ?? "",
-			url: pages.get(id)?.url ?? "",
+			url: shown(pages.get(id)?.url ?? ""),
 			// What the agent is driving, which is what its own listing means by "here".
 			here: id === this.#target,
 			// And what is on the screen, which is the same tab until somebody goes to look at another.
@@ -637,7 +660,7 @@ export class Browser {
 
 	/** Where the browser is, for the address bar on the operator's view. */
 	where(): string {
-		return this.#where;
+		return shown(this.#where);
 	}
 
 	/** The last frame the browser sent, for a viewer that has just arrived mid-stream. */

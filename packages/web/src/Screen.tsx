@@ -2,6 +2,7 @@ import type { AgentSummary } from "@squad/control-plane";
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServedAt } from "./served.tsx";
+import { Spin } from "./spin.tsx";
 
 /**
  * Where an agent's browser is watched from, copied here because the browser cannot import the
@@ -438,7 +439,7 @@ export function Screen({ agentId }: { agentId: string }) {
 					// Against the top rather than the middle of the column: the picture belongs under the
 					// address bar that says where it is, and a browser floating in the vertical centre of a tall
 					// column with a gap over it reads as something that failed to load.
-					className="flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
+					className="relative flex min-h-0 flex-1 justify-center overflow-auto border-line border-t bg-ground p-2 outline-none focus-visible:bg-sunk"
 					onKeyDown={(event) => {
 						if (!holding) return;
 						if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -484,11 +485,6 @@ export function Screen({ agentId }: { agentId: string }) {
 						{/* Along the bottom of the picture rather than across the middle of it: it is a note
 				    about the page, and the part somebody is trying to read is the one place it cannot
 				    go. Inside the figure, so it stays with the picture rather than with the column. */}
-						{!arrived && (
-							<figcaption className="pointer-events-none absolute inset-0 flex items-center justify-center text-[0.75rem] text-muted">
-								waiting for the picture…
-							</figcaption>
-						)}
 						{arrived && !holding && (
 							<figcaption className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
 								<span className="rounded-full bg-ground/85 px-3 py-1 text-[0.72rem] text-muted">
@@ -497,6 +493,18 @@ export function Screen({ agentId }: { agentId: string }) {
 							</figcaption>
 						)}
 					</figure>
+
+					{/*
+					 * Over the whole stage rather than inside the figure, which is the shape of the picture
+					 * and so has no shape at all until one arrives: the line used to wrap into a column
+					 * three words wide and clip against the top, which is a broken screen saying so.
+					 */}
+					{!arrived && (
+						<div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[0.78rem] text-muted">
+							<Spin />
+							<span>waiting for the first frame…</span>
+						</div>
+					)}
 				</div>
 			</section>
 		</>

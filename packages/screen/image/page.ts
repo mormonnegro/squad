@@ -253,3 +253,61 @@ export function viewPage(agentId: string): string {
 })();
 </script>`;
 }
+
+/**
+ * What the browser is on before anybody has asked it for anything.
+ *
+ * `about:blank` was a white rectangle the size of a browser, and what a white rectangle says is
+ * that something failed to load. It was the first thing anybody saw of a screen they had just
+ * turned on, which made turning one on feel like it had not worked.
+ *
+ * Served from this program rather than written as a data: URL, so that it is an ordinary page: it
+ * renders the way everything else does, the screencast carries it like any other frame, and there
+ * is nothing special anywhere about the first picture.
+ *
+ * Large type, because this is read at whatever size the column happens to be — in a band beside a
+ * conversation it is a third of the width it was drawn at, and a paragraph set for a browser window
+ * is unreadable there.
+ */
+export function startPage(agentId: string): string {
+	return `<!doctype html>
+<meta charset="utf-8">
+<title>${agentId} — ready</title>
+<style>
+	html, body { height: 100%; margin: 0; }
+	body {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 24px;
+		background: #0e1013;
+		color: #dedcd7;
+		font: 34px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+		text-align: center;
+		padding: 48px;
+	}
+	.mark {
+		width: 112px;
+		height: 112px;
+		border-radius: 28px;
+		border: 2px solid #2f6b4f;
+		background: #16241d;
+		display: grid;
+		place-items: center;
+		color: #8fd9a8;
+		font-size: 54px;
+	}
+	h1 { margin: 0; font-size: 50px; font-weight: 600; color: #f5f3ef; }
+	p { margin: 0; max-width: 24em; color: #9ba1a9; }
+	strong { color: #dedcd7; font-weight: 600; }
+</style>
+<div class="mark">&#10003;</div>
+<h1>${agentId}&rsquo;s browser is ready</h1>
+<p>
+	Nothing is open yet. This browser stays signed in to whatever it is signed into, and it waits
+	here until <strong>${agentId}</strong> opens a page &mdash; or until you take the keyboard and
+	type an address yourself.
+</p>
+`;
+}

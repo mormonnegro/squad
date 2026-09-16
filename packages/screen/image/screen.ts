@@ -2,7 +2,7 @@ import http from "node:http";
 import { Browser } from "./browser.ts";
 import { readEgress, startForwarder } from "./forward.ts";
 import { refusedToAgent, refusedToOperator, TheKeyboard } from "./keyboard.ts";
-import { viewPage } from "./page.ts";
+import { startPage, viewPage } from "./page.ts";
 import { presented, tokenIn } from "./token.ts";
 import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
 
@@ -114,6 +114,20 @@ const view = http.createServer((request, response) => {
 			response
 				.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
 				.end(viewPage(AGENT_ID));
+			return;
+		}
+
+		/*
+		 * Where the browser sits before anybody asks it for anything.
+		 *
+		 * On this door rather than a file in the image, because a page has to have an address for a
+		 * browser to be on it, and this is the one address in here that already exists. Reached from
+		 * inside the container by Chromium, which is the only thing that ever asks for it.
+		 */
+		if (request.method === "GET" && path === "/start") {
+			response
+				.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
+				.end(startPage(AGENT_ID));
 			return;
 		}
 
