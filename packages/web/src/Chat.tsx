@@ -16,6 +16,16 @@ import { Spin } from "./spin.tsx";
 /** Enough marks to say who was read, before the row turns into the list it is summarising. */
 const MOST_MARKS = 5;
 
+/**
+ * A path picked out of the file browser, on its way into the box it will be asked about in.
+ *
+ * An object rather than the path, so that asking about the same file twice is two askings: what is
+ * carried is the asking, and the way it is taken once is by which one it was.
+ */
+export interface Carried {
+	readonly path: string;
+}
+
 export function Chat({
 	plane,
 	agent,
@@ -23,12 +33,23 @@ export function Chat({
 	live,
 	onLocal,
 	onFiles,
+	carried,
+	onCarried,
 }: {
 	plane: Plane;
 	agent: AgentSummary;
 	said: readonly Utterance[];
 	live: Live;
 	onLocal: (agentId: string, said: Utterance) => void;
+	/**
+	 * A path carried down from the file browser, to be asked about.
+	 *
+	 * The conversation is not mounted while that screen is open, so what comes back with the person
+	 * cannot be held in the box they left — it is held above both and handed over here. Taken once
+	 * and given back, so that walking into the files and out again does not paste it twice.
+	 */
+	carried: Carried | undefined;
+	onCarried: () => void;
 	/**
 	 * What it has in its box: what it built, what it wrote down, what you left it.
 	 *
@@ -244,6 +265,8 @@ export function Chat({
 						agent={agent}
 						busy={live.thinking}
 						onLocal={onLocal}
+						carried={carried}
+						onCarried={onCarried}
 						onStop={() => void plane.stop(agent.id)}
 					/>
 				</div>
@@ -747,11 +770,16 @@ function Composer({
 	agent,
 	busy,
 	onLocal,
+	carried,
+	onCarried,
 }: {
 	plane: Plane;
 	agent: AgentSummary;
 	busy: boolean;
 	onLocal: (agentId: string, said: Utterance) => void;
+	/** A path from the file browser, put in the box rather than sent. */
+	carried: Carried | undefined;
+	onCarried: () => void;
 	/** Ends the turn in flight where it is. The half it wrote is kept; nothing takes it again. */
 	onStop: () => void;
 }) {
@@ -773,6 +801,8 @@ function Composer({
 	 */
 	const [shell, setShell] = useState(false);
 	const box = useRef<HTMLTextAreaElement>(null);
+	/** The last asking that was taken into the box, so it is taken once. */
+	const took = useRef<Carried | undefined>(undefined);
 	// Nothing to complete in the sandbox: a `/` there is the root of a filesystem, not the front of
 	// a command this console knows the name of.
 	const menu: readonly Command[] = shell ? [] : completions(draft);
@@ -785,6 +815,27 @@ function Composer({
 		field.style.height = "auto";
 		field.style.height = `${field.scrollHeight}px`;
 	}, []);
+
+	/**
+	 * A path carried in from the files, dropped where the sentence about it is going to be written.
+	 *
+	 * Appended rather than substituted, because somebody who was halfway through a question when
+	 * they went to find the name of the thing is somebody who wants both halves. The caret lands
+	 * after it, which is where the rest of the sentence goes.
+	 */
+	useEffect(() => {
+		// By which asking it was rather than by what it says, so that the same file asked about twice
+		// is two askings — and so that an effect run twice on one mount is still one paste.
+		if (carried === undefined || took.current === carried) return;
+		took.current = carried;
+		const path = carried.path;
+		setDraft((was) => (was.trim() === "" ? `${path} ` : `${was.trimEnd()} ${path} `));
+		onCarried();
+		const field = box.current;
+		if (field === null) return;
+		field.focus();
+		requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+	}, [carried, onCarried]);
 
 	const send = async (): Promise<void> => {
 		const line = draft.trim();

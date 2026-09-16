@@ -11,6 +11,7 @@ import {
 	Image,
 	LayoutGrid,
 	List,
+	MessageSquare,
 	MoreVertical,
 	Pencil,
 	RefreshCw,
@@ -116,6 +117,7 @@ export function Files({
 	where,
 	onWhere,
 	onClose,
+	onSay,
 }: {
 	plane: Plane;
 	agent: AgentSummary;
@@ -124,6 +126,16 @@ export function Files({
 	onWhere: (path: string) => void;
 	/** Back to the conversation, which is where this was opened from. */
 	onClose: () => void;
+	/**
+	 * Down to the conversation with this path in the box, ready to be asked about.
+	 *
+	 * The other half of what a file browser beside a chat is for. Half of what is looked at in here
+	 * ends in a question — what is this, why is it here, finish it — and until now that question was
+	 * asked by reading a path off the screen and typing it back in by hand, which is the thing this
+	 * screen exists to stop. Nothing is sent: the path lands in the box, and the sentence around it
+	 * is still the operator's to write.
+	 */
+	onSay: (path: string) => void;
 }) {
 	const [listing, setListing] = useState<Listing | undefined>();
 	const [read, setRead] = useState<Read | undefined>();
@@ -442,6 +454,7 @@ export function Files({
 								read={read}
 								saving={saving}
 								onSave={() => void save(where, nameOfPath(where))}
+								onSay={() => onSay(where)}
 							/>
 						</BoxIs>
 					) : listing?.kind === "dir" ? (
@@ -457,6 +470,7 @@ export function Files({
 							onRename={rename}
 							onDelete={(entry, at) => setAsked({ entry, at })}
 							onSave={(entry, at) => void save(at, entry.name)}
+							onSay={onSay}
 						/>
 					) : null}
 				</div>
@@ -595,6 +609,8 @@ interface Doing {
 	readonly rename: (entry: FileEntry) => void;
 	readonly remove: (entry: FileEntry) => void;
 	readonly save: (entry: FileEntry) => void;
+	/** Into the box you talk to it in, as the path the agent would find it under. */
+	readonly say: (entry: FileEntry) => void;
 }
 
 /** What is in a folder, drawn in whichever shape was asked for, and what to say when there is none. */
@@ -609,6 +625,7 @@ function Inside({
 	onRename,
 	onDelete,
 	onSave,
+	onSay,
 }: {
 	listing: Extract<Listing, { kind: "dir" }>;
 	where: string;
@@ -621,6 +638,7 @@ function Inside({
 	onRename: (from: string, to: string) => Promise<boolean>;
 	onDelete: (entry: FileEntry, at: string) => void;
 	onSave: (entry: FileEntry, at: string) => void;
+	onSay: (at: string) => void;
 }) {
 	const shown = listing.entries.filter((one) => dots || !one.name.startsWith("."));
 	/** How many names in here start with a dot, whether they are being shown or not. */
@@ -638,6 +656,7 @@ function Inside({
 		rename: (entry) => setRenaming(entry.name),
 		remove: (entry) => onDelete(entry, pathOf(entry.name)),
 		save: (entry) => onSave(entry, pathOf(entry.name)),
+		say: (entry) => onSay(pathOf(entry.name)),
 	};
 
 	return (
@@ -821,12 +840,12 @@ function Thing({
 			data-on={on}
 			title={entry.name}
 			onFocus={onPick}
-			onClick={() => {
-				// A screen with no pointer has no second click to wait for.
-				if (window.matchMedia("(hover: none)").matches) doing.open(entry);
-				else onPick();
+			onClick={(event) => {
+				// A ctrl-click on a Mac is the other button, and it arrives here as a click as well as
+				// a menu: opening the file it was asked about is the thing this is not for.
+				if (event.ctrlKey || event.metaKey) return;
+				doing.open(entry);
 			}}
-			onDoubleClick={() => doing.open(entry)}
 			onContextMenu={(event) => {
 				event.preventDefault();
 				onPick();
@@ -889,12 +908,26 @@ function Thing({
 						<MoreVertical className="size-3.5" />
 					</button>
 				</MenuTrigger>
+				{/*
+				 * Held off the thing it hangs on, which is not where it looks like it is.
+				 *
+				 * The menu is drawn in a portal at the end of the document, but a React event walks the
+				 * tree the element was written in — so a click on an item arrived at this thing's own
+				 * click as well, and choosing "rename" opened the file it was about.
+				 */}
 				<MenuContent
 					align={point === undefined ? "end" : "start"}
 					alignOffset={hangs.alignOffset}
 					sideOffset={hangs.sideOffset}
 					collisionPadding={8}
 					className="min-w-[13rem]"
+					onClick={(event) => event.stopPropagation()}
+					onDoubleClick={(event) => event.stopPropagation()}
+					onContextMenu={(event) => {
+						event.preventDefault();
+						event.stopPropagation();
+					}}
+					onKeyDown={(event) => event.stopPropagation()}
 				>
 					<MenuGroup>
 						<MenuItem onSelect={() => doing.open(entry)}>
@@ -910,6 +943,15 @@ function Thing({
 							<Pencil className="size-4 flex-none text-muted" />
 							Rename
 							<Says says="F2" />
+						</MenuItem>
+						{/*
+						 * The one that leaves this screen. Everything else in this menu happens to the
+						 * file; this one is about it — the path goes into the box downstairs, where the
+						 * question gets written around it, and nothing is sent until it is.
+						 */}
+						<MenuItem onSelect={() => doing.say(entry)}>
+							<MessageSquare className="size-4 flex-none text-muted" />
+							Ask about it
 						</MenuItem>
 						{entry.kind === "file" && (
 							<MenuItem onSelect={() => doing.save(entry)}>
@@ -1050,6 +1092,7 @@ function Document({
 	read,
 	saving,
 	onSave,
+	onSay,
 }: {
 	name: string;
 	at: string;
@@ -1058,6 +1101,7 @@ function Document({
 	read: Read | undefined;
 	saving: boolean;
 	onSave: () => void;
+	onSay: () => void;
 }) {
 	const [url, setUrl] = useState<string | undefined>();
 	const picture = read !== undefined && imageOf(name) !== undefined;
@@ -1088,6 +1132,11 @@ function Document({
 					{sized(size)} · {when(changedAt)}
 				</span>
 				<span className="flex-1" />
+				{/* Where a question is most often asked: you have just read the thing. */}
+				<button type="button" className="pill" onClick={onSay}>
+					<MessageSquare className="size-3.5" />
+					ask about it
+				</button>
 				<button type="button" className="pill" disabled={saving} onClick={onSave}>
 					{saving ? <Spin /> : <Download className="size-3.5" />}
 					save it

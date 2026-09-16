@@ -204,6 +204,13 @@ export function App() {
 		filesAt(window.location.pathname),
 	);
 	/**
+	 * A path picked out of the file browser, waiting for the box it is going to be asked about in.
+	 *
+	 * Here rather than in the conversation because the conversation is unmounted while its files are
+	 * on screen: what is carried between two screens has to be held by the thing that holds both.
+	 */
+	const [carried, setCarried] = useState<{ readonly path: string } | undefined>();
+	/**
 	 * Which of the selected agent's served ports is being watched, if any.
 	 *
 	 * The same kind of thing its files are: one agent's screen, at that agent's address, gone when
@@ -790,6 +797,13 @@ export function App() {
 							where={browsing}
 							onWhere={(path) => openFiles(agent.id, path)}
 							onClose={() => show("none", agent.id)}
+							// Down to the conversation with the path in the box. Held here because the
+							// conversation is not mounted while its files are on screen, so the thing being
+							// carried has to be held by whatever outlives both.
+							onSay={(path) => {
+								setCarried({ path: `~/${path}` });
+								show("none", agent.id);
+							}}
 						/>
 					) : watching !== undefined && agent !== undefined && plane !== undefined ? (
 						<Logs
@@ -820,6 +834,8 @@ export function App() {
 							live={live[agent.id] ?? QUIET}
 							onLocal={local}
 							onFiles={openFiles}
+							carried={carried}
+							onCarried={() => setCarried(undefined)}
 						/>
 					) : (
 						<Nothing onMake={() => setMaking(true)} />
