@@ -94,7 +94,8 @@ describe("the question", () => {
 		expect(asked.model).toBe("jev-latest");
 		expect(asked.state.page).toBe("Checkout — https://shop.test/checkout");
 		expect(asked.questions.which.type).toBe("choice");
-		expect(asked.questions.which.instructions).toContain("the continue button");
+		// Short on purpose: the long version of this line halved the confidence on an obvious answer.
+		expect(asked.questions.which.instructions).toBe("Which one is: the continue button?");
 		expect(Object.keys(asked.questions.which.criteria)).toEqual(["1", "2", "3", NONE]);
 		expect(asked.questions.which.criteria["3"]).toBe('button "Continue to payment"');
 	});

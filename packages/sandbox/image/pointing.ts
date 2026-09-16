@@ -147,7 +147,17 @@ export function askedAbout(pointing: Pointing, what: string, outline: Outline): 
 		questions: {
 			which: {
 				type: "choice",
-				instructions: `Somebody working this page wants: ${what}. Which of these things on the page would they use? Each option is an element of the page, named as it reads on screen. Answer ${NONE} if none of them is it.`,
+				/*
+				 * Short, and measured rather than written.
+				 *
+				 * The first version of this line explained the situation — somebody is working this page,
+				 * each option is an element of it, answer none if none of them is it — and asking for a
+				 * button that was plainly on the list came back at 0.35, with half the weight on none.
+				 * The same page and the same options under `Which one is: X?` came back at 0.88, and the
+				 * thing that is genuinely absent still answers none at 0.99. What a classifier wants is
+				 * the question; the explaining was noise in front of it.
+				 */
+				instructions: `Which one is: ${what}?`,
 				criteria,
 			},
 		},
