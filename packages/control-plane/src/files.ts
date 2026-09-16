@@ -281,3 +281,63 @@ export const WRITE_SCRIPT = [
 	"}",
 	"process.stdout.write(JSON.stringify({ at, size: statSync(last ? at : part).size, done: last }));",
 ].join("\n");
+
+/**
+ * The one that renames, which is also the one that moves.
+ *
+ * They are the same call to the filesystem and the same thing to a person: a name is where a file
+ * is. Nothing is overwritten — `renameSync` would replace whatever is at the new name without a
+ * word, and the whole reason a person renames a file is that they are looking at the folder it is
+ * in. Two operators renaming onto the same name in the same instant is a race this check does not
+ * win, and the loser overwrites; a lock inside the container for a file manager one person is using
+ * would be a lock nobody could explain.
+ */
+export const MOVE_SCRIPT = [
+	'const { existsSync, renameSync } = require("node:fs");',
+	'const { basename } = require("node:path");',
+	'const [, at = "", to = ""] = process.argv;',
+	"if (!existsSync(at)) {",
+	'\tprocess.stderr.write("There is nothing at " + at + ".");',
+	"\tprocess.exit(1);",
+	"}",
+	"if (existsSync(to)) {",
+	'\tprocess.stderr.write("There is already something called " + basename(to) + " in there.");',
+	"\tprocess.exit(1);",
+	"}",
+	"try {",
+	"\trenameSync(at, to);",
+	"} catch (error) {",
+	'\tprocess.stderr.write(error.code === "EACCES" ? "There is no renaming " + basename(at) + "." : String(error.message));',
+	"\tprocess.exit(1);",
+	"}",
+	"process.stdout.write(JSON.stringify({ at: to }));",
+].join("\n");
+
+/**
+ * The one that deletes, and it deletes: there is no bin in here to fish it back out of.
+ *
+ * A folder goes with everything under it, because the alternative is a screen that refuses to
+ * delete a directory with a file in it — which is every directory — and sends the person back to
+ * the shell they came here to stop using. What makes that safe enough to offer is that it is asked
+ * before it is done, in a sentence that says how much is going.
+ */
+export const REMOVE_SCRIPT = [
+	'const { lstatSync, rmSync } = require("node:fs");',
+	'const { basename } = require("node:path");',
+	'const [, at = ""] = process.argv;',
+	"let stat;",
+	"try {",
+	"\tstat = lstatSync(at);",
+	"} catch (error) {",
+	'\tprocess.stderr.write(error.code === "ENOENT" ? "There is nothing at " + at + "." : String(error.message));',
+	"\tprocess.exit(1);",
+	"}",
+	"const dir = stat.isDirectory();",
+	"try {",
+	"\trmSync(at, { recursive: dir });",
+	"} catch (error) {",
+	'\tprocess.stderr.write(error.code === "EACCES" ? "There is no deleting " + basename(at) + "." : String(error.message));',
+	"\tprocess.exit(1);",
+	"}",
+	'process.stdout.write(JSON.stringify({ at, kind: dir ? "dir" : "file" }));',
+].join("\n");

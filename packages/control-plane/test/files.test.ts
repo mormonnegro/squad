@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,7 +7,9 @@ import {
 	insideBox,
 	LIST_SCRIPT,
 	type Listing,
+	MOVE_SCRIPT,
 	READ_SCRIPT,
+	REMOVE_SCRIPT,
 	type Slice,
 	tilde,
 	WRITE_SCRIPT,
@@ -15,7 +17,7 @@ import {
 } from "../src/files.ts";
 
 /**
- * The three scripts run here exactly as they run in the box: `node -e`, arguments, stdin.
+ * The scripts run here exactly as they run in the box: `node -e`, arguments, stdin.
  *
  * They are strings of a program that lives inside a container, which is the one kind of code a type
  * checker has nothing to say about. A test that ran the logic some other way would be a test of a
@@ -194,5 +196,70 @@ describe("the writing script", () => {
 		expect(() =>
 			run(WRITE_SCRIPT, [at, "99", "last"], Buffer.from("!").toString("base64")),
 		).toThrow(/already in flight/);
+	});
+});
+
+describe("the renaming script", () => {
+	it("gives a file its new name", () => {
+		writeFileSync(join(root, "notes.md"), "x");
+
+		run(MOVE_SCRIPT, [join(root, "notes.md"), join(root, "todo.md")]);
+
+		expect(existsSync(join(root, "notes.md"))).toBe(false);
+		expect(existsSync(join(root, "todo.md"))).toBe(true);
+	});
+
+	/** A rename is also a move, because to a filesystem and to a person those are one thing. */
+	it("carries a folder into another one, with everything under it", () => {
+		mkdirSync(join(root, "project", "src"), { recursive: true });
+		writeFileSync(join(root, "project", "src", "main.ts"), "x");
+		mkdirSync(join(root, "done"));
+
+		run(MOVE_SCRIPT, [join(root, "project"), join(root, "done", "project")]);
+
+		expect(existsSync(join(root, "done", "project", "src", "main.ts"))).toBe(true);
+	});
+
+	/** The whole reason somebody renames a file is that they are looking at the folder it is in. */
+	it("refuses a name that is already taken rather than writing over it", () => {
+		writeFileSync(join(root, "notes.md"), "the one being kept");
+		writeFileSync(join(root, "todo.md"), "the one being renamed");
+
+		expect(() => run(MOVE_SCRIPT, [join(root, "todo.md"), join(root, "notes.md")])).toThrow(
+			/already something called notes.md/,
+		);
+		expect(readFileSync(join(root, "notes.md"), "utf8")).toBe("the one being kept");
+	});
+
+	it("says there is nothing there in words somebody can act on", () => {
+		expect(() => run(MOVE_SCRIPT, [join(root, "gone.md"), join(root, "here.md")])).toThrow(
+			/There is nothing at/,
+		);
+	});
+});
+
+describe("the deleting script", () => {
+	it("deletes a file and says what it was", () => {
+		writeFileSync(join(root, "cat.png"), "x");
+
+		const gone = JSON.parse(run(REMOVE_SCRIPT, [join(root, "cat.png")])) as { kind: string };
+
+		expect(gone.kind).toBe("file");
+		expect(existsSync(join(root, "cat.png"))).toBe(false);
+	});
+
+	/** Every directory worth deleting has something in it, so a folder goes whole or not at all. */
+	it("deletes a folder and everything under it", () => {
+		mkdirSync(join(root, "old", "deep"), { recursive: true });
+		writeFileSync(join(root, "old", "deep", "notes.md"), "x");
+
+		const gone = JSON.parse(run(REMOVE_SCRIPT, [join(root, "old")])) as { kind: string };
+
+		expect(gone.kind).toBe("dir");
+		expect(existsSync(join(root, "old"))).toBe(false);
+	});
+
+	it("says there is nothing there rather than pretending it deleted something", () => {
+		expect(() => run(REMOVE_SCRIPT, [join(root, "never-was")])).toThrow(/There is nothing at/);
 	});
 });

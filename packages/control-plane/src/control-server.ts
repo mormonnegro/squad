@@ -106,6 +106,26 @@ export type ControlRequest =
 			readonly last: boolean;
 	  }
 	/**
+	 * The two that change what is in the box rather than adding to it: a new name, and a deletion.
+	 *
+	 * The same trust as the drop above them and none of its shape — whoever may write a file into
+	 * that box may rename one and may throw one away. `to` is a path in the same box, so a rename
+	 * and a move are one op, which is what they are to the filesystem and to the person doing it.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "move-file";
+			readonly agentId: string;
+			readonly at: string;
+			readonly to: string;
+	  }
+	| {
+			readonly id: string;
+			readonly op: "remove-file";
+			readonly agentId: string;
+			readonly at: string;
+	  }
+	/**
 	 * The schedules an agent is waiting on, with what each of them will say to it.
 	 *
 	 * Asked for rather than carried on every summary: `wakeAt` answers when, which is what a row has
@@ -571,6 +591,14 @@ export type ControlResponse =
 	| { readonly id: string; readonly ok: true; readonly printed: Printed }
 	/** What a written chunk landed as, and whether that was the last of them. */
 	| { readonly id: string; readonly ok: true; readonly wrote: Wrote }
+	/** Where a renamed file ended up, which is the name the screen draws it under from now on. */
+	| { readonly id: string; readonly ok: true; readonly moved: { readonly at: string } }
+	/** What was deleted, and whether it was a folder — which is what the sentence about it says. */
+	| {
+			readonly id: string;
+			readonly ok: true;
+			readonly gone: { readonly at: string; readonly kind?: "dir" | "file" };
+	  }
 	/** What a half-typed path could still become. Empty is an answer: nothing there matches. */
 	| { readonly id: string; readonly ok: true; readonly options: readonly string[] }
 	| { readonly id: string; readonly ok: false; readonly error: string }
@@ -875,6 +903,18 @@ export class ControlServer {
 						request.from,
 						request.last,
 					),
+				});
+			} else if (request.op === "move-file") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					moved: await this.#plane.moveFile(request.agentId, request.at, request.to),
+				});
+			} else if (request.op === "remove-file") {
+				this.#write(socket, {
+					id: request.id,
+					ok: true,
+					gone: await this.#plane.removeFile(request.agentId, request.at),
 				});
 			} else if (request.op === "complete") {
 				this.#write(socket, {

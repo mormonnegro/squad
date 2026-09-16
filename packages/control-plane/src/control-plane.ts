@@ -48,6 +48,7 @@ import {
 	DEFAULT_DEPLOYMENT,
 	DockerEngine,
 	DockerSandboxManager,
+	SANDBOX_HOME,
 	SANDBOX_SCREEN_EXTENSION,
 } from "@squad/sandbox";
 import {
@@ -83,8 +84,10 @@ import {
 	LIST_SCRIPT,
 	type Listing,
 	MOST_ENTRIES,
+	MOVE_SCRIPT,
 	nameOfPath,
 	READ_SCRIPT,
+	REMOVE_SCRIPT,
 	readAnswer,
 	refused,
 	type Slice,
@@ -3634,6 +3637,68 @@ export class ControlPlane {
 			this.#emit({ kind: "note", who: agentId, action: "given", detail: tilde(path) });
 		}
 		return wrote;
+	}
+
+	/**
+	 * Renames one of its files, which is the same call as moving it and the same thing to a person.
+	 *
+	 * The reach the drop already had, pointed the other way. An operator who can put a file into that
+	 * box and read every file in it was never being kept from changing a name — they were being sent
+	 * to `!mv` to do it, which means holding a path in their head while they type it at a prompt that
+	 * cannot see the folder they are looking at.
+	 *
+	 * The agent is told, in its own conversation and without being woken: a file it wrote and can no
+	 * longer find under the name it chose is a turn spent finding out why, and one line in the
+	 * transcript is the whole of what it needs to know.
+	 */
+	async moveFile(agentId: string, at: string, to: string): Promise<{ readonly at: string }> {
+		const from = this.#insideBox(agentId, at);
+		const onto = this.#insideBox(agentId, to);
+		if (from === SANDBOX_HOME || onto === SANDBOX_HOME) {
+			throw new Error("The box itself has no name to change.");
+		}
+		const found = await this.sandboxes.exec(agentId, ["node", "-e", MOVE_SCRIPT, from, onto]);
+		if (found.exitCode !== 0) {
+			throw new Error(refused(found.stderr, `${tilde(from)} could not be renamed.`));
+		}
+		const moved = readAnswer<{ at: string }>(found.stdout);
+		const said =
+			folderOf(from) === folderOf(onto)
+				? `You renamed ${nameOfPath(from)} to ${nameOfPath(onto)} in ${tilde(folderOf(onto))}.`
+				: `You moved ${nameOfPath(from)} from ${tilde(folderOf(from))} to ${tilde(folderOf(onto))}.`;
+		await this.#record(agentId, { from: "plane", text: said });
+		this.#emit({ kind: "note", who: agentId, action: "renamed", detail: tilde(onto) });
+		return moved;
+	}
+
+	/**
+	 * Deletes one of its files, or a folder and everything under it. There is no bin.
+	 *
+	 * Said plainly rather than softened, because the console that offers this has to ask first and
+	 * the sentence it asks with is only true if this is true. A folder goes whole for the reason a
+	 * file manager that refused to delete a non-empty directory would be one nobody used: every
+	 * directory worth deleting has something in it.
+	 *
+	 * Told to the agent like a drop is, for the same reason and with the same restraint: it is a
+	 * line in the conversation, and nothing wakes it. A file that is gone is a fact about the box,
+	 * and the next turn should not have to work it out from a failed read.
+	 */
+	async removeFile(agentId: string, at: string): Promise<{ readonly at: string }> {
+		const path = this.#insideBox(agentId, at);
+		if (path === SANDBOX_HOME) {
+			throw new Error("The box itself is not a thing to delete. The agent is, in its settings.");
+		}
+		const found = await this.sandboxes.exec(agentId, ["node", "-e", REMOVE_SCRIPT, path]);
+		if (found.exitCode !== 0) {
+			throw new Error(refused(found.stderr, `${tilde(path)} could not be deleted.`));
+		}
+		const gone = readAnswer<{ at: string; kind: "dir" | "file" }>(found.stdout);
+		await this.#record(agentId, {
+			from: "plane",
+			text: `You deleted ${gone.kind === "dir" ? "the folder " : ""}${nameOfPath(path)} from ${tilde(folderOf(path))}.`,
+		});
+		this.#emit({ kind: "note", who: agentId, action: "deleted", detail: tilde(path) });
+		return gone;
 	}
 
 	/**
