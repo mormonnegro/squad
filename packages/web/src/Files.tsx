@@ -788,6 +788,26 @@ function Thing({
 	const Glyph = entry.kind === "dir" ? Folder : glyphOf(entry.name);
 	const tiles = view === "tiles";
 	const [menu, setMenu] = useState(false);
+	/** The door the menu hangs off, and where the pointer was when it was asked for. */
+	const door = useRef<HTMLButtonElement>(null);
+	const at = useRef<{ x: number; y: number } | undefined>(undefined);
+
+	/**
+	 * Where the menu is drawn: at the pointer when that is what asked for it.
+	 *
+	 * A desktop puts the corner of the menu under the cursor, and it is not decoration — a menu
+	 * that appears centred on the pointer has an item under it before the hand has moved, which is
+	 * one stray click away from being chosen. Off the door instead when the door was pressed.
+	 */
+	const box = menu ? door.current?.getBoundingClientRect() : undefined;
+	const point = at.current;
+	const hangs =
+		box !== undefined && point !== undefined
+			? {
+					alignOffset: Math.round(point.x - box.left),
+					sideOffset: Math.round(point.y - box.bottom),
+				}
+			: { alignOffset: 0, sideOffset: 6 };
 
 	return (
 		// biome-ignore lint/a11y/useSemanticElements: it holds the button that opens its own menu, so it cannot be one
@@ -810,7 +830,16 @@ function Thing({
 			onContextMenu={(event) => {
 				event.preventDefault();
 				onPick();
-				setMenu(true);
+				// Opened when the button comes back up, not when it goes down.
+				//
+				// This event arrives on the press on a Mac and on X11, and a menu drawn under the
+				// pointer on the press is a menu whose first item the release lands on — which is how
+				// the right button was opening the file instead of offering to. Where it arrives on
+				// the release instead, which is Windows, the button is already up and there is nothing
+				// to wait for.
+				at.current = { x: event.clientX, y: event.clientY };
+				if (event.buttons === 0) setMenu(true);
+				else window.addEventListener("mouseup", () => setMenu(true), { once: true });
 			}}
 			onKeyDown={(event) => {
 				// Backspace as well as Delete, because half the keyboards this is read on call the one
@@ -846,16 +875,27 @@ function Thing({
 			<Menu open={menu} onOpenChange={setMenu}>
 				<MenuTrigger asChild>
 					<button
+						ref={door}
 						type="button"
 						className="tile-more"
 						title={`what can be done to ${entry.name}`}
-						onClick={(event) => event.stopPropagation()}
+						onClick={(event) => {
+							// Pressed rather than pointed at, so it hangs off itself like any other menu.
+							at.current = undefined;
+							event.stopPropagation();
+						}}
 						onDoubleClick={(event) => event.stopPropagation()}
 					>
 						<MoreVertical className="size-3.5" />
 					</button>
 				</MenuTrigger>
-				<MenuContent align="end" collisionPadding={8} className="min-w-[13rem]">
+				<MenuContent
+					align={point === undefined ? "end" : "start"}
+					alignOffset={hangs.alignOffset}
+					sideOffset={hangs.sideOffset}
+					collisionPadding={8}
+					className="min-w-[13rem]"
+				>
 					<MenuGroup>
 						<MenuItem onSelect={() => doing.open(entry)}>
 							{entry.kind === "dir" ? (
