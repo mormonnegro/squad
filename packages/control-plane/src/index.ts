@@ -117,6 +117,14 @@ export {
 	repoGrants,
 	reposPrompt,
 } from "./repos.ts";
+export {
+	MOST_OPTIONS,
+	MOST_QUESTIONS,
+	OPTION_CHARS,
+	parseQuestions,
+	type Question,
+	QUESTION_CHARS,
+} from "./questions.ts";
 export { nameRefused, type Room, roomChannel, roomIn } from "./rooms.ts";
 export { type EnsureSelfRepoOptions, ensureSelfRepo } from "./self.ts";
 export { overheard, Transcript, type Utterance } from "./transcript.ts";

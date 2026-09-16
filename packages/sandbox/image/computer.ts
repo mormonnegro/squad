@@ -12,6 +12,7 @@ import {
 	spentOn,
 	type Usage,
 } from "./looking.ts";
+import { alreadyAsked, askFor, holding, keep } from "./question.ts";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
 
 /**
@@ -106,6 +107,23 @@ function does(asked: Record<string, unknown>): Promise<readonly Block[]> {
 		});
 		request.end(payload);
 	});
+}
+
+/**
+ * The same card `ask_operator` puts up, filed from here.
+ *
+ * Two doors onto one thing, and both of them earn their keep: a question about a decision is asked
+ * from anywhere, and a question about this browser is asked where the browser is. What they must not
+ * be is two different notions of a pending question — an operator with a note on the screen and
+ * nothing in the conversation has to be watching the right pane at the right minute, which is the
+ * failure this whole card exists to end.
+ */
+const ASK_FILE = process.env.SQUAD_ASK_FILE ?? "/home/agent/.run/ask.json";
+
+function alsoAsk(question: string, options: readonly string[], hands: boolean): string {
+	const asked = askFor(question, options, hands, alreadyAsked(holding(ASK_FILE)));
+	keep(ASK_FILE, asked.asked);
+	return asked.text;
 }
 
 /**
@@ -529,27 +547,51 @@ export default function (pi: ExtensionAPI): void {
 		name: "screen_ask",
 		label: "Ask the operator to take the screen",
 		description: [
-			"Put a sentence on the screen asking your operator to come and do something on it themselves:",
-			"sign in, approve something, answer a code, get past whatever will not let you past.",
+			"Ask your operator to come and do something on this browser themselves: sign in, approve",
+			"something, answer a code, press whatever will not let you press it.",
 			"",
-			"Your note appears on their live view of this browser, where there is a button that takes the",
-			"keyboard off you. While they hold it, everything that touches the page is refused and",
-			"reading still works, so you can watch but not interfere.",
+			"It puts the note in two places, because there are two places they might be looking. On their",
+			"live view of this browser, beside the button that takes the keyboard off you — and in the",
+			"conversation, as a card carrying that same button and whatever you wrote in `then`. While",
+			"they hold the keyboard everything that touches the page is refused and reading still works,",
+			"so you can watch without interfering.",
 			"",
-			"Nothing waits for them. They may be asleep. Say what you need in your answer too, and if the",
-			"work cannot go on without it, end the turn and book one later with wake_me — then read the",
-			"page when you wake and carry on from wherever they left it.",
+			"The options are what they press when they are done, and each one is the message it sends you:",
+			"one that says they did it, one that says they could not. Without them the card is a sentence",
+			"with nothing to answer it, and they are left typing a reply you then have to interpret.",
+			"",
+			"Nothing waits for them. They may be asleep. Say what you need in your answer too, and then",
+			"end the turn: the answer comes back as a message, in a turn of its own.",
 		].join("\n"),
 		promptSnippet: "Ask the operator to take this screen and do something on it",
 		promptGuidelines: [
 			"When a page wants a password, a card or a one-time code, use screen_ask. Never type one yourself and never invent one.",
+			"When an element will not respond to screen_click — a widget your reading of the page does not expose — use screen_ask rather than trying it four more ways. Say which button, in the words printed on it.",
+			"Always write the options, in the operator's own language: the card is answered by pressing one of them, and a card with nothing to press is a paragraph again.",
 		],
 		parameters: Type.Object({
 			note: Type.String({ description: "What you need them to do, in one sentence." }),
+			options: Type.Optional(
+				Type.Array(Type.String(), {
+					description:
+						"What they press when they are done, each written as the message it sends you. Two is usually right: done, and could not.",
+				}),
+			),
 		}),
 		async execute(_id, params) {
-			const { note } = params as { note: string };
-			return { content: [...(await does({ verb: "ask", note }))], details: {} };
+			const { note, options } = params as { note: string; options?: readonly string[] };
+			// The note on the screen and the card in the conversation are one act, so a failure to file
+			// the card is not a reason for the note not to be on the screen: the operator who is already
+			// watching the browser is the likeliest reader of either.
+			const filed = ((): string => {
+				try {
+					return alsoAsk(note, options ?? [], true);
+				} catch (error) {
+					return `The card was not put up: ${(error as Error).message}`;
+				}
+			})();
+			const said = await does({ verb: "ask", note });
+			return { content: [...said, { type: "text", text: filed }], details: {} };
 		},
 	});
 }

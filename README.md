@@ -1839,6 +1839,56 @@ mailbox it read somewhere and handed out the pairing phrase would have chosen wh
 it. Everywhere else, printing the command is the helpful half; there, it would be leaving the
 credential one paste away.
 
+## An agent asking you a question
+
+The same failure as the section above, pointed sideways: not at something the console could set up,
+but at a decision only the person can take. An agent one step from carrying on would write the step
+out — three fares, what each one includes, a question mark at the bottom — and stop. That paragraph
+is read twenty minutes later by somebody who then has to compose a reply precise enough to act on,
+and who quite often answers a different question from the one asked.
+
+`ask_operator` is a pi extension shipped in the image beside `wake_me` and `console_command`, and
+what it adds is the answers:
+
+```
+‹asks› Estoy en el paso 2 de la reserva en LEVEL (EZE 18:35 → MAD 20:20 +1). ¿Con qué tarifa sigo?
+
+  ┌ Light, $683 — solo artículo personal y equipaje de mano de 10 kg ┐
+  ├ Comfort, $793 — agrega facturado de 23 kg, comida y asiento      ┤
+  └ Extra, $890 — agrega prioridad de embarque y asiento estándar    ┘
+```
+
+**Each option is the message it sends.** Press "Comfort, $793 …" and that line goes into the
+conversation as yours, word for word, in a turn of its own — the same thing typing it would have
+done, and the plane holds no opinion in the middle. Which is why the options are written as replies
+rather than as labels, in whatever language the conversation is in: `option 1` is a button that
+tells the agent nothing when it comes back. In the terminal console the same answers rest on the
+prompt as a numbered list, sent by the digit that names them, and only over an empty line — inside a
+sentence a `2` is a `2`, so you can still answer in your own words a question that offered three.
+
+**The question also goes into the conversation, and that is the half that lasts.** The card is a
+thing to press and goes the moment somebody presses it; the line stays, because otherwise the record
+reads `Comfort, $793 …` in the operator's own voice with nothing above it saying what was asked.
+
+When what is needed is hands rather than an answer — a click the agent cannot reach, a password, a
+code out of somebody's phone — the card carries one more button, and it is drawn as something else
+entirely: it takes the keyboard off the agent and puts the browser in front of you. Pressing it says
+nothing to the agent. The answers are what you press afterwards, when you know how it went. The same
+card comes up from `screen_ask` on the browser side, which puts the note on the live view as well,
+because there are two places somebody might be looking and only one of them was ever covered.
+
+**A card comes down when the operator says anything at all**, pressing being one way of saying
+something and typing past it another: the question was addressed to them, and they have now replied
+to it. Nothing else takes it down. A webhook does not, a schedule does not, and the agent waking
+itself up to look at the same page again does not — which is the rule the feature would be broken
+without, because that last one is the commonest turn to follow a question, and a card that vanished
+then would vanish while the person it was for was still asleep. A later turn that asks something new
+replaces it; a turn that asks nothing leaves it exactly where it was.
+
+Three at a time, at the most, and the cap is much harder than the console queue's for a reason that
+is not the console: every one of these is a stop. A turn that ended with five cards on the screen has
+handed its work back rather than done any.
+
 ## Agents writing to each other
 
 An agent that needs something another agent has — the repository, the mailbox, the account nobody

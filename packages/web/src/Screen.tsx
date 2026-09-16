@@ -95,9 +95,38 @@ interface Standing {
  * address, which is a stronger separation than the frame was. And the chrome around it — whose
  * screen, who has the keyboard, where it is pointed — is this console's own, in its own type.
  */
-export function Screen({ agentId }: { agentId: string }) {
+/**
+ * Takes the keyboard off the agent, from somewhere that is not this panel.
+ *
+ * Exported because the conversation now asks for it: an agent that wants a pair of hands puts a
+ * button in the chat, and that button has to do the thing the button in this header does. The same
+ * door either way — the plane's tunnel onto the screen's loopback port, which is the one surface the
+ * agent itself cannot reach.
+ */
+export async function takeTheKeyboard(agentId: string): Promise<void> {
+	await fetch(`/screen/${encodeURIComponent(agentId)}/keyboard`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ hold: true }),
+	}).catch(() => undefined);
+}
+
+export function Screen({
+	agentId,
+	open,
+	onOpen,
+}: {
+	agentId: string;
+	/**
+	 * Whether it is showing, decided by whoever holds the conversation.
+	 *
+	 * Held outside rather than in here because the conversation opens it: a card saying "come and
+	 * press this" is worth nothing if the screen it is about is folded away behind a chevron.
+	 */
+	open: boolean;
+	onOpen: (open: boolean) => void;
+}) {
 	const servedAt = useServedAt();
-	const [open, setOpen] = useState(true);
 	// Undefined until somebody drags it, and then a number of pixels. Undefined is not a width of
 	// zero: it is the share the layout gives it, which is the right answer until somebody disagrees.
 	const [width, setWidth] = useState<number | undefined>(remembered);
@@ -202,7 +231,7 @@ export function Screen({ agentId }: { agentId: string }) {
 				<button
 					type="button"
 					className="text-muted hover:text-say"
-					onClick={() => setOpen(true)}
+					onClick={() => onOpen(true)}
 					title="show the screen"
 				>
 					<ChevronLeft className="size-4" />
@@ -325,7 +354,7 @@ export function Screen({ agentId }: { agentId: string }) {
 					<button
 						type="button"
 						className="flex items-center gap-1.5 hover:text-say"
-						onClick={() => setOpen(false)}
+						onClick={() => onOpen(false)}
 						title="put the screen away"
 					>
 						<ChevronRight className="size-3.5" />

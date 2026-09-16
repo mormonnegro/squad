@@ -135,6 +135,7 @@ import type { AgentStep } from "./pi-output.ts";
 import { RELAY_PATH } from "./pi-session.ts";
 import { nameFor, PLUGINS, type Plugin, pluginAt, pluginOf, serverOf } from "./plugins.ts";
 import { type Served, ServedPorts } from "./ports.ts";
+import type { Question } from "./questions.ts";
 import {
 	checkRepo,
 	GITHUB_TOKEN_ENV,
@@ -460,6 +461,15 @@ export interface AgentSummary {
 	 */
 	readonly wants: readonly string[];
 	/**
+	 * What it has asked its operator, with the answers it wrote for them, newest last.
+	 *
+	 * Beside the hosts and the peers because it is the same kind of fact — a thing waiting on a
+	 * person — and drawn in the same place, which is the conversation. What is different about it is
+	 * that the plane has no opinion at all about the answer: pressing one of these sends the agent's
+	 * own sentence back as the operator's message, and that is the whole of it.
+	 */
+	readonly questions: readonly Question[];
+	/**
 	 * The answers it has written that are waiting to be let out, oldest first.
 	 *
 	 * The words themselves, because that is what is being decided: the other two questions are "may
@@ -736,6 +746,19 @@ export class ControlPlane {
 	 */
 	readonly #wanting = new Map<string, Sent[]>();
 	/**
+	 * The questions each agent has put to its operator and nobody has pressed anything on.
+	 *
+	 * Held for as long as this plane runs, on the asking's terms — and the rules for when one goes
+	 * away are the other half of the feature, because a card that outlives its moment is worse than
+	 * no card at all. It goes when the operator says anything to that agent at all, pressing an
+	 * option being one way of saying something: a question is addressed to them, and them answering
+	 * it in any form is the end of it. It is replaced when a later turn asks something new. And it is
+	 * left exactly where it is by a turn that asked nothing, which is not a detail — the commonest
+	 * turn after a question is the agent waking itself up to look at the same page again, and a card
+	 * that vanished then would vanish while the person it was for was still asleep.
+	 */
+	readonly #questions = new Map<string, readonly Question[]>();
+	/**
 	 * What is true for the turn each agent is taking right now: who its operator named in it, and how
 	 * far the message that woke it had already travelled.
 	 *
@@ -820,6 +843,12 @@ export class ControlPlane {
 				// Asked here rather than worked out later, because this is the only moment the question has
 				// an answer: a turn in flight now is the one this message is going to wait behind.
 				void this.#record(event.agentId, overheard(event), this.bus.busy(event.agentId));
+				// And here is where a card comes down. Whatever the agent was asking, the operator has
+				// now said something to it — pressing one of the options is one way of saying something,
+				// typing past the card is another, and both of them end the question. Nothing else does:
+				// a webhook, a schedule or the agent waking itself leaves the card standing, because the
+				// person it was addressed to has still not seen it.
+				if (event.trust === "operator" && !isOwnNote(event)) this.#questions.delete(event.agentId);
 			},
 		});
 		this.scheduler = new Scheduler({
@@ -994,6 +1023,7 @@ export class ControlPlane {
 			asking: this.asking(agent.id),
 			wants: this.wants(agent.id),
 			sending: this.sending(agent.id),
+			questions: this.questions(agent.id),
 			gates: await this.#gates.of(agent.id).catch(() => []),
 			bot: bot === undefined ? undefined : { username: bot.username, paired: bot.paired },
 			// Cut down to the two facts a row can draw. The rest of a standing is a pairing link and a
@@ -1104,6 +1134,7 @@ export class ControlPlane {
 			// What it had to be asked about goes with the name, like every other thing decided here.
 			await this.#gates.forget(agentId);
 			this.#sending.delete(agentId);
+			this.#questions.delete(agentId);
 			// The doors into it go with it. A trigger left standing would be an address on somebody
 			// else's dashboard pointing at an agent this plane no longer has.
 			for (const name of await this.#triggers.forget(agentId)) this.webhooks.drop(name);
@@ -1159,6 +1190,7 @@ export class ControlPlane {
 			onWake: (id, wake, answering) => this.#applyWake(id, wake, answering),
 			onAsked: (id, asked) => this.#applyAsked(id, asked),
 			onSent: (id, sent) => this.#applySent(id, sent),
+			onQuestions: (id, questions) => this.#applyQuestions(id, questions),
 			// Named by destination, not by agent, so an operator waiting on their own reply is not
 			// told that somebody else's channel is the reason.
 			onUndelivered: (id, channel, error) => this.#reportError(`${id} -> ${channel}`, error),
@@ -1407,6 +1439,45 @@ export class ControlPlane {
 				tone: "bad",
 				text: `${host} was not opened: ${(error as Error).message}`,
 			});
+		}
+	}
+
+	/**
+	 * The questions this agent has put to its operator, oldest first.
+	 *
+	 * On the summary rather than sent as an event, for the reason the hosts it is asking about are:
+	 * the console draws this row every two seconds anyway, and a question that arrived only as an
+	 * event is a question missed by every console that was not open at the moment it was asked —
+	 * which, for a thing whose entire purpose is to be waiting when somebody comes back, is the one
+	 * failure that matters.
+	 */
+	questions(agentId: string): readonly Question[] {
+		return this.#questions.get(agentId) ?? [];
+	}
+
+	/**
+	 * Puts up what a turn asked, replacing whatever was there.
+	 *
+	 * Replacing rather than adding, because a card is about the state the agent was in when it wrote
+	 * it: an agent that woke itself, looked at the page again and asked something new is not also
+	 * still asking the old thing. A turn that asked nothing never reaches here at all, which is what
+	 * leaves a card standing across the agent's own checking-back turns.
+	 */
+	async #applyQuestions(agentId: string, questions: readonly Question[]): Promise<void> {
+		if (questions.length === 0) return;
+		this.#questions.set(agentId, questions);
+		// Written into the conversation as well as held, and this is the half that lasts. What is held
+		// is a thing to press, and it goes the moment somebody presses it; what is written is what was
+		// asked, which is still worth having tomorrow — otherwise the record reads "Comfort $793" in
+		// the operator's own voice with nothing above it saying what the question was.
+		//
+		// It also means a console that draws no cards at all still shows the question, which is the
+		// difference between a terminal that cannot answer conveniently and one that never finds out.
+		// Marked `‹asks›` for the reason a console command the agent asked for is marked: unmarked is
+		// how this pane draws the agent answering, and a question sitting among replies is a line the
+		// operator has to work out nobody typed.
+		for (const question of questions) {
+			await this.#record(agentId, { from: "agent", via: "asks", text: question.text });
 		}
 	}
 

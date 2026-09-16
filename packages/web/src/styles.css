@@ -1567,6 +1567,80 @@ pre .md-path:hover {
 }
 
 /*
+ * An answer the agent wrote for you, which is a different object from a key.
+ *
+ * A key is `y open` — one character, pressable from the keyboard, named after the letter that
+ * presses it, and the mono face is what says so. These are sentences, and the sentence is the
+ * message: press "Comfort $793 — facturado 23 kg" and that line is what the agent is told. So they
+ * are set in the face the conversation is written in, stacked rather than in a row, and ranged left
+ * like the lines above them — a column of choices is read down, and centring would make each one
+ * start somewhere new.
+ */
+.ask-picks {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+.pick {
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 0.45rem 0.75rem;
+	background: var(--bg-code);
+	font: 0.85rem / 1.45 var(--sans);
+	color: var(--text);
+	text-align: left;
+	transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.pick:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--green) 55%, transparent);
+	color: var(--text-strong);
+}
+
+/* The one that was pressed, held in place for the moment before the card goes: without it the row
+   empties under the pointer and the press reads as a click that did not land. */
+.pick[data-chosen="true"] {
+	border-color: var(--green);
+	color: var(--green);
+}
+
+.pick:disabled:not([data-chosen="true"]) {
+	color: var(--muted);
+	opacity: 0.55;
+}
+
+/*
+ * The door, which is not an answer and does not look like one.
+ *
+ * Pressing it says nothing to the agent at all: it takes the keyboard and puts the browser in front
+ * of you. Amber, which in this console is the colour of the thing waiting on a person — the same
+ * edge this card is bordered with.
+ */
+.ask-hands {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.6rem;
+}
+
+.pick-hands {
+	align-self: flex-start;
+	border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+	color: var(--amber);
+}
+
+.pick-hands:hover:not(:disabled) {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+
+.ask-hint {
+	font-size: 0.78rem;
+	color: var(--muted);
+}
+
+/*
  * A key, which is a key: a thing on a keyboard, named after the letter that presses it.
  *
  * Square and set in mono on purpose, and left that way when everything else here became a pill —

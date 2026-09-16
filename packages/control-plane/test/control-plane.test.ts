@@ -20,6 +20,7 @@ import {
 	withDefaults,
 } from "../src/control-plane.ts";
 import { ProviderKeys } from "../src/keys.ts";
+import type { Question } from "../src/questions.ts";
 import type { TurnResult, TurnRunner, WakeChange } from "../src/turn.ts";
 
 describe("ControlPlane", () => {
@@ -2255,3 +2256,169 @@ async function authorizationServer(): Promise<{ url: string }> {
 	server.unref();
 	return { url: origin };
 }
+
+/*
+ * A question an agent put to its operator, and the four moments in its life.
+ *
+ * Every one of these is a rule somebody could reasonably have written the other way round, which is
+ * why they are all here: what puts a card up, what leaves it alone, what replaces it, and what takes
+ * it down. Get the last two backwards and the feature fails in the way that is hardest to see — the
+ * card is gone by the time the person it was for comes back to the screen.
+ */
+describe("what an agent asks its operator", () => {
+	let stateDir: string;
+
+	beforeEach(async () => {
+		stateDir = await mkdtemp(join(tmpdir(), "squad-asks-"));
+	});
+
+	afterEach(async () => {
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	const scout: AgentConfig = { id: "scout", limitUsd: 5 };
+
+	const putting = (...questions: readonly Question[]): TurnRunner => ({
+		async run() {
+			return {
+				text: "ahí va",
+				exitCode: 0,
+				stderr: "",
+				ms: 1,
+				tokens: 0,
+				costUsd: 0,
+				...(questions.length > 0 ? { questions } : {}),
+			};
+		},
+	});
+
+	const said = async (plane: ControlPlane, event: Partial<NewAgentEvent> = {}): Promise<void> => {
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "channel",
+			trust: "operator",
+			channel: "cli:test",
+			body: "buscame vuelos",
+			...event,
+		} as NewAgentEvent);
+		await plane.bus.drain();
+	};
+
+	const asked = async (plane: ControlPlane) =>
+		(await plane.agents()).find((agent) => agent.id === "scout")?.questions ?? [];
+
+	const fare: Question = { text: "¿Qué tarifa?", options: ["Light $683", "Comfort $793"] };
+
+	it("puts up what the turn asked, with the answers as the agent wrote them", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		expect(await asked(plane)).toEqual([fare]);
+	});
+
+	// The half that lasts. What is held is a thing to press and goes the moment it is pressed; what is
+	// written down is what was asked, and without it the record reads "Comfort $793" in the operator's
+	// own voice with nothing above it saying what the question was.
+	it("writes the question into the conversation, under the agent's name", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		expect((await plane.transcripts()).scout ?? []).toMatchObject([
+			{ from: "operator", text: "buscame vuelos" },
+			{ from: "agent", text: "ahí va" },
+			{ from: "agent", via: "asks", text: "¿Qué tarifa?" },
+		]);
+	});
+
+	/*
+	 * The rule this feature would be broken without.
+	 *
+	 * The commonest turn after a question is the agent waking itself up to look at the same page
+	 * again — it asked, it said it would check back, it checked back. If that turn took the card down,
+	 * the card would be gone before the person it was addressed to had opened the console.
+	 */
+	it("leaves the card standing through a turn that asked nothing", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		// The agent waking itself, which is not the operator answering anything.
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "schedule",
+			trust: "operator",
+			channel: "self",
+			body: "seguí con los vuelos",
+		});
+		await plane.bus.drain();
+
+		expect(await asked(plane)).toEqual([fare]);
+	});
+
+	it("replaces it when a later turn asks something else", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		const next: Question = { text: "¿Sigo al checkout?", options: ["Sí", "No"] };
+		await plane.attach("scout", putting(next));
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "schedule",
+			trust: "operator",
+			channel: "self",
+			body: "seguí",
+		});
+		await plane.bus.drain();
+
+		expect(await asked(plane)).toEqual([next]);
+	});
+
+	/*
+	 * And the rule that takes it down, which is not "somebody pressed a button".
+	 *
+	 * Pressing one sends the option as a message, so the message is what the plane sees — and a
+	 * message typed instead of pressed is the same answer given a different way. Both end the
+	 * question, because it was addressed to the operator and they have now replied to it.
+	 */
+	it("takes it down when the operator says anything at all", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		await plane.attach("scout", putting());
+		await said(plane, { body: "Comfort $793" });
+
+		expect(await asked(plane)).toEqual([]);
+	});
+
+	it("leaves it standing for a webhook, which is not the person it asked", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		await plane.attach("scout", putting());
+		await plane.bus.publish({
+			agentId: "scout",
+			source: "webhook",
+			trust: "public",
+			channel: "webhook:stripe",
+			body: "{}",
+		});
+		await plane.bus.drain();
+
+		expect(await asked(plane)).toEqual([fare]);
+	});
+
+	it("says the agent is waiting on somebody, the way a host it cannot reach does", async () => {
+		const plane = new ControlPlane({ agents: [scout], stateDir });
+		await plane.attach("scout", putting(fare));
+		await said(plane);
+
+		const summary = (await plane.agents()).find((agent) => agent.id === "scout");
+		expect(summary?.questions).toHaveLength(1);
+		expect(summary?.asking).toEqual([]);
+	});
+});

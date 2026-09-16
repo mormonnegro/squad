@@ -66,6 +66,18 @@ export const SANDBOX_CONSOLE_EXTENSION = "/usr/local/lib/squad/extensions/consol
 export const SANDBOX_REMEMBER_EXTENSION = "/usr/local/lib/squad/extensions/remember.ts";
 
 /**
+ * The extension that lets an agent put a question on its operator's console with the answers already
+ * written. Shipped in the image.
+ *
+ * Universal rather than conditional like the screen, because the thing it fixes has nothing to do
+ * with browsers: an agent one decision away from carrying on used to write the decision out as a
+ * paragraph and end it with a question mark, which is a turn spent handing work back to somebody who
+ * then has to type an answer precise enough to be acted on. Here the answers are the agent's own
+ * sentences, and pressing one sends it.
+ */
+export const SANDBOX_ASK_EXTENSION = "/usr/local/lib/squad/extensions/ask.ts";
+
+/**
  * The extension that lets an agent write to another agent on this plane. Shipped in the image.
  *
  * The only one whose effect is a turn somebody else takes, which is why what it can reach is decided
@@ -99,6 +111,7 @@ export const SANDBOX_EXTENSIONS: readonly string[] = [
 	SANDBOX_CONSOLE_EXTENSION,
 	SANDBOX_REMEMBER_EXTENSION,
 	SANDBOX_SEND_EXTENSION,
+	SANDBOX_ASK_EXTENSION,
 ];
 
 /**
@@ -151,6 +164,15 @@ export const SANDBOX_SEARCH_FILE = `${SANDBOX_HOME}/.run/search.json`;
  * a turn waiting to be allowed to ask for the second.
  */
 export const SANDBOX_CONSOLE_FILE = `${SANDBOX_HOME}/.run/console.json`;
+
+/**
+ * Where the agent leaves the questions it is putting to its operator, read once the turn is over.
+ *
+ * A list rather than one, for the console queue's reason, and capped much harder than that one is:
+ * a command is a step and three of them in a row is one intention, while every question here stops
+ * and waits for a person. A turn that ended with five cards on the screen has handed its work back.
+ */
+export const SANDBOX_ASK_FILE = `${SANDBOX_HOME}/.run/ask.json`;
 
 /**
  * Where the agent leaves the messages it is sending the others, read once the turn is over.
@@ -243,6 +265,7 @@ export function buildEnv(spec: SandboxSpec): string[] {
 		SQUAD_SEARCH_FILE: SANDBOX_SEARCH_FILE,
 		SQUAD_VISION_FILE: SANDBOX_VISION_FILE,
 		SQUAD_CONSOLE_FILE: SANDBOX_CONSOLE_FILE,
+		SQUAD_ASK_FILE: SANDBOX_ASK_FILE,
 		SQUAD_SEND_FILE: SANDBOX_SEND_FILE,
 		SQUAD_TEAM_FILE: SANDBOX_TEAM_FILE,
 		SQUAD_LESSONS_FILE: SANDBOX_LESSONS_FILE,

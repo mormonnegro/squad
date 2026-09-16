@@ -1,4 +1,4 @@
-import type { AgentSummary, Utterance } from "@squad/control-plane";
+import type { AgentSummary, Question, Utterance } from "@squad/control-plane";
 import { Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Live } from "./App.tsx";
@@ -9,7 +9,7 @@ import { nameOf } from "./face.ts";
 import { here } from "./here.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Plane } from "./plane.ts";
-import { hasScreen, Screen } from "./Screen.tsx";
+import { hasScreen, Screen, takeTheKeyboard } from "./Screen.tsx";
 import { safeEnd } from "./safe-end.ts";
 import { Spin } from "./spin.tsx";
 
@@ -42,6 +42,15 @@ export function Chat({
 	const floor = useRef<HTMLDivElement>(null);
 	// Whether the bottom is what is being read. It is, until somebody scrolls away from it.
 	const [following, setFollowing] = useState(true);
+	/**
+	 * Whether the browser is showing, held here rather than inside the screen itself.
+	 *
+	 * Because the conversation opens it. An agent that has asked for a pair of hands puts a button in
+	 * the conversation, and that button is worth nothing if the screen it is about is folded away
+	 * behind a chevron — what it means is "come and do this", and it has to be able to show you the
+	 * thing you are being asked to do it on.
+	 */
+	const [screen, setScreen] = useState(true);
 
 	// Before paint rather than after, so a turn arriving never shows the previous bottom of the
 	// conversation for a frame on its way past. And only while the bottom is where the reader is:
@@ -160,6 +169,34 @@ export function Chat({
 									onAnswer={(send) => void plane.answerSend(agent.id, index, send)}
 								/>
 							))}
+
+							{/*
+							 * What the agent asked, with the answers it wrote.
+							 *
+							 * Last of the four and nearest the box, because it is the only one that is not about
+							 * permission. Those three are a plane holding something until somebody says yes;
+							 * this is the agent one decision short of carrying on, and what answers it is a
+							 * message — pressing an option sends that option, word for word, in your name.
+							 * Which is why there is no yes and no no here, and no plane in the middle of it.
+							 */}
+							{agent.questions.map((question, index) => (
+								<Asked
+									// The place in the list is the identity, as it is for the held messages above: a
+									// turn may put up three, and the same agent may ask the same thing twice after
+									// looking at the same page again.
+									// biome-ignore lint/suspicious/noArrayIndexKey: the list is what is being answered
+									key={`ask:${index}`}
+									who={agent.id}
+									question={question}
+									screen={hasScreen(agent)}
+									onScreen={() => {
+										setScreen(true);
+										void takeTheKeyboard(agent.id);
+									}}
+									// Exactly what the box does with a typed line, because that is what this is.
+									onPick={(option) => void plane.wake(agent.id, option).catch(() => {})}
+								/>
+							))}
 						</div>
 						{!following && (
 							<button
@@ -183,7 +220,7 @@ export function Chat({
 						onStop={() => void plane.stop(agent.id)}
 					/>
 				</div>
-				{hasScreen(agent) && <Screen agentId={agent.id} />}
+				{hasScreen(agent) && <Screen agentId={agent.id} open={screen} onOpen={setScreen} />}
 			</div>
 		</>
 	);
@@ -546,6 +583,112 @@ function Ask({
 					{keys[1]}
 				</button>
 			</div>
+		</div>
+	);
+}
+
+/**
+ * A question the agent put up, and the answers it wrote for you.
+ *
+ * The card exists because of what it replaces. An agent one decision from carrying on used to write
+ * the decision out as a paragraph — three fares, what each one includes, and a question mark at the
+ * bottom — read twenty minutes later by somebody who then has to type an answer precise enough to
+ * be acted on. Here the answers are the agent's own sentences and pressing one sends it, so there
+ * is nothing to compose and nothing to match up: what arrives in the next turn is the line printed
+ * on the button, word for word.
+ *
+ * Pressed once. Not because a second press would be dangerous — it would only be a second message —
+ * but because the card stays on the screen until the plane's next poll notices the question is
+ * answered, and two seconds of a live button under a decision somebody has already taken reads as a
+ * click that did not land.
+ */
+function Asked({
+	who,
+	question,
+	screen,
+	onScreen,
+	onPick,
+}: {
+	who: string;
+	question: Question;
+	/** Whether there is a browser to be handed. An agent without one cannot be asking for hands. */
+	screen: boolean;
+	onScreen: () => void;
+	onPick: (option: string) => void;
+}) {
+	const [chosen, setChosen] = useState<string | undefined>();
+	const [went, setWent] = useState(false);
+	const hands = question.hands === true && screen;
+
+	return (
+		<div className="ask">
+			{/*
+			 * What kind of thing this is, and not the question itself.
+			 *
+			 * The question is the line immediately above this card, written into the conversation where
+			 * it will still be tomorrow. Repeating it here would be the same two sentences twice on one
+			 * screen — and this is the part you act on rather than the part you read, so what it says is
+			 * what pressing something will do.
+			 */}
+			<div className="ask-what">
+				<strong>{nameOf(who)}</strong>{" "}
+				{hands
+					? "needs your hands on its screen. Take the keyboard, do it, then say how it went."
+					: "is waiting on one of these. Pressing one sends it, in your name."}
+			</div>
+
+			{/*
+			 * The door, above the answers and drawn as something else entirely.
+			 *
+			 * It is not one of the answers and must not look like one: pressing it says nothing to the
+			 * agent at all, it takes the keyboard off it and puts the browser in front of you. The
+			 * answers are what you press afterwards, when you know how it went.
+			 */}
+			{hands && (
+				<div className="ask-hands">
+					<button
+						type="button"
+						className="pick pick-hands"
+						onClick={() => {
+							setWent(true);
+							onScreen();
+						}}
+					>
+						Take the keyboard
+					</button>
+					{went && (
+						<span className="ask-hint">
+							the screen is on the right — press one of these when you are done
+						</span>
+					)}
+				</div>
+			)}
+
+			{question.options.length > 0 && (
+				<div className="ask-picks">
+					{question.options.map((option) => (
+						<button
+							key={option}
+							type="button"
+							className="pick"
+							disabled={chosen !== undefined}
+							data-chosen={option === chosen ? "true" : undefined}
+							onClick={() => {
+								setChosen(option);
+								onPick(option);
+							}}
+						>
+							{option}
+						</button>
+					))}
+				</div>
+			)}
+
+			{/* Said only where it is not obvious: a card with nothing to press is one where the box below
+			    is the only way to answer, and nothing on the screen would otherwise say so. */}
+			{question.options.length === 0 && (
+				<span className="ask-hint">answer in the box below when you are done</span>
+			)}
 		</div>
 	);
 }

@@ -817,6 +817,7 @@ describe("Column", () => {
 		asking: [],
 		wants: [],
 		sending: [],
+		questions: [],
 		gates: [],
 		bot: undefined,
 		mail: undefined,
@@ -1136,6 +1137,7 @@ describe("reached", () => {
 		asking: [],
 		wants: [],
 		sending: [],
+		questions: [],
 		gates: [],
 		bot: { username: "demo_bot", paired: true },
 		mail: { address: "agents+demo@squad.dev", writes: true },
@@ -1193,6 +1195,7 @@ describe("standing", () => {
 		asking: [],
 		wants: [],
 		sending: [],
+		questions: [],
 		gates: [],
 		bot: { username: "demo_bot", paired: true },
 		mail: { address: "agents+demo@squad.dev", writes: true },
@@ -1276,6 +1279,7 @@ describe("Chat", () => {
 		confirm?: string | undefined;
 		asking?: string | undefined;
 		wanting?: string | undefined;
+		answers?: readonly string[] | undefined;
 		menu?: readonly Command[];
 		pick?: number;
 		held?: Span | undefined;
@@ -1292,6 +1296,7 @@ describe("Chat", () => {
 				confirm: undefined,
 				wanting: undefined,
 				asking: undefined,
+				answers: undefined,
 				menu: [],
 				pick: 0,
 				held: undefined,
@@ -1471,9 +1476,57 @@ describe("Chat", () => {
 						from: "operator" as const,
 						text: `pregunta ${index}`,
 					})),
+					answers: ["uno", "dos", "tres"],
 				}).split("\n"),
 			).toHaveLength(rows);
 		}
+	});
+
+	/*
+	 * The answers an agent wrote to a question of its own, which this pane can send by their number.
+	 *
+	 * The other console draws them as buttons. Here they are a numbered list resting on the prompt and
+	 * the prompt says which keys send them, because the eye is on the prompt and a numbered list above
+	 * a bare `>` is a list nobody knows is pressable.
+	 */
+	it("numbers the answers the agent wrote, and says which keys send them", () => {
+		const drawn = chat({
+			history: [{ from: "agent", text: "¿qué tarifa?" }],
+			rows: 8,
+			answers: ["Light $683", "Comfort $793"],
+		});
+
+		expect(bare(drawn)).toContain("1 Light $683");
+		expect(bare(drawn)).toContain("2 Comfort $793");
+		expect(bare(drawn)).toContain("1–2 to answer, or say");
+	});
+
+	// Because a sentence being typed is a sentence that may contain a 2. The numbers are a door that
+	// opens on an empty line only, which is where the bang goes in on the other console.
+	it("gives the prompt back the moment something is typed", () => {
+		const drawn = chat({
+			history: [{ from: "agent", text: "¿qué tarifa?" }],
+			rows: 8,
+			answers: ["Light $683", "Comfort $793"],
+			draft: "ninguna, mirá",
+		});
+
+		expect(bare(drawn)).toContain("1 Light $683");
+		expect(bare(drawn)).not.toContain("to answer, or say");
+		expect(drawn).toContain(">");
+	});
+
+	// All of them or none. A list cut off at two, with the third still answerable by its number, is a
+	// key that sends a line nobody on this screen can read.
+	it("draws none of them rather than some, when they do not all fit", () => {
+		const drawn = chat({
+			history: [{ from: "agent", text: "¿cuál?" }],
+			rows: 4,
+			answers: ["uno", "dos", "tres", "cuatro"],
+		});
+
+		expect(bare(drawn)).not.toContain("1 uno");
+		expect(drawn).toContain(">");
 	});
 
 	// A line being typed outruns the pane long before it is finished. Wrapping it would cost a row

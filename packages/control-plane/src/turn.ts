@@ -4,6 +4,7 @@ import { type AgentEvent, isOwnNote, type WakeupHandler } from "@squad/events";
 import {
 	type ExecResult,
 	extensionsFor,
+	SANDBOX_ASK_FILE,
 	SANDBOX_CONSOLE_FILE,
 	SANDBOX_EXTENSIONS,
 	SANDBOX_INBOX_PATH,
@@ -20,6 +21,7 @@ import { CLI_CHANNEL } from "./control-server.ts";
 import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
+import { parseQuestions, type Question } from "./questions.ts";
 import { type RepoStanding, reposPrompt } from "./repos.ts";
 import type { Search } from "./search.ts";
 import { parseSent, type Sent, type Teammate } from "./team.ts";
@@ -74,6 +76,15 @@ export interface TurnResult {
 	readonly asked?: readonly string[];
 	/** The messages it wrote to other agents. Which of them may be delivered is decided upstream. */
 	readonly sent?: readonly Sent[];
+	/**
+	 * The questions it put to its operator, with the answers it wrote for them.
+	 *
+	 * Absent and empty are different, and the difference is the whole of how these behave: a turn
+	 * that asked nothing leaves whatever was already on the screen standing, because the commonest
+	 * way a turn happens after a question is the agent waking itself up to check on the same thing.
+	 * A turn that asked something replaces it.
+	 */
+	readonly questions?: readonly Question[];
 	/** Set when the turn was stopped rather than finished. The text is as far as it had got. */
 	readonly stopped?: true;
 }
@@ -172,6 +183,7 @@ export interface PiTurnRunnerOptions {
 	readonly onStep?: (agentId: string, step: AgentStep) => void;
 	readonly wakeFile?: string;
 	readonly consoleFile?: string;
+	readonly askFile?: string;
 	readonly extensions?: readonly string[];
 	/** Whether this agent has a screen, and so the tools for one. Asked at the start of every turn. */
 	readonly screen?: (agentId: string) => Promise<boolean>;
@@ -308,6 +320,7 @@ export class PiTurnRunner {
 	readonly #onStep: ((agentId: string, step: AgentStep) => void) | undefined;
 	readonly #wakeFile: string;
 	readonly #consoleFile: string;
+	readonly #askFile: string;
 	readonly #extensions: readonly string[];
 	/**
 	 * Whether this agent has a browser, asked at the start of every turn.
@@ -342,6 +355,7 @@ export class PiTurnRunner {
 		this.#onStep = options.onStep;
 		this.#wakeFile = options.wakeFile ?? SANDBOX_WAKE_FILE;
 		this.#consoleFile = options.consoleFile ?? SANDBOX_CONSOLE_FILE;
+		this.#askFile = options.askFile ?? SANDBOX_ASK_FILE;
 		this.#extensions = options.extensions ?? SANDBOX_EXTENSIONS;
 		this.#screen = options.screen;
 		this.#servers = options.servers;
@@ -520,6 +534,10 @@ export class PiTurnRunner {
 		// the one thing a turn leaves behind that somebody else is waiting on, and a turn that died
 		// after writing it would have hung the agent it wrote to on a message that never came.
 		const sent = await this.#takeSent(agentId);
+		// And again. A question is the one thing a turn leaves behind that a person is waiting on, and
+		// a turn that died after writing one would be an agent that stopped for an answer nobody was
+		// ever shown the question for.
+		const questions = await this.#takeQuestions(agentId);
 
 		const result: TurnResult = {
 			text: output.text,
@@ -540,6 +558,9 @@ export class PiTurnRunner {
 			// whoever stopped a turn stopped what it was doing, and waking another agent afterwards is
 			// this turn carrying on somewhere the hand that stopped it is not looking.
 			...(sent !== undefined && !stopped ? { sent } : {}),
+			// On the same terms once more: whoever stopped a turn stopped what it was doing, and a card
+			// appearing afterwards would be that turn asking a question about work nobody is doing.
+			...(questions !== undefined && !stopped ? { questions } : {}),
 			...(stopped ? { stopped: true } : {}),
 		};
 		// A turn that was stopped did not fail. Its exit code says killed and its answer ends mid
@@ -708,6 +729,16 @@ export class PiTurnRunner {
 		return parseAsked(read.stdout);
 	}
 
+	/** And again, where leaving it in place would put the same card up at the end of every turn. */
+	async #takeQuestions(agentId: string): Promise<readonly Question[] | undefined> {
+		const read = await this.#sandbox
+			.run(agentId, ["sh", "-c", 'cat "$1" && rm -f "$1"', "sh", this.#askFile], "")
+			.catch(() => undefined);
+
+		if (read === undefined || read.exitCode !== 0) return undefined;
+		return parseQuestions(read.stdout);
+	}
+
 	/** And again, where leaving it in place would send the same message every turn from now on. */
 	async #takeSent(agentId: string): Promise<readonly Sent[] | undefined> {
 		const read = await this.#sandbox
@@ -772,6 +803,11 @@ export interface TurnHandlerOptions {
 	 * — or the question about it already on a screen — before the answer to this turn goes out.
 	 */
 	readonly onSent?: (agentId: string, sent: readonly Sent[]) => Promise<void>;
+	/**
+	 * The questions the turn put to its operator. Awaited, so the card is on the screen before the
+	 * answer that says it is there.
+	 */
+	readonly onQuestions?: (agentId: string, questions: readonly Question[]) => Promise<void>;
 	/** A reply that had nowhere to go. The turn still counts as taken. */
 	readonly onUndelivered?: (agentId: string, channel: string, error: Error) => void;
 }
@@ -813,6 +849,10 @@ export function createTurnHandler(options: TurnHandlerOptions): WakeupHandler {
 		// agent is a turn starting somewhere else, and it should start from what this turn actually did
 		// rather than from a plane still settling what it asked for.
 		if (result.sent) await options.onSent?.(agentId, result.sent);
+		// Last of the four and still before the reply, because the card is the part of this turn the
+		// operator acts on: an answer that says "I have put the three fares up for you" and a screen
+		// with nothing on it yet is the console looking, for a moment, like it dropped the question.
+		if (result.questions) await options.onQuestions?.(agentId, result.questions);
 		if (!options.router || result.text.length === 0) return;
 
 		// Every destination is tried, and none of them can undo the turn. The model has been paid and

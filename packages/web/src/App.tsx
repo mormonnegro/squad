@@ -907,7 +907,7 @@ function AgentRow({
 	// A question nobody has answered outranks everything else this row could say. It is the one
 	// state where the agent is stopped and waiting on the person reading this.
 	const state =
-		agent.asking.length + agent.wants.length > 0
+		agent.asking.length + agent.wants.length + agent.questions.length > 0
 			? "asking"
 			: live.thinking
 				? "busy"
@@ -923,8 +923,10 @@ function AgentRow({
 		stopped: "stopped",
 	}[state];
 	// Everything this agent is stopped and waiting on somebody for, which is the one kind of pending
-	// work that is not the agent's: a host to reach, an agent to write to, a message to let out.
-	const waiting = agent.asking.length + agent.wants.length + agent.sending.length;
+	// work that is not the agent's: a host to reach, an agent to write to, a message to let out, a
+	// question it wrote the answers to and cannot press.
+	const waiting =
+		agent.asking.length + agent.wants.length + agent.sending.length + agent.questions.length;
 	/** Three of the week, because a rail is a list of agents and not a calendar. */
 	const shown = wakes.slice(0, 3);
 	const heat =

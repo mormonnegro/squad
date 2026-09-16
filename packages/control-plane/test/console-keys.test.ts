@@ -77,6 +77,7 @@ const listed = (id: string): AgentSummary => ({
 	asking: [],
 	wants: [],
 	sending: [],
+	questions: [],
 	gates: [],
 	bot: undefined,
 	mail: undefined,

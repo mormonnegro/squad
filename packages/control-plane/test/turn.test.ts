@@ -48,6 +48,8 @@ class StubSandbox implements TurnSandbox {
 	left: string | undefined;
 	/** What it left in the console file: the commands it is asking for. Absent is having asked for none. */
 	asked: string | undefined;
+	/** What it left in the ask file: the questions it put to its operator. Absent is having asked none. */
+	asks: string | undefined;
 	/** A command that says its piece and then runs until something stops it, like a turn does. */
 	holds = false;
 	/** A sandbox that will not take the servers, to see what the turn does about it. */
@@ -96,11 +98,18 @@ class StubSandbox implements TurnSandbox {
 				const cut = this.lessons.split("\n").slice(0, lines).join("\n").slice(0, bytes);
 				return { exitCode: 0, stdout: cut, stderr: "" };
 			}
-			const asking = String(cmd[4]).includes("console.json");
-			const held = asking ? this.asked : this.left;
+			// Told apart by the file each one names rather than by the order they are read in: taking
+			// one for another reads, from upstream, as an agent having asked for something it never did.
+			const file = String(cmd[4]);
+			const held = file.includes("console.json")
+				? this.asked
+				: file.includes("ask.json")
+					? this.asks
+					: this.left;
 			if (held === undefined) return { exitCode: 1, stdout: "", stderr: "" };
 			// Taken away by the reading, which is the whole point of reading it that way.
-			if (asking) this.asked = undefined;
+			if (file.includes("console.json")) this.asked = undefined;
+			else if (file.includes("ask.json")) this.asks = undefined;
 			else this.left = undefined;
 			return { exitCode: 0, stdout: held, stderr: "" };
 		}
@@ -181,6 +190,8 @@ describe("PiTurnRunner", () => {
 			"/usr/local/lib/squad/extensions/remember.ts",
 			"--extension",
 			"/usr/local/lib/squad/extensions/send.ts",
+			"--extension",
+			"/usr/local/lib/squad/extensions/ask.ts",
 		]);
 	});
 
@@ -618,6 +629,60 @@ describe("PiTurnRunner", () => {
 
 		expect((await turn).asked).toBeUndefined();
 		expect(sandbox.asked).toBeUndefined();
+	});
+
+	it("brings back the questions the turn put to its operator", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.asks = JSON.stringify([{ text: "¿Qué tarifa?", options: ["Light $683", "Comfort"] }]);
+
+		const result = await new PiTurnRunner({ sandbox }).run("a1", "hi");
+
+		expect(result.questions).toEqual([{ text: "¿Qué tarifa?", options: ["Light $683", "Comfort"] }]);
+	});
+
+	// Absent and empty are different here, and the difference is the whole of how a card behaves: a
+	// turn that asked nothing leaves whatever was already on the operator's screen standing.
+	it("says nothing about a turn that asked nothing", async () => {
+		expect((await new PiTurnRunner({ sandbox: new StubSandbox() }).run("a1", "hi")).questions).toBe(
+			undefined,
+		);
+	});
+
+	it("does not put the same card up again on the turn after", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.asks = JSON.stringify([{ text: "¿Cuál?", options: ["A"] }]);
+		const runner = new PiTurnRunner({ sandbox });
+
+		await runner.run("a1", "hi");
+
+		expect((await runner.run("a1", "otra vez")).questions).toBeUndefined();
+	});
+
+	// For the console queue's reason: the turn died for want of the answer it was asking for, and a
+	// question lost with the turn is an agent that stays stuck across every retry.
+	it("still brings them back from a turn that failed", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.result = { exitCode: 1, stdout: "", stderr: "boom" };
+		sandbox.asks = JSON.stringify([{ text: "¿Cuál?", options: ["A"] }]);
+
+		await expect(new PiTurnRunner({ sandbox }).run("a1", "hi")).rejects.toMatchObject({
+			result: { questions: [{ text: "¿Cuál?", options: ["A"] }] },
+		});
+	});
+
+	// A card appearing after somebody stopped the turn is that turn asking about work nobody is doing
+	// any more. Still taken off the disk, so the next turn does not find it and put it up.
+	it("puts none up from a turn that was stopped", async () => {
+		const sandbox = new StubSandbox();
+		sandbox.holds = true;
+		sandbox.asks = JSON.stringify([{ text: "¿Cuál?", options: ["A"] }]);
+		const runner = new PiTurnRunner({ sandbox });
+
+		const turn = runner.run("a1", "hi");
+		runner.stop("a1");
+
+		expect((await turn).questions).toBeUndefined();
+		expect(sandbox.asks).toBeUndefined();
 	});
 });
 

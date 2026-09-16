@@ -947,7 +947,7 @@ export function Column({
 			// even that, because it is the one state on this column that will not resolve itself: an
 			// agent waiting on an answer is stopped until somebody comes to this row and gives it.
 			const mark =
-				agent.asking.length > 0 || agent.wants.length > 0
+				agent.asking.length > 0 || agent.wants.length > 0 || agent.questions.length > 0
 					? MARKS.asking
 					: busy.has(agent.id)
 						? MARKS.busy
@@ -1140,15 +1140,31 @@ export function aside(
 	working: boolean,
 	queued: number,
 	rows: number,
-): { readonly taken: number; readonly queued: number; readonly working: boolean } {
+	choices = 0,
+): {
+	readonly taken: number;
+	readonly queued: number;
+	readonly working: boolean;
+	readonly choices: number;
+} {
 	const room = chatRows(rows);
+	// The answers an agent has written outrank everything but the menu under the hand, because they
+	// are the one thing on this pane that is not information: the agent is stopped until one of them
+	// is pressed. All of them or none — a list cut off at two, with the third still answerable by its
+	// number, is a key that does something nobody can see.
+	const offered = choices > 0 && choices <= room - listed ? choices : 0;
 	// Messages waiting to be taken outrank the clock. The seconds are a comfort; a line somebody typed
 	// and nobody has answered yet is the thing on this pane they are still owed.
-	const waiting = Math.max(0, Math.min(queued, room - listed));
+	const waiting = Math.max(0, Math.min(queued, room - listed - offered));
 	// The working row gives way before the last row of conversation does. A pane squeezed to nothing
 	// is still a conversation with a prompt under it, and a clock is not worth the last line of talk.
-	const clock = working && room - listed - waiting > 0;
-	return { taken: listed + waiting + (clock ? 1 : 0), queued: waiting, working: clock };
+	const clock = working && room - listed - offered - waiting > 0;
+	return {
+		taken: listed + offered + waiting + (clock ? 1 : 0),
+		queued: waiting,
+		working: clock,
+		choices: offered,
+	};
 }
 
 /** The conversation as the rows a pane of this size is showing of it, which is what a drag copies. */
@@ -1174,6 +1190,7 @@ export function Chat({
 	confirm,
 	asking,
 	wanting,
+	answers,
 	menu,
 	pick,
 	held,
@@ -1195,6 +1212,16 @@ export function Chat({
 	readonly asking: string | undefined;
 	/** The agent this one has written to and may not, or nothing while it is waiting on nobody. */
 	readonly wanting: string | undefined;
+	/**
+	 * The answers the agent wrote to a question of its own, or nothing while it has asked nothing.
+	 *
+	 * Unlike the three questions above it, this one does not take the keyboard: the numbers answer it
+	 * and every other key is a letter of a reply typed in your own words, which is a thing you must
+	 * still be able to do — an agent that offered three fares has not thereby stopped you asking it
+	 * about a fourth. So the digits count only over an empty line, which is the same door the bang
+	 * opens on in the other console: inside a line a 2 is a 2.
+	 */
+	readonly answers: readonly string[] | undefined;
 	/** What the line being typed could still turn out to be, which is empty unless it began with a slash. */
 	readonly menu: readonly Command[];
 	readonly pick: number;
@@ -1207,7 +1234,16 @@ export function Chat({
 	const { from, listed } = offering(menu, pick, rows);
 	const named = listed.map((command) => `${command.name} ${command.takes}`.trimEnd());
 	const widest = Math.max(0, ...named.map((name) => name.length));
-	const budget = aside(listed.length, thinking !== undefined, queued.length, rows);
+	const budget = aside(
+		listed.length,
+		thinking !== undefined,
+		queued.length,
+		rows,
+		answers?.length ?? 0,
+	);
+	// Drawn only if all of them fit, which is what the budget decided; the numbers answer only what
+	// is drawn, so that a key never does something invisible.
+	const offered = budget.choices > 0 ? (answers ?? []) : [];
 	// Nothing when the pane had no row to spare for it, which is what `aside` decides for both of us.
 	const working = budget.working ? thinking : undefined;
 	// The end of the queue rather than the start of it, when only some of it fits: this pane is read
@@ -1239,7 +1275,14 @@ export function Chat({
 					? `write to ${wanting}?  y / n `
 					: shell !== undefined
 						? `! ${here(shell)} `
-						: "> ";
+						: // The agent's own answers, offered as the keys that send them — and only over an
+							// empty line, because the moment a sentence is being typed a digit is part of it.
+							// The mark is where the hint goes for the reason the y and the n are in theirs:
+							// the eye is on the prompt, and a numbered list above a bare `>` is a list nobody
+							// knows is pressable.
+							offered.length > 0 && draft === ""
+							? `1–${offered.length} to answer, or say `
+							: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
@@ -1252,7 +1295,11 @@ export function Chat({
 			? "red"
 			: shell !== undefined
 				? "magenta"
-				: "cyan";
+				: // Yellow rather than red: nothing here is irreversible and nothing is being consented
+					// to. It is the colour this console already uses for something waiting on a person.
+					offered.length > 0 && draft === ""
+					? "yellow"
+					: "cyan";
 	return h(
 		Box,
 		{ flexDirection: "column", flexGrow: 1 },
@@ -1310,6 +1357,18 @@ export function Chat({
 				// who is waiting to be heard is exactly as worth knowing here as it is down in the pane.
 				h(Text, { color: "cyan" }, "⋯ "),
 				spoken(said, "").split("\n")[0] ?? "",
+			),
+		),
+		// The answers the agent wrote, numbered, resting on the prompt where the key that sends them is
+		// about to be pressed. Above the queue and under the menu for the reason each of those is where
+		// it is: the menu is what the hand is doing this second, and this is what it is being asked to
+		// do next.
+		...offered.map((option, index) =>
+			h(
+				Text,
+				{ key: `choice-${index}`, wrap: "truncate" },
+				h(Text, { color: "yellow", bold: true }, ` ${index + 1} `),
+				clipped(option, Math.max(0, columns - 4)),
 			),
 		),
 		// Outside the prompt's box and resting on it, the way the list of what a word could become
@@ -2559,6 +2618,18 @@ export function App({
 	// The other question of the same kind, kept apart from it by the arrow in the key: a host and an
 	// agent can be called the same thing, and answering one is not answering the other.
 	const wanting = selected?.wants.find((to) => !answered.has(`${selected.id} > ${to}`));
+	/**
+	 * The answers the agent under the cursor wrote to its own oldest question.
+	 *
+	 * The oldest only, for the reason the host is: there is one prompt and one row of numbers, and a
+	 * screen offering eight keys for three questions is a screen where pressing 2 is a guess. The rest
+	 * keep their mark in the column and come up as each is answered.
+	 *
+	 * Nothing is remembered about having answered one. Unlike a reach, this is not a question the
+	 * plane holds open until somebody says yes or no — pressing a number sends a message, and the
+	 * message itself is what takes the question down, at the plane, for every console watching.
+	 */
+	const answers = selected?.questions[0]?.options;
 	// Clamped rather than corrected, the way the command menu is: the list can come back shorter than
 	// it was, and nothing should have to be reset from inside a keystroke.
 	const walk = configRows(section, providers, models, servers, grants, mail);
@@ -2616,10 +2687,16 @@ export function App({
 	// takes: they have no lines anybody would want in a paste.
 	const boxed = inner > PROMPT_ROWS;
 	const listed = panel === "chat" && selected !== undefined ? offering(menu, at, inner).listed : [];
-	const taken =
+	// The same budget the pane is about to draw with, worked out here for the reason the rows are —
+	// and now for one more: what it set aside is also whether the agent's own answers are on screen,
+	// which is whether their numbers are keys. A digit that sent a line nobody could see would be the
+	// worst key in this console.
+	const budget =
 		panel === "chat" && selected !== undefined
-			? aside(listed.length, busy.has(selected.id), queued.length, inner).taken
-			: 0;
+			? aside(listed.length, busy.has(selected.id), queued.length, inner, answers?.length ?? 0)
+			: undefined;
+	const taken = budget?.taken ?? 0;
+	const numbered = (budget?.choices ?? 0) > 0;
 	const onScreen =
 		panel === "logs"
 			? visible(lines, inner, top)
@@ -4043,6 +4120,26 @@ export function App({
 			return;
 		}
 
+		/*
+		 * The answers the agent wrote, sent by the number that names them.
+		 *
+		 * Through the same door the bang goes through, and for the same reason: only over an empty
+		 * line. Inside a line a 2 is a 2, which is what leaves somebody able to type a reply of their
+		 * own to a question that offered three — an agent listing fares has not thereby stopped you
+		 * asking it about a fourth.
+		 *
+		 * Nothing is remembered about having pressed one. What takes the question down is the message,
+		 * at the plane, for every console watching it — so a second press is a second message rather
+		 * than a key that has quietly stopped working.
+		 */
+		if (!shell && draft === "" && numbered && /^[1-9]$/.test(input)) {
+			const answer = answers?.[Number(input) - 1];
+			if (answer !== undefined) {
+				void ask(selected.id, answer, "say");
+				return;
+			}
+		}
+
 		// A chunk can arrive carrying a whole line, from a paste or from a terminal that batched the
 		// keystrokes. The return inside it is what ends the line then, and is never reported as the
 		// key: without this, pasting a line types it and leaves it sitting there unsent.
@@ -4203,6 +4300,7 @@ export function App({
 									confirm: deleting,
 									asking,
 									wanting,
+									answers,
 									menu,
 									pick: at,
 									held,
