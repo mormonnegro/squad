@@ -11,6 +11,9 @@ import {
 	SURE_ENOUGH_TO_PRESS,
 	TARGET_KEY,
 	walked,
+	wordsFor,
+	wordsIn,
+	worthPressing,
 } from "../image/steering.ts";
 
 const pointing: Pointing = {
@@ -43,12 +46,13 @@ describe("asking what to do next", () => {
 		expect(Object.keys(body.questions)).toEqual([MOVE_KEY, TARGET_KEY]);
 	});
 
-	it("offers four moves and no others, because this is a list and not a language", () => {
+	it("offers a short list of moves and no others, because this is a list and not a language", () => {
 		expect(Object.keys(asked().questions[MOVE_KEY].criteria).sort()).toEqual([
 			"click",
 			"done",
 			"scroll",
 			"stuck",
+			"type",
 		]);
 	});
 
@@ -69,16 +73,13 @@ describe("asking what to do next", () => {
 	});
 
 	// What stops a walk going round in circles: the only place this API takes free words is the
-	// instructions, so what was already pressed goes there.
+	// instructions, so the last few presses go there.
 	it("carries what it already pressed, so it does not press it again", () => {
 		const body = asked(["Brasil", "Colombia"]);
 
 		expect(body.questions[MOVE_KEY].instructions).toContain("Already pressed: Brasil, Colombia");
-		expect(body.questions[TARGET_KEY].instructions).toContain("Already pressed");
 	});
 
-	// The last few and not the whole history: a classifier reading a paragraph of it is answering a
-	// harder question than the one being asked.
 	it("carries the last few rather than everything it ever did", () => {
 		const body = asked(["uno", "dos", "tres", "cuatro", "cinco"]);
 
@@ -217,5 +218,163 @@ describe("what the walk says it did", () => {
 
 	it("says plainly when it pressed nothing at all", () => {
 		expect(walked([], "stuck", "x")).toContain("Nothing was pressed");
+	});
+});
+
+/**
+ * What goes in a box, which is the one thing a classifier cannot answer.
+ *
+ * A walk that can see a search field and choose it, and then has nothing to put in it, stops at
+ * every site whose way on is a search. The words come from the model that looks at pages — already
+ * chosen on this plane, already paid for — asked for one string and nothing else.
+ */
+describe("what to type into a box", () => {
+	const question = wordsFor("la página de Wikipedia sobre la Pachamama", 'input search "Buscar"');
+
+	it("carries the goal and the box it is about", () => {
+		expect(question).toContain("Pachamama");
+		expect(question).toContain("Buscar");
+	});
+
+	// The rules that matter for something typing on a page with nobody watching.
+	it("forbids the things it must never type", () => {
+		expect(question).toContain("Never a password");
+		expect(question).toContain("Never anything invented");
+	});
+
+	it("takes the string out of the answer", () => {
+		expect(wordsIn('{"text": "Pachamama"}')).toBe("Pachamama");
+		expect(wordsIn('Sure! {"text": "Pachamama"} — hope that helps')).toBe("Pachamama");
+	});
+
+	// Nothing rather than a guess: a walk that types something invented into a search box goes
+	// somewhere nobody asked for, and the next step is chosen from there.
+	it("takes nothing when the model would not commit", () => {
+		expect(wordsIn('{"text": null}')).toBeUndefined();
+		expect(wordsIn("no idea, sorry")).toBeUndefined();
+		expect(wordsIn('{"text": "   "}')).toBeUndefined();
+	});
+});
+
+/**
+ * Whether the walk may type, which is the caller's to decide and not the classifier's.
+ *
+ * "Get from this article to that one" and "find me the cheapest flight" are both walks, and only
+ * one of them may use the search box: a walk across an encyclopedia that types the destination into
+ * the search field has not walked anywhere. Left off the list rather than forbidden in the rules,
+ * because a choice that is not offered cannot be made.
+ */
+describe("walking by what the pages offer", () => {
+	const moves = (typing: boolean) =>
+		Object.keys(
+			JSON.parse(askedToStep(pointing, "the Pachamama article", page, [], new Set(), typing))
+				.questions[MOVE_KEY].criteria,
+		).sort();
+
+	it("offers typing when the caller allows it", () => {
+		expect(moves(true)).toContain("type");
+	});
+
+	it("does not offer it at all when the walk is to follow links", () => {
+		expect(moves(false)).not.toContain("type");
+		expect(moves(false)).toEqual(["click", "done", "scroll", "stuck"]);
+	});
+
+	// The boxes are their own question, asked only when there is a box and permission to type into
+	// one. A head with no options is a refusal, and an unused head is a question paid for and unread.
+	it("asks about the boxes separately, and only when there are any", () => {
+		const withBox = JSON.parse(
+			askedToStep(
+				pointing,
+				"x",
+				{ ...page, rows: [...page.rows, '[9] input search "Buscar"'] },
+				[],
+				new Set(),
+				true,
+			),
+		);
+		expect(Object.keys(withBox.questions)).toContain("field");
+		expect(Object.keys(withBox.questions.field.criteria)).toEqual(["9", "none"]);
+
+		const noBox = JSON.parse(askedToStep(pointing, "x", page, [], new Set(), true));
+		expect(Object.keys(noBox.questions)).not.toContain("field");
+	});
+
+	// And a box is never offered as something to press: a walk that presses a text field arrives
+	// nowhere, which is what it did on every page with a search box on it.
+	it("keeps the boxes out of the things to press", () => {
+		const body = JSON.parse(
+			askedToStep(pointing, "x", { ...page, rows: [...page.rows, '[9] input search "Buscar"'] }),
+		);
+
+		expect(Object.keys(body.questions[TARGET_KEY].criteria)).not.toContain("9");
+	});
+});
+
+/**
+ * What goes in a box, which is the one thing a classifier cannot answer.
+ *
+ * The words come from the model that looks at pages — already chosen on this plane, already paid
+ * for — asked for one string and nothing else.
+ */
+describe("what to type into a box", () => {
+	const question = wordsFor("la página de Wikipedia sobre la Pachamama", 'input search "Buscar"');
+
+	it("carries the goal and the box it is about", () => {
+		expect(question).toContain("Pachamama");
+		expect(question).toContain("Buscar");
+	});
+
+	it("forbids the things it must never type", () => {
+		expect(question).toContain("Never a password");
+		expect(question).toContain("Never anything invented");
+	});
+
+	it("takes the string out of the answer", () => {
+		expect(wordsIn('{"text": "Pachamama"}')).toBe("Pachamama");
+		expect(wordsIn('Sure! {"text": "Pachamama"} — hope that helps')).toBe("Pachamama");
+	});
+
+	// Nothing rather than a guess: a walk that types something invented into a search box goes
+	// somewhere nobody asked for, and every step after that is chosen from there.
+	it("takes nothing when the model would not commit", () => {
+		expect(wordsIn('{"text": null}')).toBeUndefined();
+		expect(wordsIn("no idea, sorry")).toBeUndefined();
+		expect(wordsIn('{"text": "   "}')).toBeUndefined();
+	});
+});
+
+/**
+ * Whether an answer is worth acting on, judged against its own alternatives rather than a number.
+ *
+ * Two afternoons went into learning that a fixed floor cannot work here. Confidence spreads over
+ * the options offered: the right link for "the article about Colombia" comes back at 0.26 out of
+ * two hundred and fifty, and a floor of 0.35 refuses it — while 0.25 lets through a weak answer
+ * that sent the walk round a loop, pressing the same link four times. What the number means is only
+ * clear beside `none`, the option that says the page has nothing.
+ */
+describe("whether to press what came back", () => {
+	const answered = (choice: string, weights: Record<string, number>) => ({
+		answers: { which: { choice, confidence: weights[choice] ?? 0, probabilities: weights } },
+	});
+
+	it("presses a thin answer that is clearly over none", () => {
+		expect(worthPressing(answered("73", { 73: 0.26, 12: 0.1, none: 0.04 }), "which")).toMatchObject(
+			{ ref: 73 },
+		);
+	});
+
+	it("refuses one that none beats", () => {
+		expect(worthPressing(answered("73", { 73: 0.2, none: 0.66 }), "which")).toBeUndefined();
+	});
+
+	// Not a rounding away from it either: a link the page cannot tell from nothing is nothing.
+	it("refuses one that merely ties with none", () => {
+		expect(worthPressing(answered("73", { 73: 0.3, none: 0.28 }), "which")).toBeUndefined();
+	});
+
+	it("refuses none itself, however sure of it", () => {
+		expect(worthPressing(answered("none", { none: 0.99 }), "which")).toBeUndefined();
+		expect(worthPressing({ answers: {} }, "which")).toBeUndefined();
 	});
 });

@@ -98,6 +98,37 @@ export function askedOf(looking: Looking, about: string, png: string): string {
 	});
 }
 
+/**
+ * The same model, asked a question with no picture in it.
+ *
+ * The one thing a classifier cannot do is write a word, and a walk across a site stops at the first
+ * search box without one: it can see the box and choose it, and then there is nothing to put in it.
+ * So the model that looks answers this too — it is already chosen, already paid for, and what is
+ * being asked of it is one short string rather than a description of a page.
+ *
+ * Borrowed in shape from browser-use/jev-ultrafast, where the classifier picks the operation and a
+ * small model supplies the value for the one operation that needs words.
+ */
+export function askedInWords(looking: Looking, question: string): string {
+	if (looking.shape === "messages") {
+		return JSON.stringify({
+			model: looking.model,
+			max_tokens: 120,
+			messages: [{ role: "user", content: [{ type: "text", text: question }] }],
+		});
+	}
+	if (looking.shape === "chat") {
+		return JSON.stringify({
+			model: looking.model,
+			messages: [{ role: "user", content: [{ type: "text", text: question }] }],
+		});
+	}
+	return JSON.stringify({
+		model: looking.model,
+		input: [{ role: "user", content: [{ type: "input_text", text: question }] }],
+	});
+}
+
 interface Answered {
 	readonly output?: readonly {
 		readonly type: string;

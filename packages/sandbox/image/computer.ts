@@ -5,6 +5,7 @@ import http from "node:http";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
+	askedInWords,
 	askedOf,
 	type Looking,
 	readLooking,
@@ -33,12 +34,15 @@ import { alreadyAsked, askFor, holding, keep } from "./question.ts";
 import {
 	askedToStep,
 	type Move,
+	FIELD_KEY,
 	MOST_SCROLLS,
 	movedIn,
 	offered,
-	SURE_ENOUGH_TO_PRESS,
 	TARGET_KEY,
 	walked,
+	worthPressing,
+	wordsFor,
+	wordsIn,
 } from "./steering.ts";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
 
@@ -293,6 +297,7 @@ async function walkTowards(
 	model: Pointing,
 	goal: string,
 	most: number,
+	typing: boolean,
 ): Promise<{ readonly said: string; readonly usage: Usage | undefined }> {
 	const trail: string[] = [];
 	/** Scrolls since the last press: for the pages that put more on the list when you go down them. */
@@ -334,7 +339,7 @@ async function walkTowards(
 		}
 		before = now;
 		const offering = offered(outline.rows, goal, asked);
-		const said = await askTheModel(model, askedToStep(model, goal, outline, trail, asked));
+		const said = await askTheModel(model, askedToStep(model, goal, outline, trail, asked, typing));
 		if ("why" in said) return { said: said.why, usage: spent };
 		add(said.usage);
 		// Whatever was on that question is spent: if the answer is none of them, the next question is
@@ -350,8 +355,12 @@ async function walkTowards(
 		if (move === "done" || move === "stuck") {
 			return { said: [walked(trail, move, goal), "", await page()].join("\n"), usage: spent };
 		}
+		// The head that goes with the move: a press reads the things that can be pressed, a word reads
+		// the boxes. Asking the other one would be reading an answer about a list nobody acted on.
 		const picked =
-			move === "scroll" ? undefined : pickedIn(said.answer, SURE_ENOUGH_TO_PRESS, TARGET_KEY);
+			move === "scroll"
+				? undefined
+				: worthPressing(said.answer, move === "type" ? FIELD_KEY : TARGET_KEY);
 		/*
 		 * Nothing to press on this screen, which on a long page is a fact about the screen.
 		 *
@@ -383,10 +392,68 @@ async function walkTowards(
 		asked = new Set();
 		presses += 1;
 		const row = outline.rows.find((one) => refOf(one) === picked.ref);
-		trail.push(row === undefined ? `[${picked.ref}]` : labelOf(row));
+		const named = row === undefined ? `[${picked.ref}]` : labelOf(row);
+		/*
+		 * Pressed once is pressed. The instructions say so and a classifier is not bound by them: a
+		 * walk that landed on a page with one plausible link pressed it four times in a row, each
+		 * time arriving where it already was. This is the rule rather than the hint.
+		 */
+		if (trail.includes(named)) {
+			return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+		}
+
+		/*
+		 * Typing, which is the one move that needs a word rather than a choice.
+		 *
+		 * A classifier cannot write one, so the model that looks at pages writes it: it is already
+		 * chosen on this plane, already paid for, and what it is asked for is one short string. This
+		 * is the difference between a walk that stops at a search box and one that uses it.
+		 */
+		if (move === "type") {
+			if (/input password/.test(named)) {
+				return {
+					said: [
+						"That box is for a password, and this does not type those.",
+						"screen_login fills a sign-in from your operator's vault; screen_ask brings them to the keyboard.",
+						"",
+						await page(),
+					].join("\n"),
+					usage: spent,
+				};
+			}
+			const words = await wordsOf(goal, named);
+			if (words === undefined) {
+				return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+			}
+			trail.push(`typed "${words}" into ${named}`);
+			await does({ verb: "type", ref: picked.ref, text: words, enter: true, brief: true });
+			continue;
+		}
+
+		trail.push(named);
 		await does({ verb: "click", ref: picked.ref, brief: true });
 	}
 	return { said: [walked(trail, "most", goal), "", await page()].join("\n"), usage: spent };
+}
+
+/**
+ * What to put in a box, asked of the model that looks at pages.
+ *
+ * Text is the one thing the classifier has no answer for. Rather than a provider of its own, this
+ * borrows the one the operator already chose for looking — a small model, already paid for, asked
+ * for a string and nothing else. Nothing when it will not commit: a walk that types a guess into a
+ * search box is a walk that goes somewhere nobody asked for.
+ */
+async function wordsOf(goal: string, field: string): Promise<string | undefined> {
+	const model = await looking();
+	if (model === undefined) return undefined;
+	const { status, body } = await post(model.endpoint, askedInWords(model, wordsFor(goal, field)));
+	if (status !== 200) return undefined;
+	try {
+		return wordsIn(saidBy(model, JSON.parse(body)));
+	} catch {
+		return undefined;
+	}
 }
 
 /** Two costs added up, because a walk is many requests and the agent is shown one number. */
@@ -897,6 +964,10 @@ export default function (pi: ExtensionAPI): void {
 				'Say the destination, not the route: "the page about coffee in Brazil" rather than "click',
 				'Brasil then Café". It chooses each step from what the page actually offers.',
 				"",
+				"It prefers links, and types into a search box when no link leads closer. Set links true to",
+				"forbid that — for getting somewhere by following what the pages themselves offer, where",
+				"searching for the destination would be missing the point.",
+				"",
 				"It looks down a page as it goes: a reading is what is on the screen, so if the way on is",
 				"in the middle of a long article it scrolls to it rather than giving up at the fold.",
 				"",
@@ -914,14 +985,24 @@ export default function (pi: ExtensionAPI): void {
 					description:
 						'Where to end up, as you would say it: "the page about coffee in Brazil", "the checkout", "the settings for billing".',
 				}),
+				links: Type.Optional(
+					Type.Boolean({
+						description:
+							"Set true to make it walk by what is on the pages only. Left out, it may also type into a search box when no link leads closer.",
+					}),
+				),
 				most: Type.Optional(
 					Type.Integer({
-						description: "How many presses it may make before stopping. Eight by default.",
+						description: "How many presses it may make before stopping. Twelve by default.",
 					}),
 				),
 			}),
 			async execute(_id, params) {
-				const { goal, most } = params as { goal: string; most?: number };
+				const { goal, most, links } = params as {
+					goal: string;
+					most?: number;
+					links?: boolean;
+				};
 				const model = pointing();
 				if (model === undefined) {
 					return {
@@ -929,11 +1010,17 @@ export default function (pi: ExtensionAPI): void {
 						details: {},
 					};
 				}
-				// Bounded here as well as offered as a default: a walk is the one call that can make
-				// twenty presses without anybody watching, and the ceiling is what keeps a goal it will
-				// never reach from pressing its way across a site until the turn runs out.
-				const steps = Math.max(1, Math.min(most ?? 8, 15));
-				const walk = await walkTowards(model, goal.trim(), steps);
+				/*
+				 * Bounded here as well as offered as a default, and the ceiling is higher than it was.
+				 *
+				 * Eight presses is not a journey: a walk across a site is five or six on a good day and
+				 * twice that when the first idea was wrong, and stopping halfway hands the rest back to
+				 * the model at the price the walk exists to avoid. What the cap is really for is the goal
+				 * that will never be reached, and forty of these costs about a minute — the same as two
+				 * turns of the model that would otherwise be doing it one click at a time.
+				 */
+				const steps = Math.max(1, Math.min(most ?? 12, 40));
+				const walk = await walkTowards(model, goal.trim(), steps, links !== true);
 				return {
 					content: [{ type: "text" as const, text: walk.said }],
 					details: {},

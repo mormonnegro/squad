@@ -4,6 +4,7 @@ import {
 	MOST_OPTIONS,
 	NONE,
 	type Outline,
+	type Picked,
 	type Pointing,
 	refOf,
 } from "./pointing.ts";
@@ -27,20 +28,87 @@ import {
  * with the operation and the target on the same observed state.
  */
 
-/** What can happen on a page, which is deliberately four things and not a language. */
-export type Move = "click" | "scroll" | "done" | "stuck";
+/** What can happen on a page, which is deliberately a short list and not a language. */
+export type Move = "click" | "type" | "scroll" | "done" | "stuck";
 
 /** The four, with the sentence each is offered under. */
 const MOVES: Readonly<Record<Move, string>> = {
 	click: "Press something on this page that gets closer to the goal.",
+	// The one that needs a word rather than a choice, and the one that makes a search box useful:
+	// without it a walk that can see the box picks it and then has nothing to put in it.
+	type: "Type something into a box on this page — a search field, a filter — and submit it.",
 	scroll: "What is needed is further down this page, not yet visible.",
 	done: "The goal is already met: this page is what was being looked for.",
 	stuck: "This page offers no way to get closer to the goal.",
 };
 
-/** The two questions, asked under names the answers come back under. */
+/** The moves with typing taken off the list, for a walk that may only follow what is on the page. */
+function withoutTyping(): Record<string, string> {
+	const { type: _typing, ...rest } = MOVES;
+	return rest;
+}
+
+/**
+ * What the small model is asked when the move is to type, which is one string and never a sentence.
+ *
+ * Its whole job is to turn a goal into what a person would put in that box: "the Wikipedia page
+ * about the Pachamama" and a search field make "Pachamama". The rules are the ones that matter for
+ * something that types on a page nobody is watching — never a credential, never something invented,
+ * and nothing at all rather than a guess.
+ */
+export function wordsFor(goal: string, field: string): string {
+	return [
+		'Answer with JSON and nothing else: {"text": "…"}.',
+		`Somebody is working towards this goal: ${goal}`,
+		`They are about to type into this box on the page: ${field}`,
+		"What exactly should be typed into it? Usually a few words taken from the goal.",
+		"Never a password, a card number or a code. Never anything invented about a person.",
+		'If nothing can be typed from the goal alone, answer {"text": null}.',
+	].join(" ");
+}
+
+/** The string the small model came back with, or nothing it would stand behind. */
+export function wordsIn(said: string): string | undefined {
+	const found = /\{[\s\S]*\}/.exec(said);
+	if (found === null) return undefined;
+	try {
+		const text = (JSON.parse(found[0]) as { text?: unknown }).text;
+		if (typeof text !== "string") return undefined;
+		const trimmed = text.trim();
+		return trimmed === "" ? undefined : trimmed.slice(0, 200);
+	} catch {
+		return undefined;
+	}
+}
+
+/*
+ * There were rules here — six lines of policy, ported in shape from browser-use/jev-ultrafast, whose
+ * loop hands the classifier rules rather than a question. They measured worse, and plainly: on the
+ * same page, for the same goal, the rules answered "stuck" at 0.35 while the one-line question
+ * answered "click" at 0.69 and picked the right link. Their rules are written for their own action
+ * space and their own model; ported here they were a guess wearing the clothes of a port. What this
+ * classifier wants is the question, which is the same thing the first line of `askedAbout` says.
+ */
+
+/** The questions, asked under names the answers come back under. */
 export const MOVE_KEY = "move";
 export const TARGET_KEY = "which";
+/** Where a word would go, which is a different list of things from where a press would. */
+export const FIELD_KEY = "field";
+
+/**
+ * What kind of thing a row is, which decides what can be done to it.
+ *
+ * A reading says `[7] a "Londres"` or `[3] input search "Buscar"`, so the kind is the word after
+ * the number. This is the whole of what separates the two lists below, and separating them is the
+ * fix for a walk that kept choosing the search box as the thing to press: offered one list of
+ * everything, a classifier asked how to reach Argentina from London picks the search field at 0.68,
+ * because searching is how a person would do it — and then the walk presses a text box and nothing
+ * happens.
+ */
+function typeable(row: string): boolean {
+	return /^\[\d+\]\s+(input|textarea|select)/.test(row);
+}
 
 /**
  * One request that decides the step and its target, over the page as it stands.
@@ -56,11 +124,24 @@ export function askedToStep(
 	outline: Outline,
 	trail: readonly string[] = [],
 	asked: ReadonlySet<number> = new Set(),
+	typing = true,
 ): string {
+	const offering = offered(outline.rows, goal, asked);
+	/*
+	 * One list per operation, which is how their loop does it and why it works.
+	 *
+	 * A press goes to a link or a button; a word goes into a box. Offered as one list, the question
+	 * "which of these gets closest to Argentina" is answered with the search field — correctly, in a
+	 * sense, and uselessly, because pressing a text box does nothing. Each head now sees only what
+	 * its own operation can be done to.
+	 */
 	const criteria: Record<string, string> = {};
-	for (const row of offered(outline.rows, goal, asked)) {
+	const fields: Record<string, string> = {};
+	for (const row of offering) {
 		const ref = refOf(row);
-		if (ref !== undefined) criteria[String(ref)] = labelOf(row);
+		if (ref === undefined) continue;
+		if (typeable(row)) fields[String(ref)] = labelOf(row);
+		else criteria[String(ref)] = labelOf(row);
 	}
 	/*
 	 * A way to say none of them, which this asked for without at first and paid for.
@@ -71,6 +152,13 @@ export function askedToStep(
 	 * it, which is what makes the number underneath the choice worth reading at all.
 	 */
 	criteria[NONE] = "None of these leads any closer to the goal.";
+	/*
+	 * The walk so far as data rather than as a sentence.
+	 *
+	 * It used to be four names glued into the instructions. A list is what the question is actually
+	 * about — this is a loop and every step of it is a fact about where it has been — and it is the
+	 * shape the classifier is given the rest of the state in.
+	 */
 	const been = trail.length === 0 ? "" : ` Already pressed: ${trail.slice(-4).join(", ")}.`;
 	return JSON.stringify({
 		model: pointing.model,
@@ -82,13 +170,33 @@ export function askedToStep(
 			[MOVE_KEY]: {
 				type: "choice",
 				instructions: `Working towards: ${goal}.${been} What should happen on this page now?`,
-				criteria: { ...MOVES },
+				/*
+				 * Typing is offered or it is not, and that is the caller's to say.
+				 *
+				 * "Get from this article to that one" and "find me the cheapest flight" are both walks,
+				 * and only one of them may use the search box: a walk across an encyclopedia that types
+				 * the destination into the search field has not walked anywhere. Left out of the list
+				 * rather than forbidden in the rules, because a choice that is not offered cannot be
+				 * made — and a rule about it is one more thing for a classifier to weigh.
+				 */
+				criteria: typing ? { ...MOVES } : withoutTyping(),
 			},
 			[TARGET_KEY]: {
 				type: "choice",
 				instructions: `Which one gets closest to: ${goal}?${been}`,
 				criteria,
 			},
+			// Asked only when there is both something to type into and permission to type: an unused
+			// head is a question answered for nothing, and a head with no options is a refusal.
+			...(typing && Object.keys(fields).length > 0
+				? {
+						[FIELD_KEY]: {
+							type: "choice",
+							instructions: `Which box would you type into, to get to: ${goal}?${been}`,
+							criteria: { ...fields, [NONE]: "None of these boxes is the one to type into." },
+						},
+					}
+				: {}),
 		},
 	});
 }
@@ -136,6 +244,41 @@ export function offered(
 export const SURE_ENOUGH_TO_MOVE = 0.4;
 
 /**
+ * Whether the answer is worth pressing, judged against its own alternatives rather than a number.
+ *
+ * A fixed floor cannot work here and two afternoons went into finding that out. Confidence spreads
+ * over the options offered: the right link on an article for "the article about Colombia" comes back
+ * at 0.26 out of two hundred and fifty answers, and a floor set at 0.35 refuses it — while the same
+ * floor at 0.25 lets through a weak answer that sends the walk round a loop, pressing the same link
+ * four times.
+ *
+ * What the number means is only clear beside `none`, which is the option that says the page has
+ * nothing. Above it by a clear margin is a link worth pressing however thin the spread; below it is
+ * a page to stop on. That is the same judgement a person makes reading the list.
+ */
+export function worthPressing(answer: unknown, key: string): Picked | undefined {
+	const said = answer as {
+		answers?: Record<
+			string,
+			| { choice?: unknown; confidence?: unknown; probabilities?: Record<string, unknown> }
+			| undefined
+		>;
+	};
+	const head = said.answers?.[key];
+	const choice = head?.choice;
+	if (typeof choice !== "string" || choice === NONE) return undefined;
+	const ref = Number(choice);
+	if (!Number.isInteger(ref) || ref < 1) return undefined;
+	const weights = head?.probabilities ?? {};
+	const mine = typeof weights[choice] === "number" ? (weights[choice] as number) : 0;
+	const nothing = typeof weights[NONE] === "number" ? (weights[NONE] as number) : 0;
+	// Clearly over the option that means "nothing here", and not a rounding away from it.
+	if (mine <= nothing + 0.05) return undefined;
+	const sure = typeof head?.confidence === "number" ? head.confidence : mine;
+	return { ref, confidence: sure };
+}
+
+/**
  * And how sure the target has to be before the walk presses it.
  *
  * Not the same scale as the one above and not comparable to it: that is a choice of four and this is
@@ -146,8 +289,13 @@ export const SURE_ENOUGH_TO_MOVE = 0.4;
  *
  * Lower than the floor for pressing a thing the agent named by its own words, because that question
  * has one right answer on the page and this one is a judgement about where a link leads.
+ *
+ * Lowered again when the page stopped being cut to sixty options. A question with two hundred and
+ * fifty answers spreads its weight over all of them: the right link on the Café article for "the
+ * article about Colombia" comes back at 0.26, which is the top answer by a distance and was being
+ * refused by a floor set when the same question had a quarter as many ways to answer it.
  */
-export const SURE_ENOUGH_TO_PRESS = 0.35;
+export const SURE_ENOUGH_TO_PRESS = 0.25;
 
 /**
  * How far down a page it may look for the way on before giving up on the page.
