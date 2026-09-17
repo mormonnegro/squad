@@ -337,8 +337,13 @@ export class Browser {
 			}
 			// Unacknowledged frames stop the stream after a handful, and a live view that freezes after
 			// four frames is worse than one that never started, because it looks like the page froze.
+			//
+			// Acknowledged to whoever sent it rather than to the session the agent is driving: those are
+			// the same session until somebody looks at another tab, and from then on every ack went to
+			// the wrong place — which is the same freeze, arriving four frames after they looked away.
 			if (typeof ack === "number") {
-				void cdp.send("Page.screencastFrameAck", { sessionId: ack }, this.#session).catch(() => {});
+				const whose = typeof event.sessionId === "string" ? event.sessionId : this.#seenSession;
+				void cdp.send("Page.screencastFrameAck", { sessionId: ack }, whose).catch(() => {});
 			}
 		});
 	}

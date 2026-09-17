@@ -80,6 +80,8 @@ interface Standing {
 	readonly url?: string;
 	readonly note?: string;
 	readonly tabs?: readonly Tab[];
+	/** When that browser started. A different one means the picture this page holds is of a dead one. */
+	readonly since?: string;
 }
 
 /**
@@ -162,6 +164,19 @@ export function Screen({
 	const [attempt, setAttempt] = useState(0);
 	const [arrived, setArrived] = useState(false);
 	const wasReachable = useRef(true);
+	/**
+	 * Which browser the picture on this page is of.
+	 *
+	 * A stream of JPEGs in an `<img>` is a connection held open, and the container at the other end
+	 * is replaced every time the image is rebuilt or the screen is turned off and on. The stream dies
+	 * with it and the `<img>` keeps the last frame it got — while this page, still polling the state
+	 * quite happily, goes on drawing an address bar that moves and a browser that does not.
+	 *
+	 * Reading whether the connection dropped was not enough: the state is asked for every second and
+	 * a half, and a container that came back between two of those was never seen to be away. What
+	 * cannot be missed is the browser saying it is a different browser.
+	 */
+	const watching = useRef<string | undefined>(undefined);
 	const [standing, setStanding] = useState<Standing>({ holder: "agent" });
 	const [typed, setTyped] = useState("");
 	/**
@@ -207,7 +222,17 @@ export function Screen({
 			wasReachable.current = reachable;
 			if (!reading || answer === undefined || !reachable) return;
 			const said = (await answer.json().catch(() => undefined)) as Standing | undefined;
-			if (reading && said !== undefined) setStanding(said);
+			if (!reading || said === undefined) return;
+			// A browser that started since this picture did is a different browser: the stream this page
+			// is holding ended when the old one went, and nothing about it will ever move again.
+			if (said.since !== undefined && said.since !== watching.current) {
+				if (watching.current !== undefined) {
+					setArrived(false);
+					setAttempt((one) => one + 1);
+				}
+				watching.current = said.since;
+			}
+			setStanding(said);
 		};
 		void look();
 		const ticking = setInterval(() => void look(), 1_500);

@@ -29,6 +29,21 @@ import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
  */
 
 const AGENT_ID = process.env.SQUAD_AGENT_ID ?? "agent";
+
+/**
+ * When this browser started, which is the one fact a console needs to know its picture is dead.
+ *
+ * The live view is a stream of JPEGs held open in an `<img>`, and an `<img>` whose connection ends
+ * does not try again: it keeps the last frame on the screen forever. Every replacement of this
+ * container ends every such stream — and the console, still polling the state happily, goes on
+ * showing the page the browser was on twenty minutes ago while its address bar moves with the real
+ * one. What that looks like from a chair is a browser that does not render until the page is
+ * reloaded, which is exactly how it was reported.
+ *
+ * So the state carries when this process began. A console that sees it change knows the browser it
+ * was watching is gone, and asks for the picture again.
+ */
+const SINCE = new Date().toISOString();
 const VERB_PORT = Number(process.env.SQUAD_SCREEN_VERB_PORT ?? 7181);
 const VIEW_PORT = Number(process.env.SQUAD_SCREEN_VIEW_PORT ?? 7180);
 const PROXY_PORT = Number(process.env.SQUAD_SCREEN_PROXY_PORT ?? 7182);
@@ -188,6 +203,7 @@ const view = http.createServer((request, response) => {
 				...keyboard.state(),
 				url: browser.where(),
 				tabs: await browser.tabs().catch(() => []),
+				since: SINCE,
 			});
 			return;
 		}
