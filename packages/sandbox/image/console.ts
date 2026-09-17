@@ -54,6 +54,7 @@ export default function (pi: ExtensionAPI): void {
 			"  /serve stop <port>        take it back down",
 			"  /serve                    what of yours is open, and at which addresses",
 			"  /reach <host>             ask to open a host you were refused on the way out",
+			"  /screen login <host>      ask to be allowed to sign into a site from your operator's vault",
 			"",
 			"Nothing you run is reachable from outside this sandbox unless you ask for /serve. Bind your",
 			"server to 127.0.0.1 and then ask, and your operator gets a link they can open in a browser.",

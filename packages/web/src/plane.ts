@@ -598,6 +598,11 @@ export class Plane {
 		await this.#ask({ op: "remove", agentId, purge });
 	}
 
+	/** Answers a site an agent asked to sign into. A yes lends it one account, out of your own vault. */
+	async answerSignIn(agentId: string, host: string, open: boolean): Promise<void> {
+		await this.#ask({ op: "sign-in", agentId, host, open });
+	}
+
 	async answerReach(agentId: string, host: string, open: boolean): Promise<void> {
 		await this.#ask({ op: "reach", agentId, host, open });
 	}

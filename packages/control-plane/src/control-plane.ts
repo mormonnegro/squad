@@ -71,6 +71,7 @@ import {
 import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
+	signInWanted,
 	COMPLETE_SCRIPT,
 	type CommandContext,
 	type EmailOffer,
@@ -500,6 +501,15 @@ export interface AgentSummary {
 	 */
 	readonly asking: readonly string[];
 	/**
+	 * The sites it has asked to be able to sign into, oldest first, waiting on a yes or a no.
+	 *
+	 * Beside the hosts and for the same reason. It is a narrower thing than a host and a sharper one:
+	 * a yes here is one account of the operator's, out of a vault they chose what to put in, lent to
+	 * one agent — and the agent never sees any of it. It asks rather than opens for the reason it
+	 * cannot open a host either: what a page talked it into is not consent.
+	 */
+	readonly logins: readonly string[];
+	/**
 	 * The other agents it has written to and may not, oldest first, waiting on a yes or a no.
 	 *
 	 * Beside the hosts and for their reason: the console draws this row every two seconds anyway, and
@@ -784,6 +794,8 @@ export class ControlPlane {
 	 * either way is the asking itself, which is written into the conversation like everything else.
 	 */
 	readonly #asking = new Map<string, string[]>();
+	/** The sites each agent has asked to sign into, waiting on a key. Held here, as the hosts are. */
+	readonly #askedLogins = new Map<string, string[]>();
 	/**
 	 * The messages each agent has written to an agent it may not write to, held until somebody says.
 	 *
@@ -1108,6 +1120,7 @@ export class ControlPlane {
 			model: (await this.#modelFor(agent.id))?.id ?? agent.model,
 			served: await this.#served.of(agent.id),
 			asking: this.asking(agent.id),
+			logins: this.loginAsks(agent.id),
 			wants: this.wants(agent.id),
 			sending: this.sending(agent.id),
 			questions: this.questions(agent.id),
@@ -1502,6 +1515,65 @@ export class ControlPlane {
 	/** The hosts an agent has asked for that nobody has answered yet, oldest first. */
 	asking(agentId: string): readonly string[] {
 		return this.#asking.get(agentId) ?? [];
+	}
+
+	/**
+	 * Puts a site in front of the operator as a question, and opens nothing.
+	 *
+	 * The same door `/reach` opens and a narrower thing behind it: this is one account, for one
+	 * agent, out of a vault the operator chose what to put in. An agent that could add to its own
+	 * list is an agent that can be talked into signing into whatever the vault holds — by a page it
+	 * read, which is where the instructions an agent should not follow actually come from.
+	 */
+	async #askSignIn(agentId: string, host: string): Promise<void> {
+		const waiting = this.#askedLogins.get(agentId) ?? [];
+		// Asked twice is asked once, as it is for a host: a turn that met the same door on four pages
+		// asked for one thing four times, and four identical keys is a screen nobody answers.
+		if (waiting.includes(host)) return;
+		this.#askedLogins.set(agentId, [...waiting, host]);
+	}
+
+	/** The sites an agent has asked to sign into that nobody has answered yet, oldest first. */
+	loginAsks(agentId: string): readonly string[] {
+		return this.#askedLogins.get(agentId) ?? [];
+	}
+
+	/**
+	 * Answers one, which is the only thing that opens a site on an agent's asking.
+	 *
+	 * A yes here is exactly `/screen login <host>` typed at the console: the site goes on that agent's
+	 * list and the browser is told at once. Both answers are written into the conversation, because a
+	 * question that vanished having done something is worse than one that vanished having done
+	 * nothing — the yes lends an account, and that belongs in the record beside the asking.
+	 */
+	async answerSignIn(agentId: string, host: string, open: boolean): Promise<void> {
+		const waiting = this.#askedLogins.get(agentId) ?? [];
+		if (!waiting.includes(host)) return;
+		this.#askedLogins.set(
+			agentId,
+			waiting.filter((one) => one !== host),
+		);
+		if (!open) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `${host} stays closed. Nothing was opened, and the agent is not told to try again.`,
+			});
+			return;
+		}
+		try {
+			const opened = await this.openSignIn(agentId, host);
+			await this.#record(agentId, {
+				from: "plane",
+				text: `${agentId} can sign into ${opened} out of your vault, and its browser has the list now. /screen login off ${opened} takes it back.`,
+			});
+		} catch (error) {
+			await this.#record(agentId, {
+				from: "plane",
+				tone: "bad",
+				text: `${host} was not opened: ${(error as Error).message}`,
+			});
+		}
 	}
 
 	/**
@@ -3612,6 +3684,26 @@ export class ControlPlane {
 
 			const refusal = agentMayNot(line, { agentId, limitUsd });
 			if (refusal !== undefined) {
+				/*
+				 * The one refusal that becomes a question instead of a sentence.
+				 *
+				 * Every other thing on that list is printed at the agent with the line its operator
+				 * would type, and the operator retypes it. This one is a key on their screen, because
+				 * it is narrow enough to answer without reading anything else: one site, one agent, out
+				 * of a vault they chose what to put in, and the agent never sees a field of it. The
+				 * same door `/reach` opens, for the same reason — an agent stopped at a login with no
+				 * way to ask is an agent that goes and does something else instead.
+				 */
+				const wanted = signInWanted(line);
+				const site = wanted === undefined ? undefined : readSite(wanted);
+				if (site !== undefined) {
+					await this.#askSignIn(agentId, site);
+					await this.#record(agentId, {
+						from: "plane",
+						text: `${agentId} asked to sign into ${site} out of your vault. There is a key for it on your screen — nothing is open until you press it.`,
+					});
+					continue;
+				}
 				await this.#record(agentId, { from: "plane", tone: "bad", text: refusal });
 				continue;
 			}

@@ -3,7 +3,15 @@ import http from "node:http";
 import { Browser } from "./browser.ts";
 import { readEgress, startForwarder } from "./forward.ts";
 import { refusedToAgent, refusedToOperator, TheKeyboard } from "./keyboard.ts";
-import { credentialIn, hostOf, itemArgs, itemFor, openedFor, type VaultItem } from "./logins.ts";
+import {
+	credentialIn,
+	hostOf,
+	itemArgs,
+	itemFor,
+	notOpened,
+	openedFor,
+	type VaultItem,
+} from "./logins.ts";
 import { startPage, viewPage } from "./page.ts";
 import { presented, tokenIn } from "./token.ts";
 import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
@@ -115,13 +123,7 @@ const verbs = http.createServer((request, response) => {
 			}
 			const where = hostOf(asked.url ?? browser.where());
 			if (!openedFor(where, opened)) {
-				json(response, 200, {
-					text: [
-						`Your operator has not opened ${where} for you, so nothing was filled in.`,
-						"Ask them with screen_ask — they open the site once at the console, and after that",
-						"you can sign in here yourself whenever the session runs out.",
-					].join(" "),
-				});
+				json(response, 200, { text: notOpened(where) });
 				return;
 			}
 			json(response, 200, { text: await signIn(where) });

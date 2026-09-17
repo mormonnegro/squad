@@ -180,6 +180,19 @@ export function Chat({
 									onAnswer={(open) => void plane.answerReach(agent.id, host, open)}
 								/>
 							))}
+							{agent.logins.map((host) => (
+								<Ask
+									key={`login:${host}`}
+									what={
+										<>
+											<strong>{nameOf(agent.id)}</strong> wants to sign into <code>{host}</code>{" "}
+											out of your vault. It never sees the password — what crosses into the page is
+											keystrokes.
+										</>
+									}
+									onAnswer={(open) => void plane.answerSignIn(agent.id, host, open)}
+								/>
+							))}
 							{agent.wants.map((to) => (
 								<Ask
 									key={`talk:${to}`}

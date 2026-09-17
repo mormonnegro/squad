@@ -250,6 +250,11 @@ export class ControlClient {
 	}
 
 	/** Answers a host this agent asked for: open it to every agent here, or leave it closed. */
+	/** Answers a site an agent asked to sign into. A yes is exactly what `/screen login` would do. */
+	async answerSignIn(agentId: string, host: string, open: boolean): Promise<void> {
+		await this.#once({ op: "sign-in", agentId, host, open });
+	}
+
 	async answerReach(agentId: string, host: string, open: boolean): Promise<void> {
 		await this.#once({ op: "reach", agentId, host, open });
 	}

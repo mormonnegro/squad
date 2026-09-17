@@ -68,6 +68,7 @@ const summary = (id: string, served: Door["served"][]): AgentSummary => ({
 	model: undefined,
 	served,
 	asking: [],
+	logins: [],
 	wants: [],
 	sending: [],
 	questions: [],

@@ -970,9 +970,11 @@ export default function (pi: ExtensionAPI): void {
 			"into the page; what you get back is a sentence about which boxes were filled, and the page",
 			"afterwards shows a password box as bullets like anybody else's.",
 			"",
-			"This works only for sites your operator has opened for you. If it says one is not open, the",
-			"thing to do is screen_ask: they open it once at the console, and after that you sign",
-			"yourself in whenever the session runs out.",
+			"This works only for sites your operator has opened for you, which is a list this browser",
+			"holds and not a setting in their password manager. If it says one is not open, do not send",
+			"them to the password manager — it is fine. Ask for the site instead: run /screen login <host>",
+			"at your console, which opens nothing and puts the question on their screen with one key to",
+			"answer. They press it once and after that you sign yourself in whenever the session runs out.",
 			"",
 			"Open the sign-in page first, and call this on it. If the form is the two-step kind — the",
 			"name first and the password on the next page — call it again on the second page.",
@@ -980,7 +982,7 @@ export default function (pi: ExtensionAPI): void {
 		promptSnippet: "Sign into the site you are on, from your operator's password manager",
 		promptGuidelines: [
 			"At a login, try screen_login before anything else: it is the only way you may sign in, and it costs one call.",
-			"Never type a password, a card or a code yourself, and never invent one. If screen_login says the site is not open for you, use screen_ask.",
+			"Never type a password, a card or a code yourself, and never invent one. If screen_login says the site is not open for you, ask for it with /screen login <host> at your console — that raises a question your operator answers with one key, and it is not a setting in their password manager.",
 		],
 		parameters: Type.Object({
 			url: Type.Optional(

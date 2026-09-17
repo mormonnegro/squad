@@ -120,6 +120,29 @@ export function openedFor(host: string, opened: readonly string[]): boolean {
 	});
 }
 
+/**
+ * What an agent is told about a site its operator has not opened, which is a sentence to get right.
+ *
+ * The first version of this said only that the operator had not opened it "for you", and what the
+ * agent did with that was tell its operator to go and check their password manager. They went, found
+ * the vault perfectly well shared, and concluded the thing was broken — which it was not, and the
+ * half hour that cost was spent in the one place the answer could never be.
+ *
+ * So it says both halves out loud: this is not a setting over in 1Password, it is a list this
+ * browser holds; and here is the line, with the host already in it, that adds to it. An agent
+ * repeating this verbatim sends its operator to the right screen with nothing left to work out.
+ */
+export function notOpened(host: string): string {
+	return [
+		`Your operator has not opened ${host} for you, so nothing was filled in.`,
+		"This is not a setting in their password manager — the vault is fine and this browser can read",
+		"it. It is a list of sites this browser holds, one per agent.",
+		`Ask for it yourself: run /screen login ${host} at your console. That opens nothing — it puts`,
+		"the question on your operator's screen, where one key answers it — and then try this again.",
+		"After that you sign yourself in here whenever the session runs out.",
+	].join(" ");
+}
+
 /** One field of an entry, as `op item get --format json --reveal` gives it. */
 interface VaultField {
 	readonly id?: string;

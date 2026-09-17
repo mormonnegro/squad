@@ -816,6 +816,7 @@ describe("Column", () => {
 		model: undefined,
 		served: [],
 		asking: [],
+		logins: [],
 		wants: [],
 		sending: [],
 		questions: [],
@@ -1136,6 +1137,7 @@ describe("reached", () => {
 		model: undefined,
 		served: [],
 		asking: [],
+		logins: [],
 		wants: [],
 		sending: [],
 		questions: [],
@@ -1194,6 +1196,7 @@ describe("standing", () => {
 		model: "deepseek-v4-flash",
 		served: [],
 		asking: [],
+		logins: [],
 		wants: [],
 		sending: [],
 		questions: [],
@@ -1280,6 +1283,7 @@ describe("Chat", () => {
 		confirm?: string | undefined;
 		asking?: string | undefined;
 		wanting?: string | undefined;
+		signingInto?: string | undefined;
 		answers?: readonly string[] | undefined;
 		menu?: readonly Command[];
 		pick?: number;
@@ -1297,6 +1301,7 @@ describe("Chat", () => {
 				confirm: undefined,
 				wanting: undefined,
 				asking: undefined,
+				signingInto: undefined,
 				answers: undefined,
 				menu: [],
 				pick: 0,

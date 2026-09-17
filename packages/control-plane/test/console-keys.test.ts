@@ -75,6 +75,7 @@ const listed = (id: string): AgentSummary => ({
 	model: undefined,
 	served: [],
 	asking: [],
+	logins: [],
 	wants: [],
 	sending: [],
 	questions: [],
@@ -120,6 +121,8 @@ function plane(
 	const dropped: string[] = [];
 	/** The cards taken down without an answer: whose, which one, and the words it was drawn with. */
 	const takenDown: [string, number, string][] = [];
+	/** The sites answered: whose, which, and whether the key said yes. */
+	const signings: [string, string, boolean][] = [];
 	const aimed: SearchSpec[] = [];
 	const shelved: [string, McpServer][] = [];
 	const handed: [string, string, boolean][] = [];
@@ -234,6 +237,14 @@ function plane(
 		},
 		// Answered the way the plane answers it: the question comes off the agent's row, so what the
 		// screen shows afterwards is what the plane says rather than what the keyboard did.
+		answerSignIn: async (agentId: string, host: string, open: boolean) => {
+			signings.push([agentId, host, open]);
+			roster = roster.map((one) =>
+				one.id === agentId
+					? { ...one, logins: one.logins.filter((waiting) => waiting !== host) }
+					: one,
+			);
+		},
 		answerReach: async (agentId: string, host: string, open: boolean) => {
 			answers.push([agentId, host, open]);
 			roster = roster.map((one) =>
@@ -324,6 +335,7 @@ function plane(
 		written,
 		dropped,
 		takenDown,
+		signings,
 		aimed,
 		shelved,
 		handed,
@@ -861,6 +873,60 @@ describe("an agent this one wrote to", () => {
  * own terminal and pressing a key. So these tests are about the two things that makes true: that
  * the name is on the screen before anything is opened, and that only `y` opens it.
  */
+/**
+ * The same question about a narrower thing: one login of the operator's own, lent to one agent.
+ *
+ * It exists because the alternative is an agent stopped at a sign-in page telling its operator to go
+ * and type a command — which they then have to find, spell and aim at the right agent. A key on the
+ * screen where the question was raised is the whole difference between a permission somebody grants
+ * in the moment and one they mean to get around to.
+ */
+describe("a site an agent asked to sign into", () => {
+	const wanting = (id: string, ...sites: string[]): AgentSummary => ({
+		...listed(id),
+		logins: sites,
+	});
+
+	it("names the site on the prompt, and opens nothing until a key says so", async () => {
+		const { client, signings } = plane({ has: [wanting("demo", "app.ahrefs.com")] });
+		const console_ = open(client, [wanting("demo", "app.ahrefs.com")]);
+		try {
+			expect(console_.screen()).toContain("let it sign into app.ahrefs.com?");
+			expect(console_.screen()).toContain("y / n");
+			expect(signings).toEqual([]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("opens it on a y, which is exactly what the command would have done", async () => {
+		const { client, signings } = plane({ has: [wanting("demo", "app.ahrefs.com")] });
+		const console_ = open(client, [wanting("demo", "app.ahrefs.com")]);
+		try {
+			await console_.press("y");
+
+			expect(signings).toEqual([["demo", "app.ahrefs.com", true]]);
+			expect(console_.screen()).not.toContain("let it sign into app.ahrefs.com?");
+		} finally {
+			console_.close();
+		}
+	});
+
+	// Every key but `y` is a no, which is what makes a question about somebody's account safe to put
+	// under a hand that was in the middle of typing a sentence.
+	it("takes anything that is not y for a no, and lends nothing", async () => {
+		const { client, signings } = plane({ has: [wanting("demo", "app.ahrefs.com")] });
+		const console_ = open(client, [wanting("demo", "app.ahrefs.com")]);
+		try {
+			await console_.press("k");
+
+			expect(signings).toEqual([["demo", "app.ahrefs.com", false]]);
+		} finally {
+			console_.close();
+		}
+	});
+});
+
 describe("a host an agent asked for", () => {
 	const waiting = (id: string, ...hosts: string[]): AgentSummary => ({
 		...listed(id),

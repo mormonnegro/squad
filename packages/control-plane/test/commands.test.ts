@@ -3,6 +3,7 @@ import { SCREEN_VIEW_PORT } from "@squad/screen";
 import { describe, expect, it } from "vitest";
 import {
 	agentMayNot,
+	signInWanted,
 	COMMANDS,
 	CONFIG_SECTIONS,
 	type CommandContext,
@@ -2711,6 +2712,33 @@ describe("endedIn", () => {
  * something in its own context could get anywhere by it. So nothing here may widen what it reaches
  * or what it spends, and everything that cannot is allowed to just happen.
  */
+/**
+ * Which lines are a request to sign into a site, read the same way twice.
+ *
+ * The refusal that prints and the plane that raises a question read the same line, and a line one
+ * of them took for a request while the other did not would be an agent told to ask with a line that
+ * asks nobody.
+ */
+describe("signInWanted", () => {
+	it("reads the site out of the line, however the verb was spelled", () => {
+		expect(signInWanted("/screen login github.com")).toBe("github.com");
+		expect(signInWanted("/screen signin github.com")).toBe("github.com");
+		expect(signInWanted("/screen sign-in github.com")).toBe("github.com");
+	});
+
+	// Asking for less of somebody's account is not a request for permission, so it raises nothing.
+	it("is not a request when it closes one, or names none", () => {
+		expect(signInWanted("/screen login off github.com")).toBeUndefined();
+		expect(signInWanted("/screen login")).toBeUndefined();
+	});
+
+	it("is not a request when it is another command entirely", () => {
+		expect(signInWanted("/screen on")).toBeUndefined();
+		expect(signInWanted("/reach github.com")).toBeUndefined();
+		expect(signInWanted("hola, ¿me abrís github?")).toBeUndefined();
+	});
+});
+
 describe("agentMayNot", () => {
 	const scout = { agentId: "scout", limitUsd: 5 };
 

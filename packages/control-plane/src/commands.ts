@@ -2474,6 +2474,24 @@ export interface AgentAsking {
  * prints the line the operator would type, in their console, under the reason the agent wanted it —
  * so the operator does the one thing only they can do, without having to know the command existed.
  */
+/**
+ * The site a `/screen login <host>` is about, or nothing when the line is not one.
+ *
+ * Read here rather than in the plane because this file is where a line becomes a meaning, and
+ * because the refusal above reads the same line the same way: an agent typing this gets a question
+ * raised for its operator rather than a sentence printed at it, and the two must agree about which
+ * lines those are.
+ */
+export function signInWanted(line: string): string | undefined {
+	const said = line.trim();
+	if (!said.startsWith("/")) return undefined;
+	const [name = "", verb = "", first = "", ...after] = said.slice(1).split(/\s+/);
+	if (name !== "screen" || !/^(login|signin|sign-in)$/.test(verb)) return undefined;
+	// Closing one is not a question: an agent asking for less of somebody's account may have it.
+	if (first === "" || first === "off" || first === "drop" || first === "close") return undefined;
+	return [first, ...after].join(" ").trim();
+}
+
 export function agentMayNot(line: string, asking: AgentAsking): string | undefined {
 	const [name = "", ...rest] = line.trim().slice(1).split(/\s+/);
 

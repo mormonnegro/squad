@@ -6,6 +6,7 @@ import {
 	hostOf,
 	itemArgs,
 	itemFor,
+	notOpened,
 	openedFor,
 	readForm,
 	type TheForm,
@@ -262,5 +263,30 @@ describe("asking the vault for one entry", () => {
 	// is a password box with the word "concealed" in it.
 	it("always asks for the values rather than their placeholders", () => {
 		expect(itemArgs(item)).toContain("--reveal");
+	});
+});
+
+/**
+ * What an agent is told about a site nobody opened, which is the sentence that cost half an hour.
+ *
+ * The first version said only that the operator had not opened it "for you". What the agent did with
+ * that was send its operator to their password manager, where they found the vault properly shared
+ * and concluded the feature was broken — an answer that could never be in the place they were sent
+ * to look. Both halves are said now, and the line to type comes with the host already in it.
+ */
+describe("being told a site is not open", () => {
+	const said = notOpened("app.ahrefs.com");
+
+	it("names the site and says nothing was filled", () => {
+		expect(said).toContain("app.ahrefs.com");
+		expect(said).toContain("nothing was filled in");
+	});
+
+	it("says it is not the password manager, because that is where somebody will otherwise go", () => {
+		expect(said).toContain("not a setting in their password manager");
+	});
+
+	it("carries the line that fixes it, with the host in it", () => {
+		expect(said).toContain("/screen login app.ahrefs.com");
 	});
 });

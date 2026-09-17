@@ -317,6 +317,21 @@ export type ControlRequest =
 			readonly open: boolean;
 	  }
 	/**
+	 * The answer to a site an agent asked to sign into: open it for that agent, or leave it closed.
+	 *
+	 * Separate from the command that opens one, although a yes ends in the same place, and for the
+	 * reason `reach` is separate from `add-grant`: this is only an answer. It opens a site the agent
+	 * named and the plane is still holding a question about, so a console cannot turn an answer into
+	 * a permission for something nobody asked for.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "sign-in";
+			readonly agentId: string;
+			readonly host: string;
+			readonly open: boolean;
+	  }
+	/**
 	 * The answer to an agent this one asked to write to: send what it wrote, or drop it.
 	 *
 	 * Separate from anything that opens a door for its own sake, on `reach`'s terms: this only answers
@@ -990,6 +1005,9 @@ export class ControlServer {
 				this.#write(socket, { id: request.id, ok: true, text: request.host });
 			} else if (request.op === "reach") {
 				await this.#plane.answerReach(request.agentId, request.host, request.open);
+				this.#write(socket, { id: request.id, ok: true, text: request.host });
+			} else if (request.op === "sign-in") {
+				await this.#plane.answerSignIn(request.agentId, request.host, request.open);
 				this.#write(socket, { id: request.id, ok: true, text: request.host });
 			} else if (request.op === "triggers") {
 				// Without the secret. It went out once, to whoever made it, and a list is a thing read

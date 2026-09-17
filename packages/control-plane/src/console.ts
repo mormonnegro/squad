@@ -1192,6 +1192,8 @@ export function Chat({
 	confirm,
 	asking,
 	wanting,
+	/** The site it asked to sign into, answered on the prompt like the two above it. */
+	signingInto,
 	answers,
 	menu,
 	pick,
@@ -1214,6 +1216,8 @@ export function Chat({
 	readonly asking: string | undefined;
 	/** The agent this one has written to and may not, or nothing while it is waiting on nobody. */
 	readonly wanting: string | undefined;
+	/** The site it asked to sign into out of the operator's vault, or nothing while it asks for none. */
+	readonly signingInto: string | undefined;
 	/**
 	 * The answers the agent wrote to a question of its own, or nothing while it has asked nothing.
 	 *
@@ -1275,19 +1279,24 @@ export function Chat({
 					// sentence is in the line above where it has room to be read.
 					wanting !== undefined
 					? `write to ${wanting}?  y / n `
-					: shell !== undefined
-						? `! ${here(shell)} `
-						: // The agent's own answers, offered as the keys that send them — and only over an
-							// empty line, because the moment a sentence is being typed a digit is part of it.
-							// The mark is where the hint goes for the reason the y and the n are in theirs:
-							// the eye is on the prompt, and a numbered list above a bare `>` is a list nobody
-							// knows is pressable.
-							// The key that takes it down is in the prompt beside the ones that answer it, because
-							// that is where the eye is: a card somebody is not going to answer stays on the screen
-							// forever otherwise, in front of the next one.
-							offered.length > 0 && draft === ""
-							? `1–${offered.length} to answer, 0 to drop it, or say `
-							: "> ";
+					: // The third, and the one that lends an account rather than opening a door. Said as the
+						// agent would say it — sign into, not "open" — because what a yes buys here is a login
+						// of the operator's own, typed into that page by the browser and never seen by the agent.
+						signingInto !== undefined
+						? `let it sign into ${signingInto}?  y / n `
+						: shell !== undefined
+							? `! ${here(shell)} `
+							: // The agent's own answers, offered as the keys that send them — and only over an
+								// empty line, because the moment a sentence is being typed a digit is part of it.
+								// The mark is where the hint goes for the reason the y and the n are in theirs:
+								// the eye is on the prompt, and a numbered list above a bare `>` is a list nobody
+								// knows is pressable.
+								// The key that takes it down is in the prompt beside the ones that answer it, because
+								// that is where the eye is: a card somebody is not going to answer stays on the screen
+								// forever otherwise, in front of the next one.
+								offered.length > 0 && draft === ""
+								? `1–${offered.length} to answer, 0 to drop it, or say `
+								: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
 	// The prompt is one row and stays one row: what is worth seeing of a line still being typed is
@@ -1296,7 +1305,10 @@ export function Chat({
 	// Red is the whole warning, and the border carries it too: the box the hand is in changes colour
 	// under a line already half typed, which is what stops the answer from being reflex.
 	const hue =
-		confirm !== undefined || asking !== undefined || wanting !== undefined
+		confirm !== undefined ||
+		asking !== undefined ||
+		wanting !== undefined ||
+		signingInto !== undefined
 			? "red"
 			: shell !== undefined
 				? "magenta"
@@ -2707,6 +2719,9 @@ export function App({
 	// The other question of the same kind, kept apart from it by the arrow in the key: a host and an
 	// agent can be called the same thing, and answering one is not answering the other.
 	const wanting = selected?.wants.find((to) => !answered.has(`${selected.id} > ${to}`));
+	// And the third of the same kind: a site the agent asked to sign into. Marked apart again, because
+	// a host it may reach and a site it may sign into can be the same name and are not the same yes.
+	const signingInto = selected?.logins.find((host) => !answered.has(`${selected.id} @ ${host}`));
 	/**
 	 * The answers the agent under the cursor wrote to its own oldest question.
 	 *
@@ -3083,6 +3098,24 @@ export function App({
 			client.answerReach(agentId, host, open).catch((error: Error) => {
 				setAnswered((prev) => new Set([...prev].filter((one) => one !== `${agentId} ${host}`)));
 				feed.note(agentId, "reach", error.message, true);
+			});
+		},
+		[client, feed],
+	);
+
+	/**
+	 * Answers a site an agent asked to sign into, which is a yes worth exactly one account.
+	 *
+	 * The reach answer's shape. What is different is what a yes costs: not a host this agent may
+	 * reach, but one login of the operator's own, lent to one agent out of a vault they chose what to
+	 * put in — and the agent never sees a field of it.
+	 */
+	const answerSignIn = useCallback(
+		(agentId: string, host: string, open: boolean): void => {
+			setAnswered((prev) => new Set([...prev, `${agentId} @ ${host}`]));
+			client.answerSignIn(agentId, host, open).catch((error: Error) => {
+				setAnswered((prev) => new Set([...prev].filter((one) => one !== `${agentId} @ ${host}`)));
+				feed.note(agentId, "sign-in", error.message, true);
 			});
 		},
 		[client, feed],
@@ -3556,6 +3589,12 @@ export function App({
 		// so that two waiting questions are asked in the order the prompt draws them.
 		if (wanting !== undefined && selected !== undefined) {
 			answerTalk(selected.id, wanting, input === "y" || input === "Y");
+			return;
+		}
+		// And the third, behind both: a site to sign into. Every key but `y` is a no here too, which is
+		// what makes a question about somebody's account safe to raise under a hand mid-sentence.
+		if (signingInto !== undefined && selected !== undefined) {
+			answerSignIn(selected.id, signingInto, input === "y" || input === "Y");
 			return;
 		}
 		// The same question, about a model or a host, and modal for the same reason: it is asked with the
@@ -4422,6 +4461,7 @@ export function App({
 									confirm: deleting,
 									asking,
 									wanting,
+									signingInto,
 									answers,
 									menu,
 									pick: at,
