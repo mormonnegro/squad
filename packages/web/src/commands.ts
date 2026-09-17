@@ -36,7 +36,7 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/screen",
-		takes: "[on|off|auto]",
+		takes: "[on|off|auto|login <host>]",
 		does: "give it a browser of its own, and open the live view of it here",
 	},
 	{
@@ -93,7 +93,7 @@ export const COMMANDS: readonly Command[] = [
 	{ name: "/delete", takes: "", does: "delete this agent, after asking whether you meant it" },
 	{
 		name: "/config",
-		takes: "[models|search|grants|plugins|email]",
+		takes: "[models|search|grants|vault|plugins|email]",
 		does: "the whole plane's screen: its keys, models, reach and mailbox",
 	},
 	{ name: "/help", takes: "", does: "every command there is" },
