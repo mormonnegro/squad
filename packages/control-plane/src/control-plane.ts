@@ -158,6 +158,7 @@ import {
 } from "./pointing.ts";
 import { type Served, ServedPorts } from "./ports.ts";
 import { type Question, StandingQuestions, without } from "./questions.ts";
+import { thinkingFor } from "./thinking.ts";
 import {
 	checkRepo,
 	GITHUB_TOKEN_ENV,
@@ -4740,6 +4741,19 @@ export class ControlPlane {
 			// And the model that points, for the same reason again: it is read off a file written into
 			// the sandbox before pi starts, so a choice made at the console is in the next turn.
 			pointing: () => this.pointing(),
+			/*
+			 * And the model the agent itself thinks with, which is the one thing its sandbox never had
+			 * an address for. What reads it is the walk in its browser: something that decides its own
+			 * steps needs somewhere to go when deciding is exactly what it cannot do.
+			 *
+			 * Only for the agents that have a browser, which is what makes it worth a write at all. The
+			 * file is read by one loop in one tool; on an agent with no screen it is an exec into a
+			 * container every turn for something nothing will ever open.
+			 */
+			thinking: async (agentId) =>
+				(await this.wantsScreen(agentId))
+					? thinkingFor(await this.#modelFor(agentId))
+					: undefined,
 			// And the repositories, so one given at the console is in front of the agent on its next
 			// turn, with the branches it may push named before it tries one it may not.
 			repos: (agentId) => this.repos(agentId),

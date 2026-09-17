@@ -14,6 +14,7 @@ import {
 	SANDBOX_SEARCH_FILE,
 	SANDBOX_SEND_FILE,
 	SANDBOX_TEAM_FILE,
+	SANDBOX_THINKING_FILE,
 	SANDBOX_VISION_FILE,
 	SANDBOX_WAKE_FILE,
 	SANDBOX_WORKSPACE_PATH,
@@ -23,6 +24,7 @@ import type { NamedServer } from "./mcp.ts";
 import type { ModelChoice } from "./models.ts";
 import { type AgentStep, PiOutput } from "./pi-output.ts";
 import type { Pointing } from "./pointing.ts";
+import type { Thinking } from "./thinking.ts";
 import { parseQuestions, type Question } from "./questions.ts";
 import { type RepoStanding, reposPrompt } from "./repos.ts";
 import type { Search } from "./search.ts";
@@ -202,6 +204,14 @@ export interface PiTurnRunnerOptions {
 	readonly pointing?: () => Promise<Pointing | undefined>;
 	readonly pointingFile?: string;
 	/**
+	 * The model this agent thinks with, as an address the loop in its browser can call.
+	 *
+	 * Per agent rather than per plane, unlike the two above: what an agent thinks with is its own
+	 * setting, and `/model` moves it between turns.
+	 */
+	readonly thinking?: (agentId: string) => Promise<Thinking | undefined>;
+	readonly thinkingFile?: string;
+	/**
 	 * The repositories this agent holds, asked for again at the start of every turn so one given at
 	 * the console is in front of the agent on its next turn rather than its next container.
 	 */
@@ -343,6 +353,9 @@ export class PiTurnRunner {
 	readonly #visionFile: string;
 	readonly #pointing: (() => Promise<Pointing | undefined>) | undefined;
 	readonly #pointingFile: string;
+	/** Where the agent's own model is written, and what writes it: the plane, before every turn. */
+	readonly #thinking: ((agentId: string) => Promise<Thinking | undefined>) | undefined;
+	readonly #thinkingFile: string;
 	readonly #team: ((agentId: string) => Promise<readonly Teammate[]>) | undefined;
 	readonly #teamFile: string;
 	readonly #sendFile: string;
@@ -374,6 +387,8 @@ export class PiTurnRunner {
 		this.#visionFile = options.visionFile ?? SANDBOX_VISION_FILE;
 		this.#pointing = options.pointing;
 		this.#pointingFile = options.pointingFile ?? SANDBOX_POINTING_FILE;
+		this.#thinking = options.thinking;
+		this.#thinkingFile = options.thinkingFile ?? SANDBOX_THINKING_FILE;
 		this.#team = options.team;
 		this.#teamFile = options.teamFile ?? SANDBOX_TEAM_FILE;
 		this.#sendFile = options.sendFile ?? SANDBOX_SEND_FILE;
@@ -502,6 +517,7 @@ export class PiTurnRunner {
 			await this.#putSearch(agentId);
 			await this.#putVision(agentId);
 			await this.#putPointing(agentId);
+			await this.#putThinking(agentId);
 			await this.#putTeam(agentId);
 			const thinksWith = await this.#model?.(agentId);
 			const lessons = await this.#lessons(agentId);
@@ -675,6 +691,27 @@ export class PiTurnRunner {
 			.run(
 				agentId,
 				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#pointingFile],
+				JSON.stringify(chosen),
+			)
+			.catch(() => undefined);
+	}
+
+	/**
+	 * Puts the model this agent thinks with where the loop can reach it, before pi starts.
+	 *
+	 * On the pointing file's terms, and for one reason of its own: what reads this is the walk, which
+	 * decides its own steps and needs somewhere to go when deciding is the thing it cannot do. The
+	 * key is not in it — the request leaves with no credential and is given one at the proxy, against
+	 * the grant this agent already holds for the model it has been thinking with all along.
+	 */
+	async #putThinking(agentId: string): Promise<void> {
+		if (this.#thinking === undefined) return;
+		const chosen = await this.#thinking(agentId).catch(() => undefined);
+		if (chosen === undefined) return;
+		await this.#sandbox
+			.run(
+				agentId,
+				["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", this.#thinkingFile],
 				JSON.stringify(chosen),
 			)
 			.catch(() => undefined);
