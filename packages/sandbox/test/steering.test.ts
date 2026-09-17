@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { Outline, Pointing } from "../image/pointing.ts";
 import {
 	askedToStep,
+	MOST_SCROLLS,
 	MOVE_KEY,
 	movedIn,
+	offered,
 	SURE_ENOUGH_TO_MOVE,
+	SURE_ENOUGH_TO_PRESS,
 	TARGET_KEY,
 	walked,
 } from "../image/steering.ts";
@@ -49,7 +52,19 @@ describe("asking what to do next", () => {
 	});
 
 	it("offers the rows of the page as the things to press", () => {
-		expect(Object.keys(asked().questions[TARGET_KEY].criteria)).toEqual(["1", "2", "3"]);
+		expect(Object.keys(asked().questions[TARGET_KEY].criteria)).toEqual(["1", "2", "3", "none"]);
+	});
+
+	/**
+	 * The option that makes the number underneath the answer worth reading.
+	 *
+	 * Without it, sixty options and no escape mean the weight has to land somewhere: the first walk
+	 * across Wikipedia chose a row at 0.21 — a spread, not a choice — and every step was refused as
+	 * unsure, so it scrolled twelve times and pressed nothing. With it, the same question answers
+	 * "none of these" at 0.66 and the walk stops and says so.
+	 */
+	it("lets it say that none of them leads anywhere", () => {
+		expect(asked().questions[TARGET_KEY].criteria.none).toContain("None of these");
 	});
 
 	// What stops a walk going round in circles: the only place this API takes free words is the
@@ -75,6 +90,73 @@ describe("asking what to do next", () => {
 
 		expect(body.state.page).toContain("Café");
 		expect(body.state.says).toContain("El café es una bebida");
+	});
+});
+
+/**
+ * The floor that decides whether a walk goes somewhere or wanders, set from measurement.
+ *
+ * Not comparable to the floor for the move: that is a choice of four and this is a choice of sixty,
+ * and the same certainty reads lower when the weight is spread. The numbers here are the ones seen
+ * on real pages — 0.84 where the way on was plainly there, 0.66 for `none` where it was not, and
+ * 0.21 back when no `none` was offered and the weight had to land somewhere.
+ */
+describe("how sure is sure enough to press", () => {
+	it("refuses the spread that a question with no escape produces", () => {
+		expect(SURE_ENOUGH_TO_PRESS).toBeGreaterThan(0.21);
+	});
+
+	// And below what a classifier gives a link it is actually confident about, or the walk would
+	// refuse the answers it exists to act on.
+	it("takes an answer a page with the way on it actually gives", () => {
+		expect(SURE_ENOUGH_TO_PRESS).toBeLessThan(0.66);
+	});
+
+	/**
+	 * A reading of a page is what is drawn on the screen, so a link in the body of a long article
+	 * does not exist until it has been scrolled to. Two screens of a twenty screen page is the tool
+	 * "only seeing the first viewport", which is what the agent using it reported.
+	 */
+	it("looks further down a page than the first screen or two", () => {
+		expect(MOST_SCROLLS).toBeGreaterThanOrEqual(8);
+	});
+});
+
+/**
+ * Which rows go in front of the classifier, which is what decided whether the first walk could work.
+ *
+ * A question takes sixty options and a page is two hundred rows. The first version offered the sixty
+ * nearest by word overlap — and for "the Rolling Stones page" on an article about coffee, nothing
+ * shares a word, so what it offered was the first sixty in page order: the menu, the search box and
+ * the language list. It was being asked to find a way on out of the site's furniture.
+ */
+describe("which rows are offered", () => {
+	const rows = Array.from({ length: 200 }, (_, at) => `[${at + 1}] a "row ${at + 1}"`);
+
+	it("offers a window of them and not the page", () => {
+		expect(offered(rows, "anything", new Set()).length).toBe(60);
+	});
+
+	it("offers the rest of the page once a window has been asked about", () => {
+		const first = offered(rows, "anything", new Set());
+		const asked = new Set(first.map((row) => Number(/\[(\d+)\]/.exec(row)?.[1])));
+		const second = offered(rows, "anything", asked);
+
+		expect(second.some((row) => first.includes(row))).toBe(false);
+		expect(second.length).toBe(60);
+	});
+
+	// A goal that names what it is after is answered on the first question, whatever page order says.
+	it("puts what the goal names first, wherever it is on the page", () => {
+		const said = offered([...rows, '[201] a "Colombia"'], "the article about Colombia", new Set());
+
+		expect(said.some((row) => row.includes("Colombia"))).toBe(true);
+	});
+
+	it("runs out rather than offering the same rows again", () => {
+		const all = new Set(rows.map((_, at) => at + 1));
+
+		expect(offered(rows, "anything", all)).toEqual([]);
 	});
 });
 
@@ -127,7 +209,7 @@ describe("what the walk says it did", () => {
 	it("tells running out of steps from having nowhere to go", () => {
 		expect(walked([], "most", "x")).toContain("step limit");
 		expect(walked([], "stuck", "x")).toContain("no way further");
-		expect(walked([], "unsure", "x")).toContain("no longer sure");
+		expect(walked([], "unsure", "x")).toContain("could not tell which");
 	});
 
 	it("says plainly when it pressed nothing at all", () => {

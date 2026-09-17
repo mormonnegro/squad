@@ -28,10 +28,18 @@ import {
 	refOf,
 	refusedBy as refusedPointing,
 	spentOn as spentPointing,
-	SURE_ENOUGH,
 } from "./pointing.ts";
 import { alreadyAsked, askFor, holding, keep } from "./question.ts";
-import { askedToStep, type Move, movedIn, TARGET_KEY, walked } from "./steering.ts";
+import {
+	askedToStep,
+	type Move,
+	MOST_SCROLLS,
+	movedIn,
+	offered,
+	SURE_ENOUGH_TO_PRESS,
+	TARGET_KEY,
+	walked,
+} from "./steering.ts";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
 
 /**
@@ -287,6 +295,12 @@ async function walkTowards(
 	most: number,
 ): Promise<{ readonly said: string; readonly usage: Usage | undefined }> {
 	const trail: string[] = [];
+	/** Scrolls since the last press: for the pages that put more on the list when you go down them. */
+	let scrolls = 0;
+	/** Which rows of this page have already been offered, so the next question offers the others. */
+	let asked = new Set<number>();
+	/** What the last reading was, for telling a page that scrolled from one that had nowhere left to go. */
+	let before = "";
 	let spent: Usage | undefined;
 	const add = (usage: Usage | undefined): void => {
 		if (usage === undefined) return;
@@ -294,32 +308,80 @@ async function walkTowards(
 	};
 	const page = async (): Promise<string> => textIn(await does({ verb: "read", brief: true })) ?? "";
 
-	for (let step = 0; step < most; step += 1) {
+	/*
+	 * Presses rather than turns of the loop, which is the budget that means anything.
+	 *
+	 * Looking down a page costs a question and changes nothing; pressing is what moves. The first
+	 * version counted both against one number, so a walk that had to scroll to find the way on spent
+	 * its whole allowance looking at the page it started on.
+	 */
+	let presses = 0;
+	while (presses < most) {
 		const outline: Outline | undefined = readOutline(textIn(await does({ verb: "outline" })));
 		if (outline === undefined) {
 			return { said: "The browser could not say what is on the page.", usage: spent };
 		}
-		const asked = await askTheModel(model, askedToStep(model, goal, outline, trail));
-		if ("why" in asked) return { said: asked.why, usage: spent };
-		add(asked.usage);
-		const move: Move | undefined = movedIn(asked.answer);
+		/*
+		 * The page stopped moving, so there is nothing further down to find.
+		 *
+		 * A reading is what is drawn, so scrolling is how the rest of a long article comes into
+		 * existence at all — and the bottom is where two readings in a row are the same. Without this
+		 * the loop would scroll its cap out on every page that ends above the fold.
+		 */
+		const now = `${outline.rows.join("|")}::${outline.text.length}`;
+		if (scrolls > 0 && now === before) {
+			return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+		}
+		before = now;
+		const offering = offered(outline.rows, goal, asked);
+		const said = await askTheModel(model, askedToStep(model, goal, outline, trail, asked));
+		if ("why" in said) return { said: said.why, usage: spent };
+		add(said.usage);
+		// Whatever was on that question is spent: if the answer is none of them, the next question is
+		// about the rest of the page rather than the same sixty rows again.
+		for (const row of offering) {
+			const ref = refOf(row);
+			if (ref !== undefined) asked.add(ref);
+		}
+		const move: Move | undefined = movedIn(said.answer);
 		if (move === undefined) {
 			return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
 		}
 		if (move === "done" || move === "stuck") {
 			return { said: [walked(trail, move, goal), "", await page()].join("\n"), usage: spent };
 		}
-		if (move === "scroll") {
-			await does({ verb: "scroll", to: "down", brief: true });
-			continue;
-		}
-		const picked = pickedIn(asked.answer, SURE_ENOUGH, TARGET_KEY);
+		const picked =
+			move === "scroll" ? undefined : pickedIn(said.answer, SURE_ENOUGH_TO_PRESS, TARGET_KEY);
+		/*
+		 * Nothing to press on this screen, which on a long page is a fact about the screen.
+		 *
+		 * The two ways of saying it are the same thing: it asked to scroll, or it asked to press and
+		 * then would not say what. Both mean the way on is not among the things drawn right now, and
+		 * what a person does about that is look further down.
+		 */
 		if (picked === undefined) {
-			// It wanted to press something and would not say what. Scrolling is the cheap thing to try
-			// before giving the page back: half the time what it meant is below the fold.
+			/*
+			 * Nothing among the rows it was shown. Two things are left to try, in this order.
+			 *
+			 * The rest of the page first, because a reading is two hundred rows and a question takes
+			 * sixty: what it has not been shown yet is where the way on usually is on a long page, and
+			 * asking about it costs one more question. Then scrolling, for the pages that only put
+			 * things on the list once you have gone down them.
+			 */
+			if (asked.size < outline.rows.length) continue;
+			if (scrolls >= MOST_SCROLLS) {
+				return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+			}
+			scrolls += 1;
+			asked = new Set();
 			await does({ verb: "scroll", to: "down", brief: true });
 			continue;
 		}
+		// Pressed something, so this is a new page: nothing on it has been offered or scrolled past.
+		scrolls = 0;
+		before = "";
+		asked = new Set();
+		presses += 1;
 		const row = outline.rows.find((one) => refOf(one) === picked.ref);
 		trail.push(row === undefined ? `[${picked.ref}]` : labelOf(row));
 		await does({ verb: "click", ref: picked.ref, brief: true });
@@ -834,8 +896,11 @@ export default function (pi: ExtensionAPI): void {
 				'Say the destination, not the route: "the page about coffee in Brazil" rather than "click',
 				'Brasil then Café". It chooses each step from what the page actually offers.',
 				"",
+				"It looks down a page as it goes: a reading is what is on the screen, so if the way on is",
+				"in the middle of a long article it scrolls to it rather than giving up at the fold.",
+				"",
 				"It stops by itself and tells you which: it arrived, the page offered no way on, it was",
-				"unsure what to do next, or it ran out of steps. What comes back is where it ended and",
+				"unsure what to do next, or it ran out of presses. What comes back is where it ended and",
 				"what it pressed to get there. It types nothing — a page that needs words needs you.",
 			].join("\n"),
 			promptSnippet: "Walk the browser to a page, pressing its own way there",
