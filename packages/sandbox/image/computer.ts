@@ -706,7 +706,8 @@ export default function (pi: ExtensionAPI): void {
 			? {}
 			: {
 					promptGuidelines: [
-						'Click by naming the thing — what: "the Continue button" — rather than by reading the page and using a ref. It is one call instead of two and keeps the page\'s element list out of this conversation.',
+						'Click by naming the thing — what: "the Continue button" — which is the only way to click here.',
+						"Two clicks in a row towards the same place is a walk, and a walk is screen_goal: each of these costs a turn of yours and every step of a goal costs none. If you are about to click a second time to get somewhere, say where you are going instead.",
 					],
 				}),
 		/*
