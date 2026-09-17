@@ -110,6 +110,28 @@ describe("asking", () => {
 		expect(only?.wants).toEqual([]);
 	});
 
+	/**
+	 * The same rule one screen further in, where getting it wrong costs the whole page.
+	 *
+	 * A plane older than this bundle answers `tools` without the parts it has never heard of, and
+	 * that is not a rare case in development — it is every run of the dev server, which serves a page
+	 * newer than the plane it is pointed at by definition. Read straight off, the missing half is not
+	 * a row short: it throws where it is read, in a render, and React takes the document with it.
+	 */
+	it("fills in the half of the tools an older plane does not answer", async () => {
+		const asked = plane.tools();
+		wire.answer({
+			id: wire.idOf(0),
+			ok: true,
+			tools: { search: { using: undefined, offers: [] } },
+		});
+
+		const answer = await asked;
+		expect(answer.vault).toEqual({ held: false, here: false });
+		expect(answer.pointing.offers).toEqual([]);
+		expect(answer.vision.offers).toEqual([]);
+	});
+
 	it("keeps the handler while the answer is still being written", async () => {
 		const pieces: string[] = [];
 		const asked = plane.wake("scout", "hello", (text) => pieces.push(text));

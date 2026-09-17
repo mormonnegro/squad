@@ -784,7 +784,12 @@ export class Plane {
 	 */
 	async tools(): Promise<Tools> {
 		const answer = await this.#ask({ op: "tools" });
-		return (answer.tools as Tools | undefined) ?? EMPTY_TOOLS;
+		// Filled in over the empty one rather than taken whole, for the reason the agents list is: a
+		// plane older than this bundle answers without the parts it has never heard of, and a screen
+		// that read one of them straight off would not draw a row short — it would throw on the field
+		// it wanted and take the whole page with it. Which is exactly what a dev server does every
+		// time, since the page is newer than the plane it is pointed at by definition.
+		return { ...EMPTY_TOOLS, ...((answer.tools as Partial<Tools> | undefined) ?? {}) };
 	}
 
 	/** Points the searching at a provider, or at another of that provider's models. */
