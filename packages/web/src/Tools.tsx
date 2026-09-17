@@ -77,7 +77,8 @@ export function Tools({ plane }: { plane: Plane }) {
 							done somewhere else by a model you pick here, paid for with a key the agents never
 							hold. Choosing is the whole of setting one up: the host, the key and the price come
 							with the provider, and the proxy is told to pay for that one endpoint and nothing else
-							on it.
+							on it. And a fourth that is no model at all — the password manager their browsers sign
+							into sites from, which is one key and no choice.
 						</p>
 					</div>
 
@@ -279,7 +280,7 @@ function Pointing({
  * only one that costs the operator nothing at the moment it is needed.
  *
  * What the paragraph has to say is where the password goes, because that is the question somebody
- * pasting this is actually asking. It goes into the browser\'s container, which is the one the agent
+ * pasting this is actually asking. It goes into the browser's container, which is the one the agent
  * has no filesystem in, and into the page as keystrokes. The agent names a site; it never sees a
  * field. Which sites, per agent, is the other half and is not decided here: it is decided in front
  * of the agent, with /screen login.
@@ -306,7 +307,7 @@ function Vault({
 					{!standing.held && <span className="tally">off</span>}
 				</h2>
 				<p className="section-says">
-					A 1Password service account, read inside each agent\'s browser and nowhere else. The agent
+					A 1Password service account, read inside each agent's browser and nowhere else. The agent
 					asks to be signed into a site, the password is looked up in that container and typed into
 					the page, and what comes back to the agent is a sentence about which boxes were filled —
 					never a field, never a value, not in the answer and not in any later reading of the page.
