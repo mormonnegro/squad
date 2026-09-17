@@ -12,6 +12,7 @@ import {
 	screenContainerName,
 	screenUrl,
 	screenVolumeName,
+	VAULT_HOSTS,
 	VAULT_TOKEN_ENV,
 	vaultMark,
 } from "../src/spec.ts";
@@ -88,6 +89,18 @@ describe("what the browser is given", () => {
 		);
 	});
 
+	/**
+	 * The certificate, for the one program in here that is neither Node nor Chromium.
+	 *
+	 * `op` is a Go binary and reads these two names and no others. Both, because the proxy either
+	 * opens a connection and re-signs it — our CA — or tunnels it, in which case what arrives is the
+	 * host\'s own certificate and the ordinary store is what checks it.
+	 */
+	it("hands the proxy's certificate to the programs that read neither of the other two", () => {
+		expect(env).toContain(`SSL_CERT_FILE=${CA_CERT_PATH}`);
+		expect(env).toContain("SSL_CERT_DIR=/etc/ssl/certs");
+	});
+
 	it("holds nothing of the agent's own", () => {
 		// A screen is not a second sandbox. None of what an agent is given to think with belongs in
 		// here, and a variable that leaked in would be one a browser could be talked into using.
@@ -95,6 +108,25 @@ describe("what the browser is given", () => {
 		expect(names).not.toContain("SQUAD_REPO");
 		expect(names).not.toContain("SQUAD_WAKE_FILE");
 		expect(names.some((name) => name.endsWith("_API_KEY"))).toBe(false);
+	});
+});
+
+/**
+ * The hosts a vault is opened at, which the proxy has to be told about or the CLI reaches nothing.
+ *
+ * Wildcards rather than `my.1password.com`, because which host it is depends on the account: `ent`
+ * for enterprise, and a domain per region for everybody else. A list that covered only the common
+ * one would be a feature that works until somebody in Europe tries it.
+ */
+describe("where a vault is opened", () => {
+	it("covers the sign-in domain whichever one the account was made in", () => {
+		expect(VAULT_HOSTS).toContain("*.1password.com");
+		expect(VAULT_HOSTS).toContain("*.1password.eu");
+		expect(VAULT_HOSTS).toContain("*.1password.ca");
+	});
+
+	it("is a wildcard of one label, which is what a grant can express", () => {
+		for (const host of VAULT_HOSTS) expect(host).toMatch(/^\*\.[a-z0-9.-]+$/);
 	});
 });
 

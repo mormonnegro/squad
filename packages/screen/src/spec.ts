@@ -26,6 +26,21 @@ export const SCREEN_VIEW_PORT = 7180;
 export const VAULT_TOKEN_ENV = "OP_SERVICE_ACCOUNT_TOKEN";
 
 /**
+ * Where the 1Password CLI goes when it opens a vault, which the proxy has to be told about.
+ *
+ * Nothing in these containers has a route off the host except through the egress proxy, and the
+ * proxy refuses what no grant names — so without this, connecting a vault ends in a browser that
+ * says the vault would not open, with nothing anywhere saying it was a grant. A wildcard each
+ * because the host is the account's sign-in domain: `my` for most, `ent` for the enterprise ones,
+ * and the region the account was made in decides the rest.
+ *
+ * What is granted carries nothing of ours. The token is in this container's environment and goes
+ * out in the CLI's own request, so an agent that reached this host itself would be an agent making
+ * an unauthenticated call to somebody else's API — which is why this is a host and not a secret.
+ */
+export const VAULT_HOSTS = ["*.1password.com", "*.1password.eu", "*.1password.ca"] as const;
+
+/**
  * Where the agent's verbs are answered, inside the screen container.
  *
  * A different port from the view rather than a path on it, because they are opened to different
@@ -189,6 +204,17 @@ export function buildScreenEnv(spec: ScreenSpec): string[] {
 		 * of its own environment in one command.
 		 */
 		...(spec.vaultToken === undefined ? {} : { [VAULT_TOKEN_ENV]: spec.vaultToken }),
+		/*
+		 * The proxy's certificate, for the programs in here that are neither Node nor Chromium.
+		 *
+		 * Which is `op`: a Go binary, and Go reads these two and not the ones above it. Both are set
+		 * rather than one — the file is this deployment's own CA, for the connections the proxy opens
+		 * and re-signs, and the directory is the ordinary store, for a host the operator has since
+		 * told the proxy to tunnel rather than read. Naming only the file would trust our CA and
+		 * nothing else, which is exactly the configuration that breaks the day somebody pipes one.
+		 */
+		SSL_CERT_FILE: CA_CERT_PATH,
+		SSL_CERT_DIR: "/etc/ssl/certs",
 		// For the screen server itself, which fetches nothing off the machine but is a Node process in
 		// a container with no route out, and would otherwise hang rather than fail if it ever tried.
 		HTTP_PROXY: spec.proxyUrl,

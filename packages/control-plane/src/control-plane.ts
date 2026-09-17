@@ -64,6 +64,7 @@ import {
 	readSite,
 	SCREEN_VIEW_PORT,
 	siteHost,
+	VAULT_HOSTS,
 	VAULT_TOKEN_ENV,
 	vaultMark,
 } from "@squad/screen";
@@ -2337,9 +2338,15 @@ export class ControlPlane {
 		}
 		await this.#keys.keep(keyEnv, value.trim());
 		if (pointing) await this.#reregisterAll();
-		// Every browser on the plane, because the token is written into a container's environment when
-		// it is created: a screen already up is holding the old one until it is made again.
-		if (vault) await this.#settleScreens();
+		if (vault) {
+			// The grant that lets the browser reach 1Password at all, which appears and disappears with
+			// the token exactly as the pointing one does with its key.
+			await this.#reregisterAll();
+			// And every browser on the plane, because the token is written into a container's
+			// environment when it is created: a screen already up holds the old one until it is made
+			// again.
+			await this.#settleScreens();
+		}
 	}
 
 	/** Where searching goes, filled in from the table, and whether this plane can pay for it. */
@@ -2586,6 +2593,7 @@ export class ControlPlane {
 			...(await this.#searching(declared)),
 			...(await this.#looking(declared)),
 			...(await this.#pointingAt(declared)),
+			...(await this.#vaultAt(agentId, declared)),
 			...(await this.#pipedThrough(declared)),
 			...earned,
 			...(await this.#reached(declared)),
@@ -2790,6 +2798,29 @@ export class ControlPlane {
 		return [pointingGrant(pointing)].filter(
 			(grant) => !declared.some((own) => own.id === grant.id),
 		);
+	}
+
+	/**
+	 * Where the browser opens the vault, granted only while there is a vault and a browser.
+	 *
+	 * Derived rather than written down, on the pointing grant's terms: connecting a password manager
+	 * at the console is the whole of setting one up, and a feature whose second step is "now open
+	 * 1password.com under grants" is a feature that is broken for everybody who read the first step
+	 * and stopped. It appears with the token and with the screen, and goes when either does.
+	 *
+	 * Carrying nothing, which is what makes it a small grant to hold: the token is in the browser's
+	 * container and travels in the CLI's own request, so the sandbox reaching this host is a sandbox
+	 * making unauthenticated calls to an API that answers none of them.
+	 */
+	async #vaultAt(agentId: string, declared: readonly Grant[]): Promise<readonly Grant[]> {
+		if (!(await this.wantsScreen(agentId))) return [];
+		const token = await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined);
+		if (token === undefined || token === "") return [];
+		return VAULT_HOSTS.map((host) => ({
+			id: `vault:${host}`,
+			host,
+			injection: { kind: "none" } as const,
+		})).filter((grant) => !declared.some((own) => own.id === grant.id));
 	}
 
 	async #reached(declared: readonly Grant[]): Promise<readonly Grant[]> {
@@ -3978,6 +4009,9 @@ export class ControlPlane {
 		}
 		await this.#screenChoices.set(agentId, on);
 		await this.#settleScreen(agentId);
+		// The vault host is granted to an agent that has a browser and to no other, so turning one on
+		// or off is a change to what this agent may reach — and grants are written once, at the door.
+		await this.#reregister(agentId);
 		return this.screenStanding(agentId);
 	}
 

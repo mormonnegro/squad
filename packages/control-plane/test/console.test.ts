@@ -49,6 +49,7 @@ import type { GrantStanding } from "../src/grants.ts";
 import type { MailStanding } from "../src/mailbox.ts";
 import type { ServerStanding } from "../src/mcp.ts";
 import type { ModelOffer } from "../src/models.ts";
+import type { VaultStanding } from "../src/screens.ts";
 import type { SearchStanding } from "../src/search.ts";
 
 /**
@@ -1813,6 +1814,7 @@ describe("Config", () => {
 		grants?: readonly GrantStanding[];
 		mail?: MailStanding | undefined;
 		mailing?: { field: MailField; text: string } | undefined;
+		vault?: VaultStanding | undefined;
 		admitting?: string | undefined;
 		cursor?: number;
 		typing?: string | undefined;
