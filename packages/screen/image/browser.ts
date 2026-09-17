@@ -780,6 +780,19 @@ export class Browser {
 				if (asked.ref !== undefined && !(await this.#clickRef(asked.ref))) {
 					return { text: `There is no [${asked.ref}] on this page any more. Read it again.` };
 				}
+				/*
+				 * What was in the box goes first.
+				 *
+				 * Typing used to insert at the cursor, which is what a person does and the wrong thing
+				 * for somebody saying "put this in the phone field": a field typed into twice held both
+				 * numbers, end to end, and the site refused a phone number twenty digits long. Nobody
+				 * asking for a box to say something means "say it after whatever is in there".
+				 *
+				 * Only where a box was named. Typing with no ref is typing where the cursor already is,
+				 * which is for a page that has no box to name, and clearing there would empty whatever
+				 * the last click happened to land in.
+				 */
+				if (asked.ref !== undefined) await this.#clear();
 				await this.#need().send("Input.insertText", { text: asked.text ?? "" }, this.#session);
 				if (asked.enter === true) {
 					await this.#press("Enter");

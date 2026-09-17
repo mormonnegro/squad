@@ -253,13 +253,21 @@ async function pointAt(
 	if ("why" in asked) return asked;
 	const picked = pickedIn(asked.answer);
 	if (picked === undefined) {
+		// Which page, because the commonest reason a description matches nothing is that the browser
+		// is not on the page the agent thinks it is: a tab it opened, a step it did not land on.
 		return {
-			why: `Nothing on this page is clearly "${what}".`,
+			why: `Nothing on ${where(outline)} is clearly "${what}".`,
 			near: nearestIn(asked.answer, outline.rows),
 			usage: asked.usage,
 		};
 	}
 	return { ref: picked.ref, usage: asked.usage };
+}
+
+/** The page an answer is about, which is the fact an agent on the wrong tab is missing. */
+function where(outline: Outline): string {
+	const name = outline.title === "" ? outline.url : outline.title;
+	return name === "" ? "this page" : `"${name}"`;
 }
 
 /** One request to the thing that chooses, with every way it can fail said in words. */
@@ -588,6 +596,9 @@ export default function (pi: ExtensionAPI): void {
 			"",
 			"Name the field by its ref, or leave it out to type wherever the cursor already is. Set enter",
 			"to submit straight after, which is one call instead of two for a search box.",
+			"",
+			"A named field is emptied first, so what it holds afterwards is what you sent and nothing",
+			"else. Typing with no field named inserts where the cursor is and clears nothing.",
 			...(points === undefined
 				? []
 				: [
@@ -747,7 +758,7 @@ export default function (pi: ExtensionAPI): void {
 				const press = then === undefined ? undefined : found[fields.length]?.ref;
 				if (puts.length === 0 && press === undefined) {
 					return instead(
-						`None of those is clearly a box on this page: ${missed.join(", ")}.`,
+						`None of those is clearly a box on ${where(outline)}: ${missed.join(", ")}. If that is not the page you meant, you are on another tab — screen_tabs says which.`,
 						nearestIn(asked.answer, outline.rows, 3, keyAt(0)),
 						asked.usage,
 					);
@@ -760,7 +771,7 @@ export default function (pi: ExtensionAPI): void {
 					brief: true,
 				});
 				const said = [
-					`Filled ${puts.length} of ${fields.length}.`,
+					`Filled ${puts.length} of ${fields.length} on ${where(outline)}.`,
 					...(missed.length === 0
 						? []
 						: [
