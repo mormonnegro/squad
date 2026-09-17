@@ -161,6 +161,18 @@ export interface CommandContext {
 	 */
 	setScreen(on: boolean | null): Promise<ScreenStanding>;
 	/**
+	 * Opens a site this agent's browser may sign into out of the operator's vault.
+	 *
+	 * The one thing guarded in this file that hands an agent a credential, and it is a command
+	 * because of when it is wanted: in front of an agent that has just stopped at a login. What it
+	 * opens is narrow on purpose — one host, for one agent, out of a vault the operator chose what
+	 * to put in — and the agent never sees what is filled in, so this is the use of an account
+	 * rather than the account. An agent asking for it is turned away one file over.
+	 */
+	openSignIn(host: string): Promise<string>;
+	/** Closes one. Answers whether there was one to close. */
+	closeSignIn(host: string): Promise<boolean>;
+	/**
 	 * Which model looks at pictures for this plane, and every model that could.
 	 *
 	 * Plane-wide rather than per-agent, on the search provider's terms: which model does a job, what
@@ -375,7 +387,7 @@ export const COMMANDS: readonly Command[] = [
 	},
 	{
 		name: "/screen",
-		takes: "[on|off|auto]",
+		takes: "[on|off|auto|login <host>]",
 		does: "give it a browser of its own, and open the live view of it here",
 	},
 	{
@@ -912,6 +924,24 @@ const NO_TOOLS = [
 	"container whose image has moved, and the agent has the tools on its next turn.",
 ].join("\n");
 
+/**
+ * What signing in out of a vault is, for the operator about to allow one.
+ *
+ * Three facts, and each is one somebody would otherwise find out the wrong way round: the password
+ * is never in the sandbox, the agent never learns it, and what it may sign into is this list and
+ * nothing else. The vault is the operator's own and what is in it is their decision — this only
+ * says which of it an agent may ask to have typed for it.
+ */
+const WHAT_SIGNING_IN_IS = [
+	"The password is read inside the browser's own container, by the 1Password CLI, using a token",
+	"this plane holds and the sandbox has no path to — and what crosses into the page is keystrokes.",
+	"The agent names a site and gets back a sentence about the boxes on the page: it never sees the",
+	"password, not in the answer and not in a reading of the page afterwards.",
+	"",
+	"It can only ask for sites on this list. Everything else is refused at the browser's door, and",
+	"the list is not something the agent can read or add to.",
+].join("\n");
+
 /** Said wherever the link is, because the keyboard is the half of this that is not obvious. */
 const THE_KEYBOARD = [
 	"On that page there is a button that takes the keyboard. While you hold it the agent cannot",
@@ -969,8 +999,62 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 			: `${id} is back to what the operator's file says, which is that it has no screen.`;
 	}
 
+	if (said === "login" || said === "signin" || said === "sign-in") {
+		const [first = "", ...after] = words.slice(1);
+		if (first === "off" || first === "drop" || first === "close") {
+			const host = after.join(" ").trim();
+			if (host === "") return "Which site? /screen login off <host>.";
+			const closed = await context.closeSignIn(host);
+			if (!closed) return `${id} was not signing into ${host}, so nothing changed.`;
+			return [
+				`${id} can no longer sign into ${host}. Its browser has been told.`,
+				"",
+				"What it is already signed into, it stays signed into: the session is a cookie in the",
+				`profile rather than a password, and ${id} keeps it until somebody signs that browser out.`,
+			].join("\n");
+		}
+		if (first === "") {
+			const standing = await context.screen();
+			return standing.sites.length === 0
+				? [
+						`${id} signs into nothing out of your vault. /screen login <host> opens one.`,
+						"",
+						WHAT_SIGNING_IN_IS,
+					].join("\n")
+				: [`${id} signs into: ${standing.sites.join(", ")}.`, "", WHAT_SIGNING_IN_IS].join("\n");
+		}
+		let host: string;
+		try {
+			host = await context.openSignIn([first, ...after].join(" ").trim());
+		} catch (error) {
+			// Answered rather than thrown, as a login that would not start is: what this refuses is a
+			// host somebody mistyped, and the place to say so is under the line they typed it on.
+			return (error as Error).message;
+		}
+		const standing = await context.screen();
+		return [
+			`${id} can sign into ${host} out of your vault, and its browser has the list now.`,
+			"",
+			// Said here rather than left for the browser to say later: a permission granted against a
+			// vault this plane has not been given is a permission that does nothing, and the operator
+			// is standing right here at the moment it would be cheapest to fix.
+			...(standing.vault
+				? []
+				: [
+						"No vault is connected to this plane yet, so nothing will be filled in: the 1Password",
+						"service account token goes on the keys screen, under /config keys. This list is kept",
+						"either way, and starts working the moment a vault is connected.",
+						"",
+					]),
+			...(standing.on
+				? []
+				: [`${id} has no browser to sign in with either. /screen on gives it one.`, ""]),
+			WHAT_SIGNING_IN_IS,
+		].join("\n");
+	}
+
 	if (said !== "") {
-		return `"${said}" is not something to do to a screen. /screen on gives it one, /screen off takes it away, /screen auto leaves it to the operator's file, and /screen on its own says where it stands.`;
+		return `"${said}" is not something to do to a screen. /screen on gives it one, /screen off takes it away, /screen auto leaves it to the operator's file, /screen login <host> lets it sign into one out of your vault, and /screen on its own says where it stands.`;
 	}
 
 	const standing = await context.screen();
@@ -987,6 +1071,9 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 		standing.keyboard === "operator"
 			? "Somebody has the keyboard on it right now, so the agent cannot touch the page."
 			: "",
+		standing.sites.length === 0
+			? "It signs into nothing out of your vault. /screen login <host> opens one."
+			: `It signs into: ${standing.sites.join(", ")}.`,
 		"",
 		...(standing.at === undefined ? [] : [servedPath(id, standing.at.port), ""]),
 		...(standing.toolless === true ? [NO_TOOLS, ""] : []),
@@ -2424,6 +2511,25 @@ export function agentMayNot(line: string, asking: AgentAsking): string | undefin
 			return `This agent asked to stop being able to write to ${after.join(" ") || "another agent"}. That one stays with you: /team drop ${after.join(" ")}, if you meant it.`;
 		}
 		return `This agent asked to be able to write to "${first}", which would wake ${first} and spend what ${first} may spend. That one stays with you: /team ${first}, if you meant it. Writing to ${first} is the thing it can do about this by itself: that puts the same question on your screen and opens nothing until you answer it.`;
+	}
+
+	/*
+	 * A site an agent may sign into is the one thing a command can hand it that is somebody's account.
+	 *
+	 * The agent never sees the password and still: what the browser types on its behalf is the
+	 * operator's own login, and an agent that could add to this list is an agent that can be talked
+	 * into signing into anything the vault holds. The line is printed, because an agent asking is
+	 * usually an agent stopped at exactly the login its operator meant it to have.
+	 *
+	 * Closing one is not on this list. Narrowing what it may do is the same kind of thing as asking
+	 * to be held to a tighter ceiling, and an agent that wants less of somebody's account may have it.
+	 */
+	if (name === "screen" && rest[0] !== undefined && /^(login|signin|sign-in)$/.test(rest[0])) {
+		const [, first = "", ...after] = rest;
+		if (first !== "off" && first !== "drop" && first !== "close") {
+			const host = [first, ...after].join(" ").trim();
+			return `This agent asked to be able to sign into ${host === "" ? "a site" : host} out of your vault. That one stays with you: /screen login ${host}, if you meant it.`;
+		}
 	}
 
 	if (name === "repo") {

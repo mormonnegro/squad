@@ -99,6 +99,10 @@ function context(
 		visionKeys?: readonly string[];
 		/** Whether the sandbox is too old to hold the tools that drive the browser. */
 		toolless?: boolean;
+		/** The sites this agent may already sign into out of the operator's vault. */
+		sites?: readonly string[];
+		/** Whether this plane holds a vault for those sites to be read out of. */
+		vault?: boolean;
 	} = {},
 ) {
 	const state = { spentUsd: start.spentUsd ?? 0, limitUsd: start.limitUsd };
@@ -117,6 +121,8 @@ function context(
 	const cleared: string[] = [];
 	const serving = [...(start.serving ?? [])];
 	const takenBy = start.takenBy ?? new Map<number, string>();
+	/** The sites opened for this agent, and every change to them that got as far as the plane. */
+	const sites = [...(start.sites ?? [])];
 	/** The screen as the plane would hold it: a decision, and a container that follows it. */
 	const screen = {
 		on: start.screen ?? false,
@@ -328,11 +334,25 @@ function context(
 			screen: async () => ({
 				on: screen.on,
 				running: screen.running,
+				sites: [...sites],
+				vault: start.vault ?? false,
 				...(screen.on ? { at: { port: SCREEN_VIEW_PORT, at: SCREEN_VIEW_PORT } } : {}),
 				...(screen.keyboard === undefined ? {} : { keyboard: screen.keyboard }),
 				...(screen.building === true ? { building: true } : {}),
 				...(screen.toolless === true ? { toolless: true } : {}),
 			}),
+			openSignIn: async (host: string) => {
+				const site = host.trim().toLowerCase();
+				if (!site.includes(".")) throw new Error(`"${host}" is not a site`);
+				if (!sites.includes(site)) sites.push(site);
+				return site;
+			},
+			closeSignIn: async (host: string) => {
+				const at = sites.indexOf(host.trim().toLowerCase());
+				if (at === -1) return false;
+				sites.splice(at, 1);
+				return true;
+			},
 			setScreen: async (on: boolean | null) => {
 				screened.push(on);
 				// `null` is the file's decision, and in here the file never asked for one.
@@ -341,6 +361,8 @@ function context(
 				return {
 					on: screen.on,
 					running: screen.running,
+					sites: [...sites],
+					vault: start.vault ?? false,
 					...(screen.on ? { at: { port: SCREEN_VIEW_PORT, at: SCREEN_VIEW_PORT } } : {}),
 				};
 			},
@@ -1098,6 +1120,66 @@ describe("/screen", () => {
 		expect(said).toContain("scout has no screen");
 		expect(said).toContain("/screen on");
 		expect(said).toContain("container of its own");
+	});
+
+	it("opens one site for it to sign into, and says the browser has been told", async () => {
+		const plane = context({ agentId: "scout", screen: true, vault: true });
+		const said = await runCommand("/screen login github.com", plane.context);
+
+		expect(said).toContain("scout can sign into github.com");
+		expect(said).toContain("browser has the list now");
+		// The half an operator is actually deciding about: the password never reaches the agent, and
+		// the list is the only thing it may ask for.
+		expect(said).toContain("what crosses into the page is keystrokes");
+		expect(said).toContain("It can only ask for sites on this list");
+		expect(await runCommand("/screen login", plane.context)).toContain(
+			"scout signs into: github.com",
+		);
+	});
+
+	it("says a list is worth nothing yet when no vault has been connected", async () => {
+		// Otherwise this is a permission that reads as granted and fills nothing in, and the person
+		// who could fix that in a minute is the one standing here.
+		const said = await runCommand(
+			"/screen login github.com",
+			context({ agentId: "scout", screen: true }).context,
+		);
+
+		expect(said).toContain("No vault is connected");
+		expect(said).toContain("/config keys");
+	});
+
+	it("refuses something that is not a site rather than writing down a line that matches nothing", async () => {
+		const said = await runCommand(
+			"/screen login nonsense",
+			context({ agentId: "scout", screen: true, vault: true }).context,
+		);
+
+		expect(said).toContain("not a site");
+	});
+
+	it("closes one, and says the browser stays signed into what it already is", async () => {
+		const plane = context({
+			agentId: "scout",
+			screen: true,
+			vault: true,
+			sites: ["github.com"],
+		});
+		const said = await runCommand("/screen login off github.com", plane.context);
+
+		expect(said).toContain("can no longer sign into github.com");
+		// The fact that makes this not a sign-out, said where somebody would otherwise assume it was.
+		expect(said).toContain("stays signed into");
+		expect(await runCommand("/screen login", plane.context)).toContain("signs into nothing");
+	});
+
+	it("says what it may sign into when asked where it stands", async () => {
+		const said = await runCommand(
+			"/screen",
+			context({ agentId: "scout", screen: true, vault: true, sites: ["github.com"] }).context,
+		);
+
+		expect(said).toContain("It signs into: github.com.");
 	});
 
 	it("says the browser is being built rather than leaving the link looking broken", async () => {
@@ -2666,6 +2748,29 @@ describe("agentMayNot", () => {
 		const token = agentMayNot(`/repo ${PAT}`, scout);
 		expect(token).toContain("may put a credential");
 		expect(token).not.toContain(PAT);
+	});
+
+	/**
+	 * The sharpest one on this list, because what it hands over is an account.
+	 *
+	 * An agent that could add to its own sign-in list is an agent that can be talked into signing
+	 * into anything the operator's vault holds — by a page it read, which is where the instructions
+	 * an agent should not follow actually come from. The line is printed under the refusal: an agent
+	 * that asks is usually stopped at the login its operator meant it to be allowed.
+	 */
+	it("does not let it open a site to sign into, and prints the line that would", () => {
+		const refusal = agentMayNot("/screen login github.com", scout);
+
+		expect(refusal).toContain("stays with you");
+		expect(refusal).toContain("/screen login github.com");
+	});
+
+	// Asking for less of somebody's account is the same kind of thing as asking to be held to a
+	// tighter ceiling, and an agent may have it. So is a browser, which widens nothing on its own.
+	it("lets it close one, and lets it ask for a browser", () => {
+		expect(agentMayNot("/screen login off github.com", scout)).toBeUndefined();
+		expect(agentMayNot("/screen on", scout)).toBeUndefined();
+		expect(agentMayNot("/screen", scout)).toBeUndefined();
 	});
 
 	it("lets it change what it thinks with, and give a server up", () => {

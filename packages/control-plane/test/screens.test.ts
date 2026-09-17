@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hasScreen, ScreenChoices } from "../src/screens.ts";
+import { hasScreen, ScreenChoices, SignInSites } from "../src/screens.ts";
 
 let dir = "";
 let choices: ScreenChoices;
@@ -73,5 +73,72 @@ describe("who wins", () => {
 
 	it("has no screen when nobody ever said anything", () => {
 		expect(hasScreen(undefined, undefined)).toBe(false);
+	});
+});
+
+/**
+ * The second permission a browser has, and the one that is about somebody's account.
+ *
+ * Every assertion here is about the same property said a different way: nothing is open until an
+ * operator opened it, and nothing stays open for a name that has gone.
+ */
+describe("what an agent may sign into", () => {
+	let sites: SignInSites;
+
+	beforeEach(() => {
+		sites = new SignInSites(join(dir, "signins.json"));
+	});
+
+	it("opens nothing for an agent nobody has opened anything for", async () => {
+		expect(await sites.of("scout")).toEqual([]);
+	});
+
+	it("opens one site at a time, and says when a second says nothing new", async () => {
+		expect(await sites.add("scout", "github.com")).toBe(true);
+		expect(await sites.add("scout", "github.com")).toBe(false);
+		expect(await sites.of("scout")).toEqual(["github.com"]);
+	});
+
+	it("keeps one agent's list out of another's", async () => {
+		await sites.add("scout", "github.com");
+		await sites.add("emma", "mail.google.com");
+
+		expect(await sites.of("scout")).toEqual(["github.com"]);
+		expect(await sites.of("emma")).toEqual(["mail.google.com"]);
+	});
+
+	it("closes one, and says when there was nothing to close", async () => {
+		await sites.add("scout", "github.com");
+		await sites.add("scout", "mail.google.com");
+
+		expect(await sites.drop("scout", "github.com")).toBe(true);
+		expect(await sites.of("scout")).toEqual(["mail.google.com"]);
+		expect(await sites.drop("scout", "github.com")).toBe(false);
+	});
+
+	it("survives being read back by another plane, because a permission outlives a restart", async () => {
+		await sites.add("scout", "github.com");
+
+		expect(await new SignInSites(join(dir, "signins.json")).of("scout")).toEqual(["github.com"]);
+	});
+
+	/**
+	 * The one that matters most, and the one nothing else would catch.
+	 *
+	 * A name that was deleted can be made again, and a list left behind would hand whoever makes it
+	 * the accounts the last agent of that name was trusted with.
+	 */
+	it("forgets everything opened for a name that has gone", async () => {
+		await sites.add("scout", "github.com");
+		await sites.forget("scout");
+
+		expect(await sites.of("scout")).toEqual([]);
+		expect(await new SignInSites(join(dir, "signins.json")).of("scout")).toEqual([]);
+	});
+
+	it("reads a file somebody edited into nonsense as an empty list rather than throwing", async () => {
+		await writeFile(join(dir, "signins.json"), '{"scout":"github.com"}', "utf8");
+
+		expect(await sites.of("scout")).toEqual([]);
 	});
 });

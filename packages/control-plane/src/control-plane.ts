@@ -61,7 +61,9 @@ import {
 import {
 	buildScreenImage,
 	DockerScreens,
+	readSite,
 	SCREEN_VIEW_PORT,
+	siteHost,
 	VAULT_TOKEN_ENV,
 	vaultMark,
 } from "@squad/screen";
@@ -168,7 +170,7 @@ import {
 	standingOf as repoStanding,
 } from "./repos.ts";
 import { nameRefused, type Room, RoomChannel, Rooms, roomChannel } from "./rooms.ts";
-import { hasScreen, ScreenChoices, type ScreenStanding } from "./screens.ts";
+import { hasScreen, ScreenChoices, type ScreenStanding, SignInSites } from "./screens.ts";
 import {
 	DEFAULT_SEARCH_PROVIDER,
 	resolveSearch,
@@ -655,6 +657,7 @@ export class ControlPlane {
 	readonly #served: ServedPorts;
 	/** Which agents an operator has turned a screen on for, which outranks what the file declares. */
 	readonly #screenChoices: ScreenChoices;
+	readonly #signIns: SignInSites;
 	/**
 	 * The browser image being built, while it is being built.
 	 *
@@ -852,6 +855,7 @@ export class ControlPlane {
 		this.#spend = new SpendLedger(join(this.#stateDir, "spend.json"));
 		this.#served = new ServedPorts(join(this.#stateDir, "served.json"));
 		this.#screenChoices = new ScreenChoices(join(this.#stateDir, "screens.json"));
+		this.#signIns = new SignInSites(join(this.#stateDir, "signins.json"));
 		this.#declaredModels = options.models ?? [];
 		this.#addedModels = new AddedModels(join(this.#stateDir, "added-models.json"));
 		this.#addedGrants = new AddedGrants(join(this.#stateDir, "added-grants.json"));
@@ -1191,6 +1195,9 @@ export class ControlPlane {
 			// the name is not it: a browser nobody asked for, already signed in, would be the worst kind
 			// of inheritance.
 			await this.#screenChoices.forget(agentId);
+			// And what that screen was allowed to sign into, for the same reason and more sharply: a
+			// list that outlived the name would hand the next agent to hold it somebody's accounts.
+			await this.#signIns.forget(agentId);
 			// The ports go with the container they pointed into. Left behind, the next agent to take
 			// this name would inherit links to servers it never started.
 			await this.#served.forget(agentId);
@@ -3428,6 +3435,8 @@ export class ControlPlane {
 			unserve: (port) => this.#served.close(agentId, port),
 			screen: () => this.screenStanding(agentId),
 			setScreen: (on) => this.setScreen(agentId, on),
+			openSignIn: (host) => this.openSignIn(agentId, host),
+			closeSignIn: (host) => this.closeSignIn(agentId, host),
 			vision: async () => ({ using: await this.vision(), offers: await this.visionOffers() }),
 			chooseVision: (spec) => this.chooseVision(spec),
 			pointing: async () => ({
@@ -3963,6 +3972,10 @@ export class ControlPlane {
 		return {
 			on,
 			running: status?.running === true,
+			sites: await this.#signIns.of(agentId),
+			// Whether there is a vault at all, so a screen with an empty list can say which of the two
+			// things is missing: the sites, or the password manager they would be read out of.
+			vault: (await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined)) !== undefined,
 			...(tools ? {} : { toolless: true }),
 			...(at === undefined ? {} : { at }),
 			...(keyboard === undefined ? {} : { keyboard }),
@@ -3994,6 +4007,81 @@ export class ControlPlane {
 		} catch {
 			return undefined;
 		}
+	}
+
+	/** The sites this agent may sign into out of the vault, which is the console's list and no file's. */
+	async signIns(agentId: string): Promise<readonly string[]> {
+		return this.#signIns.of(agentId);
+	}
+
+	/**
+	 * Opens one, and tells the browser before answering.
+	 *
+	 * The order matters and is the whole of why this is not two calls: an operator who has just said
+	 * "yes, that site" is looking at an agent waiting at a login, and a permission that lands on the
+	 * next restart is one they will think did not work.
+	 */
+	async openSignIn(agentId: string, said: string): Promise<string> {
+		const host = readSite(said);
+		if (host === undefined) {
+			throw new Error(`"${said}" is not a site — a host like github.com, without the https://`);
+		}
+		await this.#signIns.add(agentId, host);
+		await this.#tellSites(agentId);
+		return host;
+	}
+
+	/** Closes one. Answers whether there was one to close, and the browser is told either way. */
+	async closeSignIn(agentId: string, said: string): Promise<boolean> {
+		const dropped = await this.#signIns.drop(agentId, siteHost(said));
+		if (dropped) await this.#tellSites(agentId);
+		return dropped;
+	}
+
+	/**
+	 * Tells one browser which sites it may sign into, on the door the agent has no route to.
+	 *
+	 * Pushed rather than asked for: the screen holds this in memory and has no way to come and get
+	 * it — what it can reach is the proxy, and this plane is not on the other side of that. It goes
+	 * over the operator's door, which is the plane's own tunnel onto loopback in that container,
+	 * because a list that arrived on the agent's door would be a list the agent could send itself.
+	 */
+	async #tellSites(agentId: string): Promise<boolean> {
+		const hosts = await this.#signIns.of(agentId);
+		// The body as a string literal in the program, rather than built in it: what goes in here is a
+		// host an operator typed, and the one thing it must never be is source code.
+		const body = JSON.stringify(JSON.stringify({ hosts }));
+		const asked = [
+			`fetch("http://127.0.0.1:${SCREEN_VIEW_PORT}/logins",`,
+			`{method:"POST",headers:{"content-type":"application/json"},body:${body}})`,
+			".then((answer) => process.exit(answer.ok ? 0 : 1))",
+			".catch(() => process.exit(1))",
+		].join("");
+		const said = await this.screens.exec(agentId, ["node", "-e", asked]).catch(() => undefined);
+		return said?.exitCode === 0;
+	}
+
+	/**
+	 * The same, for a browser that has just been started and is not one yet.
+	 *
+	 * A container is created, started, and then spends a few seconds becoming Chromium. The list has
+	 * to be in it before the first thing the agent asks: an agent refused at a login it was in fact
+	 * granted does not ask again, it goes and does something else and says so afterwards. Not awaited
+	 * by the settle that starts it — what this waits on is a browser coming up, and nothing a console
+	 * is holding should.
+	 *
+	 * Nothing at all when there is nothing to say. A screen starts with an empty list, so pushing one
+	 * is telling it what it already believes, twelve times, for every agent on a plane that does not
+	 * use this.
+	 */
+	#tellSitesWhenUp(agentId: string): void {
+		void (async () => {
+			if ((await this.#signIns.of(agentId)).length === 0) return;
+			for (let tries = 0; tries < 12; tries++) {
+				if (await this.#tellSites(agentId)) return;
+				await new Promise((wake) => setTimeout(wake, 2_500));
+			}
+		})();
 	}
 
 	/**
@@ -4069,6 +4157,10 @@ export class ControlPlane {
 		}
 		await this.screens.start(agentId);
 		await this.#served.open(agentId, SCREEN_VIEW_PORT);
+		// Last, and not waited for: the browser is up as far as Docker is concerned and is still
+		// becoming one, and what this carries is a permission rather than anything the screen needs to
+		// come up at all.
+		this.#tellSitesWhenUp(agentId);
 	}
 
 	/**

@@ -30,6 +30,16 @@ export interface ScreenStanding {
 	 * mentions having one.
 	 */
 	readonly toolless?: boolean;
+	/**
+	 * The sites this agent may sign into out of the operator's vault.
+	 *
+	 * On the standing rather than asked for separately because everything that draws a screen draws
+	 * this beside it: the list is short, it is the second half of what a browser is allowed to do,
+	 * and a console that had to ask twice would show one without the other for a moment.
+	 */
+	readonly sites: readonly string[];
+	/** Whether this plane holds a vault at all, which is what an empty list usually means. */
+	readonly vault: boolean;
 }
 
 /**
@@ -114,4 +124,105 @@ export class ScreenChoices {
  */
 export function hasScreen(declared: boolean | undefined, chosen: boolean | undefined): boolean {
 	return chosen ?? declared ?? false;
+}
+
+/**
+ * The sites each agent may sign into out of its operator's vault, decided at the console.
+ *
+ * The other permission a browser has, and a different kind from the first. Whether an agent has a
+ * screen is about a container; this is about a password: an agent that has been talked into signing
+ * into somewhere it was never meant to reach is the failure this list exists to make impossible, so
+ * it is deny by default, per agent, and written nowhere the agent can read or reach.
+ *
+ * Kept here rather than in the config file for the reason the screen itself is: it is decided in
+ * front of an agent that has just said it cannot get past a login, and a permission that costs an
+ * edit and a redeploy is one nobody grants at the moment it is wanted.
+ */
+export class SignInSites {
+	readonly #path: string;
+	#tail: Promise<unknown> = Promise.resolve();
+
+	constructor(path: string) {
+		this.#path = path;
+	}
+
+	/** The sites this agent may sign into, in the order they were opened. */
+	async of(agentId: string): Promise<readonly string[]> {
+		return (await this.#serialize(() => this.#read()))[agentId] ?? [];
+	}
+
+	async all(): Promise<Readonly<Record<string, readonly string[]>>> {
+		return this.#serialize(() => this.#read());
+	}
+
+	/** Opens one. Answers whether anything changed, so a second `/screen login` says so. */
+	async add(agentId: string, host: string): Promise<boolean> {
+		return this.#serialize(async () => {
+			const all = await this.#read();
+			const held = all[agentId] ?? [];
+			if (held.includes(host)) return false;
+			all[agentId] = [...held, host];
+			await this.#write(all);
+			return true;
+		});
+	}
+
+	/** Closes one. Answers whether there was one to close. */
+	async drop(agentId: string, host: string): Promise<boolean> {
+		return this.#serialize(async () => {
+			const all = await this.#read();
+			const held = all[agentId] ?? [];
+			if (!held.includes(host)) return false;
+			const left = held.filter((one) => one !== host);
+			if (left.length === 0) delete all[agentId];
+			else all[agentId] = left;
+			await this.#write(all);
+			return true;
+		});
+	}
+
+	/**
+	 * Everything opened for one agent, forgotten.
+	 *
+	 * For a name that has been deleted. A list left behind would come back the day somebody made an
+	 * agent with the same name — and what it would hand them is somebody else's accounts.
+	 */
+	async forget(agentId: string): Promise<void> {
+		await this.#serialize(async () => {
+			const all = await this.#read();
+			if (all[agentId] === undefined) return;
+			delete all[agentId];
+			await this.#write(all);
+		});
+	}
+
+	async #read(): Promise<Record<string, string[]>> {
+		try {
+			const parsed: unknown = JSON.parse(await readFile(this.#path, "utf8"));
+			if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+			const all: Record<string, string[]> = {};
+			for (const [agentId, hosts] of Object.entries(parsed as Record<string, unknown>)) {
+				if (!Array.isArray(hosts)) continue;
+				all[agentId] = hosts.filter((host): host is string => typeof host === "string");
+			}
+			return all;
+		} catch {
+			return {};
+		}
+	}
+
+	async #write(all: Record<string, string[]>): Promise<void> {
+		await mkdir(dirname(this.#path), { recursive: true });
+		// Written elsewhere and renamed, as the choices beside it are: a plane killed mid-write must
+		// leave the old file rather than half of a new one, and half of this one is a permission.
+		const temporary = `${this.#path}.${process.pid}.tmp`;
+		await writeFile(temporary, `${JSON.stringify(all, null, "\t")}\n`, "utf8");
+		await rename(temporary, this.#path);
+	}
+
+	#serialize<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.#tail.then(operation, operation);
+		this.#tail = result.catch(() => {});
+		return result;
+	}
 }

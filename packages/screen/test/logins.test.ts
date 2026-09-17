@@ -9,6 +9,7 @@ import {
 	type TheForm,
 	type VaultItem,
 } from "../image/logins.ts";
+import { readSite, siteHost } from "../src/sites.ts";
 
 const spot = (filled = false) => ({ at: { x: 10, y: 20 }, filled });
 const form = (parts: Partial<TheForm>): TheForm => ({
@@ -127,5 +128,53 @@ describe("what it says afterwards", () => {
 	it("reads a host out of an address the way a vault does", () => {
 		expect(hostOf("https://www.github.com/login")).toBe("github.com");
 		expect(hostOf("github.com")).toBe("github.com");
+	});
+});
+
+/**
+ * The two halves of one rule, held against each other.
+ *
+ * The plane writes down the sites an agent may sign into; the browser decides whether the site it
+ * is on is one of them. They are two copies of the same function in two packages — the image cannot
+ * import out of its own build context — and the day they disagree is the day an operator opens
+ * `github.com` at the console and their agent is refused at github.com with nothing to explain it.
+ */
+describe("the plane and the browser agree on what a site is", () => {
+	const addresses = [
+		"github.com",
+		"https://github.com/settings/keys",
+		"www.github.com",
+		"WWW.GitHub.com",
+		"https://accounts.google.com/signin",
+		"mail.google.com",
+		"not a host",
+		"",
+	];
+
+	it("reads the same host out of every address either of them will meet", () => {
+		for (const address of addresses) expect(siteHost(address)).toBe(hostOf(address));
+	});
+});
+
+/**
+ * What the console refuses to write down, which is a different question from what a host is.
+ *
+ * A mistyped host is not refused anywhere later: it is a line in a list that quietly matches no
+ * page, and the operator finds out when their agent says it was not let in. So it is caught while
+ * the person who typed it is still looking at the screen.
+ */
+describe("what may be opened at the console", () => {
+	it("takes a host, with or without everything around it", () => {
+		expect(readSite("github.com")).toBe("github.com");
+		expect(readSite("https://github.com/settings/keys")).toBe("github.com");
+		expect(readSite("www.GitHub.com")).toBe("github.com");
+	});
+
+	it("turns away what is not one", () => {
+		expect(readSite("")).toBeUndefined();
+		expect(readSite("localhost")).toBeUndefined();
+		expect(readSite("not a host")).toBeUndefined();
+		expect(readSite("github .com")).toBeUndefined();
+		expect(readSite(".com")).toBeUndefined();
 	});
 });
