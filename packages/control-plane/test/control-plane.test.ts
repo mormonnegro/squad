@@ -229,6 +229,32 @@ describe("provider keys", () => {
 
 		expect(await standing("DEEPSEEK_API_KEY")).toMatchObject({ held: true, here: true });
 	});
+
+	/**
+	 * The vault, which is on the allowed side of that boundary and is not a provider.
+	 *
+	 * Nothing is bought with it and no model is thought with it; what makes it the same kind of thing
+	 * to be allowed to type is where it goes — into one container, read by one program, through a
+	 * door no agent can reach. The alternative is an operator editing the `.env` on the host and
+	 * restarting the plane to connect a password manager.
+	 */
+	it("takes the vault token, which is the one key here that buys nothing", async () => {
+		const plane = planeWith();
+		expect(await plane.vault()).toMatchObject({ held: false, here: false });
+
+		await plane.setKey("OP_SERVICE_ACCOUNT_TOKEN", "ops_typed");
+
+		expect(await plane.vault()).toMatchObject({ held: true, here: true });
+	});
+
+	it("gives the vault back, so disconnecting one is a button and not an ssh session", async () => {
+		const plane = planeWith();
+		await plane.setKey("OP_SERVICE_ACCOUNT_TOKEN", "ops_typed");
+
+		await plane.setKey("OP_SERVICE_ACCOUNT_TOKEN", "");
+
+		expect(await plane.vault()).toMatchObject({ held: false });
+	});
 });
 
 /**

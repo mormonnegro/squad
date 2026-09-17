@@ -1,5 +1,5 @@
 import type { AgentSummary } from "@squad/control-plane";
-import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServedAt } from "./served.tsx";
 import { Spin } from "./spin.tsx";
@@ -164,6 +164,15 @@ export function Screen({
 	const wasReachable = useRef(true);
 	const [standing, setStanding] = useState<Standing>({ holder: "agent" });
 	const [typed, setTyped] = useState("");
+	/**
+	 * What the vault said the last time somebody pressed the key, which is a sentence and not a state.
+	 *
+	 * Every answer here is one line and every one of them is something to do about it: nothing in the
+	 * vault for this site, two accounts and say which, no vault connected at all. Kept until the next
+	 * press or the next page, because a message that cleared itself on a timer is one somebody reads
+	 * half of while they are looking at the form it is about.
+	 */
+	const [filled, setFilled] = useState<string>();
 	const picture = useRef<HTMLImageElement>(null);
 	const stage = useRef<HTMLDivElement>(null);
 	const holding = standing.holder === "operator";
@@ -213,6 +222,8 @@ export function Screen({
 	// finish typing a URL into.
 	useEffect(() => {
 		setTyped(standing.url ?? "");
+		// And whatever the vault last said, which was about the page that has just been left.
+		setFilled(undefined);
 	}, [standing.url]);
 
 	/** Where the pointer is on the page, not on the picture of it, which is drawn at any width. */
@@ -434,7 +445,57 @@ export function Screen({
 							placeholder={holding ? "Where to?" : "Take the keyboard to go somewhere"}
 							onChange={(event) => setTyped(event.target.value)}
 						/>
+						{/*
+						 * The key, where a password manager puts it: beside the address, pressed while
+						 * looking at the form it fills. It is the same door the agent knocks at and a
+						 * different rule — nothing is checked here, because this is the person whose vault
+						 * it is pressing a button on their own screen.
+						 *
+						 * Only while they hold the keyboard, which is the one rule this panel already has:
+						 * a form filled under an agent that is working is the collision the hand-off exists
+						 * to prevent, and the address bar beside it is disabled for the same reason.
+						 */}
+						<button
+							type="button"
+							className="ml-1.5 flex-none rounded-md border border-line px-2 py-1 text-muted hover:text-say disabled:text-muted"
+							disabled={!holding}
+							title={
+								holding
+									? "sign in here from your vault"
+									: "take the keyboard to sign in from your vault"
+							}
+							onClick={() => {
+								setFilled("…");
+								void fetch(at("fill"), {
+									method: "POST",
+									headers: { "content-type": "application/json" },
+									body: JSON.stringify({}),
+								})
+									.then(async (answer) => {
+										const said = (await answer.json().catch(() => undefined)) as
+											| { text?: string }
+											| undefined;
+										setFilled(said?.text ?? "The browser did not answer.");
+									})
+									.catch(() => setFilled("The browser did not answer."));
+							}}
+						>
+							<KeyRound className="size-3.5" />
+						</button>
 					</form>
+
+					{filled !== undefined && (
+						<p className="pt-1 text-[0.72rem] text-muted">
+							{filled}{" "}
+							<button
+								type="button"
+								className="text-muted underline hover:text-say"
+								onClick={() => setFilled(undefined)}
+							>
+								ok
+							</button>
+						</p>
+					)}
 				</div>
 
 				{/*

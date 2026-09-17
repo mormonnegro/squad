@@ -1,6 +1,12 @@
-import { Check, Eye, MousePointerClick, Search, Wrench } from "lucide-react";
+import { Check, Eye, KeyRound, MousePointerClick, Search, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Plane, ToolOffer, ToolStanding, Tools as ToolsAnswer } from "./plane.ts";
+import type {
+	Plane,
+	ToolOffer,
+	ToolStanding,
+	Tools as ToolsAnswer,
+	VaultStanding,
+} from "./plane.ts";
 import { Spin } from "./spin.tsx";
 
 /**
@@ -56,6 +62,7 @@ export function Tools({ plane }: { plane: Plane }) {
 				</span>
 				<span className="pane-title">Abilities</span>
 				<div className="pane-facts">
+					<span>{tools?.vault.held === true ? "vault on" : "vault off"}</span>
 					<span>{tools?.vision.using === undefined ? "looking off" : "looking on"}</span>
 					<span>{tools?.pointing.using === undefined ? "pointing off" : "pointing on"}</span>
 				</div>
@@ -119,6 +126,14 @@ export function Tools({ plane }: { plane: Plane }) {
 								busy={busy}
 								onKey={(value) =>
 									void run("pointing:key", () => plane.setKey("TYPESAFE_API_KEY", value))
+								}
+							/>
+
+							<Vault
+								standing={tools.vault}
+								busy={busy}
+								onKey={(value) =>
+									void run("vault:key", () => plane.setKey("OP_SERVICE_ACCOUNT_TOKEN", value))
 								}
 							/>
 						</>
@@ -251,6 +266,122 @@ function Pointing({
 				One key from <code>console.typesafe.ai</code> and this is on. It is the whole of the switch:
 				no agent ever holds it — the request leaves the sandbox with no credential and is given one
 				on its way out, at that one endpoint and nowhere else.
+			</p>
+		</section>
+	);
+}
+
+/**
+ * The vault, which is the one thing on this screen that is not a model at all.
+ *
+ * It is here because of what it is a switch for: an agent stopped at a login has three ways on and
+ * two of them are bad — invent a credential, or give up quietly. This is the third, and it is the
+ * only one that costs the operator nothing at the moment it is needed.
+ *
+ * What the paragraph has to say is where the password goes, because that is the question somebody
+ * pasting this is actually asking. It goes into the browser\'s container, which is the one the agent
+ * has no filesystem in, and into the page as keystrokes. The agent names a site; it never sees a
+ * field. Which sites, per agent, is the other half and is not decided here: it is decided in front
+ * of the agent, with /screen login.
+ */
+function Vault({
+	standing,
+	busy,
+	onKey,
+}: {
+	standing: VaultStanding;
+	busy: string | undefined;
+	onKey: (value: string) => void;
+}) {
+	const [typed, setTyped] = useState("");
+
+	return (
+		<section className="section">
+			<div className="section-head">
+				<h2 className="section-title">
+					<span className="mr-2 inline-flex text-muted">
+						<KeyRound className="size-3.5" />
+					</span>
+					Signing in
+					{!standing.held && <span className="tally">off</span>}
+				</h2>
+				<p className="section-says">
+					A 1Password service account, read inside each agent\'s browser and nowhere else. The agent
+					asks to be signed into a site, the password is looked up in that container and typed into
+					the page, and what comes back to the agent is a sentence about which boxes were filled —
+					never a field, never a value, not in the answer and not in any later reading of the page.
+					Which sites each agent may ask for is its own list:{" "}
+					<code>/screen login &lt;host&gt;</code> in its conversation, and nothing it can type opens
+					one for itself.
+				</p>
+			</div>
+
+			<div
+				className={`flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 ${
+					standing.held ? "border-up/40 bg-up/5" : "border-line"
+				}`}
+			>
+				<span className="w-4 flex-none text-up">
+					{standing.held && <Check className="size-3.5" />}
+				</span>
+				<span className="min-w-0 flex-1 truncate">
+					<span className="text-said">{standing.held ? "a vault is connected" : "no vault"}</span>
+					<span className="ml-2 text-[0.8rem] text-muted">
+						{standing.held && !standing.here ? "from this machine's environment" : "1password"}
+					</span>
+				</span>
+				{standing.held ? (
+					<button
+						type="button"
+						className="flex-none rounded-md border border-line px-2.5 py-1 text-[0.78rem] hover:text-say disabled:text-muted"
+						disabled={busy !== undefined || !standing.here}
+						title={
+							standing.here
+								? "the browsers are made again without it"
+								: "this one was exported to the plane on the host, so it is taken back there"
+						}
+						onClick={() => onKey("")}
+					>
+						{busy === "vault:key" ? <Spin /> : "forget the token"}
+					</button>
+				) : (
+					<form
+						className="flex flex-none items-center gap-2"
+						onSubmit={(event) => {
+							event.preventDefault();
+							if (typed.trim() === "") return;
+							onKey(typed.trim());
+							setTyped("");
+						}}
+					>
+						{/* A box to type into rather than a field with something in it: this plane answers
+						    with whether it holds a token and never with the token. */}
+						<input
+							className="field w-56"
+							type="password"
+							autoComplete="off"
+							spellCheck={false}
+							placeholder="ops_…"
+							value={typed}
+							onChange={(event) => setTyped(event.target.value)}
+						/>
+						<button
+							type="submit"
+							className="flex-none rounded-md border border-line px-2.5 py-1 text-[0.78rem] hover:text-say disabled:text-muted"
+							disabled={typed.trim() === "" || busy !== undefined}
+						>
+							{busy === "vault:key" ? <Spin /> : "connect it"}
+						</button>
+					</form>
+				)}
+			</div>
+
+			<p className="section-says">
+				Make it in 1Password under Developer → Service accounts, and give it read access to one
+				vault — the accounts in that vault are the accounts your agents can be signed into, so it is
+				worth being a vault made for this. A service account cannot read your Private vault at all.
+				Every browser is made again when this changes, which takes a few seconds and costs nothing
+				that was signed in.
 			</p>
 		</section>
 	);

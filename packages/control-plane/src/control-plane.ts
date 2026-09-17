@@ -2224,6 +2224,25 @@ export class ControlPlane {
 	}
 
 	/**
+	 * Whether this plane holds a vault, and whether it was given one here.
+	 *
+	 * Beside the providers rather than among them, because it is not one: no model is thought with it
+	 * and nothing is bought with it. What it is, is the one key on this plane that ends up inside a
+	 * container — the browser's, where `op` reads it — so the screen that offers it is the one about
+	 * what the agents can do rather than the one about what they think with.
+	 *
+	 * Held and never read back. The answer is two booleans, as a provider key's is, for the same
+	 * reason: there is no way to ask this plane for the value of a secret it was given.
+	 */
+	async vault(): Promise<{ readonly held: boolean; readonly here: boolean }> {
+		const held = await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined);
+		return {
+			held: held !== undefined && held.length > 0,
+			here: (await this.#keys.here()).has(VAULT_TOKEN_ENV),
+		};
+	}
+
+	/**
 	 * Everything this plane's keys could buy, asked of the providers themselves.
 	 *
 	 * Handing over a key and then being asked for a model name is being asked for the one fact the
@@ -3975,7 +3994,9 @@ export class ControlPlane {
 			sites: await this.#signIns.of(agentId),
 			// Whether there is a vault at all, so a screen with an empty list can say which of the two
 			// things is missing: the sites, or the password manager they would be read out of.
-			vault: (await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined)) !== undefined,
+			vault:
+				(await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined)) !==
+				undefined,
 			...(tools ? {} : { toolless: true }),
 			...(at === undefined ? {} : { at }),
 			...(keyboard === undefined ? {} : { keyboard }),

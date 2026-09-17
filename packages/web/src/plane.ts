@@ -282,16 +282,25 @@ export interface ToolStanding {
 	readonly offers: readonly ToolOffer[];
 }
 
+/** The password manager the agents' browsers sign in from, as a screen may know it: never the value. */
+export interface VaultStanding {
+	readonly held: boolean;
+	/** Connected here rather than exported into the plane's own environment on the host. */
+	readonly here: boolean;
+}
+
 export interface Tools {
 	readonly search: ToolStanding;
 	readonly vision: ToolStanding;
 	readonly pointing: ToolStanding;
+	readonly vault: VaultStanding;
 }
 
 const EMPTY_TOOLS: Tools = {
 	search: { using: undefined, offers: [] },
 	vision: { using: undefined, offers: [] },
 	pointing: { using: undefined, offers: [] },
+	vault: { held: false, here: false },
 };
 
 export interface Session {

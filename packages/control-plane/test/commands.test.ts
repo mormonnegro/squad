@@ -1146,7 +1146,7 @@ describe("/screen", () => {
 		);
 
 		expect(said).toContain("No vault is connected");
-		expect(said).toContain("/config keys");
+		expect(said).toContain("under Signing in");
 	});
 
 	it("refuses something that is not a site rather than writing down a line that matches nothing", async () => {

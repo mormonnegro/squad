@@ -1042,7 +1042,7 @@ async function screen(words: readonly string[], context: CommandContext): Promis
 				? []
 				: [
 						"No vault is connected to this plane yet, so nothing will be filled in: the 1Password",
-						"service account token goes on the keys screen, under /config keys. This list is kept",
+						"service account token goes on the Abilities screen, under Signing in. This list is kept",
 						"either way, and starts working the moment a vault is connected.",
 						"",
 					]),

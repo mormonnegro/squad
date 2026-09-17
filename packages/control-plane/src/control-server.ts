@@ -547,6 +547,8 @@ export type ControlResponse =
 					readonly using: PointingStanding | undefined;
 					readonly offers: readonly PointingOffer[];
 				};
+				/** Whether a password manager is connected, and whether it was connected here. */
+				readonly vault: { readonly held: boolean; readonly here: boolean };
 			};
 	  }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
@@ -1044,6 +1046,10 @@ export class ControlServer {
 							using: await this.#plane.pointing(),
 							offers: await this.#plane.pointingOffers(),
 						},
+						// Not a tool with a model behind it and on this answer anyway: it is drawn on the
+						// same screen, and a console that asked for it separately would draw that screen
+						// once without it and once with.
+						vault: await this.#plane.vault(),
 					},
 				});
 			} else if (request.op === "set-vision") {
