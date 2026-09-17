@@ -201,6 +201,11 @@ export class ControlClient {
 		throw new ControlError("unexpected answer to providers");
 	}
 
+	/** Takes one of an agent's cards down without answering it. Nothing is sent and nobody is woken. */
+	async dropQuestion(agentId: string, at: number, text: string): Promise<void> {
+		await this.#once({ op: "drop-question", agentId, at, text });
+	}
+
 	/** Whether a password manager is connected, and whether this keyboard is what connected it. */
 	async vault(): Promise<VaultStanding> {
 		const response = await this.#once({ op: "vault" });

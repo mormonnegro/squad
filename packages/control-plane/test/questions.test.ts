@@ -5,6 +5,7 @@ import {
 	OPTION_CHARS,
 	parseQuestions,
 	QUESTION_CHARS,
+	without,
 } from "../src/questions.ts";
 
 /*
@@ -81,5 +82,40 @@ describe("reading what a turn left behind", () => {
 		expect(parseQuestions(JSON.stringify([{ text: "¿Cuál?", options: ["Sí", "Sí"] }]))).toEqual([
 			{ text: "¿Cuál?", options: ["Sí"] },
 		]);
+	});
+});
+
+/**
+ * Taking one card down, which is the only way a question goes that says nothing to anybody.
+ *
+ * Answering is a message in the operator's name; so is typing a line. This is the operator deciding
+ * not to answer — and the card has to go anyway, because one that nobody is going to press stands in
+ * front of the next one for as long as the agent lives.
+ */
+describe("a card taken down", () => {
+	const one = { text: "¿qué tarifa?", options: ["Light"] };
+	const two = { text: "¿sigo al checkout?", options: ["sí"] };
+	const held = [one, two];
+
+	it("leaves the others standing", () => {
+		expect(without(held, 0, "¿qué tarifa?")).toEqual([two]);
+	});
+
+	it("takes the last one and leaves nothing", () => {
+		expect(without([one], 0)).toEqual([]);
+	});
+
+	/**
+	 * Two consoles can be looking at the same agent. A number on its own would take down whichever
+	 * question had moved into that slot since the list was drawn, which is the one mistake this must
+	 * not make quietly — the card that goes would be one nobody had read.
+	 */
+	it("refuses a number whose words are not the ones that were on screen", () => {
+		expect(without(held, 0, "¿sigo al checkout?")).toBeUndefined();
+	});
+
+	it("says nothing happened rather than answering with the same list", () => {
+		expect(without(held, 5, "¿qué tarifa?")).toBeUndefined();
+		expect(without([], 0)).toBeUndefined();
 	});
 });

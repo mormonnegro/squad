@@ -155,6 +155,19 @@ export type ControlRequest =
 			readonly at: number;
 			readonly send: boolean;
 	  }
+	/**
+	 * A card taken down without being answered, which is the one way a question goes that says nothing.
+	 *
+	 * Its place in the list and its words, both: two consoles can be looking at the same agent, and a
+	 * list one of them drew a moment ago is a list the other may have already changed.
+	 */
+	| {
+			readonly id: string;
+			readonly op: "drop-question";
+			readonly agentId: string;
+			readonly at: number;
+			readonly text?: string;
+	  }
 	/** What outside this plane gives an agent a turn. */
 	| { readonly id: string; readonly op: "triggers" }
 	| {
@@ -1026,6 +1039,9 @@ export class ControlServer {
 				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else if (request.op === "send") {
 				await this.#plane.answerSend(request.agentId, request.at, request.send);
+				this.#write(socket, { id: request.id, ok: true, text: "" });
+			} else if (request.op === "drop-question") {
+				await this.#plane.dropQuestion(request.agentId, request.at, request.text);
 				this.#write(socket, { id: request.id, ok: true, text: "" });
 			} else if (request.op === "gate") {
 				await this.#plane.setGate(request.agentId, request.gate, request.hold);

@@ -661,6 +661,17 @@ export class Plane {
 		await this.#ask({ op: "send", agentId, at, send });
 	}
 
+	/**
+	 * Takes one of an agent's cards down without answering it.
+	 *
+	 * The words go with the place, because two consoles can be looking at the same agent: a list drawn
+	 * a moment ago is a list the other one may have already answered, and taking down a card by its
+	 * number alone would take down whichever question had moved into that slot.
+	 */
+	async dropQuestion(agentId: string, at: number, text: string): Promise<void> {
+		await this.#ask({ op: "drop-question", agentId, at, text });
+	}
+
 	/** Holds what this agent would send on one channel until somebody says so, or lets it go again. */
 	async setGate(agentId: string, gate: string, hold: boolean): Promise<void> {
 		await this.#ask({ op: "gate", agentId, gate, hold });

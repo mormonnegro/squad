@@ -243,6 +243,16 @@ export function Chat({
 										if (hasScreen(agent)) void giveTheKeyboardBack(agent.id);
 										void plane.wake(agent.id, option).catch(() => {});
 									}}
+									// Nothing is sent and nobody is woken: the card is taken off this screen, and the
+									// keyboard goes back if this was the card holding it — an agent locked out of its
+									// own browser by a question somebody decided not to answer is the worse half of
+									// this feature.
+									onAway={() => {
+										if (question.hands === true && hasScreen(agent)) {
+											void giveTheKeyboardBack(agent.id);
+										}
+										void plane.dropQuestion(agent.id, index, question.text).catch(() => {});
+									}}
 								/>
 							))}
 						</div>
@@ -658,6 +668,7 @@ function Asked({
 	screen,
 	onScreen,
 	onPick,
+	onAway,
 }: {
 	who: string;
 	question: Question;
@@ -665,6 +676,8 @@ function Asked({
 	screen: boolean;
 	onScreen: () => void;
 	onPick: (option: string) => void;
+	/** Takes the card down and says nothing to anybody, which is the one way out that is not an answer. */
+	onAway: () => void;
 }) {
 	const [chosen, setChosen] = useState<string | undefined>();
 	const [went, setWent] = useState(false);
@@ -750,6 +763,25 @@ function Asked({
 					{question.options.length === 0 && (
 						<span className="ask-hint">answer in the box below when you are done</span>
 					)}
+
+					{/*
+					 * The way out that is not an answer.
+					 *
+					 * Every other thing on this card says something to the agent: an option is a message in
+					 * your name, and so is a line typed in the box. This says nothing at all — the question
+					 * was asked, it is not being answered, and a card nobody is going to press is in the way
+					 * of the next one. Quiet, because it is the least consequential thing here and the
+					 * answers above it should stay the obvious ones to reach for.
+					 */}
+					<button
+						type="button"
+						className="ask-away"
+						disabled={chosen !== undefined}
+						title={`${nameOf(who)} is not told — the card just goes`}
+						onClick={onAway}
+					>
+						take it down
+					</button>
 				</div>
 			</div>
 		</div>

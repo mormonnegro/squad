@@ -46,6 +46,28 @@ export const OPTION_CHARS = 140;
 /** Enough to say what is being decided, with the buttons still on the screen under it. */
 export const QUESTION_CHARS = 700;
 
+/**
+ * The cards left after one of them is taken down, or nothing when there was nothing to take.
+ *
+ * By its place in the list and by its words, both. Two consoles can be looking at the same agent,
+ * and a list one of them drew a moment ago is a list the other may have already answered — so a
+ * number on its own would take down whichever question had since moved into that slot, which is the
+ * one mistake this cannot make quietly.
+ *
+ * Nothing rather than the same list when nothing matched, so the caller can tell "there is one less
+ * now" from "that card is already gone" without comparing lengths.
+ */
+export function without(
+	held: readonly Question[],
+	at: number,
+	text?: string,
+): readonly Question[] | undefined {
+	const one = held[at];
+	if (one === undefined) return undefined;
+	if (text !== undefined && text !== one.text) return undefined;
+	return held.filter((_, index) => index !== at);
+}
+
 function readOne(value: unknown): Question | undefined {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
 	const { text, options, hands } = value as Record<string, unknown>;

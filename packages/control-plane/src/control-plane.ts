@@ -156,7 +156,7 @@ import {
 	resolvePointing,
 } from "./pointing.ts";
 import { type Served, ServedPorts } from "./ports.ts";
-import { type Question, StandingQuestions } from "./questions.ts";
+import { type Question, StandingQuestions, without } from "./questions.ts";
 import {
 	checkRepo,
 	GITHUB_TOKEN_ENV,
@@ -1555,6 +1555,31 @@ export class ControlPlane {
 	 */
 	questions(agentId: string): readonly Question[] {
 		return this.#questions.get(agentId) ?? [];
+	}
+
+	/**
+	 * Takes one card down without answering it, which is a thing an operator has to be able to do.
+	 *
+	 * Every other way a card goes is an answer: pressing an option, or saying anything at all, which
+	 * is the agent being told something. This is the one that says nothing — the question was asked,
+	 * it is not going to be answered, and leaving it on the screen makes the next one harder to see.
+	 * Nothing reaches the agent, because nothing has to: a card is not a turn waiting, it is a note
+	 * left on the operator's screen, and the agent went on with its life when it wrote it.
+	 *
+	 * By its place in the list, the way a held message is answered, and the text is sent with it so a
+	 * console that had drawn a stale list cannot take down a card somebody never looked at.
+	 */
+	async dropQuestion(agentId: string, at: number, text?: string): Promise<void> {
+		const held = this.#questions.get(agentId);
+		if (held === undefined) return;
+		const left = without(held, at, text);
+		if (left === undefined) return;
+		if (left.length === 0) {
+			this.#forgetQuestions(agentId);
+			return;
+		}
+		this.#questions.set(agentId, left);
+		await this.#standing.put(agentId, left).catch(() => undefined);
 	}
 
 	/** Takes a card down, here and on disk, which are one act however many places hold it. */
@@ -4352,6 +4377,10 @@ export class ControlPlane {
 		if (!stopped) this.#clearedMidTurn.delete(agentId);
 		const remembered = (await this.#runners.get(agentId)?.forget?.(agentId)) ?? false;
 		await this.#transcript.forget(agentId);
+		// The cards go with the conversation they belong to. A question is the agent one decision short
+		// of carrying on with work that has just been forgotten — pressing it afterwards would send an
+		// answer to nothing, in the operator's own name, about a turn neither of them can still read.
+		this.#forgetQuestions(agentId);
 		this.#emit({ kind: "cleared", agentId });
 		this.#emit({ kind: "note", who: agentId, action: "cleared", detail: "the conversation" });
 		return { stopped, remembered };

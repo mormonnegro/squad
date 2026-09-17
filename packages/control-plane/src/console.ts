@@ -1282,8 +1282,11 @@ export function Chat({
 							// The mark is where the hint goes for the reason the y and the n are in theirs:
 							// the eye is on the prompt, and a numbered list above a bare `>` is a list nobody
 							// knows is pressable.
+							// The key that takes it down is in the prompt beside the ones that answer it, because
+							// that is where the eye is: a card somebody is not going to answer stays on the screen
+							// forever otherwise, in front of the next one.
 							offered.length > 0 && draft === ""
-							? `1–${offered.length} to answer, or say `
+							? `1–${offered.length} to answer, 0 to drop it, or say `
 							: "> ";
 	// The box takes its border and padding out of the width before anything else is measured.
 	const width = columns - (boxed ? 4 : 0);
@@ -4239,6 +4242,21 @@ export function App({
 			const answer = answers?.[Number(input) - 1];
 			if (answer !== undefined) {
 				void ask(selected.id, answer, "say");
+				return;
+			}
+		}
+
+		/*
+		 * The card taken down rather than answered, on the same door as the numbers.
+		 *
+		 * Zero because it is the one digit that answers nothing, and over an empty line for the reason
+		 * the others are: inside a sentence a 0 is a 0. Nothing is sent — the agent is not told, and
+		 * what goes is the thing on this screen that was in front of the next question.
+		 */
+		if (!shell && draft === "" && numbered && input === "0") {
+			const asked = selected.questions[0];
+			if (asked !== undefined) {
+				void client.dropQuestion(selected.id, 0, asked.text).catch(() => undefined);
 				return;
 			}
 		}

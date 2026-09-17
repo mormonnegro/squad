@@ -1706,6 +1706,27 @@ pre .md-path:hover {
 }
 
 /*
+ * Taking the card down, which is the one thing here that is not an answer.
+ *
+ * Quiet on purpose and set apart from the column of answers: what it does is nothing — no message,
+ * no turn, nobody told. It is the size of a hint rather than of a button because it is the least
+ * consequential thing on this card, and the answers above it must stay the obvious ones to press.
+ */
+.ask-away {
+	align-self: flex-start;
+	font-size: 0.78rem;
+	color: var(--muted);
+	background: none;
+	border: none;
+	padding: 0;
+	transition: color 0.12s ease;
+}
+
+.ask-away:hover {
+	color: var(--text-strong);
+}
+
+/*
  * A key, which is a key: a thing on a keyboard, named after the letter that presses it.
  *
  * Square and set in mono on purpose, and left that way when everything else here became a pill —

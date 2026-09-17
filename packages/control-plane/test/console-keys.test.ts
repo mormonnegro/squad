@@ -118,6 +118,8 @@ function plane(
 	const given: [string, string][] = [];
 	const written: ModelSpec[] = [];
 	const dropped: string[] = [];
+	/** The cards taken down without an answer: whose, which one, and the words it was drawn with. */
+	const takenDown: [string, number, string][] = [];
 	const aimed: SearchSpec[] = [];
 	const shelved: [string, McpServer][] = [];
 	const handed: [string, string, boolean][] = [];
@@ -195,6 +197,9 @@ function plane(
 		},
 		dropModel: async (modelId: string) => {
 			dropped.push(modelId);
+		},
+		dropQuestion: async (agentId: string, at: number, text: string) => {
+			takenDown.push([agentId, at, text]);
 		},
 		offers: async () => ({
 			offers: options.sells ?? [],
@@ -318,6 +323,7 @@ function plane(
 		given,
 		written,
 		dropped,
+		takenDown,
 		aimed,
 		shelved,
 		handed,
@@ -731,6 +737,61 @@ describe("the console, pressed at", () => {
  * worth here is narrower than a host — one agent writing to one other, that way round — and the
  * message it was holding goes with it, which is why the name has to be on the screen first.
  */
+/**
+ * The card an agent put up, and the two things a hand can do with it.
+ *
+ * Every other key here is an answer, which is a message in the operator's name. This one is the way
+ * out that says nothing: a question that is not going to be answered is a card standing in front of
+ * the next one, and until there was a key for it the only way to clear it was to say something.
+ */
+describe("a question the agent asked", () => {
+	const asking = (id: string): AgentSummary => ({
+		...listed(id),
+		questions: [{ text: "¿qué tarifa?", options: ["Light $683", "Comfort $793"] }],
+	});
+
+	it("offers the numbers that answer it and the key that takes it down", async () => {
+		const { client } = plane({ has: [asking("demo")] });
+		const console_ = open(client, [asking("demo")]);
+		try {
+			expect(console_.screen()).toContain("1–2 to answer");
+			expect(console_.screen()).toContain("0 to drop it");
+		} finally {
+			console_.close();
+		}
+	});
+
+	it("takes the card down on a zero, and says nothing to the agent", async () => {
+		const { client, takenDown, asked } = plane({ has: [asking("demo")] });
+		const console_ = open(client, [asking("demo")]);
+		try {
+			await console_.press("0");
+
+			expect(takenDown).toEqual([["demo", 0, "¿qué tarifa?"]]);
+			// The whole point of the key: nothing was sent, so nothing woke.
+			expect(asked).toEqual([]);
+		} finally {
+			console_.close();
+		}
+	});
+
+	// Inside a sentence a 0 is a 0, which is the same door the numbers that answer go through: an
+	// agent that offered two fares has not thereby stopped anybody typing "cuánto sale la tercera".
+	it("leaves a zero alone once something is being typed", async () => {
+		const { client, takenDown } = plane({ has: [asking("demo")] });
+		const console_ = open(client, [asking("demo")]);
+		try {
+			await console_.press("c");
+			await console_.press("0");
+
+			expect(takenDown).toEqual([]);
+			expect(console_.screen()).toContain("c0");
+		} finally {
+			console_.close();
+		}
+	});
+});
+
 describe("an agent this one wrote to", () => {
 	const writing = (id: string, ...to: string[]): AgentSummary => ({ ...listed(id), wants: to });
 

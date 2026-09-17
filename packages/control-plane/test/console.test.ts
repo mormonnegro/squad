@@ -1499,7 +1499,19 @@ describe("Chat", () => {
 
 		expect(bare(drawn)).toContain("1 Light $683");
 		expect(bare(drawn)).toContain("2 Comfort $793");
-		expect(bare(drawn)).toContain("1–2 to answer, or say");
+		expect(bare(drawn)).toContain("1–2 to answer, 0 to drop it, or say");
+	});
+
+	// The way out that is not an answer, named where the answers are named. A card nobody is going to
+	// press stays on the screen forever otherwise, in front of the next question.
+	it("says which key takes the card down without answering it", () => {
+		const drawn = chat({
+			history: [{ from: "agent", text: "¿qué tarifa?" }],
+			rows: 8,
+			answers: ["Light $683"],
+		});
+
+		expect(bare(drawn)).toContain("0 to drop it");
 	});
 
 	// Because a sentence being typed is a sentence that may contain a 2. The numbers are a door that
