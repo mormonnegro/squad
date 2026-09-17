@@ -24,7 +24,15 @@ import { Spin } from "./spin.tsx";
  */
 export function Tools({ plane }: { plane: Plane }) {
 	const [tools, setTools] = useState<ToolsAnswer>();
-	const [why, setWhy] = useState<string>();
+	/**
+	 * What the plane said instead of doing it, and which row asked.
+	 *
+	 * The row matters as much as the words. This screen is four sections long and the bottom of it
+	 * is a scroll away from the top, so a refusal drawn at the top is a refusal nobody reads: what
+	 * pressing the button looked like was nothing happening at all. Tagged with the same key the
+	 * spinner uses, so the answer comes out under the hand that asked for it.
+	 */
+	const [why, setWhy] = useState<{ readonly at?: string; readonly text: string }>();
 	const [busy, setBusy] = useState<string>();
 
 	const look = useCallback(async () => {
@@ -32,7 +40,8 @@ export function Tools({ plane }: { plane: Plane }) {
 			setTools(await plane.tools());
 			setWhy(undefined);
 		} catch (error) {
-			setWhy((error as Error).message);
+			// Nobody's row: this is the screen itself failing to load, so it belongs at the top.
+			setWhy({ text: (error as Error).message });
 		}
 	}, [plane]);
 
@@ -42,15 +51,20 @@ export function Tools({ plane }: { plane: Plane }) {
 
 	const run = async (what: string, doing: () => Promise<void>) => {
 		setBusy(what);
+		setWhy(undefined);
 		try {
 			await doing();
 			await look();
 		} catch (error) {
-			setWhy((error as Error).message);
+			setWhy({ at: what, text: (error as Error).message });
 		} finally {
 			setBusy(undefined);
 		}
 	};
+
+	/** The refusal, for the section that asked for it and for no other. */
+	const failed = (what: string): string | undefined =>
+		why?.at?.startsWith(`${what}:`) === true ? why.text : undefined;
 
 	return (
 		<>
@@ -82,7 +96,9 @@ export function Tools({ plane }: { plane: Plane }) {
 						</p>
 					</div>
 
-					{why !== undefined && <span className="why block">{why}</span>}
+					{why?.at === undefined && why !== undefined && (
+						<span className="why block">{why.text}</span>
+					)}
 					{tools === undefined && why === undefined && (
 						<span className="inline-flex items-center gap-2 text-[0.85rem] text-muted">
 							<Spin />
@@ -93,6 +109,7 @@ export function Tools({ plane }: { plane: Plane }) {
 					{tools !== undefined && (
 						<>
 							<Ability
+								why={failed("search")}
 								icon={<Search className="size-3.5" />}
 								title="Searching"
 								says="An agent has no route to the web of its own: it asks, and a model on the other side of one approved host does the searching and the reading and answers in prose with its sources in it. Every plane searches — the only question is which model does it."
@@ -107,6 +124,7 @@ export function Tools({ plane }: { plane: Plane }) {
 							/>
 
 							<Ability
+								why={failed("vision")}
 								icon={<Eye className="size-3.5" />}
 								title="Looking"
 								says="An agent reads a page as text and numbers, which is exact and nearly free. Looking is for what text cannot say — a chart, a captcha, a page that reads as empty and is not. The picture goes to a model that can see, with the agent's question, and prose comes back. Off, a screenshot is handed to the agent's own model, which reads it or silently does not."
@@ -124,6 +142,7 @@ export function Tools({ plane }: { plane: Plane }) {
 
 							<Pointing
 								standing={tools.pointing}
+								why={failed("pointing")}
 								busy={busy}
 								onKey={(value) =>
 									void run("pointing:key", () => plane.setKey("TYPESAFE_API_KEY", value))
@@ -132,6 +151,7 @@ export function Tools({ plane }: { plane: Plane }) {
 
 							<Vault
 								standing={tools.vault}
+								why={failed("vault")}
 								busy={busy}
 								onKey={(value) =>
 									void run("vault:key", () => plane.setKey("OP_SERVICE_ACCOUNT_TOKEN", value))
@@ -176,10 +196,13 @@ type What = "search" | "vision" | "pointing";
  */
 function Pointing({
 	standing,
+	why,
 	busy,
 	onKey,
 }: {
 	standing: ToolStanding;
+	/** What the plane said instead of taking the key, drawn where the key was typed. */
+	why: string | undefined;
 	busy: string | undefined;
 	onKey: (value: string) => void;
 }) {
@@ -263,6 +286,8 @@ function Pointing({
 				)}
 			</div>
 
+			{why !== undefined && <span className="why block">{why}</span>}
+
 			<p className="section-says">
 				One key from <code>console.typesafe.ai</code> and this is on. It is the whole of the switch:
 				no agent ever holds it — the request leaves the sandbox with no credential and is given one
@@ -287,10 +312,13 @@ function Pointing({
  */
 function Vault({
 	standing,
+	why,
 	busy,
 	onKey,
 }: {
 	standing: VaultStanding;
+	/** What the plane said instead of taking it, drawn here because here is where it was typed. */
+	why: string | undefined;
 	busy: string | undefined;
 	onKey: (value: string) => void;
 }) {
@@ -377,6 +405,8 @@ function Vault({
 				)}
 			</div>
 
+			{why !== undefined && <span className="why block">{why}</span>}
+
 			<p className="section-says">
 				Make it in 1Password under Developer → Service accounts, and give it read access to one
 				vault — the accounts in that vault are the accounts your agents can be signed into, so it is
@@ -393,6 +423,7 @@ function Ability({
 	title,
 	says,
 	offers,
+	why,
 	busy,
 	what,
 	off,
@@ -403,6 +434,8 @@ function Ability({
 	title: string;
 	says: string;
 	offers: readonly ToolOffer[];
+	/** What the plane said instead of choosing it, under the list that was pressed. */
+	why: string | undefined;
 	busy: string | undefined;
 	what: What;
 	/** Searching cannot be off: every plane searches, and there is no row for not searching. */
@@ -462,6 +495,8 @@ function Ability({
 					</div>
 				))}
 			</div>
+
+			{why !== undefined && <span className="why block">{why}</span>}
 
 			{onOff !== undefined && (
 				<button
