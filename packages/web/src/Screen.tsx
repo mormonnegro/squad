@@ -250,23 +250,6 @@ export function Screen({
 		return () => img.removeEventListener("wheel", rolled);
 	});
 
-	// Away, and a way back. A column that collapses to nothing would take its own handle with it, so
-	// what is left is the narrowest thing that can still be clicked.
-	if (!open) {
-		return (
-			<aside className="flex w-9 flex-none flex-col items-center border-line border-l py-2">
-				<button
-					type="button"
-					className="text-muted hover:text-say"
-					onClick={() => onOpen(true)}
-					title="show the screen"
-				>
-					<ChevronLeft className="size-4" />
-				</button>
-			</aside>
-		);
-	}
-
 	/*
 	 * While the keyboard is held, say every so often that somebody is still here.
 	 *
@@ -318,6 +301,31 @@ export function Screen({
 	 * exactly where it was let go. Reading the state instead wrote down the step before: a render is
 	 * one tick behind the pointer, and the column jumped back thirty pixels on the next reload.
 	 */
+	/*
+	 * Away, and a way back. A column that collapses to nothing would take its own handle with it, so
+	 * what is left is the narrowest thing that can still be clicked.
+	 *
+	 * Below every hook rather than in the middle of them, which is where it used to be and is what
+	 * made the chevron take the whole console down with it: a render that returns early runs fewer
+	 * hooks than the render before it, React refuses that outright, and what an operator saw when
+	 * they folded the screen away was a black page. Nothing is skipped now — the two effects under
+	 * here do nothing while the panel is away, because neither the keyboard nor a drag is being held.
+	 */
+	if (!open) {
+		return (
+			<aside className="flex w-9 flex-none flex-col items-center border-line border-l py-2">
+				<button
+					type="button"
+					className="text-muted hover:text-say"
+					onClick={() => onOpen(true)}
+					title="show the screen"
+				>
+					<ChevronLeft className="size-4" />
+				</button>
+			</aside>
+		);
+	}
+
 	const dragTo = (clientX: number): number => {
 		const here = column.current?.getBoundingClientRect();
 		const room = column.current?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
