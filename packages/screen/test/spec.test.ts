@@ -12,6 +12,8 @@ import {
 	screenContainerName,
 	screenUrl,
 	screenVolumeName,
+	VAULT_TOKEN_ENV,
+	vaultMark,
 } from "../src/spec.ts";
 
 const spec: ScreenSpec = {
@@ -75,6 +77,17 @@ describe("what the browser is given", () => {
 		expect(env).toContain("SQUAD_EGRESS_PROXY=http://emma:tok@egress:8080");
 	});
 
+	it("has no vault in it until the operator has connected one", () => {
+		const names = env.map((entry) => entry.split("=")[0] ?? "");
+		expect(names).not.toContain(VAULT_TOKEN_ENV);
+	});
+
+	it("opens the vault with the token it was given, under the name the CLI looks for", () => {
+		expect(buildScreenEnv({ ...spec, vaultToken: "ops_abc" })).toContain(
+			`${VAULT_TOKEN_ENV}=ops_abc`,
+		);
+	});
+
 	it("holds nothing of the agent's own", () => {
 		// A screen is not a second sandbox. None of what an agent is given to think with belongs in
 		// here, and a variable that leaked in would be one a browser could be talked into using.
@@ -82,6 +95,21 @@ describe("what the browser is given", () => {
 		expect(names).not.toContain("SQUAD_REPO");
 		expect(names).not.toContain("SQUAD_WAKE_FILE");
 		expect(names.some((name) => name.endsWith("_API_KEY"))).toBe(false);
+	});
+});
+
+describe("telling one vault token from another", () => {
+	it("marks a token without being one", () => {
+		const mark = vaultMark("ops_abc");
+		expect(mark).not.toBeUndefined();
+		expect(mark).not.toContain("ops_abc");
+		expect(vaultMark("ops_abc")).toBe(mark);
+		expect(vaultMark("ops_xyz")).not.toBe(mark);
+	});
+
+	it("says nothing where there is nothing, so a screen with no vault is not one with a stale one", () => {
+		expect(vaultMark(undefined)).toBeUndefined();
+		expect(vaultMark("")).toBeUndefined();
 	});
 });
 

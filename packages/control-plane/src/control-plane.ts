@@ -58,7 +58,13 @@ import {
 	type Schedule,
 	Scheduler,
 } from "@squad/scheduler";
-import { buildScreenImage, DockerScreens, SCREEN_VIEW_PORT } from "@squad/screen";
+import {
+	buildScreenImage,
+	DockerScreens,
+	SCREEN_VIEW_PORT,
+	VAULT_TOKEN_ENV,
+	vaultMark,
+} from "@squad/screen";
 import { AgentNameStore } from "./agent-names.ts";
 import {
 	agentMayNot,
@@ -2284,9 +2290,24 @@ export class ControlPlane {
 		const pointing = Object.values(POINTING_PROVIDERS).some(
 			(provider) => provider.keyEnv === keyEnv,
 		);
-		if (!thinking && !searching && !pointing) throw new Error(`${keyEnv} is not a provider key`);
+		/*
+		 * And the vault, which is not a provider key at all and belongs here anyway.
+		 *
+		 * It buys nothing and no model is thought with it. What makes it the same kind of thing to be
+		 * allowed to type is where it ends up: in one container, read by one program, reachable
+		 * through one door the agent has no route to — the same shape as every key above, which is
+		 * held by the plane and never by an agent. The alternative is an operator editing the `.env`
+		 * on the host and restarting the plane to connect a password manager.
+		 */
+		const vault = keyEnv === VAULT_TOKEN_ENV;
+		if (!thinking && !searching && !pointing && !vault) {
+			throw new Error(`${keyEnv} is not a provider key`);
+		}
 		await this.#keys.keep(keyEnv, value.trim());
 		if (pointing) await this.#reregisterAll();
+		// Every browser on the plane, because the token is written into a container's environment when
+		// it is created: a screen already up is holding the old one until it is made again.
+		if (vault) await this.#settleScreens();
 	}
 
 	/** Where searching goes, filled in from the table, and whether this plane can pay for it. */
@@ -4003,11 +4024,23 @@ export class ControlPlane {
 		// is one that reaches nothing. Settling happens again right after the sandbox does.
 		if (token === undefined) return;
 		const proxyUrl = `http://${encodeURIComponent(agentId)}:${token}@${this.#proxyOrigin}`;
+		/*
+		 * The vault this plane holds, if it holds one.
+		 *
+		 * Resolved here rather than kept, so that connecting a vault at the console and connecting one
+		 * in the environment the plane was started with are the same thing to everything downstream.
+		 * A plane with none makes exactly the browser it made before this existed.
+		 */
+		const vault = await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined);
 
 		if (existing !== undefined) {
 			const wantedImage = await this.screens.imageId().catch(() => undefined);
 			const current = wantedImage === undefined || wantedImage === existing.imageId;
-			if (!current || existing.proxyUrl !== proxyUrl) {
+			// The token as well as the image and the proxy, for the reason the proxy is on this list: a
+			// container's environment is written when it is created and never again, so a browser
+			// adopted after the operator changed the token is one that opens the old vault, or none —
+			// and from the console that looks like a vault that was connected and did nothing.
+			if (!current || existing.proxyUrl !== proxyUrl || existing.vault !== vaultMark(vault)) {
 				await this.screens.destroy(agentId);
 				existing = undefined;
 			}
@@ -4026,6 +4059,7 @@ export class ControlPlane {
 				agentId,
 				proxyUrl,
 				caCertHostPath: this.caCertPath,
+				...(vault === undefined || vault === "" ? {} : { vaultToken: vault }),
 				// Handed down from this process's own environment, which is where a deployment says where
 				// it is: compose passes TZ and SQUAD_SCREEN_LANG through, and an install that says neither
 				// gets a browser with Chromium's own defaults rather than a guess about its operator.
@@ -4035,6 +4069,23 @@ export class ControlPlane {
 		}
 		await this.screens.start(agentId);
 		await this.#served.open(agentId, SCREEN_VIEW_PORT);
+	}
+
+	/**
+	 * Every agent's browser settled, for the things that are decided once for the whole plane.
+	 *
+	 * Screens are otherwise settled one at a time, because what usually changes is one agent's mind
+	 * about having one. A vault connected at the console is the other kind of change: it is true of
+	 * every browser at once, and a plane that applied it to the agent who happened to be selected
+	 * would be a plane where the feature works for one agent and silently not for the rest.
+	 */
+	async #settleScreens(): Promise<void> {
+		for (const agent of this.#agents) {
+			await this.#settleScreen(agent.id).catch(() => {
+				// One screen that would not settle is not a reason to leave the others holding a token
+				// their operator has taken back. What went wrong shows on that agent's own screen.
+			});
+		}
 	}
 
 	/** Whether the browser image is being built right now, which is what an empty screen is waiting on. */

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { CA_CERT_PATH, type ContainerConfig, DEFAULT_DEPLOYMENT } from "@squad/sandbox";
 
 /**
@@ -13,6 +14,16 @@ import { CA_CERT_PATH, type ContainerConfig, DEFAULT_DEPLOYMENT } from "@squad/s
 
 /** Where the operator's live view answers, inside the screen container. */
 export const SCREEN_VIEW_PORT = 7180;
+
+/**
+ * The environment variable the browser opens a vault with, spelled the way 1Password spells it.
+ *
+ * Theirs rather than ours because the program that reads it is theirs: `op` in the screen image
+ * looks this name up itself, and a name of our own would only be a name we then had to translate.
+ * It is the one secret this plane holds that no model is paid with, which is why it is not on the
+ * providers' list — a vault is not something an agent thinks with.
+ */
+export const VAULT_TOKEN_ENV = "OP_SERVICE_ACCOUNT_TOKEN";
 
 /**
  * Where the agent's verbs are answered, inside the screen container.
@@ -130,6 +141,15 @@ export interface ScreenSpec {
 	readonly lang?: string;
 	/** What clock it keeps, e.g. `America/Argentina/Buenos_Aires`. */
 	readonly timezone?: string;
+	/**
+	 * The token this browser reads its operator's vault with, when the operator has connected one.
+	 *
+	 * In this container and in no other, which is the whole of the feature: the one process that can
+	 * read a password is the one the agent has no filesystem in and no route to, and what crosses
+	 * into a page from here is keystrokes. A screen without it is exactly the browser it was, and
+	 * says so in a sentence when it is asked to sign into something.
+	 */
+	readonly vaultToken?: string;
 }
 
 /**
@@ -159,6 +179,16 @@ export function buildScreenEnv(spec: ScreenSpec): string[] {
 		 */
 		...(spec.lang === undefined ? {} : { SQUAD_SCREEN_LANG: spec.lang }),
 		...(spec.timezone === undefined ? {} : { TZ: spec.timezone }),
+		/*
+		 * The vault, for the one thing in here that opens one.
+		 *
+		 * A secret in a container's environment is a thing to be deliberate about, so: what reads it
+		 * is `op`, run by our own server in this container; what can ask that server to run it is the
+		 * plane's tunnel onto loopback and the agent's door, and the agent's door answers only for
+		 * hosts the operator opened. It is not passed to the sandbox, where an agent could read it out
+		 * of its own environment in one command.
+		 */
+		...(spec.vaultToken === undefined ? {} : { [VAULT_TOKEN_ENV]: spec.vaultToken }),
 		// For the screen server itself, which fetches nothing off the machine but is a Node process in
 		// a container with no route out, and would otherwise hang rather than fail if it ever tried.
 		HTTP_PROXY: spec.proxyUrl,
@@ -166,6 +196,19 @@ export function buildScreenEnv(spec: ScreenSpec): string[] {
 		NO_PROXY: "localhost,127.0.0.1",
 		NODE_EXTRA_CA_CERTS: CA_CERT_PATH,
 	}).map(([name, value]) => `${name}=${value}`);
+}
+
+/**
+ * A token by its shadow: enough to tell this one from the one before it, and not enough to be one.
+ *
+ * What the plane needs to know about a running screen is whether it is holding the token the
+ * operator has now, and that is a comparison rather than a value. Read back whole, a token would be
+ * a secret sitting on a status object — which is how a secret ends up in a log, printed by somebody
+ * who was looking at the thing next to it.
+ */
+export function vaultMark(token: string | undefined): string | undefined {
+	if (token === undefined || token === "") return undefined;
+	return createHash("sha256").update(token).digest("hex").slice(0, 16);
 }
 
 export function buildScreenConfig(spec: ScreenSpec): ContainerConfig & {

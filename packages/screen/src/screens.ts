@@ -13,6 +13,8 @@ import {
 	type ScreenSpec,
 	screenContainerName,
 	screenVolumeName,
+	VAULT_TOKEN_ENV,
+	vaultMark,
 } from "./spec.ts";
 
 export interface ScreenStatus {
@@ -23,6 +25,13 @@ export interface ScreenStatus {
 	readonly imageId: string;
 	/** The proxy it was created with, which is the record of the egress credential it presents. */
 	readonly proxyUrl: string | undefined;
+	/**
+	 * The vault token it was created with, by its mark rather than by its value.
+	 *
+	 * Enough to answer the only question asked of it — is this browser holding the token the operator
+	 * has now — without putting the token itself on an object the plane passes around.
+	 */
+	readonly vault: string | undefined;
 }
 
 interface ContainerInspect {
@@ -143,6 +152,7 @@ export class DockerScreens {
 				running: response.body.State.Running,
 				imageId: response.body.Image,
 				proxyUrl: readEnv(response.body.Config?.Env, "SQUAD_EGRESS_PROXY"),
+				vault: vaultMark(readEnv(response.body.Config?.Env, VAULT_TOKEN_ENV)),
 			};
 		} catch (error) {
 			if (error instanceof DockerError && error.status === 404) return undefined;

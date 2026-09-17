@@ -19,4 +19,6 @@ export {
 	screenContainerName,
 	screenUrl,
 	screenVolumeName,
+	VAULT_TOKEN_ENV,
+	vaultMark,
 } from "./spec.ts";
