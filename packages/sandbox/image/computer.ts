@@ -39,6 +39,8 @@ import {
 	movedIn,
 	offered,
 	TARGET_KEY,
+	thoughtFor,
+	thoughtIn,
 	walked,
 	worthPressing,
 	wordsFor,
@@ -292,7 +294,39 @@ async function pointAt(
  * it will not commit to a move, or it runs out of steps. Every one of those hands the page back and
  * says which it was — a loop that stopped for a different reason than it looks like is a loop an
  * agent will run again expecting a different answer.
+ *
+ * The three that are not arriving go through one more door first. A classifier is asked which of
+ * these, and the question it cannot answer is which of these leads somewhere it has never been —
+ * which is a thought, not a classification. So before it stops, it thinks: once, with the agent's
+ * own model, about a page the classifier has run out of. What comes back is a description and the
+ * classifier turns it into an element, each of them doing the half it is good at.
  */
+/**
+ * How many times one walk stops to think.
+ *
+ * The rest of the loop is a classifier at half a second a step; this is the agent's own model, which
+ * is a second or three. Two of them is a walk that thinks its way past the two junctions a site
+ * usually has and still comes back before the agent would have finished its first click.
+ */
+const MOST_THOUGHTS = 2;
+
+/**
+ * Clicks since the last time the browser was told where to go, and what to say after too many.
+ *
+ * The walk is the fastest thing here and it is measurably not what gets used: on one live run the
+ * same agent made thirty-one clicks and five goals, which is thirty-one turns of a model spent on
+ * something that costs half a second a step inside the container. The tool description says so and
+ * the guidelines say so, and neither is read again once a turn is underway.
+ *
+ * So it is said where it is felt — in the result of the third click in a row, which is the moment
+ * the agent is deciding what to click next. Counted here rather than in the plane because this is
+ * where a turn's clicks all pass through, and reset by anything that says where it was heading.
+ */
+let clicksRunning = 0;
+const CLICKS_BEFORE_SAYING_SO = 3;
+const WALK_INSTEAD =
+	"That is three clicks in a row. If these are steps towards somewhere rather than things you meant to press, say where you are going with screen_goal: it presses its own way there inside the browser, at about half a second a step, and none of them costs a turn of yours.";
+
 async function walkTowards(
 	model: Pointing,
 	goal: string,
@@ -312,6 +346,45 @@ async function walkTowards(
 		spent = spent === undefined ? usage : sums(spent, usage);
 	};
 	const page = async (): Promise<string> => textIn(await does({ verb: "read", brief: true })) ?? "";
+	let thoughts = 0;
+
+	/**
+	 * What the walk does instead of stopping: think about the page, and press what the thought named.
+	 *
+	 * Answers the page and why when there is nothing left, and nothing at all when the walk should
+	 * carry on. Capped, because this is the one step in the loop that costs a model: two thoughts on
+	 * a walk of twelve presses is a walk that still returns in seconds.
+	 */
+	const onwards = async (
+		outline: Outline,
+		why: "unsure" | "stuck",
+	): Promise<{ readonly said: string; readonly usage: Usage | undefined } | undefined> => {
+		const stopping = async () => ({
+			said: [walked(trail, why, goal), "", await page()].join("\n"),
+			usage: spent,
+		});
+		if (thoughts >= MOST_THOUGHTS) return stopping();
+		thoughts += 1;
+		const named = await thoughtAbout(goal, outline, trail);
+		if (named === undefined) return stopping();
+		const found = await askTheModel(model, askedAbout(model, named, outline));
+		if ("why" in found) return stopping();
+		add(found.usage);
+		const ref = pickedIn(found.answer)?.ref;
+		if (ref === undefined) return stopping();
+		const row = outline.rows.find((one) => refOf(one) === ref);
+		const label = row === undefined ? `[${ref}]` : labelOf(row);
+		// Pressed once is pressed, here too. A thought that names what the walk has already been
+		// through is a thought that would put it round the same loop with a model in it.
+		if (trail.includes(label)) return stopping();
+		scrolls = 0;
+		before = "";
+		asked = new Set();
+		presses += 1;
+		trail.push(label);
+		await does({ verb: "click", ref, brief: true });
+		return undefined;
+	};
 
 	/*
 	 * Presses rather than turns of the loop, which is the budget that means anything.
@@ -335,7 +408,9 @@ async function walkTowards(
 		 */
 		const now = `${outline.rows.join("|")}::${outline.text.length}`;
 		if (scrolls > 0 && now === before) {
-			return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+			const left = await onwards(outline, "unsure");
+			if (left !== undefined) return left;
+			continue;
 		}
 		before = now;
 		const offering = offered(outline.rows, goal, asked);
@@ -349,10 +424,12 @@ async function walkTowards(
 			if (ref !== undefined) asked.add(ref);
 		}
 		const move: Move | undefined = movedIn(said.answer);
-		if (move === undefined) {
-			return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+		if (move === undefined || move === "stuck") {
+			const left = await onwards(outline, move === undefined ? "unsure" : "stuck");
+			if (left !== undefined) return left;
+			continue;
 		}
-		if (move === "done" || move === "stuck") {
+		if (move === "done") {
 			return { said: [walked(trail, move, goal), "", await page()].join("\n"), usage: spent };
 		}
 		// The head that goes with the move: a press reads the things that can be pressed, a word reads
@@ -379,7 +456,9 @@ async function walkTowards(
 			 */
 			if (asked.size < outline.rows.length) continue;
 			if (scrolls >= MOST_SCROLLS) {
-				return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+				const left = await onwards(outline, "unsure");
+				if (left !== undefined) return left;
+				continue;
 			}
 			scrolls += 1;
 			asked = new Set();
@@ -434,6 +513,50 @@ async function walkTowards(
 		await does({ verb: "click", ref: picked.ref, brief: true });
 	}
 	return { said: [walked(trail, "most", goal), "", await page()].join("\n"), usage: spent };
+}
+
+/**
+ * The model this agent thinks with, when the plane has told the sandbox where it is.
+ *
+ * Read per call rather than once, like the other two: it is a file the plane writes before every
+ * turn, and `/model` moves it between them.
+ */
+async function thinking(): Promise<Looking | undefined> {
+	const path = process.env.SQUAD_THINKING_FILE ?? "";
+	if (path.length === 0) return undefined;
+	try {
+		return readLooking(await readFile(path, "utf8"));
+	} catch {
+		// No file is most planes and every older one: the walk then stops where it used to stop.
+		return undefined;
+	}
+}
+
+/**
+ * A second opinion about a page, asked of the agent's own model and turned back into an element.
+ *
+ * The one place in this loop where something thinks. A classifier answers "which of these" and it
+ * answers it well; what it cannot answer is which link leads towards a place it has never seen,
+ * which is the question left over when the answer is none of them. So that question goes to the
+ * model the agent thinks with, once, and what comes back is a description — which the classifier
+ * then turns into a number, because that is the half it is good at.
+ */
+async function thoughtAbout(
+	goal: string,
+	outline: Outline,
+	trail: readonly string[],
+): Promise<string | undefined> {
+	const model = await thinking();
+	if (model === undefined) return undefined;
+	const page = outline.title === "" ? outline.url : `${outline.title} — ${outline.url}`;
+	const asked = askedInWords(model, thoughtFor(goal, page, outline.text, trail));
+	const { status, body } = await post(model.endpoint, asked);
+	if (status !== 200) return undefined;
+	try {
+		return thoughtIn(saidBy(model, JSON.parse(body)));
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -586,6 +709,9 @@ export default function (pi: ExtensionAPI): void {
 			// agent that names what it wants is never going to use a line of it.
 			const asked =
 				points === undefined ? { verb: "open", url } : { verb: "open", url, brief: true };
+			// An address is the agent saying where it is going, so whatever clicking came before it was
+			// not a walk being taken one turn at a time. The run starts again from this page.
+			clicksRunning = 0;
 			return { content: [...(await does(asked))], details: {} };
 		},
 	});
@@ -818,8 +944,15 @@ export default function (pi: ExtensionAPI): void {
 				}
 				const found = await pointAt(model, named);
 				if ("why" in found) return instead(found.why, found.near ?? [], found.usage);
+				clicksRunning += 1;
+				const pressed = await does({ verb: "click", ref: found.ref, brief: true });
 				return {
-					content: [...(await does({ verb: "click", ref: found.ref, brief: true }))],
+					content: [
+						...pressed,
+						...(clicksRunning === CLICKS_BEFORE_SAYING_SO
+							? [{ type: "text" as const, text: WALK_INSTEAD }]
+							: []),
+					],
 					details: {},
 					usage: found.usage,
 				};
@@ -971,9 +1104,13 @@ export default function (pi: ExtensionAPI): void {
 				"It looks down a page as it goes: a reading is what is on the screen, so if the way on is",
 				"in the middle of a long article it scrolls to it rather than giving up at the fold.",
 				"",
+				"When a page stumps it, it stops and thinks with your own model before giving up, then",
+				"carries on from what that said. So a junction that needs knowing something the page does",
+				"not say is one it can usually get through by itself.",
+				"",
 				"It stops by itself and tells you which: it arrived, the page offered no way on, it was",
 				"unsure what to do next, or it ran out of presses. What comes back is where it ended and",
-				"what it pressed to get there. It types nothing — a page that needs words needs you.",
+				"what it pressed to get there.",
 			].join("\n"),
 			promptSnippet: "Walk the browser to a page, pressing its own way there",
 			promptGuidelines: [
@@ -1020,6 +1157,7 @@ export default function (pi: ExtensionAPI): void {
 				 * turns of the model that would otherwise be doing it one click at a time.
 				 */
 				const steps = Math.max(1, Math.min(most ?? 12, 40));
+				clicksRunning = 0;
 				const walk = await walkTowards(model, goal.trim(), steps, links !== true);
 				return {
 					content: [{ type: "text" as const, text: walk.said }],
