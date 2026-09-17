@@ -188,6 +188,7 @@ async function looking(): Promise<Looking | undefined> {
 function post(
 	endpoint: string,
 	body: string,
+	withinMs = VERB_TIMEOUT_MS,
 ): Promise<{ readonly status: number; readonly body: string }> {
 	return new Promise((resolve, reject) => {
 		const curl = execFile(
@@ -201,8 +202,12 @@ function post(
 				"@-",
 				"-w",
 				"\n%{http_code}",
+				// Cut by curl as well as by the process, because a socket left open is a request still
+				// being paid for: what gives up here is the waiting, and the model bills for the rest.
+				"--max-time",
+				String(Math.ceil(withinMs / 1000)),
 			],
-			{ timeout: VERB_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
+			{ timeout: withinMs + 1000, maxBuffer: 8 * 1024 * 1024 },
 			(failure, stdout, stderr) => {
 				if (failure !== null) {
 					reject(new Error(stderr.trim().length > 0 ? stderr.trim() : failure.message));
@@ -311,6 +316,18 @@ async function pointAt(
 const MOST_THOUGHTS = 2;
 
 /**
+ * How long a thought is waited for, and whether waiting for one is worth it any more.
+ *
+ * The bound is the point. Before this existed a walk that could not see the way on came back in two
+ * seconds saying so; something that thinks first must not turn that into a minute, because the whole
+ * reason the loop is in this container is that a model in it costs twenty to fifty seconds a step.
+ * Eight is what a fast model answers this in twice over — measured at one to two — and what a slow
+ * one will never answer in at all.
+ */
+const THINKS_IN_MS = 8000;
+let tooSlowToThinkWith = false;
+
+/**
  * Clicks since the last time the browser was told where to go, and what to say after too many.
  *
  * The walk is the fastest thing here and it is measurably not what gets used: on one live run the
@@ -370,7 +387,9 @@ async function walkTowards(
 		const found = await askTheModel(model, askedAbout(model, named, outline));
 		if ("why" in found) return stopping();
 		add(found.usage);
-		const ref = pickedIn(found.answer)?.ref;
+		// The walk's own standard rather than the one a named click is held to: what matters is whether
+		// this beats `none` on this page, and a thin winner among two hundred rows is still the winner.
+		const ref = worthPressing(found.answer, TARGET_KEY)?.ref;
 		if (ref === undefined) return stopping();
 		const row = outline.rows.find((one) => refOf(one) === ref);
 		const label = row === undefined ? `[${ref}]` : labelOf(row);
@@ -521,11 +540,24 @@ async function walkTowards(
  * Read per call rather than once, like the other two: it is a file the plane writes before every
  * turn, and `/model` moves it between them.
  */
-async function thinking(): Promise<Looking | undefined> {
+async function thinking(): Promise<
+	{ readonly model: Looking; readonly quietly?: Record<string, unknown> } | undefined
+> {
+	if (tooSlowToThinkWith) return undefined;
 	const path = process.env.SQUAD_THINKING_FILE ?? "";
 	if (path.length === 0) return undefined;
 	try {
-		return readLooking(await readFile(path, "utf8"));
+		const raw = await readFile(path, "utf8");
+		const model = readLooking(raw);
+		if (model === undefined) return undefined;
+		// The rest of the file is the same shape the other two models are written in; this one field
+		// is not a model at all but a sentence in the provider's own dialect, passed through as it came.
+		const said = JSON.parse(raw) as { quietly?: unknown };
+		const quietly =
+			typeof said.quietly === "object" && said.quietly !== null
+				? (said.quietly as Record<string, unknown>)
+				: undefined;
+		return { model, ...(quietly === undefined ? {} : { quietly }) };
 	} catch {
 		// No file is most planes and every older one: the walk then stops where it used to stop.
 		return undefined;
@@ -546,14 +578,45 @@ async function thoughtAbout(
 	outline: Outline,
 	trail: readonly string[],
 ): Promise<string | undefined> {
-	const model = await thinking();
-	if (model === undefined) return undefined;
+	const thinks = await thinking();
+	if (thinks === undefined) return undefined;
+	const { model, quietly } = thinks;
 	const page = outline.title === "" ? outline.url : `${outline.title} — ${outline.url}`;
-	const asked = askedInWords(model, thoughtFor(goal, page, outline.text, trail));
-	const { status, body } = await post(model.endpoint, asked);
-	if (status !== 200) return undefined;
+	const said = askedInWords(model, thoughtFor(goal, page, outline.text, trail));
+	/*
+	 * The question, plus whatever this provider needs to hear to answer it rather than deliberate.
+	 *
+	 * Merged rather than built in here, because what goes in is one provider's spelling and the plane
+	 * is what knows which provider this is. A file without it is every provider where reasoning is
+	 * opt-in, and the request goes out exactly as the model that looks would send it.
+	 */
+	const asked =
+		quietly === undefined
+			? said
+			: JSON.stringify({ ...(JSON.parse(said) as Record<string, unknown>), ...quietly });
+	let answered: { readonly status: number; readonly body: string };
 	try {
-		return thoughtIn(saidBy(model, JSON.parse(body)));
+		answered = await post(model.endpoint, asked, THINKS_IN_MS);
+	} catch {
+		/*
+		 * Gave up waiting, and does not wait again this turn.
+		 *
+		 * Measured on this plane, which is the only reason the line is here: the agent's model is a
+		 * reasoner, and asked which link leads towards a band that played Hyde Park in 1969 it spent
+		 * fifteen thousand tokens of reasoning and between fifty and ninety seconds. That is not a
+		 * second opinion inside a loop that costs half a second a step — it is the thing the loop
+		 * exists to avoid, wearing a different hat.
+		 *
+		 * So the first time it does not answer in time, this stops asking it. Not for this walk: for
+		 * the rest of the turn, because what was learnt is about the model rather than the page, and
+		 * paying the wait again on the next walk would be learning it twice.
+		 */
+		tooSlowToThinkWith = true;
+		return undefined;
+	}
+	if (answered.status !== 200) return undefined;
+	try {
+		return thoughtIn(saidBy(model, JSON.parse(answered.body)));
 	} catch {
 		return undefined;
 	}

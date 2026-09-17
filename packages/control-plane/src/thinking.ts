@@ -20,6 +20,19 @@ export interface Thinking {
 	readonly shape: "chat" | "messages" | "responses";
 	readonly keyEnv: string;
 	readonly headers?: Readonly<Record<string, string>>;
+	/**
+	 * What to add to the request so this provider answers rather than thinks out loud.
+	 *
+	 * The one field here that came out of a stopwatch. The walk asks this model one question — which
+	 * link leads towards the goal — and a reasoning model treats that as an invitation: measured on
+	 * this plane, deepseek-flash spent fifteen thousand tokens of reasoning and between fifty and
+	 * ninety seconds on it, inside a loop whose other steps cost half a second. Told not to, the same
+	 * model answered the same question in one second, and answered it better: it said there is no such
+	 * link on this page, where the reasoning runs had talked themselves into naming one.
+	 *
+	 * Per provider because the spelling is, and absent for the ones where reasoning is opt-in anyway.
+	 */
+	readonly quietly?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -31,11 +44,18 @@ export interface Thinking {
  * before this existed, not a failure.
  */
 const SPOKEN_TO: Readonly<
-	Record<string, { readonly path: string; readonly shape: Thinking["shape"] }>
+	Record<
+		string,
+		{
+			readonly path: string;
+			readonly shape: Thinking["shape"];
+			readonly quietly?: Readonly<Record<string, unknown>>;
+		}
+	>
 > = {
 	openai: { path: "/v1/chat/completions", shape: "chat" },
 	anthropic: { path: "/v1/messages", shape: "messages" },
-	deepseek: { path: "/chat/completions", shape: "chat" },
+	deepseek: { path: "/chat/completions", shape: "chat", quietly: { thinking: { type: "disabled" } } },
 	google: { path: "/v1beta/openai/chat/completions", shape: "chat" },
 	groq: { path: "/openai/v1/chat/completions", shape: "chat" },
 	together: { path: "/v1/chat/completions", shape: "chat" },
@@ -55,6 +75,7 @@ export function thinkingFor(model: Model | undefined): Thinking | undefined {
 		endpoint: `https://${model.host}${how.path}`,
 		shape: how.shape,
 		keyEnv: model.keyEnv,
+		...(how.quietly === undefined ? {} : { quietly: how.quietly }),
 		// Anthropic refuses a request without it, and the header is the same one the plane sends.
 		...(model.provider === "anthropic" ? { headers: { "anthropic-version": "2023-06-01" } } : {}),
 	};
