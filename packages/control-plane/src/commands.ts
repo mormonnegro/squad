@@ -939,7 +939,8 @@ const WHAT_SIGNING_IN_IS = [
 	"password, not in the answer and not in a reading of the page afterwards.",
 	"",
 	"It can only ask for sites on this list. Everything else is refused at the browser's door, and",
-	"the list is not something the agent can read or add to.",
+	"the list is not something the agent can read or add to. A site opens what is under it as well —",
+	"google.com covers accounts.google.com, where the form usually is — and never the other way.",
 ].join("\n");
 
 /** Said wherever the link is, because the keyboard is the half of this that is not obvious. */

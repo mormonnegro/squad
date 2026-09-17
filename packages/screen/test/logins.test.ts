@@ -5,6 +5,7 @@ import {
 	filledSaid,
 	hostOf,
 	itemFor,
+	openedFor,
 	readForm,
 	type TheForm,
 	type VaultItem,
@@ -176,5 +177,46 @@ describe("what may be opened at the console", () => {
 		expect(readSite("not a host")).toBeUndefined();
 		expect(readSite("github .com")).toBeUndefined();
 		expect(readSite(".com")).toBeUndefined();
+	});
+});
+
+/**
+ * The door the agent knocks at, which is the list and not the vault.
+ *
+ * Every case here is a real sign-in: the form is almost never on the host somebody typed, and a
+ * rule that refused those would be a permission an operator granted and an agent that still says
+ * it was not let in.
+ */
+describe("whether a page is one the operator opened", () => {
+	const opened = ["github.com", "mail.google.com"];
+
+	it("lets in the site itself, however the address was written", () => {
+		expect(openedFor("github.com", opened)).toBe(true);
+		expect(openedFor("https://github.com/login", opened)).toBe(true);
+		expect(openedFor("www.github.com", opened)).toBe(true);
+	});
+
+	it("lets in the subdomain the sign-in form actually lives on", () => {
+		expect(openedFor("gist.github.com", opened)).toBe(true);
+	});
+
+	// The other direction is a wider grant than the one that was made: opening one host of a company
+	// is opening that host, and reading it as the company is an operator's typing turned into more
+	// than they said.
+	it("does not let in the parent of a site that was opened", () => {
+		expect(openedFor("google.com", opened)).toBe(false);
+		expect(openedFor("drive.google.com", opened)).toBe(false);
+	});
+
+	it("lets in nothing at all when nothing was opened", () => {
+		expect(openedFor("github.com", [])).toBe(false);
+		expect(openedFor("", opened)).toBe(false);
+	});
+
+	// The host it is about is the page, not a string somebody could make look like one: a site named
+	// to end in the opened one is not a subdomain of it.
+	it("is not fooled by a name that merely ends the same way", () => {
+		expect(openedFor("notgithub.com", opened)).toBe(false);
+		expect(openedFor("github.com.evil.example", opened)).toBe(false);
 	});
 });

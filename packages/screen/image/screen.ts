@@ -3,7 +3,7 @@ import http from "node:http";
 import { Browser } from "./browser.ts";
 import { readEgress, startForwarder } from "./forward.ts";
 import { refusedToAgent, refusedToOperator, TheKeyboard } from "./keyboard.ts";
-import { credentialIn, hostOf, itemFor, type VaultItem } from "./logins.ts";
+import { credentialIn, hostOf, itemFor, openedFor, type VaultItem } from "./logins.ts";
 import { startPage, viewPage } from "./page.ts";
 import { presented, tokenIn } from "./token.ts";
 import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
@@ -114,7 +114,7 @@ const verbs = http.createServer((request, response) => {
 				return;
 			}
 			const where = hostOf(asked.url ?? browser.where());
-			if (!opened.includes(where)) {
+			if (!openedFor(where, opened)) {
 				json(response, 200, {
 					text: [
 						`Your operator has not opened ${where} for you, so nothing was filled in.`,

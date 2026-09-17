@@ -69,6 +69,27 @@ export function itemFor(host: string, items: readonly VaultItem[]): VaultItem | 
 	return first;
 }
 
+/**
+ * Whether this page is one of the sites the operator opened for this agent.
+ *
+ * A subdomain of an opened site counts, and that is the whole of the rule worth arguing about. A
+ * sign-in almost never happens on the host somebody types: they open `google.com` and the form is
+ * at `accounts.google.com`, they open `atlassian.com` and land on `id.atlassian.com`. An exact
+ * match would refuse every one of those, and what the operator would see is a permission they
+ * granted and an agent that says it was not let in.
+ *
+ * It does not go the other way. Opening `id.atlassian.com` is opening that and not the company:
+ * what an operator names is the most a grant can be, never the least.
+ */
+export function openedFor(host: string, opened: readonly string[]): boolean {
+	const wanted = hostOf(host);
+	if (wanted === "") return false;
+	return opened.some((one) => {
+		const site = hostOf(one);
+		return site !== "" && (wanted === site || wanted.endsWith(`.${site}`));
+	});
+}
+
 /** One field of an entry, as `op item get --format json --reveal` gives it. */
 interface VaultField {
 	readonly id?: string;
