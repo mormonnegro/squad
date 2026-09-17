@@ -43,6 +43,18 @@ export interface ScreenStanding {
 }
 
 /**
+ * The password manager the browsers sign in from, as a screen may know it — which is never the value.
+ *
+ * Two booleans, the way a provider key is answered, and for the same reason: there is no way to ask
+ * this plane for a secret it was given. `here` is the difference between a token this keyboard can
+ * take back and one exported into the plane's environment on the host, which is taken back there.
+ */
+export interface VaultStanding {
+	readonly held: boolean;
+	readonly here: boolean;
+}
+
+/**
  * Which agents have been given a browser, decided at the console rather than in the file.
  *
  * A screen is the kind of thing an operator turns on because of what is in front of them right now

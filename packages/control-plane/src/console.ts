@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { SANDBOX_REPO_PATH } from "@squad/agent-repo";
 import { CARRIERS } from "@squad/channels";
+import { VAULT_TOKEN_ENV } from "@squad/screen";
 import {
 	Box,
 	type DOMElement,
@@ -42,6 +43,7 @@ import { readName, readServer, type ServerStanding, written } from "./mcp.ts";
 import type { ModelOffer, ModelStanding, ProviderStanding } from "./models.ts";
 import { openInBrowser } from "./oauth-login.ts";
 import type { AgentStep } from "./pi-output.ts";
+import type { VaultStanding } from "./screens.ts";
 import { SEARCH_PROVIDERS, type SearchSpec, type SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -1532,6 +1534,20 @@ const LEDGER: Readonly<Record<GrantOrigin, string>> = {
 	search: "the search brings it — change it in the search section",
 };
 
+/**
+ * What a vault is here, above the one row that connects one.
+ *
+ * Two paragraphs and they answer the two questions somebody arrives with: where does the password
+ * go, and what stops an agent signing into everything in there. The second is the half that is not
+ * on this screen — it is per agent, decided in the conversation where the agent is stuck — and
+ * saying so here is what keeps somebody from looking for it among these rows.
+ */
+const VAULT = [
+	"A 1Password service account, read inside each agent's browser and nowhere else. The agent names a site, the password is typed into the page there, and what comes back to it is which boxes were filled — never a value.",
+	"",
+	"Which sites is each agent's own list, opened with /screen login <host> where that agent is. What it could ever reach is what this token can read, so it is worth a vault made for this: a service account cannot read your Private vault.",
+];
+
 /** A part of this plane with something to set, which is one row of the list this screen opens on. */
 export type Section = (typeof CONFIG_SECTIONS)[number];
 
@@ -1544,6 +1560,7 @@ const SECTIONS: Readonly<
 	models: { does: "the providers this plane can pay, and what its agents think with", said: KEYS },
 	search: { does: "where web_search goes, and what a search costs", said: SEARCHING },
 	grants: { does: "the hosts the agents may reach, and what they carry there", said: REACH },
+	vault: { does: "the password manager the agents' browsers sign into sites from", said: VAULT },
 	plugins: { does: "the plugins connected here, and which agents hold them", said: SERVERS },
 	email: { does: "the mailbox agents are reached at, and whose mail they read", said: MAIL },
 };
@@ -1574,6 +1591,8 @@ export type ConfigRow =
 	| { readonly kind: "add-server" }
 	| { readonly kind: "grant"; readonly grant: GrantStanding }
 	| { readonly kind: "add-grant" }
+	/** The one row the vault section has: a token, held or not. */
+	| { readonly kind: "vault" }
 	| { readonly kind: "mail"; readonly field: "mailbox" | "carrier" | "domain" | "key" }
 	/** One line of the list of who may write, which is an address or a whole domain. */
 	| { readonly kind: "sender"; readonly entry: string }
@@ -1587,7 +1606,7 @@ export type ConfigRow =
  * something other than what is highlighted.
  *
  * Which rows there are depends on the section that is open, and the sections themselves are the rows
- * when none is: one list at a time, because the four things there are to configure here share nothing
+ * when none is: one list at a time, because the things there are to configure here share nothing
  * but the file they are kept in, and a single list of all of them would be a screen to scroll rather
  * than a screen to read.
  */
@@ -1625,6 +1644,12 @@ export function configRows(
 						{ kind: "add-sender" } as const,
 					]),
 		];
+	}
+	if (section === "vault") {
+		// One row, because there is one thing to give: the sites are per agent and are opened where the
+		// agent is, and a list of every agent's sites on the plane's own screen would be a screen you
+		// have to scroll to find out that nothing here is set up yet.
+		return [{ kind: "vault" } as const];
 	}
 	if (section === "plugins") {
 		return [
@@ -1686,6 +1711,8 @@ export function Config({
 	mail,
 	/** The one line of the mailbox being typed out, and which of the three it is. */
 	mailing,
+	/** Whether a password manager is connected, or nothing while the plane is still being asked. */
+	vault,
 	cursor,
 	/** The key being filled in, named by its variable, or nothing while the list has the keyboard. */
 	typing,
@@ -1721,6 +1748,8 @@ export function Config({
 	readonly grants: readonly GrantStanding[];
 	readonly mail?: MailStanding | undefined;
 	readonly mailing?: { readonly field: MailField; readonly text: string } | undefined;
+	/** Whether a password manager is connected, which is the whole of the vault section. */
+	readonly vault?: VaultStanding | undefined;
 	/**
 	 * Which row the arrows are on, or -1 while they are still the column's and no row is theirs. Drawn
 	 * with nothing pointed at then, the way the log feed beside it is: a highlight on a list that would
@@ -1847,7 +1876,7 @@ export function Config({
 			columns,
 		});
 	}
-	// The list this screen opens on, which is the only place the four things it holds are one list.
+	// The list this screen opens on, which is the only place everything it holds is one list.
 	// Each row says what its section is for, because a column of bare nouns is a screen you have to
 	// open every row of to find out which one you came here for.
 	if (section === undefined) {
@@ -1865,7 +1894,9 @@ export function Config({
 							? mail?.mailbox !== undefined
 							: one === "grants"
 								? grants.length > 0
-								: servers.some((server) => server.agents.length > 0);
+								: one === "vault"
+									? vault?.held === true
+									: servers.some((server) => server.agents.length > 0);
 			const mark = ready ? MARKS.running : MARKS.stopped;
 			if (index === cursor) at = listed.length;
 			listed.push(
@@ -1906,11 +1937,17 @@ export function Config({
 									? grants.length === 0
 										? "nowhere at all — every request an agent makes is refused"
 										: `${grants.length} hosts, ${grants.filter((grant) => grant.origin === "here").length} opened here`
-									: search === undefined
-										? "asking the plane…"
-										: search.held
-											? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
-											: `${search.keyEnv}   no key, refused at the proxy`,
+									: which === "vault"
+										? vault === undefined
+											? "asking the plane…"
+											: vault.held
+												? "a vault is connected — what each agent may sign into is its own list"
+												: "no vault, so no agent can be signed into anything"
+										: search === undefined
+											? "asking the plane…"
+											: search.held
+												? `${search.provider} ${search.model}   $${search.perSearchUsd.toFixed(3)} a search`
+												: `${search.keyEnv}   no key, refused at the proxy`,
 			},
 			boxed,
 			rows,
@@ -2178,6 +2215,52 @@ export function Config({
 											? "nobody has it yet — ⏎ gives it to an agent"
 											: `${standing.agents.join(", ")}${standing.loggedIn ? "   (logged in)" : ""}`,
 							},
+			boxed,
+			rows,
+			columns,
+		});
+	}
+	if (section === "vault") {
+		// One row and one mark, which is the whole of the state this section has: either the browsers
+		// can sign in from a vault or they cannot.
+		const mark = vault?.held === true ? MARKS.running : MARKS.stopped;
+		at = listed.length;
+		listed.push(
+			h(
+				Text,
+				{ key: "vault", wrap: "truncate" },
+				h(Text, { color: mark.color }, mark.glyph),
+				h(Text, pointed(true, vault?.held === true), ` ${VAULT_TOKEN_ENV.padEnd(26)}`),
+				h(
+					Text,
+					{ dimColor: true },
+					vault === undefined
+						? "asking the plane…"
+						: vault.here
+							? "set here"
+							: vault.held
+								? "from the environment"
+								: "no vault",
+				),
+			),
+		);
+		return configScreen({
+			listed,
+			at,
+			trouble,
+			said,
+			prompt:
+				typing !== undefined
+					? // Never the characters, as every key on this screen is taken: this terminal keeps its
+						// own scrollback, and somebody is usually standing behind whoever pastes one.
+						{ kind: "typed", mark: `token for ${typing}  `, text: secret, secret: true }
+					: {
+							kind: "dim",
+							text:
+								vault?.held === true
+									? "⏎ replaces it, an empty line takes it back"
+									: "⏎ takes a service account token — nothing signs in until it does",
+						},
 			boxed,
 			rows,
 			columns,
@@ -2575,6 +2658,9 @@ export function App({
 	const [forgetting, setForgetting] = useState<string | undefined>(undefined);
 	// The mailbox and the way its mail leaves, or nothing until the plane has answered.
 	const [mail, setMail] = useState<MailStanding | undefined>(undefined);
+	// Whether a password manager is connected, which is the whole of the vault section's state: the
+	// token itself is never read back, here or anywhere else.
+	const [vault, setVault] = useState<VaultStanding | undefined>(undefined);
 	// The one line of it being typed out. The password goes here rather than into the draft for the
 	// reason every secret on this screen does: the chat prompt is one `tab` away.
 	const [mailing, setMailing] = useState<{ field: MailField; text: string } | undefined>(undefined);
@@ -2874,14 +2960,16 @@ export function App({
 			client.servers(),
 			client.grants(),
 			client.mail(),
+			client.vault(),
 		])
-			.then(([keys, thinking, searching, shelf, reach, post]) => {
+			.then(([keys, thinking, searching, shelf, reach, post, holding]) => {
 				setProviders(keys);
 				setModels(thinking);
 				setSearch(searching);
 				setServers(shelf);
 				setGrants(reach);
 				setMail(post);
+				setVault(holding);
 				setUnanswered(undefined);
 			})
 			.catch((error: unknown) => setUnanswered((error as Error).message));
@@ -3891,6 +3979,13 @@ export function App({
 					setTyping(configRow.provider.keyEnv);
 					setSecret("");
 				}
+				// The vault, taken the same masked way every key on this screen is, and given back by the
+				// same empty line: it is a secret typed at a terminal that keeps its own scrollback, and
+				// the one thing that must not happen to it is being echoed.
+				if (configRow.kind === "vault") {
+					setTyping(VAULT_TOKEN_ENV);
+					setSecret("");
+				}
 				// Two of the three are picked off a list this console already has — the providers that will
 				// search and the models each of them drives are a table, not an opinion — and the third is
 				// a key, taken the same way every other key on this screen is.
@@ -4265,6 +4360,7 @@ export function App({
 								grants,
 								mail,
 								mailing,
+								vault,
 								cursor: onRow,
 								typing,
 								secret,

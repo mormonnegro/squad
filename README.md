@@ -421,7 +421,7 @@ slash opens the list of what there is, over the prompt, filtered by whatever is 
    /email [<address>|<password>|allow …|deny …|off]  the address it is reached at, and whose mail is read as instructions
    /clear                                            forget the conversation, and start it again on nothing
    /delete                                           delete this agent, after asking whether you meant it
-   /config [models|search|grants|plugins|email]      the whole plane's screen: its keys, models, reach and mailbox
+   /config [models|search|grants|vault|plugins|email]  the whole plane's screen: its keys, models, reach and mailbox
    /help                                             every command there is
 ╭──────────────────────────────────────────────────────────────────────╮
 │ > /li                                                                │

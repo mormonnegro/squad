@@ -2084,8 +2084,19 @@ describe("Config", () => {
 		// A shelf nobody was given anything off is a shelf doing nothing, which is the count worth
 		// having: how many are on it says less than how many are reaching anything.
 		it("counts the shelf, and how much of it anybody has", () => {
-			expect(list({ cursor: 3 })).toContain("2 on the shelf, 1 of them given to somebody");
-			expect(list({ cursor: 3, servers: [] })).toContain("nothing on the shelf yet");
+			expect(list({ cursor: 4 })).toContain("2 on the shelf, 1 of them given to somebody");
+			expect(list({ cursor: 4, servers: [] })).toContain("nothing on the shelf yet");
+		});
+
+		// The row that says whether anybody can be signed into anything, which is the one fact about a
+		// vault that is worth a line on a list of sections: the sites themselves are each agent's.
+		it("says whether a vault is connected at all", () => {
+			expect(list({ cursor: 3, vault: { held: true, here: true } })).toContain(
+				"a vault is connected",
+			);
+			expect(list({ cursor: 3, vault: { held: false, here: false } })).toContain(
+				"no vault, so no agent can be signed into anything",
+			);
 		});
 	});
 

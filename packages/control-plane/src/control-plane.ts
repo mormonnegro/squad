@@ -170,7 +170,13 @@ import {
 	standingOf as repoStanding,
 } from "./repos.ts";
 import { nameRefused, type Room, RoomChannel, Rooms, roomChannel } from "./rooms.ts";
-import { hasScreen, ScreenChoices, type ScreenStanding, SignInSites } from "./screens.ts";
+import {
+	hasScreen,
+	ScreenChoices,
+	type ScreenStanding,
+	SignInSites,
+	type VaultStanding,
+} from "./screens.ts";
 import {
 	DEFAULT_SEARCH_PROVIDER,
 	resolveSearch,
@@ -2234,7 +2240,7 @@ export class ControlPlane {
 	 * Held and never read back. The answer is two booleans, as a provider key's is, for the same
 	 * reason: there is no way to ask this plane for the value of a secret it was given.
 	 */
-	async vault(): Promise<{ readonly held: boolean; readonly here: boolean }> {
+	async vault(): Promise<VaultStanding> {
 		const held = await this.#secrets.resolve({ ref: VAULT_TOKEN_ENV }).catch(() => undefined);
 		return {
 			held: held !== undefined && held.length > 0,

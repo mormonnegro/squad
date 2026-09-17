@@ -932,7 +932,7 @@ describe("/config", () => {
 		const answer = await runCommand("/config emial", context().context);
 
 		expect(answer).toContain('"emial" is not a part of this plane');
-		expect(answer).toContain("models, search, grants, plugins, email");
+		expect(answer).toContain("models, search, grants, vault, plugins, email");
 		// The help lists every command there is, and a mistyped word is not a person who is lost.
 		expect(answer).not.toContain("/serve");
 	});

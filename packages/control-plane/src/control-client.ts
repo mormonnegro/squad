@@ -13,6 +13,7 @@ import type { Catalog, ModelSpec, ModelStanding, ProviderStanding } from "./mode
 import type { Plugin } from "./plugins.ts";
 import type { RepoOffer } from "./repos.ts";
 import type { Room } from "./rooms.ts";
+import type { VaultStanding } from "./screens.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Utterance } from "./transcript.ts";
 
@@ -198,6 +199,13 @@ export class ControlClient {
 		const response = await this.#once({ op: "providers" });
 		if ("providers" in response) return response.providers;
 		throw new ControlError("unexpected answer to providers");
+	}
+
+	/** Whether a password manager is connected, and whether this keyboard is what connected it. */
+	async vault(): Promise<VaultStanding> {
+		const response = await this.#once({ op: "vault" });
+		if ("vault" in response) return response.vault;
+		throw new ControlError("unexpected answer to vault");
 	}
 
 	/** Gives the plane a provider's key, or takes back the one it was keeping when `value` is empty. */

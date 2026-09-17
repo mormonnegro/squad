@@ -106,6 +106,8 @@ function plane(
 		posts?: MailStanding;
 		refusesMail?: string;
 		refusesSender?: string;
+		/** Whether this plane already has a password manager connected to it. */
+		holdsVault?: boolean;
 	} = {},
 ) {
 	const asked: string[] = [];
@@ -211,6 +213,10 @@ function plane(
 			aimed.push(spec);
 		},
 		servers: async () => options.shelf ?? [],
+		// The vault section, which every one of these tests draws past on its way to another: this
+		// screen asks for all of it at once, and a client that could not answer would be a screen with
+		// nothing on it at all.
+		vault: async () => ({ held: options.holdsVault ?? false, here: options.holdsVault ?? false }),
 		grants: async () => reached,
 		addGrant: async (host: string) => {
 			opened.push(host);
@@ -1325,7 +1331,9 @@ describe("/config, typed at an agent", () => {
 		try {
 			await screen.press("/co");
 
-			expect(screen.screen()).toContain("/config [models|search|grants|plugins|email]");
+			// The part of the row that survives a narrow terminal: the line is truncated rather than
+			// wrapped, and this pane at eighty columns is where it runs out.
+			expect(screen.screen()).toContain("/config [models|search|grants|vault");
 		} finally {
 			screen.close();
 		}
@@ -2068,6 +2076,80 @@ describe("the config screen, pressed at", () => {
 	 * `tab` away is a chat, and a half-written server falling into it would be said to an agent.
 	 */
 	/**
+	 * The section that connects a password manager, which is one row and one secret.
+	 *
+	 * The sites each agent may sign into are not here and are not meant to be: they are opened in the
+	 * conversation of the agent that is stuck at one. What this screen decides is whether there is a
+	 * vault behind any of that at all.
+	 */
+	describe("the vault section", () => {
+		/** Opens the config screen with the vault already open, which is the fourth row. */
+		async function vaulted(options: Parameters<typeof plane>[0] = { pays, thinks }) {
+			const screen = await sections(options);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(DOWN);
+			await screen.press(ENTER);
+			return screen;
+		}
+
+		it("says nothing signs in while no vault is connected", async () => {
+			const screen = await vaulted();
+			try {
+				expect(screen.screen()).toContain("OP_SERVICE_ACCOUNT_TOKEN");
+				expect(screen.screen()).toContain("no vault");
+				expect(screen.screen()).toContain("⏎ takes a service account token");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("takes the token the masked way every key on this screen is taken", async () => {
+			const screen = await vaulted();
+			try {
+				await screen.press(ENTER);
+				expect(screen.screen()).toContain("token for OP_SERVICE_ACCOUNT_TOKEN");
+
+				await screen.press("ops_typed");
+
+				expect(screen.screen()).not.toContain("ops_typed");
+				expect(screen.screen()).toContain("••••");
+			} finally {
+				screen.close();
+			}
+		});
+
+		it("hands it to the plane when it is entered", async () => {
+			const screen = await vaulted();
+			try {
+				await screen.press(ENTER);
+				await screen.press("ops_typed");
+				await screen.press(ENTER);
+
+				expect(screen.given).toEqual([["OP_SERVICE_ACCOUNT_TOKEN", "ops_typed"]]);
+			} finally {
+				screen.close();
+			}
+		});
+
+		// The same empty line that takes a provider key back, because it is the same box: a vault is
+		// disconnected by pressing return on nothing, and the browsers are made again without it.
+		it("takes an empty line for taking the vault back", async () => {
+			const screen = await vaulted({ pays, thinks, holdsVault: true });
+			try {
+				expect(screen.screen()).toContain("set here");
+
+				await screen.press(ENTER);
+				await screen.press(ENTER);
+
+				expect(screen.given).toEqual([["OP_SERVICE_ACCOUNT_TOKEN", ""]]);
+			} finally {
+				screen.close();
+			}
+		});
+	});
+
+	/**
 	 * The section that exists so nobody has to open the config file to let an agent reach a host.
 	 *
 	 * One box, one word: what is typed here becomes reach and nothing else, so there is no id to
@@ -2247,9 +2329,10 @@ describe("the config screen, pressed at", () => {
 			},
 		];
 
-		/** Opens the config screen with the shelf already open, which is the fourth row. */
+		/** Opens the config screen with the shelf already open, which is the fifth row. */
 		async function shelved(options: Parameters<typeof plane>[0] = { pays, thinks, shelf }) {
 			const screen = await sections(options);
+			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -2396,6 +2479,7 @@ describe("the config screen, pressed at", () => {
 				posts,
 				...(refusesMail !== undefined ? { refusesMail } : {}),
 			});
+			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
 			await screen.press(DOWN);
@@ -2606,7 +2690,7 @@ describe("the config screen, pressed at", () => {
 				posts: { ...reading, senders },
 				...(refusesSender !== undefined ? { refusesSender } : {}),
 			});
-			for (let step = 0; step < 4; step += 1) await screen.press(DOWN);
+			for (let step = 0; step < 5; step += 1) await screen.press(DOWN);
 			await screen.press(ENTER);
 			// Past the two mail rows this mailbox draws, onto the list under them.
 			for (let step = 0; step < senders.length + 2; step += 1) await screen.press(DOWN);

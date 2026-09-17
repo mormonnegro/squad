@@ -18,6 +18,7 @@ import type { Plugin } from "./plugins.ts";
 import type { PointingOffer, PointingStanding } from "./pointing.ts";
 import type { RepoOffer } from "./repos.ts";
 import type { Room } from "./rooms.ts";
+import type { VaultStanding } from "./screens.ts";
 import type { SearchSpec, SearchStanding } from "./search.ts";
 import type { Skill } from "./skills.ts";
 import type { Utterance } from "./transcript.ts";
@@ -338,6 +339,15 @@ export type ControlRequest =
 	 * somewhere, and here for the same reason: it derives a grant every agent gets.
 	 */
 	| { readonly id: string; readonly op: "set-vision"; readonly spec: VisionSpec | null }
+	/**
+	 * Whether a password manager is connected to this plane, and whether it was connected here.
+	 *
+	 * Its own op rather than a corner of the tools answer, because the screen that asks for it on a
+	 * terminal is a different screen: the config screen walks sections, and a section that had to ask
+	 * for every model either tool could use in order to draw one row would be a section that waits on
+	 * three providers to say "no vault".
+	 */
+	| { readonly id: string; readonly op: "vault" }
 	/** Every server on the shelf, with who holds it — the plane's list rather than an agent's. */
 	| { readonly id: string; readonly op: "servers" }
 	/**
@@ -551,6 +561,7 @@ export type ControlResponse =
 				readonly vault: { readonly held: boolean; readonly here: boolean };
 			};
 	  }
+	| { readonly id: string; readonly ok: true; readonly vault: VaultStanding }
 	| { readonly id: string; readonly ok: true; readonly servers: readonly ServerStanding[] }
 	| {
 			readonly id: string;
@@ -1055,6 +1066,8 @@ export class ControlServer {
 			} else if (request.op === "set-vision") {
 				await this.#plane.chooseVision(request.spec);
 				this.#write(socket, { id: request.id, ok: true, text: request.spec?.provider ?? "off" });
+			} else if (request.op === "vault") {
+				this.#write(socket, { id: request.id, ok: true, vault: await this.#plane.vault() });
 			} else if (request.op === "servers") {
 				this.#write(socket, { id: request.id, ok: true, servers: await this.#plane.servers() });
 			} else if (request.op === "add-server") {
