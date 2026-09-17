@@ -48,6 +48,15 @@ export const VERBS = [
 	 * one.
 	 */
 	"login",
+	/*
+	 * Several boxes filled in and one thing pressed, in one go.
+	 *
+	 * Not a convenience: it is the difference between a form costing one call to the agent's model
+	 * and costing two per box. The refs come from one batch of questions asked of something small
+	 * and fast, so the whole of a checkout page — six boxes and the Continue under them — is one
+	 * decision by the thing that thinks and one visit here.
+	 */
+	"put",
 ] as const;
 
 export type Verb = (typeof VERBS)[number];
@@ -73,6 +82,10 @@ export interface Asked {
 	readonly brief?: boolean;
 	/** Which tab, by the number the last listing gave it. */
 	readonly tab?: number;
+	/** The boxes to fill and what goes in each, for the one verb that does more than one thing. */
+	readonly puts?: readonly { readonly ref: number; readonly text: string }[];
+	/** Something to press once they are filled, by ref. */
+	readonly press?: number;
 }
 
 export interface Refused {
@@ -185,6 +198,37 @@ export function readAsked(body: unknown): Asked | Refused {
 		}
 		case "outline":
 			return { verb: "outline" };
+		case "put": {
+			const puts = Array.isArray(body.puts) ? body.puts : [];
+			const wanted: { ref: number; text: string }[] = [];
+			for (const one of puts) {
+				if (!isRecord(one)) continue;
+				const ref = one.ref;
+				const text = one.text;
+				if (typeof ref !== "number" || !Number.isInteger(ref) || ref < 1) {
+					return { refused: "put takes boxes as {ref, text}, with a ref from the last read." };
+				}
+				if (typeof text !== "string") return { refused: "put takes text for every box." };
+				wanted.push({ ref, text });
+			}
+			const press = body.press;
+			if (
+				press !== undefined &&
+				(typeof press !== "number" || !Number.isInteger(press) || press < 1)
+			) {
+				return { refused: "put takes press as a ref, or nothing to fill the boxes and stop." };
+			}
+			if (wanted.length === 0 && press === undefined) {
+				return { refused: "put takes something to do: boxes to fill, or something to press." };
+			}
+			return {
+				verb: "put",
+				puts: wanted,
+				...(typeof press === "number" ? { press } : {}),
+				...(body.brief === true ? { brief: true } : {}),
+				...(body.enter === true ? { enter: true } : {}),
+			};
+		}
 		// A host, or none for the page it is already on — which is the usual case, because what makes
 		// an agent ask is a sign-in form in front of it.
 		case "login": {

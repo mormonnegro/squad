@@ -15,8 +15,12 @@ import {
 } from "./looking.ts";
 import {
 	askedAbout,
+	askedAboutAll,
+	keyAt,
+	nearestIn,
 	type Outline,
 	type Pointing,
+	pickedAllIn,
 	pickedIn,
 	readOutline,
 	readPointing,
@@ -237,14 +241,33 @@ async function pointAt(
 	model: Pointing,
 	what: string,
 ): Promise<
-	{ readonly ref: number; readonly usage: Usage } | { readonly why: string; readonly usage?: Usage }
+	| { readonly ref: number; readonly usage: Usage }
+	| { readonly why: string; readonly near?: readonly string[]; readonly usage?: Usage }
 > {
 	const outline: Outline | undefined = readOutline(textIn(await does({ verb: "outline" })));
 	if (outline === undefined) return { why: "The browser could not say what is on the page." };
 	if (outline.rows.length === 0)
 		return { why: "Nothing on this page can be clicked or typed into." };
 
-	const { status, body } = await post(model.endpoint, askedAbout(model, what, outline));
+	const asked = await askTheModel(model, askedAbout(model, what, outline));
+	if ("why" in asked) return asked;
+	const picked = pickedIn(asked.answer);
+	if (picked === undefined) {
+		return {
+			why: `Nothing on this page is clearly "${what}".`,
+			near: nearestIn(asked.answer, outline.rows),
+			usage: asked.usage,
+		};
+	}
+	return { ref: picked.ref, usage: asked.usage };
+}
+
+/** One request to the thing that chooses, with every way it can fail said in words. */
+async function askTheModel(
+	model: Pointing,
+	asked: string,
+): Promise<{ readonly answer: unknown; readonly usage: Usage } | { readonly why: string }> {
+	const { status, body } = await post(model.endpoint, asked);
 	let answer: unknown;
 	try {
 		answer = JSON.parse(body);
@@ -256,27 +279,32 @@ async function pointAt(
 	if (status !== 200) {
 		return { why: `Pointing failed (HTTP ${status}): ${refusedPointing(answer, body)}` };
 	}
-	const usage = spentPointing(model, answer);
-	const picked = pickedIn(answer);
-	if (picked === undefined) {
-		return { why: `Nothing on this page is clearly "${what}".`, usage };
-	}
-	return { ref: picked.ref, usage };
+	return { answer, usage: spentPointing(model, answer) };
 }
 
 /**
- * What to hand back when the pointing did not land: the page, and why it is being shown.
+ * What to hand back when the pointing did not land: the rows it was choosing between.
  *
- * The turn there was before any of this existed. Reading the page is what the agent would have done
- * to find the ref itself, so the unsure answer costs it one read rather than a refusal and a
- * second call.
+ * This used to be the whole numbered page, which was the worst thing it could be. One unsure answer
+ * put two hundred rows into the conversation, and from that moment the agent had numbers in front
+ * of it and went back to counting for the rest of the turn — one miss and the feature turned itself
+ * off. The three it was weighing up cost nothing: they come back with every answer whether or not
+ * anybody reads them.
  */
-async function insteadRead(why: string, usage: Usage | undefined) {
+function instead(why: string, near: readonly string[], usage: Usage | undefined) {
+	const lines =
+		near.length === 0
+			? [why, "Read the page if you need to see everything on it."]
+			: [
+					why,
+					"",
+					"The closest things on the page were:",
+					...near.map((row) => `  ${row}`),
+					"",
+					"Use one of those numbers, or say it the way it reads on screen.",
+				];
 	return {
-		content: [
-			{ type: "text" as const, text: `${why} Here is the page — use one of these numbers.` },
-			...(await does({ verb: "read" })),
-		],
+		content: [{ type: "text" as const, text: lines.join("\n") }],
 		details: {},
 		...(usage === undefined ? {} : { usage }),
 	};
@@ -530,7 +558,7 @@ export default function (pi: ExtensionAPI): void {
 			const model = pointing();
 			if (what !== undefined && what.trim() !== "" && model !== undefined) {
 				const found = await pointAt(model, what.trim());
-				if ("why" in found) return insteadRead(found.why, found.usage);
+				if ("why" in found) return instead(found.why, found.near ?? [], found.usage);
 				return {
 					content: [...(await does({ verb: "click", ref: found.ref, brief: true }))],
 					details: {},
@@ -604,7 +632,7 @@ export default function (pi: ExtensionAPI): void {
 			const model = pointing();
 			if (what !== undefined && what.trim() !== "" && model !== undefined) {
 				const found = await pointAt(model, what.trim());
-				if ("why" in found) return insteadRead(found.why, found.usage);
+				if ("why" in found) return instead(found.why, found.near ?? [], found.usage);
 				return {
 					content: [
 						...(await does({
@@ -632,6 +660,126 @@ export default function (pi: ExtensionAPI): void {
 			};
 		},
 	});
+
+	/*
+	 * A whole form in one call, which is the only thing here that changes how long a turn takes.
+	 *
+	 * Everything else this feature does saves tokens. This saves calls to the model that thinks —
+	 * and that model is where the minute goes: ten seconds a step, two steps a box, six boxes on a
+	 * checkout. The questions about which row is which box are asked in one request and answered in
+	 * parallel by something that takes a tenth of a second, the boxes are filled inside the browser
+	 * one after another, and the button under them is pressed on the way out.
+	 */
+	if (points !== undefined) {
+		pi.registerTool({
+			name: "screen_fill",
+			label: "Fill a form",
+			description: [
+				"Fill in a whole form at once, and press the button under it.",
+				"",
+				"Name each box the way it reads on screen and say what goes in it. They are all worked",
+				"out together and filled in order, so a six-box checkout is one call instead of twelve.",
+				"",
+				"Use this for anything with more than one box in it. screen_type is for a single box —",
+				"a search field, a code — and this is for everything else.",
+				"",
+				"A box that is not clearly one thing on the page is left empty and named in the answer,",
+				"so you can do that one yourself. The rest are still filled: a form is not all or nothing.",
+			].join("\n"),
+			promptSnippet: "Fill in a form and press the button under it, in one call",
+			promptGuidelines: [
+				"Fill forms with screen_fill rather than one box at a time. Two calls per box is where a turn's minutes go.",
+			],
+			parameters: Type.Object({
+				fields: Type.Array(
+					Type.Object({
+						what: Type.String({
+							description:
+								'The box, as it reads on screen: "the first name field", "Fecha de nacimiento".',
+						}),
+						text: Type.String({ description: "What to put in it." }),
+					}),
+					{ description: "Every box you want filled, in the order they are on the page." },
+				),
+				then: Type.Optional(
+					Type.String({
+						description:
+							'Something to press once they are filled, described: "the Continue button".',
+					}),
+				),
+			}),
+			async execute(_id, params) {
+				const { fields, then } = params as {
+					fields: readonly { what: string; text: string }[];
+					then?: string;
+				};
+				const model = pointing();
+				if (model === undefined || fields.length === 0) {
+					return {
+						content: [
+							{ type: "text" as const, text: "Say which boxes to fill and what goes in them." },
+						],
+						details: {},
+					};
+				}
+				const outline = readOutline(textIn(await does({ verb: "outline" })));
+				if (outline === undefined || outline.rows.length === 0) {
+					return {
+						content: [{ type: "text" as const, text: "There is nothing on this page to fill in." }],
+						details: {},
+					};
+				}
+
+				// One request for every box and the button: the provider answers them independently and
+				// in parallel, so asking about seven things costs what asking about one costs.
+				const wants = [...fields.map((one) => one.what), ...(then === undefined ? [] : [then])];
+				const asked = await askTheModel(model, askedAboutAll(model, wants, outline));
+				if ("why" in asked) return instead(asked.why, [], undefined);
+				const found = pickedAllIn(asked.answer, wants.length);
+
+				const puts: { ref: number; text: string }[] = [];
+				const missed: string[] = [];
+				fields.forEach((one, at) => {
+					const picked = found[at];
+					if (picked === undefined) missed.push(one.what);
+					else puts.push({ ref: picked.ref, text: one.text });
+				});
+				const press = then === undefined ? undefined : found[fields.length]?.ref;
+				if (puts.length === 0 && press === undefined) {
+					return instead(
+						`None of those is clearly a box on this page: ${missed.join(", ")}.`,
+						nearestIn(asked.answer, outline.rows, 3, keyAt(0)),
+						asked.usage,
+					);
+				}
+
+				const did = await does({
+					verb: "put",
+					puts,
+					...(press === undefined ? {} : { press }),
+					brief: true,
+				});
+				const said = [
+					`Filled ${puts.length} of ${fields.length}.`,
+					...(missed.length === 0
+						? []
+						: [
+								`Not clearly on this page, so left empty: ${missed.join(", ")}. Do those one at a time, or read the page.`,
+							]),
+					...(then === undefined
+						? []
+						: press === undefined
+							? [`Nothing on this page is clearly "${then}", so nothing was pressed.`]
+							: [`Then pressed "${then}".`]),
+				].join(" ");
+				return {
+					content: [{ type: "text" as const, text: said }, ...did],
+					details: {},
+					usage: asked.usage,
+				};
+			},
+		});
+	}
 
 	pi.registerTool({
 		name: "screen_key",

@@ -675,6 +675,18 @@ export class Browser {
 		return true;
 	}
 
+	/**
+	 * Empties the box the cursor is in.
+	 *
+	 * Select-all then delete, which is what a person does, rather than setting the value to "": a
+	 * form that is watching for typing sees this and does not see that. Modifier 2 is control and 4
+	 * is command; both are sent because the browser is Linux and the page may be reading either.
+	 */
+	async #clear(): Promise<void> {
+		await this.#press("a", { modifiers: 2 });
+		await this.#press("Delete");
+	}
+
 	async #press(key: string, options: { modifiers?: number; session?: string } = {}): Promise<void> {
 		const cdp = this.#need();
 		const session = options.session ?? this.#session;
@@ -709,10 +721,7 @@ export class Browser {
 			await this.#clickAt(spot.at.x, spot.at.y);
 			// Whatever was in there goes first: a box a browser filled in from its own history is a box
 			// that ends up holding both.
-			if (spot.filled) {
-				await this.#press("a", { modifiers: 2 });
-				await this.#press("Delete");
-			}
+			if (spot.filled) await this.#clear();
 			await cdp.send("Input.insertText", { text: value }, this.#session);
 		};
 		await put(form.username, credential.username);
@@ -776,6 +785,34 @@ export class Browser {
 					await this.#press("Enter");
 					await this.#settled();
 				}
+				return { text: said(await this.#outline(), asked.brief === true) };
+			}
+			/*
+			 * Every box, then the button, without going back for instructions between them.
+			 *
+			 * In document order and one after another, because that is what a person filling a form
+			 * does and because some forms watch it: a page that reveals its next field when the one
+			 * before it is filled gets what it is waiting for. A box whose ref has gone stale stops
+			 * the run rather than typing a passenger's surname into whatever is in that slot now.
+			 */
+			case "put": {
+				const done: string[] = [];
+				for (const one of asked.puts ?? []) {
+					if (!(await this.#clickRef(one.ref))) {
+						return {
+							text: `Filled ${done.length} of ${(asked.puts ?? []).length} before [${one.ref}] turned out not to be there any more. The page has moved on — read it again.`,
+						};
+					}
+					await this.#clear();
+					await this.#need().send("Input.insertText", { text: one.text }, this.#session);
+					done.push(String(one.ref));
+				}
+				const load = this.#loading();
+				if (asked.press !== undefined && !(await this.#clickRef(asked.press))) {
+					return { text: `The boxes are filled. [${asked.press}] is not on this page any more.` };
+				}
+				if (asked.enter === true) await this.#press("Enter");
+				if (asked.press !== undefined || asked.enter === true) await this.#settled(load);
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "key": {

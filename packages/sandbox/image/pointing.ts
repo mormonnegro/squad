@@ -128,6 +128,84 @@ export const NONE = "none";
  * thing it presses is then a button somebody did not ask for. With an out, being wrong is an answer
  * rather than a click.
  */
+/**
+ * Several things asked at once, which is the whole reason a form is one call instead of six.
+ *
+ * The provider evaluates every question in a request independently and in parallel, so asking which
+ * row is the first name, which is the surname and which is the date of birth costs what asking one
+ * of them costs. What that buys is not the tenth of a second: it is that the agent's own model is
+ * called once for the form rather than once per box, and its own model is where a turn's minute
+ * actually goes.
+ *
+ * Each question carries its own options, because which rows are worth offering depends on what is
+ * being asked for.
+ */
+export function askedAboutAll(
+	pointing: Pointing,
+	wants: readonly string[],
+	outline: Outline,
+): string {
+	const questions: Record<string, unknown> = {};
+	wants.forEach((what, at) => {
+		const criteria: Record<string, string> = {};
+		for (const row of likely(outline.rows, what)) {
+			const ref = refOf(row);
+			if (ref !== undefined) criteria[String(ref)] = labelOf(row);
+		}
+		criteria[NONE] = "None of these is the thing being described.";
+		questions[keyAt(at)] = {
+			type: "choice",
+			instructions: `Which one is: ${what}?`,
+			criteria,
+		};
+	});
+	return JSON.stringify({
+		model: pointing.model,
+		state: {
+			page: outline.title === "" ? outline.url : `${outline.title} — ${outline.url}`,
+			says: outline.text.slice(0, 2000),
+		},
+		questions,
+	});
+}
+
+/** What the nth question is called. Answers come back under the names they were asked under. */
+export function keyAt(at: number): string {
+	return `which${at}`;
+}
+
+/** Each answer in turn, in the order the things were asked for, with the unsure ones left out. */
+export function pickedAllIn(
+	answer: unknown,
+	count: number,
+	floor = SURE_ENOUGH,
+): readonly (Picked | undefined)[] {
+	return Array.from({ length: count }, (_, at) => pickedIn(answer, floor, keyAt(at)));
+}
+
+/**
+ * The rows it was choosing between, best first, for the times it would not commit to one.
+ *
+ * The probabilities come back for every option whether they are wanted or not, so this costs
+ * nothing and answers the only question the agent has next: which ones did you mean between? What
+ * it replaces is the whole numbered page, which is how one unsure answer used to send an agent back
+ * to reading pages for the rest of its turn.
+ */
+export function nearestIn(
+	answer: unknown,
+	rows: readonly string[],
+	most = 3,
+	key = "which",
+): readonly string[] {
+	const said = answer as { answers?: Record<string, { probabilities?: Record<string, unknown> }> };
+	const probabilities = said.answers?.[key]?.probabilities ?? {};
+	return Object.entries(probabilities)
+		.filter(([ref, weight]) => ref !== NONE && typeof weight === "number" && weight > 0.02)
+		.sort((a, b) => (b[1] as number) - (a[1] as number))
+		.slice(0, most)
+		.map(([ref]) => rows.find((row) => refOf(row) === Number(ref)) ?? `[${ref}]`);
+}
+
 export function askedAbout(pointing: Pointing, what: string, outline: Outline): string {
 	const rows = likely(outline.rows, what);
 	const criteria: Record<string, string> = {};
@@ -180,12 +258,12 @@ export interface Picked {
  */
 export const SURE_ENOUGH = 0.55;
 
-export function pickedIn(answer: unknown, floor = SURE_ENOUGH): Picked | undefined {
+export function pickedIn(answer: unknown, floor = SURE_ENOUGH, key = "which"): Picked | undefined {
 	const said = answer as {
-		answers?: { which?: { choice?: unknown; confidence?: unknown } };
+		answers?: Record<string, { choice?: unknown; confidence?: unknown } | undefined>;
 	};
-	const choice = said.answers?.which?.choice;
-	const confidence = said.answers?.which?.confidence;
+	const choice = said.answers?.[key]?.choice;
+	const confidence = said.answers?.[key]?.confidence;
 	if (typeof choice !== "string" || choice === NONE) return undefined;
 	const ref = Number(choice);
 	if (!Number.isInteger(ref) || ref < 1) return undefined;

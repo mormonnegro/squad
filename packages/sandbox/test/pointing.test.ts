@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
 	askedAbout,
+	askedAboutAll,
+	keyAt,
 	labelOf,
 	likely,
 	MOST_OPTIONS,
 	NONE,
+	nearestIn,
 	type Outline,
 	type Pointing,
+	pickedAllIn,
 	pickedIn,
 	readOutline,
 	readPointing,
@@ -140,5 +144,72 @@ describe("the answer", () => {
 		expect(usage.input).toBe(1000);
 		expect(usage.totalTokens).toBe(1010);
 		expect(usage.cost.total).toBeCloseTo(0.000042, 9);
+	});
+});
+
+describe("several things at once", () => {
+	/** A form is one call to the thing that thinks because it is one request to the thing that picks. */
+	it("asks one question per thing, each with its own options", () => {
+		const asked = JSON.parse(
+			askedAboutAll(POINTING, ["the email field", "the continue button"], PAGE),
+		) as { questions: Record<string, { instructions: string; criteria: Record<string, string> }> };
+
+		expect(Object.keys(asked.questions)).toEqual([keyAt(0), keyAt(1)]);
+		expect(asked.questions[keyAt(0)]?.instructions).toBe("Which one is: the email field?");
+		expect(asked.questions[keyAt(1)]?.instructions).toBe("Which one is: the continue button?");
+		expect(Object.keys(asked.questions[keyAt(1)]?.criteria ?? {})).toContain(NONE);
+	});
+
+	it("reads the answers back in the order they were asked in", () => {
+		const answer = {
+			answers: {
+				[keyAt(0)]: { choice: "2", confidence: 0.9 },
+				[keyAt(1)]: { choice: NONE, confidence: 0.99 },
+				[keyAt(2)]: { choice: "3", confidence: 0.88 },
+			},
+		};
+
+		expect(pickedAllIn(answer, 3)).toEqual([
+			{ ref: 2, confidence: 0.9 },
+			undefined,
+			{ ref: 3, confidence: 0.88 },
+		]);
+	});
+
+	/** A form is not all or nothing: the boxes it was sure about are filled and the rest are named. */
+	it("leaves out the ones it would not commit to", () => {
+		const answer = { answers: { [keyAt(0)]: { choice: "2", confidence: SURE_ENOUGH - 0.1 } } };
+
+		expect(pickedAllIn(answer, 1)).toEqual([undefined]);
+	});
+});
+
+describe("what it was choosing between", () => {
+	/**
+	 * The whole point of this: an unsure answer used to hand back two hundred numbered rows, and an
+	 * agent with numbers in front of it goes back to counting for the rest of its turn.
+	 */
+	it("names the likeliest rows, best first, out of what came back anyway", () => {
+		const answer = {
+			answers: { which: { probabilities: { "1": 0.05, "2": 0.4, "3": 0.44, none: 0.11 } } },
+		};
+
+		expect(nearestIn(answer, PAGE.rows, 3)).toEqual([
+			'[3] button "Continue to payment"',
+			'[2] input email "Email"',
+			'[1] a "Back to basket"',
+		]);
+	});
+
+	it("leaves out the ones that were never in the running, and never none", () => {
+		const answer = {
+			answers: { which: { probabilities: { "1": 0.001, "3": 0.9, none: 0.099 } } },
+		};
+
+		expect(nearestIn(answer, PAGE.rows, 3)).toEqual(['[3] button "Continue to payment"']);
+	});
+
+	it("is empty when there is nothing to say about it", () => {
+		expect(nearestIn({}, PAGE.rows)).toEqual([]);
 	});
 });
