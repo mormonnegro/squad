@@ -110,6 +110,25 @@ export function plainly(action: string, args: unknown): InWords {
 			return { say: "going back to another tab", sources: [] };
 		case "screen_tab_close":
 			return { say: "closing a tab", sources: [] };
+		/*
+		 * The one line here worth reading twice, which is why it names the site.
+		 *
+		 * Everything else on this list is an agent moving around a page. This is an account of the
+		 * operator\'s being used, and a person scrolling past it should be able to tell at a glance
+		 * which one — an unexpected host on this line is the whole of what watching is for.
+		 */
+		case "screen_login": {
+			// The site as the agent said it when it is not an address: this tool takes a host, and a
+			// host is the half of a URL that `named` is built to throw the rest of away.
+			const site = hostOf(url) || url.trim();
+			return {
+				say:
+					site === ""
+						? "signing into this page from your vault"
+						: `signing into ${site} from your vault`,
+				sources: [],
+			};
+		}
 		case "screen_ask":
 			return { say: "asking you to take the keyboard", sources: [] };
 		case "web_search":

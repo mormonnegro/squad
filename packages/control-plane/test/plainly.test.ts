@@ -35,6 +35,15 @@ describe("plainly", () => {
 			"typing into [3]: “Madrid”",
 		);
 		expect(plainly("screen_ask", { note: "…" }).say).toBe("asking you to take the keyboard");
+		// The one line on this list that is about an account rather than a page, so it names the site:
+		// an unexpected host here is the thing a person watching is watching for.
+		expect(plainly("screen_login", { url: "github.com" }).say).toBe(
+			"signing into github.com from your vault",
+		);
+		expect(plainly("screen_login", { url: "https://github.com/login" }).say).toBe(
+			"signing into github.com from your vault",
+		);
+		expect(plainly("screen_login", {}).say).toBe("signing into this page from your vault");
 	});
 
 	it("reads a shell line for what it does, past what it says", () => {

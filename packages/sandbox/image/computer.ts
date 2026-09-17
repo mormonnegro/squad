@@ -609,12 +609,13 @@ export default function (pi: ExtensionAPI): void {
 					]),
 			"",
 			"Never type a password, a card number or a one-time code. You do not have them, and a page",
-			"asking for one is a page to hand over: use screen_ask, and your operator will come and type",
-			"it themselves.",
+			"asking for one is a page to hand over: screen_login signs you in from your operator's",
+			"password manager without any of it passing through you, and screen_ask brings them to the",
+			"keyboard when that is not open to you.",
 		].join("\n"),
 		promptSnippet: "Type into a field on the page",
 		promptGuidelines: [
-			"Never type credentials into a page. Ask the operator to take the keyboard instead, with screen_ask.",
+			"Never type credentials into a page. At a login use screen_login; if that says the site is not open for you, ask the operator to take the keyboard with screen_ask.",
 		],
 		parameters: Type.Object({
 			text: Type.String({ description: "What to put in." }),
@@ -942,6 +943,59 @@ export default function (pi: ExtensionAPI): void {
 		async execute(_id, params) {
 			const { tab } = params as { tab: number };
 			return { content: [...(await does({ verb: "tab_close", tab }))], details: {} };
+		},
+	});
+
+	/*
+	 * Signing in, which is the one tool here whose answer the agent may not see.
+	 *
+	 * The other way out of a login, beside asking the operator to come and type one. What it takes is
+	 * a site and never an entry: the vault is opened in the browser's container by a CLI holding a
+	 * token this sandbox has no path to, and what crosses into the page is keystrokes. There is no
+	 * shape of request here that answers with a password, because nothing on the other side answers
+	 * with one — a filled password box reads as bullets in every later reading of the page.
+	 *
+	 * It works for the sites the operator opened for this agent and no others. The refusal says what
+	 * to do about it, because an agent stopped at a login with no way to say so is an agent that
+	 * starts guessing.
+	 */
+	pi.registerTool({
+		name: "screen_login",
+		label: "Sign in from the vault",
+		description: [
+			"Sign into the site you are on, using an account your operator keeps in their password",
+			"manager.",
+			"",
+			"You never see any of it. The password is read inside the browser's own container and typed",
+			"into the page; what you get back is a sentence about which boxes were filled, and the page",
+			"afterwards shows a password box as bullets like anybody else's.",
+			"",
+			"This works only for sites your operator has opened for you. If it says one is not open, the",
+			"thing to do is screen_ask: they open it once at the console, and after that you sign",
+			"yourself in whenever the session runs out.",
+			"",
+			"Open the sign-in page first, and call this on it. If the form is the two-step kind — the",
+			"name first and the password on the next page — call it again on the second page.",
+		].join("\n"),
+		promptSnippet: "Sign into the site you are on, from your operator's password manager",
+		promptGuidelines: [
+			"At a login, try screen_login before anything else: it is the only way you may sign in, and it costs one call.",
+			"Never type a password, a card or a code yourself, and never invent one. If screen_login says the site is not open for you, use screen_ask.",
+		],
+		parameters: Type.Object({
+			url: Type.Optional(
+				Type.String({
+					description:
+						"The site to sign into, when it is not the page you are on. A host like github.com.",
+				}),
+			),
+		}),
+		async execute(_id, params) {
+			const { url } = params as { url?: string };
+			return {
+				content: [...(await does(url === undefined ? { verb: "login" } : { verb: "login", url }))],
+				details: {},
+			};
 		},
 	});
 

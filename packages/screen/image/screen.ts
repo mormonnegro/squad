@@ -105,6 +105,14 @@ const verbs = http.createServer((request, response) => {
 		 * login with no way to say so is an agent that starts guessing passwords.
 		 */
 		if (asked.verb === "login") {
+			// Before anything is looked up, for the reason every other verb that touches the page waits:
+			// somebody is typing on this browser right now, and a form filled underneath them is the one
+			// collision this whole hand-off exists to prevent — quite possibly with the password they
+			// were in the middle of typing themselves.
+			if (keyboard.holder === "operator") {
+				json(response, 409, { refused: refusedToAgent(keyboard.state().note) });
+				return;
+			}
 			const where = hostOf(asked.url ?? browser.where());
 			if (!opened.includes(where)) {
 				json(response, 200, {
