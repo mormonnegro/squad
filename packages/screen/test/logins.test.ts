@@ -4,6 +4,7 @@ import {
 	credentialIn,
 	filledSaid,
 	hostOf,
+	itemArgs,
 	itemFor,
 	openedFor,
 	readForm,
@@ -218,5 +219,48 @@ describe("whether a page is one the operator opened", () => {
 	it("is not fooled by a name that merely ends the same way", () => {
 		expect(openedFor("notgithub.com", opened)).toBe(false);
 		expect(openedFor("github.com.evil.example", opened)).toBe(false);
+	});
+});
+
+/**
+ * How one entry is asked for, which is not the question a person at a terminal asks.
+ *
+ * A person is signed into an account and an id is enough. A service account is scoped to vaults and
+ * refuses an id on its own — "a vault query must be provided when this command is called by a
+ * service account" — which is exactly the failure this covers, found the hard way against a live
+ * vault after the agent could only report that the entry would not come out.
+ */
+describe("asking the vault for one entry", () => {
+	const item = { id: "abc123", title: "X", vault: { id: "v1", name: "Squad" } };
+
+	it("names the vault the listing already said it was in", () => {
+		expect(itemArgs(item)).toEqual([
+			"item",
+			"get",
+			"abc123",
+			"--vault",
+			"v1",
+			"--format",
+			"json",
+			"--reveal",
+		]);
+	});
+
+	// The id is what the CLI is sure about; a name is whatever somebody typed and can be two things.
+	it("falls back to the vault's name when there is no id", () => {
+		expect(itemArgs({ id: "abc123", title: "X", vault: { name: "Squad" } })).toContain("Squad");
+	});
+
+	// An older listing, or a token that is somebody's own account rather than a service account: the
+	// id alone works there, and sending an empty --vault would break what used to work.
+	it("asks by id alone when the listing said no vault", () => {
+		expect(itemArgs({ id: "abc123", title: "X" })).not.toContain("--vault");
+		expect(itemArgs({ id: "abc123", title: "X", vault: {} })).not.toContain("--vault");
+	});
+
+	// Concealed fields come back as a placeholder without this, and a placeholder typed into a login
+	// is a password box with the word "concealed" in it.
+	it("always asks for the values rather than their placeholders", () => {
+		expect(itemArgs(item)).toContain("--reveal");
 	});
 });

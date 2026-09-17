@@ -3,7 +3,7 @@ import http from "node:http";
 import { Browser } from "./browser.ts";
 import { readEgress, startForwarder } from "./forward.ts";
 import { refusedToAgent, refusedToOperator, TheKeyboard } from "./keyboard.ts";
-import { credentialIn, hostOf, itemFor, openedFor, type VaultItem } from "./logins.ts";
+import { credentialIn, hostOf, itemArgs, itemFor, openedFor, type VaultItem } from "./logins.ts";
 import { startPage, viewPage } from "./page.ts";
 import { presented, tokenIn } from "./token.ts";
 import { needsTheKeyboard, readAsked, readUrl } from "./verbs.ts";
@@ -315,11 +315,35 @@ const view = http.createServer((request, response) => {
  * CLI is the thing 1Password keeps working. Nothing is cached: a password read once and kept would
  * be a password this process could be made to say, and the whole point is that it cannot.
  */
-async function op(args: readonly string[]): Promise<string | undefined> {
+async function op(args: readonly string[]): Promise<{ out?: string; why?: string }> {
 	return new Promise((resolve) => {
-		execFile("op", [...args], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, (failure, out) => {
-			resolve(failure === null ? out : undefined);
-		});
+		execFile(
+			"op",
+			[...args],
+			{ timeout: 20_000, maxBuffer: 4 * 1024 * 1024 },
+			(failure, out, err) => {
+				if (failure === null) {
+					resolve({ out });
+					return;
+				}
+				/*
+				 * What it said, rather than only that it failed.
+				 *
+				 * This cost an evening: `op item get` refuses an id from a service account unless the
+				 * vault is named too, and says so in one clear line on stderr — which this function
+				 * threw away. What reached the agent was "the vault would not hand over X", which is
+				 * true, unactionable, and indistinguishable from a revoked token.
+				 *
+				 * The first line only. What follows it is usually a usage dump, and a paragraph of
+				 * flags in a conversation is a paragraph carried through the rest of the turn.
+				 */
+				const said = (err ?? "")
+					.split("\n")
+					.map((line) => line.replace(/^\[ERROR\]\s+\S+\s+\S+\s+/, "").trim())
+					.find((line) => line !== "");
+				resolve({ why: said === undefined || said === "" ? failure.message : said });
+			},
+		);
 	});
 }
 
@@ -328,7 +352,7 @@ async function noVault(): Promise<string | undefined> {
 	if ((process.env.OP_SERVICE_ACCOUNT_TOKEN ?? "") === "") {
 		return "No vault is connected to this browser. Your operator connects one at the console, under Abilities.";
 	}
-	if ((await op(["--version"])) === undefined) {
+	if ((await op(["--version"])).out === undefined) {
 		return "This browser was built without the 1Password CLI in it — the image could not fetch it. Rebuilding the screen picks it up.";
 	}
 	return undefined;
@@ -346,19 +370,23 @@ async function signIn(where: string): Promise<string> {
 	const without = await noVault();
 	if (without !== undefined) return without;
 	const listed = await op(["item", "list", "--format", "json"]);
-	if (listed === undefined)
-		return "The vault would not open. The token this browser holds may have been taken back.";
+	if (listed.out === undefined) {
+		return `The vault would not open — the token this browser holds may have been taken back. It said: ${listed.why}`;
+	}
 	let items: VaultItem[];
 	try {
-		items = JSON.parse(listed) as VaultItem[];
+		items = JSON.parse(listed.out) as VaultItem[];
 	} catch {
 		return "The vault answered something this screen could not read.";
 	}
 	const item = itemFor(host, items);
 	if (typeof item === "string") return item;
-	const got = await op(["item", "get", item.id, "--format", "json", "--reveal"]);
-	if (got === undefined) return `The vault would not hand over ${item.title}.`;
-	const credential = credentialIn(got);
+	const got = await op(itemArgs(item));
+	// In its own words, because every way this fails is something somebody can act on and none of
+	// them is guessable from here: a vault the token no longer reaches, an entry that has since been
+	// deleted, a CLI that wants an argument this one did not send.
+	if (got.out === undefined) return `The vault would not hand over ${item.title}: ${got.why}`;
+	const credential = credentialIn(got.out);
 	if (typeof credential === "string") return credential;
 	return browser.fill(credential);
 }

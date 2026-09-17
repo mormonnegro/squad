@@ -28,6 +28,36 @@ export interface VaultItem {
 	readonly id: string;
 	readonly title: string;
 	readonly urls?: readonly { readonly href?: string; readonly primary?: boolean }[];
+	/**
+	 * Which vault it is in, which a service account has to be told even when it can only read one.
+	 *
+	 * Not a nicety of ours: `op item get <id>` refuses outright when the caller is a service account
+	 * and no vault was named — "a vault query must be provided when this command is called by a
+	 * service account". The listing already answers it, so nothing has to be asked twice.
+	 */
+	readonly vault?: { readonly id?: string; readonly name?: string };
+}
+
+/**
+ * How to ask for one entry, which is not the same question a person asks.
+ *
+ * A person running `op` is signed into an account and one id is enough. A service account is not: it
+ * is scoped to vaults, and reading an item means naming the one it is in. The id is preferred over
+ * the name because a name is whatever somebody typed and can be two things at once.
+ */
+export function itemArgs(item: VaultItem): readonly string[] {
+	const at = item.vault?.id ?? item.vault?.name;
+	return [
+		"item",
+		"get",
+		item.id,
+		...(at === undefined || at === "" ? [] : ["--vault", at]),
+		"--format",
+		"json",
+		// Concealed fields come back as a placeholder without this, and a placeholder typed into a
+		// login is a password box with the word "concealed" in it.
+		"--reveal",
+	];
 }
 
 /** The site an address is for, which is what a vault entry and a page have in common. */
