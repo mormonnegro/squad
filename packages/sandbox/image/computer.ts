@@ -25,10 +25,13 @@ import {
 	pickedIn,
 	readOutline,
 	readPointing,
+	refOf,
 	refusedBy as refusedPointing,
 	spentOn as spentPointing,
+	SURE_ENOUGH,
 } from "./pointing.ts";
 import { alreadyAsked, askFor, holding, keep } from "./question.ts";
+import { askedToStep, type Move, movedIn, TARGET_KEY, walked } from "./steering.ts";
 import { answerOf, type Block, unreachable } from "./screen-answer.ts";
 
 /**
@@ -263,6 +266,83 @@ async function pointAt(
 		};
 	}
 	return { ref: picked.ref, usage: asked.usage };
+}
+
+/**
+ * Walking a site towards something, without going back to the model that thinks between steps.
+ *
+ * The one thing here that is a loop rather than a call. Each turn of it is: ask the browser for the
+ * page as data, ask the classifier in one request what should happen and to what, do it. About half
+ * a second a step, against the twenty to fifty seconds a step costs when every click is a tool call
+ * answered by the model driving the turn.
+ *
+ * It stops at the first of four things: it says it has arrived, it says the page offers no way on,
+ * it will not commit to a move, or it runs out of steps. Every one of those hands the page back and
+ * says which it was — a loop that stopped for a different reason than it looks like is a loop an
+ * agent will run again expecting a different answer.
+ */
+async function walkTowards(
+	model: Pointing,
+	goal: string,
+	most: number,
+): Promise<{ readonly said: string; readonly usage: Usage | undefined }> {
+	const trail: string[] = [];
+	let spent: Usage | undefined;
+	const add = (usage: Usage | undefined): void => {
+		if (usage === undefined) return;
+		spent = spent === undefined ? usage : sums(spent, usage);
+	};
+	const page = async (): Promise<string> => textIn(await does({ verb: "read", brief: true })) ?? "";
+
+	for (let step = 0; step < most; step += 1) {
+		const outline: Outline | undefined = readOutline(textIn(await does({ verb: "outline" })));
+		if (outline === undefined) {
+			return { said: "The browser could not say what is on the page.", usage: spent };
+		}
+		const asked = await askTheModel(model, askedToStep(model, goal, outline, trail));
+		if ("why" in asked) return { said: asked.why, usage: spent };
+		add(asked.usage);
+		const move: Move | undefined = movedIn(asked.answer);
+		if (move === undefined) {
+			return { said: [walked(trail, "unsure", goal), "", await page()].join("\n"), usage: spent };
+		}
+		if (move === "done" || move === "stuck") {
+			return { said: [walked(trail, move, goal), "", await page()].join("\n"), usage: spent };
+		}
+		if (move === "scroll") {
+			await does({ verb: "scroll", to: "down", brief: true });
+			continue;
+		}
+		const picked = pickedIn(asked.answer, SURE_ENOUGH, TARGET_KEY);
+		if (picked === undefined) {
+			// It wanted to press something and would not say what. Scrolling is the cheap thing to try
+			// before giving the page back: half the time what it meant is below the fold.
+			await does({ verb: "scroll", to: "down", brief: true });
+			continue;
+		}
+		const row = outline.rows.find((one) => refOf(one) === picked.ref);
+		trail.push(row === undefined ? `[${picked.ref}]` : labelOf(row));
+		await does({ verb: "click", ref: picked.ref, brief: true });
+	}
+	return { said: [walked(trail, "most", goal), "", await page()].join("\n"), usage: spent };
+}
+
+/** Two costs added up, because a walk is many requests and the agent is shown one number. */
+function sums(one: Usage, two: Usage): Usage {
+	return {
+		input: one.input + two.input,
+		output: one.output + two.output,
+		cacheRead: one.cacheRead + two.cacheRead,
+		cacheWrite: one.cacheWrite + two.cacheWrite,
+		totalTokens: one.totalTokens + two.totalTokens,
+		cost: {
+			input: one.cost.input + two.cost.input,
+			output: one.cost.output + two.cost.output,
+			cacheRead: one.cost.cacheRead + two.cost.cacheRead,
+			cacheWrite: one.cost.cacheWrite + two.cost.cacheWrite,
+			total: one.cost.total + two.cost.total,
+		},
+	};
 }
 
 /** The page an answer is about, which is the fact an agent on the wrong tab is missing. */
@@ -725,7 +805,77 @@ export default function (pi: ExtensionAPI): void {
 	 * parallel by something that takes a tenth of a second, the boxes are filled inside the browser
 	 * one after another, and the button under them is pressed on the way out.
 	 */
+	/*
+	 * The one tool that walks rather than acts, and the only one that does several things per call.
+	 *
+	 * Everything else here is one move decided by the model that thinks. This is a destination: the
+	 * loop inside it asks the classifier what to do and does it, over and over, without a word to
+	 * that model in between. Which is the whole saving — on this plane a step costs about half a
+	 * second here against twenty to fifty seconds there.
+	 *
+	 * Only where there is a classifier, because without one there is nothing to ask.
+	 */
 	if (points !== undefined) {
+		pi.registerTool({
+			name: "screen_goal",
+			label: "Get to a page",
+			description: [
+				"Walk this browser to somewhere, in one call.",
+				"",
+				"Say where you want to end up and it presses its own way there: it looks at the page,",
+				"decides what gets closest, presses it, and looks again. Nothing comes back to you in",
+				"between, which is why it is fast — a walk of five pages takes seconds rather than a call",
+				"of yours per page.",
+				"",
+				"Use it for getting somewhere: a section of a site, a product page, the page behind three",
+				"menus. Not for doing something once you are there — filling a form is screen_fill, one",
+				"press is screen_click, and anything with a password in it is screen_login.",
+				"",
+				'Say the destination, not the route: "the page about coffee in Brazil" rather than "click',
+				'Brasil then Café". It chooses each step from what the page actually offers.',
+				"",
+				"It stops by itself and tells you which: it arrived, the page offered no way on, it was",
+				"unsure what to do next, or it ran out of steps. What comes back is where it ended and",
+				"what it pressed to get there. It types nothing — a page that needs words needs you.",
+			].join("\n"),
+			promptSnippet: "Walk the browser to a page, pressing its own way there",
+			promptGuidelines: [
+				"To get somewhere that takes several clicks, use screen_goal once rather than screen_click several times: the steps happen without a turn of yours, which is most of the time a walk costs.",
+				"Say where to end up, not which links to press. If it comes back unsure or out of steps, carry on with screen_click from where it left you.",
+			],
+			parameters: Type.Object({
+				goal: Type.String({
+					description:
+						'Where to end up, as you would say it: "the page about coffee in Brazil", "the checkout", "the settings for billing".',
+				}),
+				most: Type.Optional(
+					Type.Integer({
+						description: "How many presses it may make before stopping. Eight by default.",
+					}),
+				),
+			}),
+			async execute(_id, params) {
+				const { goal, most } = params as { goal: string; most?: number };
+				const model = pointing();
+				if (model === undefined) {
+					return {
+						content: [{ type: "text" as const, text: "Nothing points on this plane." }],
+						details: {},
+					};
+				}
+				// Bounded here as well as offered as a default: a walk is the one call that can make
+				// twenty presses without anybody watching, and the ceiling is what keeps a goal it will
+				// never reach from pressing its way across a site until the turn runs out.
+				const steps = Math.max(1, Math.min(most ?? 8, 15));
+				const walk = await walkTowards(model, goal.trim(), steps);
+				return {
+					content: [{ type: "text" as const, text: walk.said }],
+					details: {},
+					...(walk.usage === undefined ? {} : { usage: walk.usage }),
+				};
+			},
+		});
+
 		pi.registerTool({
 			name: "screen_fill",
 			label: "Fill a form",

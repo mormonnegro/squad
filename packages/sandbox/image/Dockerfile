@@ -63,6 +63,7 @@ COPY ask.ts /usr/local/lib/squad/extensions/ask.ts
 # next rebuild.
 COPY looking.ts /usr/local/lib/squad/extensions/looking.ts
 COPY pointing.ts /usr/local/lib/squad/extensions/pointing.ts
+COPY steering.ts /usr/local/lib/squad/extensions/steering.ts
 COPY screen-answer.ts /usr/local/lib/squad/extensions/screen-answer.ts
 COPY computer.ts /usr/local/lib/squad/extensions/computer.ts
 
