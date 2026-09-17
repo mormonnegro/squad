@@ -198,6 +198,16 @@ export function readAsked(body: unknown): Asked | Refused {
 		}
 		case "outline":
 			return { verb: "outline" };
+		/*
+		 * The two that answer with a page and took nothing.
+		 *
+		 * `brief` is not a preference here, it is which browser this is: an agent whose plane points
+		 * cannot send a ref at all, so the list of them is a cost with no use. Carried for every verb
+		 * that answers with a page, because the saving is in what comes back rather than in the going.
+		 */
+		case "read":
+		case "back":
+			return { verb: verb as Verb, ...(body.brief === true ? { brief: true } : {}) };
 		case "put": {
 			const puts = Array.isArray(body.puts) ? body.puts : [];
 			const wanted: { ref: number; text: string }[] = [];
@@ -272,20 +282,24 @@ export function readAsked(body: unknown): Asked | Refused {
 			if (typeof body.key !== "string" || !KEYS.has(body.key)) {
 				return { refused: `key takes one of: ${[...KEYS].join(", ")}.` };
 			}
-			return { verb: "key", key: body.key };
+			return { verb: "key", key: body.key, ...(body.brief === true ? { brief: true } : {}) };
 		}
 		case "scroll": {
 			const to = body.to;
 			if (typeof to !== "string" || !SCROLLS.has(to)) {
 				return { refused: "scroll takes to: up, down, top or bottom." };
 			}
-			return { verb: "scroll", to: to as "up" | "down" | "top" | "bottom" };
+			return {
+				verb: "scroll",
+				to: to as "up" | "down" | "top" | "bottom",
+				...(body.brief === true ? { brief: true } : {}),
+			};
 		}
 		case "tab_open": {
 			if (typeof body.url !== "string") return { refused: "tab_open takes a url." };
 			const read = readUrl(body.url);
 			if ("refused" in read) return read;
-			return { verb: "tab_open", url: read.url };
+			return { verb: "tab_open", url: read.url, ...(body.brief === true ? { brief: true } : {}) };
 		}
 		case "tab":
 		case "tab_close": {
@@ -295,7 +309,7 @@ export function readAsked(body: unknown): Asked | Refused {
 					refused: `${verb} takes a tab number, which is one of the numbers from tabs. Ask for tabs first.`,
 				};
 			}
-			return { verb: verb as Verb, tab };
+			return { verb: verb as Verb, tab, ...(body.brief === true ? { brief: true } : {}) };
 		}
 		case "ask": {
 			if (typeof body.note !== "string" || body.note.trim() === "") {

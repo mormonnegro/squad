@@ -300,16 +300,19 @@ async function askTheModel(
  * anybody reads them.
  */
 function instead(why: string, near: readonly string[], usage: Usage | undefined) {
+	// Named rather than numbered, because every caller of this is an agent that names things: on a
+	// plane that points, a ref is not something it can send, so a list of numbers here would be a way
+	// out that does not open. The labels are what the rows say with the numbers taken off the front.
 	const lines =
 		near.length === 0
-			? [why, "Read the page if you need to see everything on it."]
+			? [why, "Look at the page with screen_look if you cannot tell what to call it."]
 			: [
 					why,
 					"",
 					"The closest things on the page were:",
-					...near.map((row) => `  ${row}`),
+					...near.map((row) => `  ${labelOf(row)}`),
 					"",
-					"Use one of those numbers, or say it the way it reads on screen.",
+					"Say one of those, the way it reads on screen.",
 				];
 	return {
 		content: [{ type: "text" as const, text: lines.join("\n") }],
@@ -327,6 +330,16 @@ export default function (pi: ExtensionAPI): void {
 	// Whether this plane points, asked once here: it decides what these tools say they take, and a
 	// tool description is written when it is registered rather than when it is called.
 	const points = pointing();
+	/*
+	 * What every verb that answers with a page is asked for, once this plane points.
+	 *
+	 * The saving is not in the click, it is in what comes back from it. A page listed out is two
+	 * hundred rows of button and link, it is the biggest thing in the conversation, and every later
+	 * call in the turn carries it again — for an agent that names things and can no longer send a
+	 * number, all of it answers a question that will never be asked. So scrolling, going back and
+	 * changing tabs come back brief too, and not only the click that started it.
+	 */
+	const briefly = points === undefined ? {} : { brief: true };
 
 	pi.registerTool({
 		name: "screen_open",
@@ -371,11 +384,22 @@ export default function (pi: ExtensionAPI): void {
 		name: "screen_read",
 		label: "Read the page",
 		description: [
-			"Read the page your browser is on: where it is, what you can click or type into, and what it",
-			"says.",
-			"",
-			`${REFS}`,
-			"",
+			...(points === undefined
+				? [
+						"Read the page your browser is on: where it is, what you can click or type into, and",
+						"what it says.",
+						"",
+						`${REFS}`,
+						"",
+					]
+				: [
+						"Read the page your browser is on: where it is and what it says.",
+						"",
+						"Not a list of things to press — there is none to give you, and you do not act by",
+						"number on this browser. What comes back is the words on the page, which is what the",
+						"next sentence of your work is written from. To act, name the thing.",
+						"",
+					]),
 			...(points === undefined
 				? [
 						"This is the cheap one and the one to use by default. Reading a page costs a fraction of",
@@ -383,19 +407,18 @@ export default function (pi: ExtensionAPI): void {
 						"coordinates you guessed from a picture.",
 					]
 				: [
-						"This is the expensive one, and it is not how you click things here. A page of two hundred",
-						"numbered rows is the biggest thing in this conversation and it is sent again with every",
-						"call you make afterwards — and you are not going to use the numbers, because you can",
-						"name what you want instead.",
-						"",
-						"Read when the numbers are the point: something would not take a description, a click came",
-						"back saying it was not clearly one thing, or you want to know everything a page offers",
-						"rather than press one of them.",
+						"Read when you need what the page says: a price, an error, a confirmation, the name of",
+						"the thing you are about to press. Clicking and typing do not need this at all — they",
+						"come back with the page themselves.",
 					]),
-			"",
-			"A row that says `div` is not a mistake. The list is what a person could press, which is more",
-			"than what the markup declares: a card built out of bare divs with the handler bound in",
-			"script is on it, found by the hand the browser draws over it. Click those the same way.",
+			...(points === undefined
+				? [
+						"",
+						"A row that says `div` is not a mistake. The list is what a person could press, which is",
+						"more than what the markup declares: a card built out of bare divs with the handler bound",
+						"in script is on it, found by the hand the browser draws over it. Click those the same way.",
+					]
+				: []),
 		].join("\n"),
 		promptSnippet: "Read the page your browser is on, as text and numbered elements",
 		promptGuidelines:
@@ -406,13 +429,17 @@ export default function (pi: ExtensionAPI): void {
 						"If what you want is not in the list, read the page again after scrolling to it: an element with no size and nothing drawn is left out, and a list that has just been opened or filtered is a different list.",
 					]
 				: [
-						"Do not read the page in order to click something. Name the thing in screen_click or screen_type and skip the read entirely — one call instead of two, and none of the list in this conversation.",
-						"Read when a described click came back saying it was not clearly one thing, or when you want to know everything a page offers rather than press one of them.",
-						"If what you want is not there, scroll to it and act again: an element with no size and nothing drawn is not on the page yet, and a list that has just been filtered is a different list.",
+						"Do not read the page in order to click something. Name the thing in screen_click or screen_type: reading gives you no numbers, and clicking needs none.",
+						"Read when you need what the page says rather than what it offers — a price, an error, a confirmation.",
+						"If what you named is not found, scroll to it and act again: an element with no size and nothing drawn is not on the page yet, and a list that has just been filtered is a different list.",
 					],
 		parameters: Type.Object({}),
 		async execute() {
-			return { content: [...(await does({ verb: "read" }))], details: {} };
+			// Brief where this plane points, which is the same page without the list of refs: the list is
+			// most of what a reading costs, and every number in it answers a question this agent has no
+			// way to ask.
+			const asked = points === undefined ? { verb: "read" } : { verb: "read", brief: true };
+			return { content: [...(await does(asked))], details: {} };
 		},
 	});
 
@@ -516,22 +543,22 @@ export default function (pi: ExtensionAPI): void {
 			...(points === undefined
 				? ["Say which one by its number.", "", REFS]
 				: [
-						'Describe it — `what: "the Continue button"` — and do not read the page first. Something',
-						"small and fast is handed the page and finds the element for you. This is the way to",
-						"click here: a read is the biggest thing you will put in this conversation, every later",
-						"call carries it again, and you do not need a single one of its numbers.",
+						'Describe it — `what: "the Continue button"` — the way it reads on screen. Something small',
+						"and fast is handed the page and finds the element for you.",
 						"",
-						"The page that comes back after a described click is where you are and what it says,",
-						"without the numbered list — you did not use the numbers to get here and you do not need",
-						"them to go on. Read the page when you want them.",
+						"This is the only way to click on this browser. There are no numbers to use: nothing you",
+						"can call gives you one, because a page listed out is the biggest thing you would put in",
+						"this conversation and every later call would carry it again.",
 						"",
-						"If the description is not clearly one thing on the page, nothing is clicked and you get",
-						"the page to pick from. So describe it as it reads on screen.",
-						"",
-						`Or say which one by its number. ${REFS}`,
+						"If the description is not clearly one thing on the page, nothing is clicked and you are",
+						"told what the closest things are called. Say one of those. If you cannot tell what to",
+						"call it, screen_look is a pair of eyes on the page.",
 					]),
 		].join("\n"),
-		promptSnippet: "Click something on the page, by name or by number",
+		promptSnippet:
+			points === undefined
+				? "Click something on the page, by its number"
+				: "Click something on the page by naming it",
 		...(points === undefined
 			? {}
 			: {
@@ -539,33 +566,46 @@ export default function (pi: ExtensionAPI): void {
 						'Click by naming the thing — what: "the Continue button" — rather than by reading the page and using a ref. It is one call instead of two and keeps the page\'s element list out of this conversation.',
 					],
 				}),
-		parameters: Type.Object({
-			// Named first, because the order a schema is written in is the order it is read in, and
-			// this is the one to reach for.
-			...(points === undefined
-				? {}
+		/*
+		 * One way in, decided by whether this plane points.
+		 *
+		 * With a classifier behind it there is a name and no number, and that is the whole of the
+		 * saving rather than a preference: a ref exists only because a page was listed out, and a
+		 * schema that still offered one is a schema that tells a model the list is worth asking for.
+		 * Without a classifier there is a number and nothing else, because nothing here could find an
+		 * element from a description.
+		 */
+		parameters: Type.Object(
+			points === undefined
+				? {
+						ref: Type.Integer({
+							description: "The number from the last read, without the brackets.",
+						}),
+					}
 				: {
-						what: Type.Optional(
-							Type.String({
-								description:
-									'What to click, described as it reads on screen: "the Continue button", "the second result", "the cheapest flight". Use this. It saves reading the page.',
-							}),
-						),
-					}),
-			ref: Type.Optional(
-				Type.Integer({
-					description:
-						points === undefined
-							? "The number from the last read, without the brackets."
-							: "The number from a read, if you have one. Only needed for things a description would not tell apart.",
-				}),
-			),
-		}),
+						what: Type.String({
+							description:
+								'What to click, described as it reads on screen: "the Continue button", "the second result", "the cheapest flight".',
+						}),
+					},
+		),
 		async execute(_id, params) {
 			const { ref, what } = params as { ref?: number; what?: string };
 			const model = pointing();
-			if (what !== undefined && what.trim() !== "" && model !== undefined) {
-				const found = await pointAt(model, what.trim());
+			if (model !== undefined) {
+				const named = (what ?? "").trim();
+				if (named === "") {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: "Say what to click, the way it reads on screen — this browser has no numbers to click by.",
+							},
+						],
+						details: {},
+					};
+				}
+				const found = await pointAt(model, named);
 				if ("why" in found) return instead(found.why, found.near ?? [], found.usage);
 				return {
 					content: [...(await does({ verb: "click", ref: found.ref, brief: true }))],
@@ -575,12 +615,7 @@ export default function (pi: ExtensionAPI): void {
 			}
 			if (ref === undefined) {
 				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "Say which one: a ref from the last read, or what it is called on the page.",
-						},
-					],
+					content: [{ type: "text" as const, text: "Say which one: a ref from the last read." }],
 					details: {},
 				};
 			}
@@ -594,8 +629,13 @@ export default function (pi: ExtensionAPI): void {
 		description: [
 			"Type into a field on the page.",
 			"",
-			"Name the field by its ref, or leave it out to type wherever the cursor already is. Set enter",
-			"to submit straight after, which is one call instead of two for a search box.",
+			...(points === undefined
+				? ["Name the field by its ref, or leave it out to type wherever the cursor already is."]
+				: [
+						'Describe the field — what: "the search box" — the way it reads on screen, or leave it',
+						"out to type wherever the cursor already is. There are no numbers here to name it by.",
+					]),
+			"Set enter to submit straight after, which is one call instead of two for a search box.",
 			"",
 			"A named field is emptied first, so what it holds afterwards is what you sent and nothing",
 			"else. Typing with no field named inserts where the cursor is and clears nothing.",
@@ -603,9 +643,8 @@ export default function (pi: ExtensionAPI): void {
 				? []
 				: [
 						"",
-						'Or describe the field — what: "the search box" — and skip the read: something small and',
-						"fast is handed the page and finds it. Nothing is typed if the description is not clearly",
-						"one field on the page; you get the page to pick from instead.",
+						"Nothing is typed if the description is not clearly one field on the page: you are told",
+						"what the closest ones are called, and you say one of those.",
 					]),
 			"",
 			"Never type a password, a card number or a one-time code. You do not have them, and a page",
@@ -619,19 +658,22 @@ export default function (pi: ExtensionAPI): void {
 		],
 		parameters: Type.Object({
 			text: Type.String({ description: "What to put in." }),
+			// A name where this plane points and a number where it does not, for the reason the click
+			// above has one of each: the two are not alternatives, they are what the browser answers to.
 			...(points === undefined
-				? {}
+				? {
+						ref: Type.Optional(
+							Type.Integer({ description: "The field, by its number from the last read." }),
+						),
+					}
 				: {
 						what: Type.Optional(
 							Type.String({
 								description:
-									'The field, described as it reads on screen: "the search box", "the email field". Use this. It saves reading the page.',
+									'The field, described as it reads on screen: "the search box", "the email field". Left out, it types where the cursor already is.',
 							}),
 						),
 					}),
-			ref: Type.Optional(
-				Type.Integer({ description: "The field, by its number from a read, if you have one." }),
-			),
 			enter: Type.Optional(Type.Boolean({ description: "Press Enter afterwards." })),
 		}),
 		async execute(_id, params) {
@@ -808,7 +850,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			const { key } = params as { key: string };
-			return { content: [...(await does({ verb: "key", key }))], details: {} };
+			return { content: [...(await does({ verb: "key", key, ...briefly }))], details: {} };
 		},
 	});
 
@@ -826,7 +868,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			const { to } = params as { to: string };
-			return { content: [...(await does({ verb: "scroll", to }))], details: {} };
+			return { content: [...(await does({ verb: "scroll", to, ...briefly }))], details: {} };
 		},
 	});
 
@@ -837,7 +879,7 @@ export default function (pi: ExtensionAPI): void {
 		promptSnippet: "Go back to the previous page",
 		parameters: Type.Object({}),
 		async execute() {
-			return { content: [...(await does({ verb: "back" }))], details: {} };
+			return { content: [...(await does({ verb: "back", ...briefly }))], details: {} };
 		},
 	});
 
@@ -886,7 +928,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			const { url } = params as { url: string };
-			return { content: [...(await does({ verb: "tab_open", url }))], details: {} };
+			return { content: [...(await does({ verb: "tab_open", url, ...briefly }))], details: {} };
 		},
 	});
 
@@ -917,7 +959,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			const { tab } = params as { tab: number };
-			return { content: [...(await does({ verb: "tab", tab }))], details: {} };
+			return { content: [...(await does({ verb: "tab", tab, ...briefly }))], details: {} };
 		},
 	});
 
@@ -942,7 +984,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params) {
 			const { tab } = params as { tab: number };
-			return { content: [...(await does({ verb: "tab_close", tab }))], details: {} };
+			return { content: [...(await does({ verb: "tab_close", tab, ...briefly }))], details: {} };
 		},
 	});
 

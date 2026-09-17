@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { boxScript, OUTLINE_SCRIPT, pageForAgent, readOutline } from "../image/reading.ts";
+import {
+	boxScript,
+	OUTLINE_SCRIPT,
+	pageBriefly,
+	pageForAgent,
+	readOutline,
+} from "../image/reading.ts";
 
 describe("reading a page back", () => {
 	it("takes what the page said about itself", () => {
@@ -257,5 +263,47 @@ describe("what the page offers the agent", () => {
 		});
 
 		expect(rows).toEqual([]);
+	});
+});
+
+/**
+ * The page as an agent that names things is handed it.
+ *
+ * Only ever answered to an agent whose plane points, which is an agent that cannot send a ref at
+ * all: the numbers are left out because they cost the most and buy it nothing, and nothing here may
+ * offer them — a sentence saying the list is one read away would be a door that does not open.
+ */
+describe("the page without its numbers", () => {
+	const outline = {
+		title: "Inicio",
+		url: "http://192.168.112.5:3009/",
+		text: "hola. Esta es la página de inicio.",
+		rows: ["[1] link Sobre", "[2] link Servicios", "[3] link Contacto"],
+	};
+
+	it("says where it is and what it says", () => {
+		const said = pageBriefly(outline);
+
+		expect(said).toContain("Inicio");
+		expect(said).toContain("hola. Esta es la página de inicio.");
+	});
+
+	it("carries none of the rows, which is the whole saving", () => {
+		const said = pageBriefly(outline);
+
+		expect(said).not.toContain("[1]");
+		expect(said).not.toContain("link Sobre");
+		expect(said).toContain("3 things on it");
+	});
+
+	it("offers no numbers, because there is nothing left that would take one", () => {
+		expect(pageBriefly(outline)).not.toContain("numbers");
+		expect(pageBriefly(outline)).toContain("Name the one you want");
+	});
+
+	// The other page is still the other page: an agent on a plane with no classifier acts by number
+	// and is handed them, and this is the line that keeps the two from drifting into one.
+	it("is not the page an agent that counts is handed", () => {
+		expect(pageForAgent(outline)).toContain("[1] link Sobre");
 	});
 });

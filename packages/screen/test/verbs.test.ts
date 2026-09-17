@@ -176,3 +176,36 @@ describe("whose screen this is", () => {
 		expect(presented("Bearer anything", undefined)).toBe(false);
 	});
 });
+
+/**
+ * Which verbs carry `brief`, which is the difference between the two browsers this can be.
+ *
+ * With a classifier behind it an agent acts by naming things and cannot send a ref at all — so the
+ * numbered list is a cost with no use, and every verb that answers with a page has to be able to
+ * leave it out. It used to be only the three that the click went through, which meant a scroll
+ * put two hundred rows back into a conversation the click had just kept them out of.
+ */
+describe("asking for the page without its numbers", () => {
+	const brief = (body: Record<string, unknown>) => {
+		const asked = readAsked(body);
+		return "refused" in asked ? `refused: ${asked.refused}` : asked.brief === true;
+	};
+
+	it("is carried by everything that answers with a page", () => {
+		expect(brief({ verb: "read", brief: true })).toBe(true);
+		expect(brief({ verb: "back", brief: true })).toBe(true);
+		expect(brief({ verb: "scroll", to: "down", brief: true })).toBe(true);
+		expect(brief({ verb: "key", key: "Enter", brief: true })).toBe(true);
+		expect(brief({ verb: "tab", tab: 1, brief: true })).toBe(true);
+		expect(brief({ verb: "tab_close", tab: 1, brief: true })).toBe(true);
+		expect(brief({ verb: "tab_open", url: "https://x.com", brief: true })).toBe(true);
+		expect(brief({ verb: "open", url: "https://x.com", brief: true })).toBe(true);
+		expect(brief({ verb: "click", ref: 1, brief: true })).toBe(true);
+	});
+
+	// Left out is the whole page, which is what an agent that acts by number is asking for.
+	it("is off unless it was asked for", () => {
+		expect(brief({ verb: "read" })).toBe(false);
+		expect(brief({ verb: "scroll", to: "down" })).toBe(false);
+	});
+});

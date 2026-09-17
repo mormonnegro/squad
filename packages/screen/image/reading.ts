@@ -195,6 +195,9 @@ export function pageBriefly(outline: Outline): string {
 		"",
 		outline.rows.length === 0
 			? "Nothing on this page can be clicked or typed into."
-			: `${outline.rows.length} things on it can be clicked or typed into. Name the one you want, or read the page to get their numbers.`,
+			: // No offer of numbers. This page is only ever answered to an agent that acts by naming
+				// things, and telling it a list is one read away would be telling it about a door that
+				// does not open: with a classifier behind the browser there is nothing that takes a ref.
+				`${outline.rows.length} things on it can be clicked or typed into. Name the one you want, the way it reads on screen.`,
 	].join("\n");
 }

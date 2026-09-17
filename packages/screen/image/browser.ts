@@ -747,8 +747,10 @@ export class Browser {
 			// list of verbs and the list of things that can be done stay the same list.
 			case "login":
 				return { text: "Signing in is answered at the door." };
+			// Brief when it is asked for, as every other verb here answers: an agent whose plane points
+			// acts by naming things and has no use for the list — and it is the list that costs.
 			case "read":
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			// The same page as data, for whatever is choosing a ref on the agent's behalf. Nothing
 			// reads this: it is parsed.
 			case "outline":
@@ -831,7 +833,7 @@ export class Browser {
 			case "key": {
 				await this.#press(asked.key ?? "Enter");
 				await this.#settled();
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "scroll": {
 				const by =
@@ -842,7 +844,7 @@ export class Browser {
 							: `window.scrollBy(0, ${asked.to === "up" ? -700 : 700})`;
 				await this.#evaluate(`(() => { ${by}; return "done"; })()`);
 				await sleep(200);
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "back": {
 				const history = await this.#need().send<{
@@ -857,7 +859,7 @@ export class Browser {
 					this.#session,
 				);
 				await this.#settled();
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "tabs": {
 				const open = await this.tabs();
@@ -888,7 +890,7 @@ export class Browser {
 						"",
 						`Close this one with screen_tab_close as soon as you have what you came for. ${now.length} of ${MOST_TABS} tabs are open, and every one of them is a whole page held in memory.`,
 						"",
-						pageForAgent(outline),
+						said(outline, asked.brief === true),
 					].join("\n"),
 				};
 			}
@@ -896,7 +898,7 @@ export class Browser {
 				if (!(await this.toTab(asked.tab ?? 0))) {
 					return { text: `There is no tab ${asked.tab}. Ask for tabs to see which there are.` };
 				}
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "tab_close": {
 				if (!(await this.closeTab(asked.tab ?? 0))) {
@@ -904,7 +906,7 @@ export class Browser {
 						text: `Nothing closed. Either there is no tab ${asked.tab}, or it is the only one open — a browser with no pages is a browser that has gone.`,
 					};
 				}
-				return { text: pageForAgent(await this.#outline()) };
+				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "ask":
 				// Handled by the door, which is where the note is kept. Here so the switch is total.
