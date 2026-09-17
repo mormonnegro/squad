@@ -17,6 +17,7 @@ import {
 	askedAbout,
 	askedAboutAll,
 	keyAt,
+	labelOf,
 	nearestIn,
 	type Outline,
 	type Pointing,

@@ -10,7 +10,8 @@
 		"rules": {
 			"preset": "recommended",
 			"correctness": {
-				"useHookAtTopLevel": "error"
+				"useHookAtTopLevel": "error",
+				"noUndeclaredVariables": "error"
 			}
 		}
 	},
