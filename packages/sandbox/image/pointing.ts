@@ -65,14 +65,19 @@ export function readOutline(raw: string | undefined): Outline | undefined {
 }
 
 /**
- * How many rows are offered as answers.
+ * How many rows are offered as answers, which is the classifier's own ceiling and not our taste.
  *
- * Not a money limit — a page whole is four thousand tokens and costs a fiftieth of a cent. It is
- * that a question with two hundred answers is a harder question than one with sixty, and the rows
- * that get cut are the ones with nothing in common with what was asked for. A page with more than
- * this on it is a page where the words in the request are doing the work anyway.
+ * This used to be sixty, on the belief that a question with two hundred answers is a harder
+ * question than one with sixty. Measured, that belief is wrong. Twelve labels spread down a
+ * six-hundred-row Wikipedia article, each asked for by its own words: sixty options got ten right
+ * at 404 ms a question, and two hundred and fifty got eleven right at 412 ms — with the confidences
+ * higher almost everywhere, 0.40 to 0.55, 0.66 to 0.87, 0.50 to 0.60. Nothing is paid for the extra
+ * options and something is bought.
+ *
+ * The number itself is the API's: over two hundred and fifty-five choices it answers "Too many
+ * choices. Must have at most 255 choices." and nothing else. This leaves room for `none`.
  */
-export const MOST_OPTIONS = 60;
+export const MOST_OPTIONS = 250;
 
 /** The word this row is offered under: what the read said about it, without its number. */
 export function labelOf(row: string): string {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Outline, Pointing } from "../image/pointing.ts";
+import { MOST_OPTIONS } from "../image/pointing.ts";
 import {
 	askedToStep,
 	MOST_SCROLLS,
@@ -131,10 +132,12 @@ describe("how sure is sure enough to press", () => {
  * the language list. It was being asked to find a way on out of the site's furniture.
  */
 describe("which rows are offered", () => {
-	const rows = Array.from({ length: 200 }, (_, at) => `[${at + 1}] a "row ${at + 1}"`);
+	const rows = Array.from({ length: 600 }, (_, at) => `[${at + 1}] a "row ${at + 1}"`);
 
+	// As many as the classifier will take and no more: over its ceiling it answers "Too many choices"
+	// and nothing else, so a page bigger than one question is asked about in windows.
 	it("offers a window of them and not the page", () => {
-		expect(offered(rows, "anything", new Set()).length).toBe(60);
+		expect(offered(rows, "anything", new Set()).length).toBe(MOST_OPTIONS);
 	});
 
 	it("offers the rest of the page once a window has been asked about", () => {
@@ -143,12 +146,12 @@ describe("which rows are offered", () => {
 		const second = offered(rows, "anything", asked);
 
 		expect(second.some((row) => first.includes(row))).toBe(false);
-		expect(second.length).toBe(60);
+		expect(second.length).toBe(MOST_OPTIONS);
 	});
 
 	// A goal that names what it is after is answered on the first question, whatever page order says.
 	it("puts what the goal names first, wherever it is on the page", () => {
-		const said = offered([...rows, '[201] a "Colombia"'], "the article about Colombia", new Set());
+		const said = offered([...rows, '[601] a "Colombia"'], "the article about Colombia", new Set());
 
 		expect(said.some((row) => row.includes("Colombia"))).toBe(true);
 	});

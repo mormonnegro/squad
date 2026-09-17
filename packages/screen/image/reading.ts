@@ -109,7 +109,7 @@ export const OUTLINE_SCRIPT = `(() => {
 				(label === "" ? "" : " " + JSON.stringify(label)) +
 				(has === "" ? "" : " = " + JSON.stringify(has)),
 		);
-		if (refs.length >= 200) break;
+		if (refs.length >= 600) break;
 	}
 	const text = (document.body ? document.body.innerText : "")
 		.replace(/[ \\t]+/g, " ")
@@ -162,13 +162,29 @@ export function readOutline(raw: unknown): Outline | undefined {
  * things it can act on come before the prose — an agent that has to read four thousand words of
  * article to find out there is a "Sign in" button will usually stop reading first.
  */
+/**
+ * How many rows a page is written out as, for the agent that reads rather than names.
+ *
+ * The reading itself goes further now — the classifier takes the whole page in one question and
+ * answers no slower for it — but a list written into a conversation is a different thing: six
+ * hundred rows is most of a turn's budget spent on a page the agent will use three lines of.
+ */
+const MOST_WRITTEN = 200;
+
 export function pageForAgent(outline: Outline): string {
+	const rows = outline.rows.slice(0, MOST_WRITTEN);
 	return [
 		`${outline.title || "(untitled)"} — ${outline.url}`,
 		"",
-		outline.rows.length === 0
+		rows.length === 0
 			? "Nothing on this page can be clicked or typed into."
-			: ["What you can act on, by ref:", ...outline.rows].join("\n"),
+			: [
+					"What you can act on, by ref:",
+					...rows,
+					...(outline.rows.length > rows.length
+						? [`…and ${outline.rows.length - rows.length} more, further down the page.`]
+						: []),
+				].join("\n"),
 		"",
 		outline.text === "" ? "The page has no text." : ["What it says:", outline.text].join("\n"),
 		"",
