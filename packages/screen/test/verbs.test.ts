@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { meaningOf } from "../image/waiting.ts";
 import { presented, tokenIn } from "../image/token.ts";
 import { MOST_TABS, needsTheKeyboard, readAsked, readUrl, tooManyTabs } from "../image/verbs.ts";
 
@@ -207,5 +208,55 @@ describe("asking for the page without its numbers", () => {
 	it("is off unless it was asked for", () => {
 		expect(brief({ verb: "read" })).toBe(false);
 		expect(brief({ verb: "scroll", to: "down" })).toBe(false);
+	});
+});
+
+/**
+ * Which browser event means an action has finished, which was got wrong twice in one afternoon.
+ *
+ * The first version waited for a load event with an eight second cap. Most of the web never fires
+ * one — an application that swaps its own page fires `navigatedWithinDocument`, a page restored from
+ * the back-forward cache fires neither — so every click on such a site paid the whole cap. Measured
+ * at 8.4 seconds a click before, and under a second after.
+ */
+describe("what says the page has arrived", () => {
+	it("takes a real load", () => {
+		expect(meaningOf({ method: "Page.loadEventFired" }, "main")).toBe("done");
+	});
+
+	// The one that cost the eight seconds: a page that swapped itself never loads again.
+	it("takes an application swapping its own page", () => {
+		expect(meaningOf({ method: "Page.navigatedWithinDocument" }, "main")).toBe("done");
+	});
+
+	// And the one that cost them a second time: going back is usually a restore, not a load.
+	it("takes the top frame stopping, which is how going back ends", () => {
+		expect(meaningOf({ method: "Page.frameStoppedLoading", params: { frameId: "main" } }, "main")).toBe(
+			"done",
+		);
+	});
+
+	// An advert finishing first is not the page arriving, and on a news site it always finishes first.
+	it("does not take an iframe stopping for the page", () => {
+		expect(
+			meaningOf({ method: "Page.frameStoppedLoading", params: { frameId: "advert" } }, "main"),
+		).toBeUndefined();
+	});
+
+	// The first navigation of a tab happens before anything has said which frame is the page.
+	it("takes a frame stopping when no top frame is known yet", () => {
+		expect(
+			meaningOf({ method: "Page.frameStoppedLoading", params: { frameId: "whatever" } }, undefined),
+		).toBe("done");
+	});
+
+	it("knows a navigation being announced from one finishing", () => {
+		expect(meaningOf({ method: "Page.frameStartedLoading" }, "main")).toBe("began");
+	});
+
+	// Everything else is noise on a socket that carries every event the browser has.
+	it("says nothing about anything else", () => {
+		expect(meaningOf({ method: "Page.screencastFrame" }, "main")).toBeUndefined();
+		expect(meaningOf({ method: "Network.responseReceived" }, "main")).toBeUndefined();
 	});
 });

@@ -49,7 +49,7 @@ RUN userdel -r node \
 # will not come up with nothing saying why. The test beside this one walks the imports and fails
 # with the name to add.
 COPY browser.ts cdp.ts forward.ts keyboard.ts logins.ts page.ts reading.ts screen.ts token.ts \
-     verbs.ts /usr/local/lib/squad/screen/
+     verbs.ts waiting.ts /usr/local/lib/squad/screen/
 
 # The plane's way in, which is the same program the sandbox image carries and has to stay the same
 # program: the control plane execs it by path in whichever container it is tunnelling into. A test

@@ -10,6 +10,7 @@ import {
 	readOutline,
 } from "./reading.ts";
 import { type Asked, MOST_TABS, tooManyTabs } from "./verbs.ts";
+import { meaningOf } from "./waiting.ts";
 
 /**
  * The size everything here agrees on.
@@ -162,6 +163,8 @@ export class Browser {
 	 * every viewer, forever, for something that changes when somebody clicks a link.
 	 */
 	#where = START_PAGE;
+	/** The id of the top frame, learned from the navigations, for telling its events from an iframe's. */
+	#mainFrame: string | undefined;
 	/** One attachment at a time, because the events that ask for one arrive in bursts. */
 	#following: Promise<void> = Promise.resolve();
 	/**
@@ -311,12 +314,17 @@ export class Browser {
 
 		cdp.on((event) => {
 			if (event.method === "Page.frameNavigated") {
-				const frame = event.params.frame as { url?: string; parentId?: string } | undefined;
+				const frame = event.params.frame as
+					| { id?: string; url?: string; parentId?: string }
+					| undefined;
 				// The top frame of the tab being watched. An advert in an iframe navigating is not the
 				// browser going somewhere, and neither is a tab nobody is looking at.
 				if (event.sessionId !== this.#seenSession) return;
 				if (frame?.parentId === undefined && typeof frame?.url === "string") {
 					this.#where = frame.url;
+					// Which frame is the page, kept for the waits: `frameStoppedLoading` says which frame
+					// it is about and nothing else, and an advert finishing is not the page arriving.
+					if (typeof frame.id === "string") this.#mainFrame = frame.id;
 				}
 				return;
 			}
@@ -520,8 +528,9 @@ export class Browser {
 			url,
 		});
 		if (!this.#knownTabs.includes(targetId)) this.#knownTabs.push(targetId);
+		const watch = this.#watchingPage();
 		await this.#follow(targetId, url);
-		await this.#settled();
+		await watch.settled();
 	}
 
 	/** Back to one of them, by the number it was listed as. Answers whether there was one. */
@@ -737,9 +746,9 @@ export class Browser {
 				// Listening before asking, because a page served from cache can load between the call and
 				// the listener, and a wait that began after that waits out its whole timeout for an event
 				// that already happened.
-				const load = this.#loading();
+				const watch = this.#watchingPage();
 				await this.#need().send("Page.navigate", { url: asked.url }, this.#session);
-				await this.#settled(load);
+				await watch.settled();
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			// Answered at the door rather than here: signing in reads a vault this class has no token
@@ -769,13 +778,13 @@ export class Browser {
 			}
 			case "click": {
 				const ref = asked.ref ?? 0;
-				const load = this.#loading();
+				const watch = this.#watchingPage();
 				if (!(await this.#clickRef(ref))) {
 					return {
 						text: `There is no [${ref}] on this page any more. The page has moved on since that read — read it again and use the numbers that come back.`,
 					};
 				}
-				await this.#settled(load);
+				await watch.settled();
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "type": {
@@ -797,8 +806,9 @@ export class Browser {
 				if (asked.ref !== undefined) await this.#clear();
 				await this.#need().send("Input.insertText", { text: asked.text ?? "" }, this.#session);
 				if (asked.enter === true) {
+					const watch = this.#watchingPage();
 					await this.#press("Enter");
-					await this.#settled();
+					await watch.settled();
 				}
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
@@ -822,17 +832,18 @@ export class Browser {
 					await this.#need().send("Input.insertText", { text: one.text }, this.#session);
 					done.push(String(one.ref));
 				}
-				const load = this.#loading();
+				const watch = this.#watchingPage();
 				if (asked.press !== undefined && !(await this.#clickRef(asked.press))) {
 					return { text: `The boxes are filled. [${asked.press}] is not on this page any more.` };
 				}
 				if (asked.enter === true) await this.#press("Enter");
-				if (asked.press !== undefined || asked.enter === true) await this.#settled(load);
+				if (asked.press !== undefined || asked.enter === true) await watch.settled();
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "key": {
+				const watch = this.#watchingPage();
 				await this.#press(asked.key ?? "Enter");
-				await this.#settled();
+				await watch.settled();
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "scroll": {
@@ -853,12 +864,13 @@ export class Browser {
 				}>("Page.getNavigationHistory", {}, this.#session);
 				const previous = history.entries[history.currentIndex - 1];
 				if (previous === undefined) return { text: "There is nothing behind this page." };
+				const watch = this.#watchingPage();
 				await this.#need().send(
 					"Page.navigateToHistoryEntry",
 					{ entryId: previous.id },
 					this.#session,
 				);
-				await this.#settled();
+				await watch.settled();
 				return { text: said(await this.#outline(), asked.brief === true) };
 			}
 			case "tabs": {
@@ -921,26 +933,71 @@ export class Browser {
 	 * fires it once and then changes everything afterwards without firing it again. So this waits for
 	 * the load if one is coming and settles for a pause if it is not.
 	 */
-	#loading(): Promise<void> {
-		return new Promise<void>((resolve) => {
-			const stop = this.#need().on((event) => {
-				if (event.method !== "Page.loadEventFired") return;
-				stop();
-				resolve();
-			});
-			// Resolved rather than rejected when it never comes, because for most of the web it never
-			// does: a click that changed the page without navigating fires nothing, and refusing the
-			// verb for that would refuse it on every application written in the last ten years.
-			setTimeout(() => {
-				stop();
-				resolve();
-			}, 8_000);
-		});
-	}
+	/**
+	 * How long a click is given to announce a navigation before the page is read back.
+	 *
+	 * A link and a form say so immediately: the click is what starts the load, and the protocol says
+	 * `frameStartedLoading` in the same breath. What takes longer is an application that fetches
+	 * something and moves afterwards — for those this is too short, the page comes back as it was,
+	 * and the agent reads it again. That trade is worth taking every time. The other way round costs
+	 * eight seconds on every click on every site written in the last ten years.
+	 */
+	static readonly #ANNOUNCES_IN_MS = 500;
 
-	async #settled(load?: Promise<void>): Promise<void> {
-		await (load ?? this.#loading());
-		await sleep(400);
+	/** How long a page that did navigate is given to finish, which is a real wait for a real load. */
+	static readonly #LOADS_IN_MS = 8_000;
+
+	/** What a click that changed the page in place is given to finish changing it. */
+	static readonly #REDRAWS_IN_MS = 250;
+
+	/** And what a page that did go somewhere is given to draw itself once it says it has arrived. */
+	static readonly #DRAWS_IN_MS = 400;
+
+	/**
+	 * Watches what an action turns out to be, from before it happens.
+	 *
+	 * Registered first and asked afterwards, because both halves of this are races: a page served
+	 * from cache can load between the call and the listener, and a click on a link starts navigating
+	 * before the call that made it has returned.
+	 *
+	 * The question it answers is the one that was being asked wrong. It used to wait for a load event
+	 * with an eight second cap, and most of the web never fires one: an application that swaps its
+	 * own page fires nothing at all, so every click on every such site paid the whole cap — measured
+	 * at 8.4 seconds a click on a four-page demo, which was more than the model and the classifier
+	 * and the browser put together. Now the wait is for a navigation to *begin*, which is a fifth of
+	 * a second, and only a navigation that did begin is waited out.
+	 */
+	#watchingPage(): { settled: () => Promise<void> } {
+		let began = false;
+		let done = false;
+		let finish: (() => void) | undefined;
+		const arrived = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const stop = this.#need().on((event) => {
+			const means = meaningOf(event, this.#mainFrame);
+			if (means === "began") began = true;
+			if (means === "done") {
+				done = true;
+				finish?.();
+			}
+		});
+		return {
+			settled: async () => {
+				// Whichever comes first: the page saying what it did, or the moment it stops being worth
+				// waiting to hear. A click that changed nothing says nothing, and this is all it costs.
+				await Promise.race([arrived, sleep(Browser.#ANNOUNCES_IN_MS)]);
+				if (!began && !done) {
+					stop();
+					await sleep(Browser.#REDRAWS_IN_MS);
+					return;
+				}
+				// It went somewhere. Now the long wait is the right one, because something is coming.
+				if (!done) await Promise.race([arrived, sleep(Browser.#LOADS_IN_MS)]);
+				stop();
+				await sleep(Browser.#DRAWS_IN_MS);
+			},
+		};
 	}
 
 	/** Where the browser is, for the address bar on the operator's view. */
